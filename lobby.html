@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>等候配對 · 擂台夜市</title>
+<link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="marquee">
+      <span class="eyebrow" id="event-game-tag">Battle Night Market</span>
+      <h1 id="event-title">載入中...</h1>
+      <p id="event-sub"></p>
+    </div>
+
+    <div class="card" style="text-align:center;">
+      <div id="my-status" class="status-msg">確認狀態中...</div>
+      <div class="timer-bar"><div id="pulse-bar" style="width:0%"></div></div>
+    </div>
+
+    <div class="card">
+      <h3 style="font-size:15px;color:var(--ink-dim);">擂台戰況</h3>
+      <div id="bracket-list"></div>
+    </div>
+
+    <div class="footer-nav"><a href="index.html">← 回活動列表</a></div>
+  </div>
+
+  <button class="btn ghost rule-fab" id="rule-fab-btn">📖 規則說明</button>
+  <div class="modal-overlay" id="rule-modal">
+    <div class="modal-card">
+      <h3>📖 賽制與玩法規則</h3>
+      <div id="rule-content"></div>
+      <button class="btn ghost block" id="rule-close-btn">關閉</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="assets/supabase-config.js"></script>
+  <script src="assets/db.js"></script>
+  <script src="assets/lobby.js"></script>
+</body>
+</html>

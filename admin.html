@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>管理後台 · 擂台夜市</title>
+<link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="marquee">
+      <span class="eyebrow">Admin</span>
+      <h1>後台管理</h1>
+      <p>開新活動、控制活動狀態、幫每位參加者填入獎勵</p>
+    </div>
+
+    <div class="card">
+      <h3 style="font-size:15px;">開新活動</h3>
+      <div class="field">
+        <label for="new-name">活動名稱</label>
+        <input id="new-name" placeholder="例如:週五夜擂台賽" />
+      </div>
+      <div class="field">
+        <label for="new-type">遊戲類型</label>
+        <select id="new-type">
+          <option value="dice">🎲 骰子對戰</option>
+          <option value="rps5">✂️ 五手勢對戰</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="new-deadline">報名截止時間(選填,不填就一直開放到主辦人鎖定名單為止)</label>
+        <input type="datetime-local" id="new-deadline" />
+      </div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="new-losers" style="width:auto;" />
+          <span>開啟敗部復活賽(輸一場先掉敗部,敗部再輸才淘汰)</span>
+        </label>
+      </div>
+      <div class="field" id="dice-rules-box">
+        <label>骰子對戰・進階規則(不勾就是最原始版本)</label>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink);">
+            <input type="checkbox" class="rule-box" data-rule="item_die" style="width:auto;" />
+            🎁 道具骰(每3回合隨機爆擊/回血/必中/封印)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink);">
+            <input type="checkbox" class="rule-box" data-rule="field_mod" style="width:auto;" />
+            🌪️ 戰場修飾骰(開局隨機決定當場特殊規則)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink);">
+            <input type="checkbox" class="rule-box" data-rule="free_bet" style="width:auto;" />
+            🎰 自由加注(不限低血,整場限2次)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink);">
+            <input type="checkbox" class="rule-box" data-rule="rage" style="width:auto;" />
+            🔥 怒氣值(連輸2場,下次獲勝+2傷害)
+          </label>
+        </div>
+      </div>
+      <button class="btn block" id="create-btn">建立活動</button>
+    </div>
+
+    <div id="events-admin-list"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="assets/supabase-config.js"></script>
+  <script src="assets/db.js"></script>
+  <script src="assets/admin.js"></script>
+</body>
+</html>
