@@ -19,7 +19,8 @@ function pulse() {
 }
 
 async function loadEvent() {
-  const ev = await db.getEvent(eventId);
+  const ev = await db.getEventSafe(eventId);
+  if (!ev) return null;
   document.getElementById("event-title").textContent = ev.name;
   document.getElementById("event-game-tag").textContent = GAME_LABEL[ev.game_type] || ev.game_type;
   return ev;
@@ -221,6 +222,11 @@ function bindRuleModal(ev) {
     return;
   }
   const ev = await loadEvent();
+  if (!ev) {
+    alert("這場活動已經不存在了(可能已被主辦人刪除),帶你回首頁。");
+    location.href = "index.html";
+    return;
+  }
   bindRuleModal(ev);
   await checkMyStatus(ev);
   await renderBracket(ev);

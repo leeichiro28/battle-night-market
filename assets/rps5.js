@@ -28,6 +28,7 @@ let enteredMarked = false;
 let autopilotSlot = null; // 對手超過1分鐘沒入場時,代替他自動出招的slot
 let autopilotAnnounced = false;
 let entryWatchdog = null;
+let goneAway = false;
 
 const ENTRY_TIMEOUT_MS = 60000; // 超過1分鐘對手沒入場,自動開始幫他出招
 
@@ -313,7 +314,16 @@ async function maybeAutopilotSubmit() {
 }
 
 async function refresh() {
-  match = await db.getMatch(matchId);
+  const m = await db.getMatchSafe(matchId);
+  if (!m) {
+    if (!goneAway) {
+      goneAway = true;
+      alert("這場對戰已經不存在了(活動可能已被刪除),帶你回首頁。");
+      location.href = "index.html";
+    }
+    return;
+  }
+  match = m;
   const local = db.getLocalPlayer();
   mySlot = match.player1_id === local.id ? 1 : match.player2_id === local.id ? 2 : null;
   if (mySlot && !enteredMarked) {

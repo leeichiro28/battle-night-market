@@ -88,6 +88,28 @@ const db = (function () {
     return data;
   }
 
+  // 讀取活動,活動不存在(例如已被刪除)時回傳 null 而不是丟出錯誤,方便頁面顯示友善訊息
+  async function getEventSafe(eventId) {
+    const { data, error } = await client
+      .from("events")
+      .select("*")
+      .eq("id", eventId)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
+  // 讀取對戰,對戰不存在(例如所屬活動已被刪除)時回傳 null 而不是丟出錯誤
+  async function getMatchSafe(matchId) {
+    const { data, error } = await client
+      .from("matches")
+      .select("*, p1:player1_id(name), p2:player2_id(name)")
+      .eq("id", matchId)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
   async function createEvent(opts) {
     const { data, error } = await client
       .from("events")
@@ -605,6 +627,8 @@ const db = (function () {
     ensurePlayerFromSession,
     listEvents,
     getEvent,
+    getEventSafe,
+    getMatchSafe,
     createEvent,
     deleteEvent,
     setEventStatus,
