@@ -1,20 +1,51 @@
 const GAME_LABEL = { dice: "🎲 骰子對戰", rps5: "✂️ 五手勢對戰" };
 const STATUS_LABEL = { open: "開放參加", running: "進行中", closed: "已結束" };
 
-async function ensureName() {
-  const local = db.getLocalPlayer();
-  if (local.id && local.name) return local;
+let currentPlayer = null; // 已用 Discord 登入的話是 {id, name},沒登入是 null
+let pendingLoginResolvers = [];
+
+function updateAuthUI() {
+  const loggedInCard = document.getElementById("logged-in-card");
+  if (currentPlayer) {
+    document.getElementById("who-card").style.display = "none";
+    loggedInCard.style.display = "flex";
+    document.getElementById("logged-in-name").textContent = currentPlayer.name;
+  } else {
+    loggedInCard.style.display = "none";
+    // who-card(登入卡片)只有在真的需要登入時才顯示,見 ensureLogin()
+  }
+}
+
+// 需要登入才能繼續的地方(參加、查看自己的戰況)呼叫這個:
+// 已登入就馬上回傳玩家資料;沒登入就跳出 Discord 登入卡片,等使用者登入完成後才繼續往下走
+function ensureLogin() {
+  if (currentPlayer) return Promise.resolve(currentPlayer);
   document.getElementById("who-card").style.display = "block";
+  document.getElementById("who-card").scrollIntoView({ behavior: "smooth", block: "center" });
   return new Promise((resolve) => {
-    document.getElementById("save-name-btn").onclick = async () => {
-      const name = document.getElementById("name-input").value.trim();
-      if (!name) return;
-      const p = await db.ensurePlayer(name);
-      document.getElementById("who-card").style.display = "none";
-      resolve(p);
-    };
+    pendingLoginResolvers.push(resolve);
   });
 }
+
+document.getElementById("discord-login-btn").onclick = async () => {
+  const btn = document.getElementById("discord-login-btn");
+  btn.disabled = true;
+  btn.textContent = "跳轉到 Discord 授權中...";
+  try {
+    await db.signInWithDiscord();
+    // 這裡會整頁導去 Discord 授權頁,不用再做其他事
+  } catch (e) {
+    alert("Discord 登入失敗:" + (e.message || "未知錯誤"));
+    btn.disabled = false;
+    btn.textContent = "💬 使用 Discord 登入";
+  }
+};
+
+document.getElementById("logout-btn").onclick = async () => {
+  await db.signOut();
+  currentPlayer = null;
+  updateAuthUI();
+};
 
 function formatDeadline(iso) {
   if (!iso) return null;
@@ -41,13 +72,13 @@ function eventRow(ev) {
   if (ev.status === "closed") {
     btn.textContent = "查看結果";
     btn.onclick = async () => {
-      await ensureName();
+      await ensureLogin();
       location.href = `lobby.html?event=${ev.id}`;
     };
   } else if (ev.locked) {
     btn.textContent = "已開賽,查看戰況";
     btn.onclick = async () => {
-      const local = await ensureName();
+      await ensureLogin();
       location.href = `lobby.html?event=${ev.id}`;
     };
   } else if (deadlinePassed) {
@@ -58,8 +89,8 @@ function eventRow(ev) {
     btn.onclick = async () => {
       btn.disabled = true;
       btn.textContent = "報名中...";
-      const local = await ensureName();
-      await db.joinEvent(ev.id, local.id);
+      const player = await ensureLogin();
+      await db.joinEvent(ev.id, player.id);
       location.href = `lobby.html?event=${ev.id}`;
     };
   }
@@ -69,7 +100,7 @@ function eventRow(ev) {
   actions.style.gap = "8px";
   actions.style.flexWrap = "wrap";
 
-  // 觀戰按鈕:不管活動是報名中/進行中/已結束都能點,不用等開賽,也不用先報名
+  // 觀戰按鈕:不管活動是報名中/進行中/已結束都能點,不用等開賽,也不用先登入
   // 可以先開著這個頁面掛著,場次一開打賽程列表就會自動出現「👀 觀戰」連結
   if (ev.status !== "closed") {
     const watchBtn = document.createElement("button");
@@ -95,8 +126,30 @@ async function renderEvents() {
   events.forEach((ev) => list.appendChild(eventRow(ev)));
 }
 
-(function init() {
-  // 觀戰不需要先輸入暱稱,馬上就能看到活動列表跟觀戰按鈕
-  // 暱稱只有在真的要「參加」比賽時才會跳出來問(見上面按鈕的 onclick)
+// Discord 登入狀態一有變化(第一次載入偵測到已登入、或剛授權完成導回來)就會呼叫這裡
+async function handleAuthSession(session) {
+  if (session) {
+    currentPlayer = await db.ensurePlayerFromSession(session);
+  } else {
+    currentPlayer = null;
+  }
+  updateAuthUI();
+  // 如果剛好有人按了「參加」在等登入完成,登入好了就自動放行繼續原本的動作
+  if (currentPlayer && pendingLoginResolvers.length) {
+    const resolvers = pendingLoginResolvers;
+    pendingLoginResolvers = [];
+    resolvers.forEach((r) => r(currentPlayer));
+  }
+}
+
+(async function init() {
+  // 不用登入就能馬上看到活動列表跟觀戰按鈕;真的要參加比賽時才會跳出 Discord 登入
   renderEvents();
+  try {
+    const session = await db.getSession();
+    await handleAuthSession(session);
+  } catch (e) {
+    console.error(e);
+  }
+  db.onAuthChange((session) => handleAuthSession(session));
 })();
