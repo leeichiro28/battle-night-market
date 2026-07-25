@@ -1,44 +1,116 @@
-<!doctype html>
-<html lang="zh-Hant">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>等候配對 · 擂台夜市</title>
-<link rel="stylesheet" href="assets/style.css" />
-</head>
-<body>
-  <div class="wrap">
-    <div class="marquee">
-      <span class="eyebrow" id="event-game-tag">Battle Night Market</span>
-      <h1 id="event-title">載入中...</h1>
-      <p id="event-sub"></p>
-    </div>
+# 擂台夜市 · 對戰活動網站(v2)
 
-    <div class="card" style="text-align:center;">
-      <div id="my-status" class="status-msg">確認狀態中...</div>
-      <div class="timer-bar"><div id="pulse-bar" style="width:0%"></div></div>
-    </div>
+雙人即時對戰活動系統:骰子對戰(可加掛道具骰/戰場修飾/自由加注/怒氣值)+ 五手勢進化版(石頭剪刀布蜥蜴史波克,含究極手勢)。
+玩家按「參加」報名,主辦人在後台「鎖定名單」時系統依人數自動算出賽程大小(自動補輪空),產生真正的樹狀晉級圖。
+每場活動可個別開關「敗部復活賽」:開啟後,勝部輸一場只是掉到敗部繼續打,敗部再輸一場才真的淘汰;沒開就是單敗淘汰。
+最後主辦人在後台幫每位淘汰/奪冠玩家填入自訂獎勵文字。
 
-    <div class="card">
-      <h3 style="font-size:15px;color:var(--ink-dim);">擂台戰況</h3>
-      <div id="bracket-list"></div>
-    </div>
+## ⚠️ 從 v1 升級注意事項
 
-    <div class="footer-nav"><a href="index.html">← 回活動列表</a></div>
-  </div>
+資料庫結構改了不少(新增賽程樹、敗部、規則欄位)。請重新到 Supabase SQL Editor 執行一次最新的 `supabase-schema.sql`
+(裡面都用 `if not exists`,不會刪掉你原本的玩家/活動資料,但**建議先清空測試用的活動資料再開始正式使用**,
+因為 v1 建立的活動沒有賽程樹結構,無法在 v2 介面下正常運作)。
 
-  <button class="btn ghost rule-fab" id="rule-fab-btn">📖 規則說明</button>
-  <div class="modal-overlay" id="rule-modal">
-    <div class="modal-card">
-      <h3>📖 賽制與玩法規則</h3>
-      <div id="rule-content"></div>
-      <button class="btn ghost block" id="rule-close-btn">關閉</button>
-    </div>
-  </div>
+## 部署步驟
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-  <script src="assets/supabase-config.js"></script>
-  <script src="assets/db.js"></script>
-  <script src="assets/lobby.js"></script>
-</body>
-</html>
+### 1. 設定 Supabase(資料庫)
+1. 到 https://supabase.com 註冊、New Project(Region 選 Singapore)
+2. 左側 SQL Editor → New query → 貼上 `supabase-schema.sql` 全部內容 → Run
+3. 左側 Database → Replication → 把 `events`、`event_participants`、`matches` 三張表的 Realtime 開關打開
+4. 左側 Settings → API → 複製 **Project URL** 和 **anon public key**
+5. 打開 `assets/supabase-config.js`,把兩個值貼進去
+
+### 2. 設定 Discord 登入(玩家報名一定要用這個登入)
+1. 到 https://discord.com/developers/applications → New Application,取個名字
+2. 左側 OAuth2 → General:複製 **Client ID**,按「Reset Secret」複製 **Client Secret**
+3. 回 Supabase 專案 → 左側 Authentication → Providers → 找到 **Discord** → 打開開關
+   把剛剛的 Client ID / Client Secret 貼進去 → Save
+4. Supabase 會顯示一組 **Callback URL**(長得像 `https://xxxx.supabase.co/auth/v1/callback`),複製起來
+5. 回 Discord Developer Portal → OAuth2 → General → Redirects → 貼上剛剛複製的 Callback URL → Save Changes
+6. 網站部署好、拿到正式網址後,記得回 Supabase → Authentication → URL Configuration,
+   把 **Site URL** 設成你的正式網址(例如 `https://xxxx.netlify.app`),不然登入完成後會導錯地方
+
+### 3. 部署到 Netlify
+1. 到 https://app.netlify.com,登入後選擇 **Add new site → Deploy manually**
+2. 把整個 `site` 資料夾拖進網頁的上傳區
+3. 等待部署完成,會拿到一個 `xxxx.netlify.app` 網址
+
+之後要更新網站,改完檔案重新把資料夾拖上去覆蓋即可。
+
+## 主辦人操作流程
+
+1. `admin.html` 建立活動:填名稱、選遊戲、報名截止時間(選填)、要不要開敗部復活賽、骰子的話勾選要加的進階規則
+2. **獎勵設定(選填)**:設定要發獎到第幾名(最多5名),可以「手動填每個名次」個別輸入獎勵文字,或「輸入總數自動分配」(填獎勵名稱+總數量,系統依名次自動分配,第1名分最多)。設定好之後,玩家一確定名次(冠軍/淘汰)獎勵就會自動填入,不用主辦人一個個手動輸入,現場也隨時能手動覆蓋
+3. 活動狀態為「開放參加」時,玩家可以在首頁用 Discord 登入報名,過了截止時間首頁會自動顯示「報名已截止」
+4. 報名期間如果有人要退出,回後台在該活動的參加者列表按「踢出」即可直接移除(**鎖定名單、產生賽程之後就不能再踢了**,要退出請直接手動調整 Supabase 或整場重開)
+5. 人到齊後,回後台按「鎖定名單,產生賽程」→ 系統自動算賽程大小、產生樹狀圖、開放玩家開打
+6. 比賽過程可以隨時回後台看賽程總覽跟即時戰況,對戰中的場次會有「👀 觀戰」連結可以直接點進去看現場對戰(任何人都能看,不用登入)
+7. 有人淘汰或奪冠後,冠軍/亞軍/季軍在列表會有明顯的獎牌樣式跟醒目底色
+8. 活動結束後(狀態變「已結束」),「鎖定名單」跟「結束活動」按鈕會自動消失,避免誤按
+9. 想刪除活動可以按「刪除活動」(會要求二次確認),刪除後首頁就看不到這場活動了
+
+玩家在等候室、骰子對戰、五手勢對戰頁面右下角都有「📖 規則說明」按鈕,會依照該場活動實際開啟的規則動態顯示說明,不用另外看說明書。
+
+首頁不管活動是「開放參加」「進行中」還是「已結束」都能點進去看詳情或結果,不會被擋住。
+
+## Discord 登入報名
+
+玩家要報名參加活動一定要先用 Discord 帳號登入(首頁按「💬 使用 Discord 登入」,會整頁導去 Discord 授權,授權完成後導回首頁),
+暱稱直接抓 Discord 的使用者名稱,不用自己打。**部署前要先照上面「設定 Discord 登入」的步驟,在 Discord Developer Portal 和 Supabase 都設定好,不然登入按鈕會失敗。**
+
+觀戰完全不需要登入,任何人都能直接看。
+
+## 觀戰功能
+
+任何人(不用報名、不用登入)只要有連結,都能直接看某一場正在進行的對戰畫面。首頁每個活動卡片都有一顆「👀 觀戰」按鈕,
+不管活動是「開放參加」還是「進行中」都能點,點了會開新分頁進等候室,可以先掛著等,不用等到活動開打才能進去。
+等候室跟後台的賽程列表裡,凡是「對戰中」的場次都會有「👀 觀戰」連結,點進去會用唯讀模式即時同步顯示雙方 HP、戰報,不會出現操作按鈕。
+
+## 入場逾時自動代打開打
+
+整場活動同一時間只會有一場對戰在進行,如果配對到的其中一方超過 **1 分鐘**沒有打開對戰畫面(例如電腦沒開著、忘記自己被配對到了),
+另一位已經在畫面裡的玩家的瀏覽器,會自動開始幫忙代打:每回合都用最普通的方式出招(骰子對戰是普通擲骰、不觸發防禦骰/加注等主動技能;五手勢是判定逾時,直接輸掉那一局),
+讓比賽照樣一直打下去,不會卡住後面所有人。缺席的那位玩家不管什麼時候自己打開對戰畫面,都能馬上接手,換回自己操作。
+（這個機制完全靠已入場那位玩家的瀏覽器在背景運作,所以**如果雙方都沒有打開對戰畫面,就不會有人代打** —— 這是純靜態網站架構下無法避免的限制,遇到這種情況主辦人要自己回後台留意。）
+
+## 對戰畫面加強
+
+- 戰報現在會用玩家真實姓名敘述(不再是 P1/P2),而且更詳細:誰擲出幾點、傷害多少、血量變化前後都會寫出來
+- 對戰畫面正中央新增「大字即時公告」,會用大字顯示重點動作,例如「🎲 你擲出了 5 點!」「🛡️ 你觸發防禦骰,完全擋下攻擊!」「🔥 你獲勝了這回合!」「⚔️ 輪到你了!」,詳細內容則留在下方戰報區慢慢看
+- 骰子對戰的每回合思考時間是 30 秒,超時系統會自動幫你擲骰(不會用掉防禦骰/加注等技能)
+
+
+
+## 網站結構
+
+- `index.html` — 首頁,列出活動、Discord 登入報名、觀戰入口
+- `lobby.html` — 等候配對室,顯示賽程樹與戰況、自動導向對戰
+- `dice.html` — 骰子對戰遊戲
+- `rps5.html` — 五手勢對戰遊戲
+- `admin.html` — 後台:開活動、鎖定產生賽程、踢出參加者、控制狀態、填獎勵
+- `assets/db.js` — 所有資料庫存取、Discord 登入、賽程/晉級邏輯都在這裡
+- `supabase-schema.sql` — 資料庫結構,只需在 Supabase 執行一次(**這次更新有加新欄位跟 trigger,記得重新執行一次**)
+
+## 玩法規則摘要
+
+**骰子對戰**(基礎規則永遠啟用,以下為後台可勾選的進階機制):
+- 基礎:雙方 HP 12,輪流擲骰,點數高扣對方「點差」血;每人 1 次防禦骰(可完全擋一次傷害);HP ≤5 可背水一戰,該局傷害雙倍
+- 🎁 道具骰:每 3 回合雙方各隨機獲得一個道具(爆擊+2傷害／回血+2HP／必中,平手也能贏／封印,讓對方少受1傷)
+- 🌪️ 戰場修飾骰:開局隨機決定「全場傷害+1」或「防禦骰次數變2次」其中一種場地規則
+- 🎰 自由加注:不限血量都能雙倍傷害對賭,整場限 2 次
+- 🔥 怒氣值:連續輸 2 場會讓下一次獲勝多 +2 傷害(絕境反擊)
+
+**五手勢對戰**:雙方 HP 10,3 秒內選手勢(石頭/布/剪刀/蜥蜴/史波克),超時判負。每人 1 張究極手勢卡,出牌保證獲勝該局(除非對方同局也出究極手勢則平手)。HP ≤3 時,獲勝的那一擊傷害雙倍(絕境反擊)。
+
+## 賽制說明
+
+- **勝部**:依報名人數自動算出賽程大小(補到最近的 2 的次方,例如 5 人補到 8 強,3 個輪空自動晉級),產生固定的樹狀賽程圖
+- **敗部復活賽**(可個別開關):勝部輸一場的人會掉進敗部,敗部採即時動態配對(誰先落敗部誰先配對,不是固定賽程圖);敗部再輸一場才真的淘汰
+- **總冠軍賽**:勝部冠軍 vs 敗部冠軍,單場定生死。這是簡化版雙敗制 —— 正式雙敗賽制中,若敗部冠軍贏了總冠軍賽,還要再打一場「重賽」(因為勝部冠軍才輸第一場),這裡簡化成打一場直接定輸贏,規則更好懂
+
+## 目前簡化的地方(小型私人活動夠用,規模變大再優化)
+
+- 玩家身份綁定 Discord 帳號,但 `players` 資料表本身沒有額外的權限驗證(anon key 可讀寫全部資料表),沒有做正式的後端驗證,適合信任圈內的朋友活動
+- 賽程一旦鎖定產生就不能再改報名名單(如果有人中途要退出,建議請主辦人直接手動在 Supabase 後台調整,或該場活動重開)
+- 入場逾時自動代打需要「已入場的那一方」瀏覽器在背景偵測,如果配對雙方都沒打開對戰畫面就不會自動代打
+

@@ -3,36 +3,42 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>擂台夜市 · 對戰活動</title>
+<title>等候配對 · 擂台夜市</title>
 <link rel="stylesheet" href="assets/style.css" />
 </head>
 <body>
   <div class="wrap">
     <div class="marquee">
-      <span class="eyebrow">Battle Night Market</span>
-      <h1>擂台<span>夜市</span></h1>
-      <p>選一場活動按下參加,系統自動幫你配對對手。一路打贏晉級,最後留下的人是冠軍。</p>
+      <span class="eyebrow" id="event-game-tag">Battle Night Market</span>
+      <h1 id="event-title">載入中...</h1>
+      <p id="event-sub"></p>
     </div>
 
-    <div class="card" id="who-card" style="display:none;text-align:center;">
-      <p style="margin-bottom:10px;color:var(--ink-dim);">要報名參加活動,請先用 Discord 登入</p>
-      <button class="btn block" id="discord-login-btn">💬 使用 Discord 登入</button>
-    </div>
-    <div class="card" id="logged-in-card" style="display:none;align-items:center;justify-content:space-between;gap:10px;">
-      <span>已用 Discord 登入:<b id="logged-in-name" style="color:var(--gold);"></b></span>
-      <button class="btn ghost small" id="logout-btn">登出</button>
+    <div class="card" style="text-align:center;">
+      <div id="my-status" class="status-msg">確認狀態中...</div>
+      <div class="timer-bar"><div id="pulse-bar" style="width:0%"></div></div>
     </div>
 
-    <div id="events-list"></div>
+    <div class="card">
+      <h3 style="font-size:15px;color:var(--ink-dim);">擂台戰況</h3>
+      <div id="bracket-list"></div>
+    </div>
 
-    <div class="footer-nav">
-      主辦人請到 <a href="admin.html">管理後台</a> 開新活動、設定獎勵
+    <div class="footer-nav"><a href="index.html">← 回活動列表</a></div>
+  </div>
+
+  <button class="btn ghost rule-fab" id="rule-fab-btn">📖 規則說明</button>
+  <div class="modal-overlay" id="rule-modal">
+    <div class="modal-card">
+      <h3>📖 賽制與玩法規則</h3>
+      <div id="rule-content"></div>
+      <button class="btn ghost block" id="rule-close-btn">關閉</button>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="assets/supabase-config.js"></script>
   <script src="assets/db.js"></script>
-  <script src="assets/home.js"></script>
+  <script src="assets/lobby.js"></script>
 </body>
 </html>

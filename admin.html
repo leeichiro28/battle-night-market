@@ -1,155 +1,88 @@
-const GAME_LABEL = { dice: "🎲 骰子對戰", rps5: "✂️ 五手勢對戰" };
-const STATUS_LABEL = { open: "開放參加", running: "進行中", closed: "已結束" };
-
-let currentPlayer = null; // 已用 Discord 登入的話是 {id, name},沒登入是 null
-let pendingLoginResolvers = [];
-
-function updateAuthUI() {
-  const loggedInCard = document.getElementById("logged-in-card");
-  if (currentPlayer) {
-    document.getElementById("who-card").style.display = "none";
-    loggedInCard.style.display = "flex";
-    document.getElementById("logged-in-name").textContent = currentPlayer.name;
-  } else {
-    loggedInCard.style.display = "none";
-    // who-card(登入卡片)只有在真的需要登入時才顯示,見 ensureLogin()
-  }
-}
-
-// 需要登入才能繼續的地方(參加、查看自己的戰況)呼叫這個:
-// 已登入就馬上回傳玩家資料;沒登入就跳出 Discord 登入卡片,等使用者登入完成後才繼續往下走
-function ensureLogin() {
-  if (currentPlayer) return Promise.resolve(currentPlayer);
-  document.getElementById("who-card").style.display = "block";
-  document.getElementById("who-card").scrollIntoView({ behavior: "smooth", block: "center" });
-  return new Promise((resolve) => {
-    pendingLoginResolvers.push(resolve);
-  });
-}
-
-document.getElementById("discord-login-btn").onclick = async () => {
-  const btn = document.getElementById("discord-login-btn");
-  btn.disabled = true;
-  btn.textContent = "跳轉到 Discord 授權中...";
-  try {
-    await db.signInWithDiscord();
-    // 這裡會整頁導去 Discord 授權頁,不用再做其他事
-  } catch (e) {
-    alert("Discord 登入失敗:" + (e.message || "未知錯誤"));
-    btn.disabled = false;
-    btn.textContent = "💬 使用 Discord 登入";
-  }
-};
-
-document.getElementById("logout-btn").onclick = async () => {
-  await db.signOut();
-  currentPlayer = null;
-  updateAuthUI();
-};
-
-function formatDeadline(iso) {
-  if (!iso) return null;
-  const d = new Date(iso);
-  return d.toLocaleString("zh-TW", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-}
-
-function eventRow(ev) {
-  const div = document.createElement("div");
-  div.className = "card event-card";
-  const deadlineTxt = formatDeadline(ev.registration_deadline);
-  const deadlinePassed = ev.registration_deadline && new Date() > new Date(ev.registration_deadline);
-  div.innerHTML = `
-    <div class="meta">
-      <h3>${ev.name}</h3>
-      <span class="tag">${GAME_LABEL[ev.game_type] || ev.game_type}</span>
-      <span class="tag ${ev.status}">${STATUS_LABEL[ev.status] || ev.status}</span>
-      ${ev.losers_bracket ? '<span class="tag">🥈敗部復活賽</span>' : ""}
-      ${deadlineTxt ? `<span class="tag ${deadlinePassed ? "closed" : ""}">⏰ 報名截止 ${deadlineTxt}</span>` : ""}
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>管理後台 · 擂台夜市</title>
+<link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="marquee">
+      <span class="eyebrow">Admin</span>
+      <h1>後台管理</h1>
+      <p>開新活動、控制活動狀態、幫每位參加者填入獎勵</p>
     </div>
-  `;
-  const btn = document.createElement("button");
-  btn.className = "btn";
-  if (ev.status === "closed") {
-    btn.textContent = "查看結果";
-    btn.onclick = async () => {
-      await ensureLogin();
-      location.href = `lobby.html?event=${ev.id}`;
-    };
-  } else if (ev.locked) {
-    btn.textContent = "已開賽,查看戰況";
-    btn.onclick = async () => {
-      await ensureLogin();
-      location.href = `lobby.html?event=${ev.id}`;
-    };
-  } else if (deadlinePassed) {
-    btn.textContent = "報名已截止";
-    btn.disabled = true;
-  } else {
-    btn.textContent = "參加";
-    btn.onclick = async () => {
-      btn.disabled = true;
-      btn.textContent = "報名中...";
-      const player = await ensureLogin();
-      await db.joinEvent(ev.id, player.id);
-      location.href = `lobby.html?event=${ev.id}`;
-    };
-  }
 
-  const actions = document.createElement("div");
-  actions.style.display = "flex";
-  actions.style.gap = "8px";
-  actions.style.flexWrap = "wrap";
+    <div class="card">
+      <h3 style="font-size:15px;">開新活動</h3>
+      <div class="field">
+        <label for="new-name">活動名稱</label>
+        <input id="new-name" placeholder="例如:週五夜擂台賽" />
+      </div>
+      <div class="field">
+        <label for="new-type">遊戲類型</label>
+        <select id="new-type">
+          <option value="dice">🎲 骰子對戰</option>
+          <option value="rps5">✂️ 五手勢對戰</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="new-deadline">報名截止時間(選填,不填就一直開放到主辦人鎖定名單為止)</label>
+        <input type="datetime-local" id="new-deadline" />
+      </div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="new-losers" style="width:auto;" />
+          <span>開啟敗部復活賽(輸一場先掉敗部,敗部再輸才淘汰)</span>
+        </label>
+      </div>
+      <div class="field" id="dice-rules-box">
+        <label>骰子對戰・進階規則(不勾就是最原始版本)</label>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink);">
+            <input type="checkbox" class="rule-box" data-rule="item_die" style="width:auto;" />
+            🎁 道具骰(每3回合隨機爆擊/回血/必中/封印)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink);">
+            <input type="checkbox" class="rule-box" data-rule="field_mod" style="width:auto;" />
+            🌪️ 戰場修飾骰(開局隨機決定當場特殊規則)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink);">
+            <input type="checkbox" class="rule-box" data-rule="free_bet" style="width:auto;" />
+            🎰 自由加注(不限低血,整場限2次)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink);">
+            <input type="checkbox" class="rule-box" data-rule="rage" style="width:auto;" />
+            🔥 怒氣值(連輸2場,下次獲勝+2傷害)
+          </label>
+        </div>
+      </div>
+      <div class="field">
+        <label>🏆 獎勵設定(選填,設定後名次一確定就自動套用,現場也可以再手動修改)</label>
+        <div class="field">
+          <label for="new-ranks" style="font-size:12px;">要發獎勵到第幾名(最多5名)</label>
+          <input type="number" id="new-ranks" min="1" max="5" value="3" />
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
+          <button type="button" class="btn ghost small" id="mode-manual-btn">手動填每個名次</button>
+          <button type="button" class="btn ghost small" id="mode-auto-btn">輸入總數自動分配</button>
+        </div>
+        <div id="manual-reward-box"></div>
+        <div id="auto-reward-box" style="display:none;">
+          <div id="auto-reward-list"></div>
+          <button type="button" class="btn ghost small" id="add-auto-reward-btn" style="margin-bottom:10px;">+ 新增一項獎勵</button>
+        </div>
+      </div>
+      <button class="btn block" id="create-btn">建立活動</button>
+    </div>
 
-  // 觀戰按鈕:不管活動是報名中/進行中/已結束都能點,不用等開賽,也不用先登入
-  // 可以先開著這個頁面掛著,場次一開打賽程列表就會自動出現「👀 觀戰」連結
-  if (ev.status !== "closed") {
-    const watchBtn = document.createElement("button");
-    watchBtn.className = "btn ghost";
-    watchBtn.textContent = "👀 觀戰";
-    watchBtn.onclick = () => window.open(`lobby.html?event=${ev.id}`, "_blank");
-    actions.appendChild(watchBtn);
-  }
+    <div id="events-admin-list"></div>
+  </div>
 
-  actions.appendChild(btn);
-  div.appendChild(actions);
-  return div;
-}
-
-async function renderEvents() {
-  const list = document.getElementById("events-list");
-  list.innerHTML = "";
-  const events = await db.listEvents();
-  if (!events.length) {
-    list.innerHTML = `<div class="empty">目前還沒有活動,等主辦人開賽吧</div>`;
-    return;
-  }
-  events.forEach((ev) => list.appendChild(eventRow(ev)));
-}
-
-// Discord 登入狀態一有變化(第一次載入偵測到已登入、或剛授權完成導回來)就會呼叫這裡
-async function handleAuthSession(session) {
-  if (session) {
-    currentPlayer = await db.ensurePlayerFromSession(session);
-  } else {
-    currentPlayer = null;
-  }
-  updateAuthUI();
-  // 如果剛好有人按了「參加」在等登入完成,登入好了就自動放行繼續原本的動作
-  if (currentPlayer && pendingLoginResolvers.length) {
-    const resolvers = pendingLoginResolvers;
-    pendingLoginResolvers = [];
-    resolvers.forEach((r) => r(currentPlayer));
-  }
-}
-
-(async function init() {
-  // 不用登入就能馬上看到活動列表跟觀戰按鈕;真的要參加比賽時才會跳出 Discord 登入
-  renderEvents();
-  try {
-    const session = await db.getSession();
-    await handleAuthSession(session);
-  } catch (e) {
-    console.error(e);
-  }
-  db.onAuthChange((session) => handleAuthSession(session));
-})();
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="assets/supabase-config.js"></script>
+  <script src="assets/db.js"></script>
+  <script src="assets/admin.js"></script>
+</body>
+</html>
