@@ -31,6 +31,7 @@ alter table events add column if not exists rules jsonb not null default '{}';
 alter table events add column if not exists final_match_id uuid;
 alter table events add column if not exists registration_deadline timestamptz;
 alter table events add column if not exists reward_plan jsonb not null default '{}';
+alter table events add column if not exists reward_plan jsonb not null default '{}';
 
 -- 參加者
 create table if not exists event_participants (

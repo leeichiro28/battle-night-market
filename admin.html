@@ -70,14 +70,8 @@
         </div>
         <div id="manual-reward-box"></div>
         <div id="auto-reward-box" style="display:none;">
-          <div class="field">
-            <label for="auto-reward-label" style="font-size:12px;">獎勵名稱</label>
-            <input id="auto-reward-label" placeholder="例如:金幣" />
-          </div>
-          <div class="field">
-            <label for="auto-reward-total" style="font-size:12px;">總數量(依名次自動分配,第1名分最多)</label>
-            <input type="number" id="auto-reward-total" placeholder="例如:100" />
-          </div>
+          <div id="auto-reward-list"></div>
+          <button type="button" class="btn ghost small" id="add-auto-reward-btn" style="margin-bottom:10px;">+ 新增一項獎勵</button>
         </div>
       </div>
       <button class="btn block" id="create-btn">建立活動</button>

@@ -26,6 +26,60 @@ function renderManualRewardInputs() {
   }
 }
 
+// 自動分配可以有多項獎勵(例如:金幣 + 藥水),每項各自依名次分配
+let autoRewardRowSeq = 0;
+
+function addAutoRewardRow(label = "", total = "") {
+  const list = document.getElementById("auto-reward-list");
+  const rowId = `auto-reward-row-${autoRewardRowSeq++}`;
+  const row = document.createElement("div");
+  row.className = "field";
+  row.dataset.rowId = rowId;
+  row.style.display = "flex";
+  row.style.gap = "6px";
+  row.style.alignItems = "flex-end";
+  row.innerHTML = `
+    <div style="flex:1;">
+      <label style="font-size:12px;">獎勵名稱</label>
+      <input class="auto-reward-label" placeholder="例如:金幣" value="${label}" />
+    </div>
+    <div style="flex:1;">
+      <label style="font-size:12px;">總數量(依名次分配,第1名分最多)</label>
+      <input type="number" class="auto-reward-total" placeholder="例如:100" value="${total}" />
+    </div>
+    <button type="button" class="btn ghost small remove-auto-reward-btn" style="color:var(--red);border-color:var(--red);">刪除</button>
+  `;
+  row.querySelector(".remove-auto-reward-btn").onclick = () => {
+    const rows = document.querySelectorAll("#auto-reward-list > div");
+    if (rows.length <= 1) {
+      // 至少留一行,直接清空內容就好
+      row.querySelector(".auto-reward-label").value = "";
+      row.querySelector(".auto-reward-total").value = "";
+      return;
+    }
+    row.remove();
+  };
+  list.appendChild(row);
+}
+
+function resetAutoRewardRows() {
+  document.getElementById("auto-reward-list").innerHTML = "";
+  addAutoRewardRow();
+}
+
+function collectAutoRewardEntries() {
+  const entries = [];
+  document.querySelectorAll("#auto-reward-list > div").forEach((row) => {
+    const label = row.querySelector(".auto-reward-label").value.trim();
+    const total = parseInt(row.querySelector(".auto-reward-total").value);
+    if (label && total) entries.push({ label, total });
+  });
+  return entries;
+}
+
+document.getElementById("add-auto-reward-btn").onclick = () => addAutoRewardRow();
+resetAutoRewardRows();
+
 function setRewardMode(mode) {
   rewardMode = mode;
   document.getElementById("mode-manual-btn").style.background = mode === "manual" ? "var(--gold)" : "";
@@ -55,11 +109,19 @@ function distributeRewards(total, ranks) {
 function buildRewardPlan() {
   const ranks = Math.max(1, Math.min(5, parseInt(document.getElementById("new-ranks").value) || 1));
   if (rewardMode === "auto") {
-    const label = document.getElementById("auto-reward-label").value.trim();
-    const total = parseInt(document.getElementById("auto-reward-total").value);
-    if (!label || !total) return {};
-    const amounts = distributeRewards(total, ranks);
-    return { items: amounts.map((a) => `${label} x${a}`) };
+    const entries = collectAutoRewardEntries();
+    if (!entries.length) return {};
+    // 每一項獎勵各自依名次分配,再把同一名次的多項獎勵合併成一行文字
+    const perEntryAmounts = entries.map((e) => distributeRewards(e.total, ranks));
+    const items = [];
+    for (let i = 0; i < ranks; i++) {
+      const parts = entries
+        .map((e, idx) => ({ label: e.label, amount: perEntryAmounts[idx][i] }))
+        .filter((p) => p.amount > 0)
+        .map((p) => `${p.label} x${p.amount}`);
+      items[i] = parts.length ? parts.join("、") : null;
+    }
+    return items.some((x) => x) ? { items } : {};
   }
   const items = [];
   document.querySelectorAll(".manual-reward-input").forEach((inp) => {
@@ -276,22 +338,32 @@ document.getElementById("create-btn").onclick = async () => {
   });
   if (!name) return;
   const rewardPlan = buildRewardPlan();
-  await db.createEvent({
-    name,
-    gameType: type,
-    losersBracket: losers,
-    rules: type === "dice" ? rules : {},
-    registrationDeadline: deadline,
-    rewardPlan,
-  });
-  document.getElementById("new-name").value = "";
-  document.getElementById("new-deadline").value = "";
-  document.getElementById("new-losers").checked = false;
-  document.getElementById("auto-reward-label").value = "";
-  document.getElementById("auto-reward-total").value = "";
-  document.querySelectorAll(".rule-box").forEach((b) => (b.checked = false));
-  renderManualRewardInputs();
-  loadAll();
+  const btn = document.getElementById("create-btn");
+  btn.disabled = true;
+  btn.textContent = "建立中...";
+  try {
+    await db.createEvent({
+      name,
+      gameType: type,
+      losersBracket: losers,
+      rules: type === "dice" ? rules : {},
+      registrationDeadline: deadline,
+      rewardPlan,
+    });
+    document.getElementById("new-name").value = "";
+    document.getElementById("new-deadline").value = "";
+    document.getElementById("new-losers").checked = false;
+    resetAutoRewardRows();
+    document.querySelectorAll(".rule-box").forEach((b) => (b.checked = false));
+    renderManualRewardInputs();
+    loadAll();
+  } catch (e) {
+    console.error(e);
+    alert("建立活動失敗:" + (e.message || "未知錯誤") + "\n\n請確認 Supabase 的 supabase-schema.sql 是否已更新到最新版(需要有 reward_plan 欄位)。");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "建立活動";
+  }
 };
 
 loadAll();
