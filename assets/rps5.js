@@ -24,6 +24,12 @@ let currentRoundKey = null;
 let lastSeenRound = null;
 let announceTimer = null;
 let autoFollowTriggered = false;
+let enteredMarked = false;
+let autopilotSlot = null; // 對手超過1分鐘沒入場時,代替他自動出招的slot
+let autopilotAnnounced = false;
+let entryWatchdog = null;
+
+const ENTRY_TIMEOUT_MS = 60000; // 超過1分鐘對手沒入場,自動開始幫他出招
 
 const CIRC = 289;
 
@@ -157,7 +163,8 @@ function render(state) {
 }
 
 async function resolveRoundIfReady(state) {
-  if (mySlot !== 1 || resolving) return;
+  const iAmResolver = mySlot === 1 || (mySlot === 2 && autopilotSlot === 1);
+  if (!iAmResolver || resolving) return;
   if (!state.m1 || !state.m2) return;
   resolving = true;
   try {
@@ -266,10 +273,53 @@ async function maybeAutoAdvance(state) {
   } catch (e) {}
 }
 
+// 我自己一進到這個對戰畫面,超過1分鐘對手還沒入場的話,就由我這邊自動幫對手出招,讓對戰照樣打下去
+// 對手之後如果自己進場了,會偵測到並把控制權交還給他自己
+async function checkEntryTimeout() {
+  if (!mySlot || !match) return;
+  if (match.status !== "active" || !match.activated_at) return;
+  const meEntered = mySlot === 1 ? match.p1_entered_at : match.p2_entered_at;
+  if (!meEntered) return;
+  const oppSlot = mySlot === 1 ? 2 : 1;
+  const oppEntered = mySlot === 1 ? match.p2_entered_at : match.p1_entered_at;
+  if (oppEntered) {
+    if (autopilotSlot === oppSlot) autopilotSlot = null; // 對手自己進場了,交還控制權
+    return;
+  }
+  if (autopilotSlot === oppSlot) return; // 已經在幫他代打了
+  const elapsed = Date.now() - new Date(match.activated_at).getTime();
+  if (elapsed < ENTRY_TIMEOUT_MS) return;
+  autopilotSlot = oppSlot;
+  if (!autopilotAnnounced) {
+    autopilotAnnounced = true;
+    const oppName = oppSlot === 1 ? match.p1?.name : match.p2?.name;
+    db
+      .appendMatchLog(matchId, `⌛ ${oppName || "對手"} 超過1分鐘沒有進入對戰畫面,系統開始自動幫他出招(逾時判定,不會使用究極手勢),他隨時進場都能接手。`)
+      .catch(() => {});
+  }
+}
+
+// 代打:輪到被代打的那位時,幫他判定逾時(等同沒出手勢,直接輸掉該局)
+async function maybeAutopilotSubmit() {
+  if (!autopilotSlot || !match) return;
+  if (match.status !== "active") return;
+  const state = match.state;
+  if (!state || state.hp1 <= 0 || state.hp2 <= 0) return;
+  const already = autopilotSlot === 1 ? state.m1 : state.m2;
+  if (already) return;
+  try {
+    await db.submitMove(matchId, autopilotSlot, { gesture: null, ult: false, timeout: true });
+  } catch (e) {}
+}
+
 async function refresh() {
   match = await db.getMatch(matchId);
   const local = db.getLocalPlayer();
   mySlot = match.player1_id === local.id ? 1 : match.player2_id === local.id ? 2 : null;
+  if (mySlot && !enteredMarked) {
+    enteredMarked = true;
+    db.markEntered(matchId, mySlot).catch(() => {});
+  }
   const state = match.state;
   const wasSubmitted = submittedThisRound;
   submittedThisRound = mySlot ? !!(mySlot === 1 ? state.m1 : state.m2) : false;
@@ -279,6 +329,7 @@ async function refresh() {
   render(state);
   resolveRoundIfReady(state);
   maybeAutoAdvance(state);
+  maybeAutopilotSubmit();
 }
 
 function bindControls() {
@@ -330,9 +381,14 @@ function bindRuleModal() {
   await refresh();
   unsub = db.onTableChange("matches", `id=eq.${matchId}`, () => refresh());
   unsubParticipants = db.onTableChange("event_participants", `event_id=eq.${eventId}`, () => refresh());
+  entryWatchdog = setInterval(() => {
+    checkEntryTimeout();
+    maybeAutopilotSubmit();
+  }, 5000);
 })();
 
 window.addEventListener("beforeunload", () => {
   if (unsub) unsub();
   if (unsubParticipants) unsubParticipants();
+  if (entryWatchdog) clearInterval(entryWatchdog);
 });

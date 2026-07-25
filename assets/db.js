@@ -5,7 +5,7 @@ const db = (function () {
     window.SUPABASE_ANON_KEY
   );
 
-  // ---------- 玩家身份 ----------
+  // ---------- 玩家身份(Discord 登入) ----------
   function getLocalPlayer() {
     return {
       id: localStorage.getItem("player_id") || null,
@@ -13,18 +13,53 @@ const db = (function () {
     };
   }
 
-  async function ensurePlayer(name) {
-    const local = getLocalPlayer();
-    if (local.id) {
-      if (name && name !== local.name) {
-        await client.from("players").update({ name }).eq("id", local.id);
-        localStorage.setItem("player_name", name);
-      }
-      return { id: local.id, name: name || local.name };
-    }
+  async function getSession() {
+    const { data, error } = await client.auth.getSession();
+    if (error) throw error;
+    return data.session;
+  }
+
+  // 頁面上任何地方偵測到登入狀態改變(登入完成/登出)都會呼叫 cb,回傳值是取消訂閱用的函式
+  function onAuthChange(cb) {
+    const { data } = client.auth.onAuthStateChange((_event, session) => cb(session));
+    return () => data.subscription.unsubscribe();
+  }
+
+  // 導去 Discord 授權頁,授權完成後會被導回同一頁(帶著登入狀態)
+  async function signInWithDiscord() {
+    const { error } = await client.auth.signInWithOAuth({
+      provider: "discord",
+      options: { redirectTo: location.origin + location.pathname },
+    });
+    if (error) throw error;
+  }
+
+  async function signOut() {
+    const { error } = await client.auth.signOut();
+    if (error) throw error;
+    localStorage.removeItem("player_id");
+    localStorage.removeItem("player_name");
+  }
+
+  // 用 Discord 使用者名稱當暱稱,player 的 id 直接用 Discord 登入的 auth user id(每個 Discord 帳號對應唯一一筆 players 資料)
+  function discordNameFromSession(session) {
+    const meta = session.user.user_metadata || {};
+    return (
+      meta.full_name ||
+      meta.custom_claims?.global_name ||
+      meta.name ||
+      meta.preferred_username ||
+      meta.user_name ||
+      "Discord玩家"
+    );
+  }
+
+  async function ensurePlayerFromSession(session) {
+    if (!session) return null;
+    const name = discordNameFromSession(session);
     const { data, error } = await client
       .from("players")
-      .insert({ name })
+      .upsert({ id: session.user.id, name }, { onConflict: "id" })
       .select()
       .single();
     if (error) throw error;
@@ -133,6 +168,38 @@ const db = (function () {
       .from("event_participants")
       .delete()
       .eq("id", participantId);
+    if (error) throw error;
+  }
+
+  // ---------- 入場逾時自動判定棄權 ----------
+  // 場次一開打(status變成active)就會記錄 activated_at;玩家自己的對戰畫面一載入就會呼叫這個標記入場時間。
+  async function markEntered(matchId, slot) {
+    const field = slot === 1 ? "p1_entered_at" : "p2_entered_at";
+    const { data: m, error: readErr } = await client
+      .from("matches")
+      .select(field)
+      .eq("id", matchId)
+      .single();
+    if (readErr) throw readErr;
+    if (m && !m[field]) {
+      const { error } = await client
+        .from("matches")
+        .update({ [field]: new Date().toISOString() })
+        .eq("id", matchId);
+      if (error) throw error;
+    }
+  }
+
+  // 對手超過1分鐘沒有進入對戰畫面時,在戰報加一行系統公告(用來提示接下來會自動幫對手出招)
+  async function appendMatchLog(matchId, line) {
+    const { data: m, error: readErr } = await client
+      .from("matches")
+      .select("state")
+      .eq("id", matchId)
+      .single();
+    if (readErr) throw readErr;
+    const newState = { ...m.state, log: [...(m.state.log || []), line] };
+    const { error } = await client.from("matches").update({ state: newState }).eq("id", matchId);
     if (error) throw error;
   }
 
@@ -531,7 +598,11 @@ const db = (function () {
   return {
     client,
     getLocalPlayer,
-    ensurePlayer,
+    getSession,
+    onAuthChange,
+    signInWithDiscord,
+    signOut,
+    ensurePlayerFromSession,
     listEvents,
     getEvent,
     createEvent,
@@ -543,6 +614,8 @@ const db = (function () {
     listMatches,
     setReward,
     removeParticipant,
+    markEntered,
+    appendMatchLog,
     lockAndGenerateBracket,
     activateNextMatch,
     tryMatch,
