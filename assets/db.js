@@ -128,6 +128,14 @@ const db = (function () {
     return data;
   }
 
+  async function removeParticipant(participantId) {
+    const { error } = await client
+      .from("event_participants")
+      .delete()
+      .eq("id", participantId);
+    if (error) throw error;
+  }
+
   async function setReward(participantId, reward, finalRank) {
     const patch = { reward };
     if (finalRank !== undefined && finalRank !== null) patch.final_rank = finalRank;
@@ -534,6 +542,7 @@ const db = (function () {
     listParticipants,
     listMatches,
     setReward,
+    removeParticipant,
     lockAndGenerateBracket,
     activateNextMatch,
     tryMatch,

@@ -63,7 +63,24 @@ function eventRow(ev) {
       location.href = `lobby.html?event=${ev.id}`;
     };
   }
-  div.appendChild(btn);
+
+  const actions = document.createElement("div");
+  actions.style.display = "flex";
+  actions.style.gap = "8px";
+  actions.style.flexWrap = "wrap";
+
+  // 觀戰按鈕:不管活動是報名中/進行中/已結束都能點,不用等開賽,也不用先報名
+  // 可以先開著這個頁面掛著,場次一開打賽程列表就會自動出現「👀 觀戰」連結
+  if (ev.status !== "closed") {
+    const watchBtn = document.createElement("button");
+    watchBtn.className = "btn ghost";
+    watchBtn.textContent = "👀 觀戰";
+    watchBtn.onclick = () => window.open(`lobby.html?event=${ev.id}`, "_blank");
+    actions.appendChild(watchBtn);
+  }
+
+  actions.appendChild(btn);
+  div.appendChild(actions);
   return div;
 }
 
@@ -78,7 +95,8 @@ async function renderEvents() {
   events.forEach((ev) => list.appendChild(eventRow(ev)));
 }
 
-(async function init() {
-  await ensureName();
+(function init() {
+  // 觀戰不需要先輸入暱稱,馬上就能看到活動列表跟觀戰按鈕
+  // 暱稱只有在真的要「參加」比賽時才會跳出來問(見上面按鈕的 onclick)
   renderEvents();
 })();

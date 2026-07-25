@@ -132,7 +132,7 @@ function buildRewardPlan() {
 }
 
 // ---------- 參加者列表 ----------
-function participantRow(row) {
+function participantRow(row, ev, onKicked) {
   const div = document.createElement("div");
   div.className = "bracket-row";
   div.style.flexWrap = "wrap";
@@ -184,14 +184,38 @@ function participantRow(row) {
 
   inputWrap.appendChild(input);
   inputWrap.appendChild(saveBtn);
+
+  // 賽程還沒鎖定前,才能踢出參加者(鎖定後名單已產生賽程,不能再改)
+  if (!ev.locked) {
+    const kickBtn = document.createElement("button");
+    kickBtn.className = "btn ghost small";
+    kickBtn.textContent = "踢出";
+    kickBtn.style.color = "var(--red)";
+    kickBtn.style.borderColor = "var(--red)";
+    kickBtn.onclick = async () => {
+      if (!confirm(`確定要把「${row.players.name}」踢出這場活動嗎?`)) return;
+      kickBtn.disabled = true;
+      kickBtn.textContent = "踢出中...";
+      try {
+        await db.removeParticipant(row.id);
+        onKicked();
+      } catch (e) {
+        alert("踢出失敗:" + (e.message || "未知錯誤"));
+        kickBtn.disabled = false;
+        kickBtn.textContent = "踢出";
+      }
+    };
+    inputWrap.appendChild(kickBtn);
+  }
+
   div.appendChild(label);
   div.appendChild(inputWrap);
   return div;
 }
 
-async function renderParticipants(container, eventId) {
+async function renderParticipants(container, ev) {
   container.innerHTML = "";
-  const rows = await db.listParticipants(eventId);
+  const rows = await db.listParticipants(ev.id);
   if (!rows.length) {
     container.innerHTML = `<div class="empty">還沒有人參加</div>`;
     return;
@@ -200,9 +224,10 @@ async function renderParticipants(container, eventId) {
   const eliminated = rows.filter((r) => r.status === "eliminated").sort((a, b) => (a.final_rank || 99) - (b.final_rank || 99));
   const others = rows.filter((r) => r.status !== "eliminated" && r.status !== "champion");
 
-  if (champion) container.appendChild(participantRow(champion));
-  eliminated.forEach((r) => container.appendChild(participantRow(r)));
-  others.forEach((r) => container.appendChild(participantRow(r)));
+  const onKicked = () => renderParticipants(container, ev);
+  if (champion) container.appendChild(participantRow(champion, ev, onKicked));
+  eliminated.forEach((r) => container.appendChild(participantRow(r, ev, onKicked)));
+  others.forEach((r) => container.appendChild(participantRow(r, ev, onKicked)));
 }
 
 // ---------- 賽程總覽(含觀戰連結) ----------
@@ -311,7 +336,7 @@ function eventAdminCard(ev) {
   };
 
   renderBracketSummary(card.querySelector(".bracket-summary"), ev);
-  renderParticipants(card.querySelector(".participants"), ev.id);
+  renderParticipants(card.querySelector(".participants"), ev);
   return card;
 }
 
