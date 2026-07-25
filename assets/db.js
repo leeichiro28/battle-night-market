@@ -214,7 +214,7 @@ const db = (function () {
         slot: i,
         player1_id: a ? a.player_id : null,
         player2_id: b ? b.player_id : null,
-        status: "active",
+        status: "pending", // 不立刻開打,交給 activateNextMatch 一場一場排隊啟動
         state: makeInitState(ev.game_type, ev.rules),
         _pa: a,
         _pb: b,
@@ -241,10 +241,9 @@ const db = (function () {
           slot: i,
           player1_id: feederA.status === "done" ? feederA.winner_id : null,
           player2_id: feederB.status === "done" ? feederB.winner_id : null,
-          status: "pending",
+          status: "pending", // 不立刻開打,交給 activateNextMatch 一場一場排隊啟動
           state: makeInitState(ev.game_type, ev.rules),
         };
-        if (m.player1_id && m.player2_id) m.status = "active";
         feederA.next_match_id = m.id;
         feederA.next_slot = 1;
         feederB.next_match_id = m.id;
@@ -266,19 +265,16 @@ const db = (function () {
     for (const m of allMatches.filter((m) => m.round === 1)) {
       for (const side of [m._pa, m._pb]) {
         if (!side) continue;
-        if (m.status === "active") {
+        if (m.status === "done") {
+          // 輪空:直接晉級到下一場,但一樣要排隊等 activateNextMatch 叫到才開打
           await client
             .from("event_participants")
-            .update({ status: "matched", match_id: m.id })
+            .update({ status: "pending", match_id: m.next_match_id || null })
             .eq("id", side.id);
         } else {
-          const nm = findById(m.next_match_id);
           await client
             .from("event_participants")
-            .update({
-              status: nm && nm.status === "active" ? "matched" : "pending",
-              match_id: m.next_match_id || null,
-            })
+            .update({ status: "pending", match_id: m.id })
             .eq("id", side.id);
         }
       }
@@ -288,6 +284,64 @@ const db = (function () {
       .from("events")
       .update({ locked: true, status: "running" })
       .eq("id", eventId);
+
+    // 排好整個賽程後,只啟動第一場對戰,其他人在等候室排隊等叫號
+    await activateNextMatch(eventId);
+  }
+
+  // 一場一場來:整個活動同一時間只讓一場對戰進行中。
+  // 每次有對戰結束(或有新玩家掉入敗部候位區)就呼叫這個函式,
+  // 它會找出目前沒有對戰進行中,才從排隊名單挑下一場開打。
+  const BRACKET_ORDER = { winners: 0, losers: 1, final: 2 };
+
+  async function activateNextMatch(eventId) {
+    const { data: actives, error: activeErr } = await client
+      .from("matches")
+      .select("id")
+      .eq("event_id", eventId)
+      .eq("status", "active")
+      .limit(1);
+    if (activeErr) throw activeErr;
+    if (actives && actives.length) return; // 已經有一場在打,先不排下一場
+
+    const { data: pending, error: pendErr } = await client
+      .from("matches")
+      .select("*")
+      .eq("event_id", eventId)
+      .eq("status", "pending")
+      .not("player1_id", "is", null)
+      .not("player2_id", "is", null);
+    if (pendErr) throw pendErr;
+
+    if (pending && pending.length) {
+      pending.sort((a, b) => {
+        const br = (BRACKET_ORDER[a.bracket] ?? 9) - (BRACKET_ORDER[b.bracket] ?? 9);
+        if (br) return br;
+        const rr = (a.round || 0) - (b.round || 0);
+        if (rr) return rr;
+        const sr = (a.slot ?? 999) - (b.slot ?? 999);
+        if (sr) return sr;
+        return new Date(a.created_at) - new Date(b.created_at);
+      });
+      const next = pending[0];
+      await client.from("matches").update({ status: "active" }).eq("id", next.id);
+      await client
+        .from("event_participants")
+        .update({ status: "matched", match_id: next.id })
+        .eq("event_id", eventId)
+        .in("player_id", [next.player1_id, next.player2_id]);
+      return;
+    }
+
+    // 沒有排隊中的對戰,看看敗部候位區有沒有兩人可以配對開新的一場
+    const ev = await getEvent(eventId);
+    if (ev.losers_bracket && ev.status !== "closed") {
+      try {
+        await tryMatch(eventId, ev.game_type, "losers");
+      } catch (e) {
+        // 候位人數不足時 RPC 會回傳 null,忽略即可
+      }
+    }
   }
 
   // ---------- 對戰 ----------
@@ -385,13 +439,10 @@ const db = (function () {
           .select()
           .single();
         if (error) throw error;
-        const bothFilled = !!(nm.player1_id && nm.player2_id);
-        if (bothFilled) {
-          await client.from("matches").update({ status: "active" }).eq("id", nm.id);
-        }
+        // 不在這裡直接開打,一律排隊等 activateNextMatch 叫號,確保同一時間只有一場在進行
         await client
           .from("event_participants")
-          .update({ status: bothFilled ? "matched" : "pending", match_id: nm.id })
+          .update({ status: "pending", match_id: nm.id })
           .eq("id", winnerPart.id);
       } else if (ev.losers_bracket) {
         await client
@@ -412,7 +463,6 @@ const db = (function () {
           .from("event_participants")
           .update({ status: "waiting", bracket: "losers", match_id: null })
           .eq("id", loserPart.id);
-        await tryMatch(eventId, ev.game_type, "losers");
       } else {
         await client
           .from("event_participants")
@@ -455,9 +505,11 @@ const db = (function () {
           .from("event_participants")
           .update({ status: "waiting", match_id: null })
           .eq("id", winnerPart.id);
-        await tryMatch(eventId, ev.game_type, "losers");
       }
     }
+
+    // 這場結束了,看看排隊名單裡有沒有下一場可以開打(同一時間只讓一場對戰進行中)
+    await activateNextMatch(eventId);
   }
 
   function onTableChange(table, filter, cb) {
@@ -483,6 +535,7 @@ const db = (function () {
     listMatches,
     setReward,
     lockAndGenerateBracket,
+    activateNextMatch,
     tryMatch,
     getMatch,
     updateMatchState,

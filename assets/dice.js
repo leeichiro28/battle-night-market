@@ -11,13 +11,15 @@ let selectedFreebet = false;
 let submittedThisRound = false;
 let resolving = false;
 let unsub = null;
+let unsubParticipants = null;
 let lastSeenRound = null;
 let announceTimer = null;
 let timerInterval = null;
 let currentRoundKey = null;
+let autoFollowTriggered = false;
 
 const CIRC = 289;
-const ROLL_TIME = 5000;
+const ROLL_TIME = 30000;
 const ITEM_LABEL = { crit: "⚡爆擊", heal: "💚回血", truehit: "🎯必中", seal: "🔒封印" };
 const FIELD_LABEL = { crit: "🌪️ 戰場:全場傷害+1", shield_plus: "🌪️ 戰場:防禦骰x2次" };
 
@@ -206,7 +208,7 @@ function render(state) {
     rollBtn.disabled = true;
     document.getElementById("timer-fill").style.width = "0%";
   } else {
-    statusEl.textContent = "輪到你了,選好策略後擲骰(5秒內動作)";
+    statusEl.textContent = "輪到你了,選好策略後擲骰(30秒內動作)";
     rollBtn.style.display = "block";
     rollBtn.disabled = false;
     startTimer(state);
@@ -366,6 +368,25 @@ async function resolveRoundIfReady(state) {
   }
 }
 
+// 對戰結束後,不管你是剛贏的選手還是純觀戰,自動帶你去看贏家的下一場,不用手動點觀戰
+async function maybeAutoAdvance(state) {
+  if (autoFollowTriggered) return;
+  if (!(state.hp1 <= 0 || state.hp2 <= 0)) return;
+  const winnerId = state.hp1 <= 0 ? match.player2_id : match.player1_id;
+  if (!winnerId) return;
+  try {
+    const winnerPart = await db.getMyParticipant(eventId, winnerId);
+    if (winnerPart && winnerPart.status === "matched" && winnerPart.match_id && winnerPart.match_id !== matchId) {
+      autoFollowTriggered = true;
+      const hint = document.getElementById("game-status");
+      if (hint) hint.innerHTML = mySlot ? "🏆 你贏了!正在前往下一場..." : "👀 這場結束了,正在前往下一場...";
+      setTimeout(() => {
+        location.href = `dice.html?match=${winnerPart.match_id}&event=${eventId}`;
+      }, 2500);
+    }
+  } catch (e) {}
+}
+
 async function refresh() {
   match = await db.getMatch(matchId);
   if (!ev) ev = await db.getEvent(match.event_id);
@@ -375,6 +396,7 @@ async function refresh() {
   submittedThisRound = mySlot ? !!(mySlot === 1 ? state.m1 : state.m2) : false;
   render(state);
   resolveRoundIfReady(state);
+  maybeAutoAdvance(state);
 }
 
 function bindControls() {
@@ -420,7 +442,7 @@ const RULE_EXPLAIN = {
 function renderRules() {
   const box = document.getElementById("rule-content");
   let html = `
-    <p>雙方各有 12 點 HP,輪流擲一顆骰子(1~6點)。每回合限時 5 秒。</p>
+    <p>雙方各有 12 點 HP,輪流擲一顆骰子(1~6點)。每回合限時 30 秒。</p>
     <p>點數高的一方讓對方扣「點數差」的血;點數相同則平手,雙方各扣 1 血。</p>
     <p>每人有 1 次防禦骰:出招前先啟動,若那一局你會輸,傷害完全免疫(只能觸發一次)。</p>
     <p>HP ≤5 時可開啟「背水一戰」,該局傷害雙倍賭一把。血量先歸零者落敗。</p>
@@ -456,8 +478,10 @@ function bindRuleModal() {
   bindRuleModal();
   await refresh();
   unsub = db.onTableChange("matches", `id=eq.${matchId}`, () => refresh());
+  unsubParticipants = db.onTableChange("event_participants", `event_id=eq.${eventId}`, () => refresh());
 })();
 
 window.addEventListener("beforeunload", () => {
   if (unsub) unsub();
+  if (unsubParticipants) unsubParticipants();
 });

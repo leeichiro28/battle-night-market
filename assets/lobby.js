@@ -108,7 +108,7 @@ async function renderBracket(ev) {
 
 const STATUS_TEXT = {
   waiting: "等待配對中,找到對手會自動帶你進場",
-  pending: "已排進賽程,等待對手產生中...",
+  pending: "已排進賽程,前面的對戰結束後會自動帶你進場...",
   matched: "配對成功!進入對戰...",
   wb_champion: "🏆 你打進了總冠軍賽!等待敗部冠軍產生...",
   lb_champion: "🏆 你從敗部殺出重圍!等待總冠軍賽開打...",
@@ -167,9 +167,9 @@ async function checkMyStatus(ev) {
 }
 
 async function poll(ev) {
-  if (myParticipant && myParticipant.status === "waiting" && ev.locked) {
+  if (ev.locked && ev.status !== "closed") {
     try {
-      await db.tryMatch(eventId, ev.game_type, "losers");
+      await db.activateNextMatch(eventId);
     } catch (e) {}
   }
   await checkMyStatus(ev);
@@ -200,7 +200,7 @@ function renderRules(ev) {
       if (item) html += `<p><b style="color:var(--ink);">${item[0]}</b><br/>${item[1]}</p>`;
     });
   } else {
-    html += `<p>雙方各 10 點 HP,3秒內選手勢(石頭/布/剪刀/蜥蜴/史波克),超時判負。每人1張究極手勢卡,出牌保證獲勝該局(除非雙方同局都用則平手)。HP≤3時,獲勝的那一擊傷害雙倍。</p>`;
+    html += `<p>雙方各 10 點 HP,30秒內選手勢(石頭/布/剪刀/蜥蜴/史波克),超時判負。每人1張究極手勢卡,出牌保證獲勝該局(除非雙方同局都用則平手)。HP≤3時,獲勝的那一擊傷害雙倍。</p>`;
   }
   box.innerHTML = html;
 }

@@ -18,10 +18,12 @@ let submittedThisRound = false;
 let useUlt = false;
 let resolving = false;
 let unsub = null;
+let unsubParticipants = null;
 let timerInterval = null;
 let currentRoundKey = null;
 let lastSeenRound = null;
 let announceTimer = null;
+let autoFollowTriggered = false;
 
 const CIRC = 289;
 
@@ -71,7 +73,7 @@ function startTimer(state) {
   clearInterval(timerInterval);
   if (submittedThisRound || state.hp1 <= 0 || state.hp2 <= 0) return;
 
-  let timeLeft = 3000;
+  let timeLeft = 30000;
   const fill = document.getElementById("timer-fill");
   const started = Date.now();
   timerInterval = setInterval(async () => {
@@ -150,7 +152,7 @@ function render(state) {
   ultBtn.disabled = !!myUltUsed || submittedThisRound;
 
   choiceBtns.forEach((b) => (b.disabled = submittedThisRound));
-  statusEl.textContent = submittedThisRound ? "已送出,等待對方..." : "3 秒內選一個手勢!";
+  statusEl.textContent = submittedThisRound ? "已送出,等待對方..." : "30 秒內選一個手勢!";
   startTimer(state);
 }
 
@@ -245,6 +247,25 @@ async function resolveRoundIfReady(state) {
   }
 }
 
+// 對戰結束後,不管你是剛贏的選手還是純觀戰,自動帶你去看贏家的下一場,不用手動點觀戰
+async function maybeAutoAdvance(state) {
+  if (autoFollowTriggered) return;
+  if (!(state.hp1 <= 0 || state.hp2 <= 0)) return;
+  const winnerId = state.hp1 <= 0 ? match.player2_id : match.player1_id;
+  if (!winnerId) return;
+  try {
+    const winnerPart = await db.getMyParticipant(eventId, winnerId);
+    if (winnerPart && winnerPart.status === "matched" && winnerPart.match_id && winnerPart.match_id !== matchId) {
+      autoFollowTriggered = true;
+      const hint = document.getElementById("game-status");
+      if (hint) hint.innerHTML = mySlot ? "🏆 你贏了!正在前往下一場..." : "👀 這場結束了,正在前往下一場...";
+      setTimeout(() => {
+        location.href = `rps5.html?match=${winnerPart.match_id}&event=${eventId}`;
+      }, 2500);
+    }
+  } catch (e) {}
+}
+
 async function refresh() {
   match = await db.getMatch(matchId);
   const local = db.getLocalPlayer();
@@ -257,6 +278,7 @@ async function refresh() {
   }
   render(state);
   resolveRoundIfReady(state);
+  maybeAutoAdvance(state);
 }
 
 function bindControls() {
@@ -281,7 +303,7 @@ function bindControls() {
 function renderRules() {
   const box = document.getElementById("rule-content");
   box.innerHTML = `
-    <p>雙方各有 10 點 HP,3 秒內選一個手勢:石頭 🪨 / 布 📄 / 剪刀 ✂️ / 蜥蜴 🦎 / 史波克 🖖。超時未選視為該局落敗。</p>
+    <p>雙方各有 10 點 HP,30 秒內選一個手勢:石頭 🪨 / 布 📄 / 剪刀 ✂️ / 蜥蜴 🦎 / 史波克 🖖。超時未選視為該局落敗。</p>
     <p>石頭勝剪刀、蜥蜴;布勝石頭、史波克;剪刀勝布、蜥蜴;蜥蜴勝史波克、布;史波克勝剪刀、石頭。</p>
     <p>每人有 1 張「究極手勢」卡:出牌保證獲勝該局,除非對方同一局也出究極手勢,此時雙方抵銷、判定平手。</p>
     <p>當你的 HP ≤3 時,獲勝的那一擊傷害會翻倍,適合絕地反擊。血量先歸零者落敗。</p>
@@ -307,8 +329,10 @@ function bindRuleModal() {
   bindRuleModal();
   await refresh();
   unsub = db.onTableChange("matches", `id=eq.${matchId}`, () => refresh());
+  unsubParticipants = db.onTableChange("event_participants", `event_id=eq.${eventId}`, () => refresh());
 })();
 
 window.addEventListener("beforeunload", () => {
   if (unsub) unsub();
+  if (unsubParticipants) unsubParticipants();
 });
