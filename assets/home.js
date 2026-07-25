@@ -39,8 +39,11 @@ function eventRow(ev) {
   const btn = document.createElement("button");
   btn.className = "btn";
   if (ev.status === "closed") {
-    btn.textContent = "已結束";
-    btn.disabled = true;
+    btn.textContent = "查看結果";
+    btn.onclick = async () => {
+      await ensureName();
+      location.href = `lobby.html?event=${ev.id}`;
+    };
   } else if (ev.locked) {
     btn.textContent = "已開賽,查看戰況";
     btn.onclick = async () => {

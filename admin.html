@@ -58,6 +58,28 @@
           </label>
         </div>
       </div>
+      <div class="field">
+        <label>🏆 獎勵設定(選填,設定後名次一確定就自動套用,現場也可以再手動修改)</label>
+        <div class="field">
+          <label for="new-ranks" style="font-size:12px;">要發獎勵到第幾名(最多5名)</label>
+          <input type="number" id="new-ranks" min="1" max="5" value="3" />
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
+          <button type="button" class="btn ghost small" id="mode-manual-btn">手動填每個名次</button>
+          <button type="button" class="btn ghost small" id="mode-auto-btn">輸入總數自動分配</button>
+        </div>
+        <div id="manual-reward-box"></div>
+        <div id="auto-reward-box" style="display:none;">
+          <div class="field">
+            <label for="auto-reward-label" style="font-size:12px;">獎勵名稱</label>
+            <input id="auto-reward-label" placeholder="例如:金幣" />
+          </div>
+          <div class="field">
+            <label for="auto-reward-total" style="font-size:12px;">總數量(依名次自動分配,第1名分最多)</label>
+            <input type="number" id="auto-reward-total" placeholder="例如:100" />
+          </div>
+        </div>
+      </div>
       <button class="btn block" id="create-btn">建立活動</button>
     </div>
 

@@ -4,17 +4,32 @@ const eventId = qs.get("event");
 
 let match = null;
 let ev = null;
-let mySlot = null;
+let mySlot = null; // 1 | 2 | null(觀戰)
 let selectedShield = false;
 let selectedAllin = false;
 let selectedFreebet = false;
 let submittedThisRound = false;
 let resolving = false;
 let unsub = null;
+let lastSeenRound = null;
+let announceTimer = null;
+let timerInterval = null;
+let currentRoundKey = null;
 
 const CIRC = 289;
+const ROLL_TIME = 5000;
 const ITEM_LABEL = { crit: "⚡爆擊", heal: "💚回血", truehit: "🎯必中", seal: "🔒封印" };
 const FIELD_LABEL = { crit: "🌪️ 戰場:全場傷害+1", shield_plus: "🌪️ 戰場:防禦骰x2次" };
+
+function announce(text, holdMs) {
+  const el = document.getElementById("big-announce");
+  el.textContent = text;
+  el.classList.remove("show");
+  void el.offsetWidth;
+  el.classList.add("show");
+  clearTimeout(announceTimer);
+  announceTimer = setTimeout(() => el.classList.remove("show"), holdMs || 2200);
+}
 
 function ringUpdate(el, hp, maxHp) {
   const ratio = Math.max(hp, 0) / maxHp;
@@ -28,9 +43,58 @@ function appendLogLines(log) {
   box.scrollTop = box.scrollHeight;
 }
 
+function names() {
+  return [match.p1?.name || "玩家一", match.p2?.name || "玩家二"];
+}
+
+function buildHeadline(evt) {
+  if (!evt) return "";
+  const [p1Name, p2Name] = names();
+  if (evt.type === "tie") return "⚖️ 平手!雙方各扣 1 血";
+  const winnerName = evt.winnerSlot === 1 ? p1Name : p2Name;
+  const loserName = evt.winnerSlot === 1 ? p2Name : p1Name;
+  if (evt.shieldBlocked) {
+    if (mySlot === evt.loserSlot) return `🛡️ 你觸發防禦骰,完全擋下攻擊!`;
+    if (mySlot === evt.winnerSlot) return `🛡️ ${loserName} 擋下了你的攻擊!`;
+    return `🛡️ ${loserName} 觸發防禦骰,擋下攻擊!`;
+  }
+  if (mySlot === evt.loserSlot) return `😖 你扣了 ${evt.dmg} 點血!`;
+  if (mySlot === evt.winnerSlot) return `🔥 你獲勝了這回合!${loserName} 扣 ${evt.dmg} 血`;
+  return `${winnerName} 獲勝!${loserName} 扣 ${evt.dmg} 血`;
+}
+
+function startTimer(state) {
+  if (!mySlot || submittedThisRound || state.hp1 <= 0 || state.hp2 <= 0) return;
+  const roundKey = state.round + "-" + mySlot;
+  if (currentRoundKey === roundKey) return;
+  currentRoundKey = roundKey;
+  clearInterval(timerInterval);
+
+  const started = Date.now();
+  const fill = document.getElementById("timer-fill");
+  timerInterval = setInterval(async () => {
+    const elapsed = Date.now() - started;
+    const pct = Math.max(0, 100 - (elapsed / ROLL_TIME) * 100);
+    fill.style.width = pct + "%";
+    if (elapsed >= ROLL_TIME) {
+      clearInterval(timerInterval);
+      if (!submittedThisRound) {
+        submittedThisRound = true;
+        const roll = 1 + Math.floor(Math.random() * 6);
+        announce(`⌛ 思考時間到,系統幫你擲出了 ${roll} 點!`);
+        await db.submitMove(matchId, mySlot, { roll, defend: false, allin: false, freebet: false });
+        selectedShield = false;
+        selectedAllin = false;
+        selectedFreebet = false;
+      }
+    }
+  }, 80);
+}
+
 function render(state) {
-  document.getElementById("p1-name").textContent = match.p1?.name || "玩家一";
-  document.getElementById("p2-name").textContent = match.p2?.name || "玩家二";
+  const [p1Name, p2Name] = names();
+  document.getElementById("p1-name").textContent = p1Name;
+  document.getElementById("p2-name").textContent = p2Name;
   document.getElementById("p1-hp").textContent = Math.max(state.hp1, 0);
   document.getElementById("p2-hp").textContent = Math.max(state.hp2, 0);
   ringUpdate(document.getElementById("p1-ring"), state.hp1, 12);
@@ -46,11 +110,55 @@ function render(state) {
     fieldTag.style.display = "none";
   }
 
+  if (lastSeenRound !== null && state.round !== lastSeenRound) {
+    const headline = buildHeadline(state.lastEvent);
+    if (headline) announce(headline);
+    if (mySlot && !submittedThisRound) {
+      setTimeout(() => {
+        if (!submittedThisRound) announce("⚔️ 輪到你了!");
+      }, 2000);
+    }
+  }
+  lastSeenRound = state.round;
+
+  const statusEl = document.getElementById("game-status");
+  const rollBtn = document.getElementById("roll-btn");
+  const preRollBox = document.getElementById("pre-roll-options");
+
+  if (state.hp1 <= 0 || state.hp2 <= 0) {
+    clearInterval(timerInterval);
+    document.getElementById("timer-fill").style.width = "0%";
+    rollBtn.style.display = "none";
+    preRollBox.style.display = "none";
+    document.getElementById("rage-tag").style.display = "none";
+    const winnerName = state.hp1 <= 0 ? p2Name : p1Name;
+    if (!mySlot) {
+      statusEl.innerHTML = `🏆 ${winnerName} 獲勝了這場對戰!`;
+    } else {
+      const iWon = (mySlot === 1 && state.hp2 <= 0) || (mySlot === 2 && state.hp1 <= 0);
+      statusEl.innerHTML = iWon ? "🏆 你贏了這場對戰!回等候室看看下一步" : "💀 你被擊敗了,感謝參戰!";
+    }
+    document.getElementById("back-link").style.display = "block";
+    document.getElementById("back-link").innerHTML = `<a href="lobby.html?event=${eventId}">← 回等候室查看賽況</a>`;
+    return;
+  }
+
+  if (!mySlot) {
+    // 觀戰模式
+    preRollBox.style.display = "none";
+    rollBtn.style.display = "none";
+    document.getElementById("rage-tag").style.display = "none";
+    document.getElementById("timer-fill").style.width = "0%";
+    statusEl.innerHTML = `👀 觀戰模式・對戰進行中`;
+    return;
+  }
+
   const myShield = mySlot === 1 ? state.shield1 : state.shield2;
   const myHp = mySlot === 1 ? state.hp1 : state.hp2;
   const myFreebet = mySlot === 1 ? state.freebet1 : state.freebet2;
   const myRageReady = mySlot === 1 ? state.rageready1 : state.rageready2;
 
+  preRollBox.style.display = "flex";
   const shieldBtn = document.getElementById("shield-toggle");
   shieldBtn.textContent =
     myShield <= 0
@@ -92,27 +200,16 @@ function render(state) {
     rageTag.style.display = "none";
   }
 
-  const statusEl = document.getElementById("game-status");
-  const rollBtn = document.getElementById("roll-btn");
-
-  if (state.hp1 <= 0 || state.hp2 <= 0) {
-    rollBtn.style.display = "none";
-    document.getElementById("pre-roll-options").style.display = "none";
-    const iWon = (mySlot === 1 && state.hp2 <= 0) || (mySlot === 2 && state.hp1 <= 0);
-    statusEl.innerHTML = iWon
-      ? "🏆 你贏了這場對戰!回等候室看看下一步"
-      : "💀 你被擊敗了,感謝參戰!";
-    document.getElementById("back-link").style.display = "block";
-    document.getElementById("back-link").innerHTML = `<a href="lobby.html?event=${eventId}">← 回等候室查看賽況</a>`;
-    return;
-  }
-
   if (submittedThisRound) {
     statusEl.textContent = "已擲出,等待對方出手...";
+    rollBtn.style.display = "block";
     rollBtn.disabled = true;
+    document.getElementById("timer-fill").style.width = "0%";
   } else {
-    statusEl.textContent = "輪到你了,選好策略後擲骰";
+    statusEl.textContent = "輪到你了,選好策略後擲骰(5秒內動作)";
+    rollBtn.style.display = "block";
     rollBtn.disabled = false;
+    startTimer(state);
   }
 }
 
@@ -121,6 +218,7 @@ async function resolveRoundIfReady(state) {
   if (!state.m1 || !state.m2) return;
   resolving = true;
   try {
+    const [p1Name, p2Name] = names();
     let hp1 = state.hp1;
     let hp2 = state.hp2;
     let shield1 = state.shield1;
@@ -135,8 +233,9 @@ async function resolveRoundIfReady(state) {
     const m1 = state.m1;
     const m2 = state.m2;
     const rules = ev.rules || {};
+    let lastEvent = null;
 
-    let entry = `R${state.round}· P1🎲${m1.roll}　P2🎲${m2.roll}`;
+    let entry = `第${state.round}回合:${p1Name} 擲出 ${m1.roll} 點,${p2Name} 擲出 ${m2.roll} 點。`;
 
     let item1 = null;
     let item2 = null;
@@ -144,7 +243,7 @@ async function resolveRoundIfReady(state) {
       const items = ["crit", "heal", "truehit", "seal"];
       item1 = items[Math.floor(Math.random() * 4)];
       item2 = items[Math.floor(Math.random() * 4)];
-      entry += ` ｜道具:P1${ITEM_LABEL[item1]} P2${ITEM_LABEL[item2]}`;
+      entry += `道具骰觸發!${p1Name}獲得${ITEM_LABEL[item1]},${p2Name}獲得${ITEM_LABEL[item2]}。`;
       if (item1 === "heal") hp1 = Math.min(12, hp1 + 2);
       if (item2 === "heal") hp2 = Math.min(12, hp2 + 2);
     }
@@ -164,9 +263,12 @@ async function resolveRoundIfReady(state) {
     if (loserSlot === "tie") {
       hp1 -= 1;
       hp2 -= 1;
-      entry += " → 平手,雙方各扣1";
+      entry += `點數相同,雙方戰成平手,各扣 1 點血(${p1Name} ${state.hp1}→${hp1},${p2Name} ${state.hp2}→${hp2})。`;
+      lastEvent = { type: "tie" };
     } else {
       const winnerSlot = loserSlot === 1 ? 2 : 1;
+      const winnerName = winnerSlot === 1 ? p1Name : p2Name;
+      const loserName = loserSlot === 1 ? p1Name : p2Name;
       const allinActive = m1.allin || m2.allin;
       let dmg = diff === 0 ? 2 : diff;
       if (allinActive) dmg *= 2;
@@ -180,7 +282,7 @@ async function resolveRoundIfReady(state) {
       const winnerRageReady = winnerSlot === 1 ? rageready1 : rageready2;
       if (rules.rage && winnerRageReady) {
         dmg += 2;
-        entry += ` ｜P${winnerSlot}怒氣爆發`;
+        entry += `${winnerName}的怒氣值爆發,追加 2 點傷害!`;
         if (winnerSlot === 1) {
           rageready1 = false;
           rage1 = 0;
@@ -192,14 +294,19 @@ async function resolveRoundIfReady(state) {
 
       const loserDefend = loserSlot === 1 ? m1.defend : m2.defend;
       const loserShield = loserSlot === 1 ? shield1 : shield2;
+      const hpBefore = loserSlot === 1 ? hp1 : hp2;
+
       if (loserDefend && loserShield > 0) {
         if (loserSlot === 1) shield1--;
         else shield2--;
-        entry += ` → P${loserSlot}觸發防禦骰,擋下${dmg}傷害!`;
+        entry += `${loserName}觸發防禦骰,完全擋下了本應承受的 ${dmg} 點傷害!`;
+        lastEvent = { type: "hit", winnerSlot, loserSlot, dmg, shieldBlocked: true };
       } else {
         if (loserSlot === 1) hp1 -= dmg;
         else hp2 -= dmg;
-        entry += ` → P${loserSlot}扣${dmg}血${allinActive ? "(加注雙倍!)" : ""}`;
+        const hpAfter = loserSlot === 1 ? hp1 : hp2;
+        entry += `${winnerName}技高一籌,${loserName}扣了 ${dmg} 點血${allinActive ? "(加注雙倍!)" : ""}(${hpBefore}→${Math.max(hpAfter, 0)})。`;
+        lastEvent = { type: "hit", winnerSlot, loserSlot, dmg, shieldBlocked: false };
       }
 
       if (rules.rage) {
@@ -208,14 +315,14 @@ async function resolveRoundIfReady(state) {
           rage2 = 0;
           if (rage1 >= 2) {
             rageready1 = true;
-            entry += " ｜P1怒氣值滿!";
+            entry += `${p1Name}連輸2場,怒氣值滿了!`;
           }
         } else {
           rage2++;
           rage1 = 0;
           if (rage2 >= 2) {
             rageready2 = true;
-            entry += " ｜P2怒氣值滿!";
+            entry += `${p2Name}連輸2場,怒氣值滿了!`;
           }
         }
       }
@@ -241,6 +348,7 @@ async function resolveRoundIfReady(state) {
       freebet1,
       freebet2,
       log,
+      lastEvent,
       round: state.round + 1,
       m1: null,
       m2: null,
@@ -262,9 +370,9 @@ async function refresh() {
   match = await db.getMatch(matchId);
   if (!ev) ev = await db.getEvent(match.event_id);
   const local = db.getLocalPlayer();
-  mySlot = match.player1_id === local.id ? 1 : 2;
+  mySlot = match.player1_id === local.id ? 1 : match.player2_id === local.id ? 2 : null;
   const state = match.state;
-  submittedThisRound = !!(mySlot === 1 ? state.m1 : state.m2);
+  submittedThisRound = mySlot ? !!(mySlot === 1 ? state.m1 : state.m2) : false;
   render(state);
   resolveRoundIfReady(state);
 }
@@ -272,19 +380,24 @@ async function refresh() {
 function bindControls() {
   document.getElementById("shield-toggle").onclick = () => {
     selectedShield = !selectedShield;
+    if (selectedShield) announce("🛡️ 你準備使用防禦骰!");
     refresh();
   };
   document.getElementById("allin-toggle").onclick = () => {
     selectedAllin = !selectedAllin;
+    if (selectedAllin) announce("🔥 你決定背水一戰!");
     refresh();
   };
   document.getElementById("freebet-toggle").onclick = () => {
     selectedFreebet = !selectedFreebet;
+    if (selectedFreebet) announce("🎰 你使出了自由加注!");
     refresh();
   };
   document.getElementById("roll-btn").onclick = async () => {
     const roll = 1 + Math.floor(Math.random() * 6);
     document.getElementById("roll-btn").disabled = true;
+    clearInterval(timerInterval);
+    announce(`🎲 你擲出了 ${roll} 點!`);
     await db.submitMove(matchId, mySlot, {
       roll,
       defend: selectedShield,
@@ -307,7 +420,7 @@ const RULE_EXPLAIN = {
 function renderRules() {
   const box = document.getElementById("rule-content");
   let html = `
-    <p>雙方各有 12 點 HP,輪流擲一顆骰子(1~6點)。</p>
+    <p>雙方各有 12 點 HP,輪流擲一顆骰子(1~6點)。每回合限時 5 秒。</p>
     <p>點數高的一方讓對方扣「點數差」的血;點數相同則平手,雙方各扣 1 血。</p>
     <p>每人有 1 次防禦骰:出招前先啟動,若那一局你會輸,傷害完全免疫(只能觸發一次)。</p>
     <p>HP ≤5 時可開啟「背水一戰」,該局傷害雙倍賭一把。血量先歸零者落敗。</p>

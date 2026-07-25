@@ -53,20 +53,26 @@ const db = (function () {
     return data;
   }
 
-  async function createEvent(name, gameType, losersBracket, rules, registrationDeadline) {
+  async function createEvent(opts) {
     const { data, error } = await client
       .from("events")
       .insert({
-        name,
-        game_type: gameType,
-        losers_bracket: !!losersBracket,
-        rules: rules || {},
-        registration_deadline: registrationDeadline || null,
+        name: opts.name,
+        game_type: opts.gameType,
+        losers_bracket: !!opts.losersBracket,
+        rules: opts.rules || {},
+        registration_deadline: opts.registrationDeadline || null,
+        reward_plan: opts.rewardPlan || {},
       })
       .select()
       .single();
     if (error) throw error;
     return data;
+  }
+
+  async function deleteEvent(eventId) {
+    const { error } = await client.from("events").delete().eq("id", eventId);
+    if (error) throw error;
   }
 
   async function setEventStatus(eventId, status) {
@@ -330,6 +336,18 @@ const db = (function () {
     return data;
   }
 
+  async function activeRemainingCount(eventId) {
+    const rows = await listParticipants(eventId);
+    return rows.filter((r) =>
+      ["waiting", "pending", "matched", "wb_champion", "lb_champion"].includes(r.status)
+    ).length;
+  }
+
+  function rewardForRank(ev, rank) {
+    const items = (ev.reward_plan && ev.reward_plan.items) || [];
+    return items[rank - 1] || null;
+  }
+
   // 一場對戰結束後的晉級/淘汰/敗部/總冠軍賽路由邏輯
   async function advanceAfterMatch(match, winnerId, loserId) {
     await client
@@ -342,15 +360,16 @@ const db = (function () {
     const winnerPart = await getMyParticipant(eventId, winnerId);
     const loserPart = await getMyParticipant(eventId, loserId);
     const now = new Date().toISOString();
+    const preCount = await activeRemainingCount(eventId);
 
     if (match.bracket === "final") {
       await client
         .from("event_participants")
-        .update({ status: "eliminated", eliminated_at: now, final_rank: 2 })
+        .update({ status: "eliminated", eliminated_at: now, final_rank: 2, reward: loserPart.reward || rewardForRank(ev, 2) })
         .eq("id", loserPart.id);
       await client
         .from("event_participants")
-        .update({ status: "champion", final_rank: 1 })
+        .update({ status: "champion", final_rank: 1, reward: winnerPart.reward || rewardForRank(ev, 1) })
         .eq("id", winnerPart.id);
       await setEventStatus(eventId, "closed");
       return;
@@ -383,7 +402,7 @@ const db = (function () {
       } else {
         await client
           .from("event_participants")
-          .update({ status: "champion", final_rank: 1, match_id: null })
+          .update({ status: "champion", final_rank: 1, match_id: null, reward: winnerPart.reward || rewardForRank(ev, 1) })
           .eq("id", winnerPart.id);
         await setEventStatus(eventId, "closed");
       }
@@ -397,7 +416,12 @@ const db = (function () {
       } else {
         await client
           .from("event_participants")
-          .update({ status: "eliminated", eliminated_at: now })
+          .update({
+            status: "eliminated",
+            eliminated_at: now,
+            final_rank: preCount,
+            reward: loserPart.reward || rewardForRank(ev, preCount),
+          })
           .eq("id", loserPart.id);
       }
       return;
@@ -406,7 +430,12 @@ const db = (function () {
     if (match.bracket === "losers") {
       await client
         .from("event_participants")
-        .update({ status: "eliminated", eliminated_at: now })
+        .update({
+          status: "eliminated",
+          eliminated_at: now,
+          final_rank: preCount,
+          reward: loserPart.reward || rewardForRank(ev, preCount),
+        })
         .eq("id", loserPart.id);
 
       const rows = await listParticipants(eventId);
@@ -446,6 +475,7 @@ const db = (function () {
     listEvents,
     getEvent,
     createEvent,
+    deleteEvent,
     setEventStatus,
     joinEvent,
     getMyParticipant,

@@ -31,6 +31,18 @@ function roundLabel(round, totalRounds) {
   return `第 ${round} 輪`;
 }
 
+function matchRowHtml(m, ev, fallbackDoneText) {
+  const n1 = m.p1?.name || (m.status === "pending" ? "待定" : fallbackDoneText || "?");
+  const n2 = m.p2?.name || (m.status === "pending" ? "待定" : fallbackDoneText || "?");
+  const w1 = m.winner_id && m.winner_id === m.player1_id;
+  const w2 = m.winner_id && m.winner_id === m.player2_id;
+  const watchLink =
+    m.status === "active"
+      ? `<a href="${GAME_PAGE[ev.game_type]}?match=${m.id}&event=${ev.id}" target="_blank" style="font-size:11px;white-space:nowrap;">👀 觀戰</a>`
+      : "";
+  return `<div class="bracket-row"><span class="${w1 ? "win" : m.winner_id ? "lose" : ""}">${n1}</span><span style="color:var(--ink-dim);">vs</span><span class="${w2 ? "win" : m.winner_id ? "lose" : ""}">${n2}</span>${watchLink}</div>`;
+}
+
 async function renderBracket(ev) {
   const box = document.getElementById("bracket-list");
   const parts = await db.listParticipants(eventId);
@@ -64,13 +76,7 @@ async function renderBracket(ev) {
   for (let r = 1; r <= totalRounds; r++) {
     const rows = wbMatches.filter((m) => m.round === r).sort((a, b) => a.slot - b.slot);
     html += `<div style="font-size:11px;color:var(--ink-dim);margin:8px 0 4px;">${roundLabel(r, totalRounds)}</div>`;
-    rows.forEach((m) => {
-      const n1 = m.p1?.name || (m.status === "pending" ? "待定" : "輪空");
-      const n2 = m.p2?.name || (m.status === "pending" ? "待定" : "輪空");
-      const w1 = m.winner_id && m.winner_id === m.player1_id;
-      const w2 = m.winner_id && m.winner_id === m.player2_id;
-      html += `<div class="bracket-row"><span class="${w1 ? "win" : m.winner_id ? "lose" : ""}">${n1}</span><span style="color:var(--ink-dim);">vs</span><span class="${w2 ? "win" : m.winner_id ? "lose" : ""}">${n2}</span></div>`;
-    });
+    rows.forEach((m) => (html += matchRowHtml(m, ev, "輪空")));
   }
 
   if (ev.losers_bracket) {
@@ -80,26 +86,16 @@ async function renderBracket(ev) {
     } else {
       lbMatches
         .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-        .forEach((m) => {
-          const n1 = m.p1?.name || "?";
-          const n2 = m.p2?.name || "?";
-          const w1 = m.winner_id && m.winner_id === m.player1_id;
-          const w2 = m.winner_id && m.winner_id === m.player2_id;
-          html += `<div class="bracket-row"><span class="${w1 ? "win" : m.winner_id ? "lose" : ""}">${n1}</span><span style="color:var(--ink-dim);">vs</span><span class="${w2 ? "win" : m.winner_id ? "lose" : ""}">${n2}</span></div>`;
-        });
+        .forEach((m) => (html += matchRowHtml(m, ev)));
     }
   }
 
   if (finalMatch) {
     html += `<h3 style="font-size:13px;color:var(--ink-dim);margin-top:16px;">🏆 總冠軍賽</h3>`;
-    const n1 = finalMatch.p1?.name || "?";
-    const n2 = finalMatch.p2?.name || "?";
-    const w1 = finalMatch.winner_id && finalMatch.winner_id === finalMatch.player1_id;
-    const w2 = finalMatch.winner_id && finalMatch.winner_id === finalMatch.player2_id;
-    html += `<div class="bracket-row"><span class="${w1 ? "win" : finalMatch.winner_id ? "lose" : ""}">${n1}</span><span style="color:var(--ink-dim);">vs</span><span class="${w2 ? "win" : finalMatch.winner_id ? "lose" : ""}">${n2}</span></div>`;
+    html += matchRowHtml(finalMatch, ev);
   }
 
-  const eliminated = parts.filter((p) => p.status === "eliminated").sort((a, b) => new Date(b.eliminated_at) - new Date(a.eliminated_at));
+  const eliminated = parts.filter((p) => p.status === "eliminated").sort((a, b) => (a.final_rank || 99) - (b.final_rank || 99));
   if (eliminated.length) {
     html += `<h3 style="font-size:13px;color:var(--ink-dim);margin-top:16px;">已出局</h3>`;
     eliminated.forEach((p) => {
@@ -121,17 +117,18 @@ const STATUS_TEXT = {
 
 async function checkMyStatus(ev) {
   const local = db.getLocalPlayer();
+  const statusEl = document.getElementById("my-status");
+
   if (!local.id) {
-    location.href = "index.html";
-    return;
-  }
-  myParticipant = await db.getMyParticipant(eventId, local.id);
-  if (!myParticipant) {
-    location.href = "index.html";
+    statusEl.innerHTML = `👀 觀戰模式,你目前沒有報名這場活動`;
     return;
   }
 
-  const statusEl = document.getElementById("my-status");
+  myParticipant = await db.getMyParticipant(eventId, local.id);
+  if (!myParticipant) {
+    statusEl.innerHTML = `👀 觀戰模式,你目前沒有報名這場活動`;
+    return;
+  }
 
   if (!ev.locked) {
     statusEl.textContent = "已報名,等主辦人鎖定名單開賽";
