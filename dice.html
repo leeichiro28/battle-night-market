@@ -3,75 +3,86 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>骰子對戰 · 擂台夜市</title>
+<title>管理後台 · 擂台夜市</title>
 <link rel="stylesheet" href="assets/style.css" />
 </head>
 <body>
   <div class="wrap">
     <div class="marquee">
-      <span class="eyebrow">🎲 骰子對戰</span>
-      <h1>擲出你的命運</h1>
-      <span class="tag" id="field-mod-tag" style="display:none;margin-top:8px;"></span>
+      <span class="eyebrow">Admin</span>
+      <h1>後台管理</h1>
+      <p>開新活動、控制活動狀態、幫每位參加者填入獎勵</p>
     </div>
 
     <div class="card">
-      <div class="duel-stage">
-        <div class="fighter">
-          <div class="name" id="p1-name">玩家一</div>
-          <div class="hp-dial" id="p1-dial">
-            <svg width="108" height="108" viewBox="0 0 108 108">
-              <circle cx="54" cy="54" r="46" fill="none" stroke="#34304A" stroke-width="10"/>
-              <circle id="p1-ring" cx="54" cy="54" r="46" fill="none" stroke="#3DBE6C" stroke-width="10" stroke-linecap="round" stroke-dasharray="289" stroke-dashoffset="0"/>
-            </svg>
-            <div class="num" id="p1-hp">12</div>
-          </div>
-        </div>
-        <div class="vs-badge">VS<br/><span id="round-num" style="font-size:12px;color:var(--ink-dim);">R1</span></div>
-        <div class="fighter">
-          <div class="name" id="p2-name">玩家二</div>
-          <div class="hp-dial" id="p2-dial">
-            <svg width="108" height="108" viewBox="0 0 108 108">
-              <circle cx="54" cy="54" r="46" fill="none" stroke="#34304A" stroke-width="10"/>
-              <circle id="p2-ring" cx="54" cy="54" r="46" fill="none" stroke="#3DBE6C" stroke-width="10" stroke-linecap="round" stroke-dasharray="289" stroke-dashoffset="0"/>
-            </svg>
-            <div class="num" id="p2-hp">12</div>
-          </div>
+      <h3 style="font-size:15px;">開新活動</h3>
+      <div class="field">
+        <label for="new-name">活動名稱</label>
+        <input id="new-name" placeholder="例如:週五夜擂台賽" />
+      </div>
+      <div class="field">
+        <label for="new-type">遊戲類型</label>
+        <select id="new-type">
+          <option value="dice">🎲 骰子對戰</option>
+          <option value="rps5">✂️ 五手勢對戰</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="new-deadline">報名截止時間(選填,不填就一直開放到主辦人鎖定名單為止)</label>
+        <input type="datetime-local" id="new-deadline" />
+      </div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="new-losers" style="width:auto;" />
+          <span>開啟敗部復活賽(輸一場先掉敗部,敗部再輸才淘汰)</span>
+        </label>
+      </div>
+      <div class="field" id="dice-rules-box">
+        <label>骰子對戰・進階規則(不勾就是最原始版本)</label>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink);">
+            <input type="checkbox" class="rule-box" data-rule="item_die" style="width:auto;" />
+            🎁 道具骰(每3回合隨機爆擊/回血/必中/封印)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink);">
+            <input type="checkbox" class="rule-box" data-rule="field_mod" style="width:auto;" />
+            🌪️ 戰場修飾骰(開局隨機決定當場特殊規則)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink);">
+            <input type="checkbox" class="rule-box" data-rule="free_bet" style="width:auto;" />
+            🎰 自由加注(不限低血,整場限2次)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink);">
+            <input type="checkbox" class="rule-box" data-rule="rage" style="width:auto;" />
+            🔥 怒氣值(連輸2場,下次獲勝+2傷害)
+          </label>
         </div>
       </div>
-
-      <div class="big-announce" id="big-announce"></div>
-      <div class="log-panel" id="log"></div>
-      <div class="timer-bar"><div id="timer-fill" style="width:100%"></div></div>
-
-      <div id="controls" style="margin-top:12px;">
-        <div id="pre-roll-options" style="display:flex; gap:10px; margin-bottom:12px; justify-content:center; flex-wrap:wrap;">
-          <button class="btn ghost small" id="shield-toggle">🛡️ 使用防禦骰</button>
-          <button class="btn ghost small" id="allin-toggle" style="display:none;">🔥 背水一戰(傷害x2)</button>
-          <button class="btn ghost small" id="freebet-toggle" style="display:none;">🎰 自由加注</button>
+      <div class="field">
+        <label>🏆 獎勵設定(選填,設定後名次一確定就自動套用,現場也可以再手動修改)</label>
+        <div class="field">
+          <label for="new-ranks" style="font-size:12px;">要發獎勵到第幾名(最多5名)</label>
+          <input type="number" id="new-ranks" min="1" max="5" value="3" />
         </div>
-        <div style="text-align:center;margin-bottom:10px;">
-          <span class="reward-badge" id="rage-tag" style="display:none;"></span>
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
+          <button type="button" class="btn ghost small" id="mode-manual-btn">手動填每個名次</button>
+          <button type="button" class="btn ghost small" id="mode-auto-btn">輸入總數自動分配</button>
         </div>
-        <button class="btn block" id="roll-btn">🎲 擲骰</button>
-        <div class="status-msg" id="game-status">等待雙方擲骰...</div>
+        <div id="manual-reward-box"></div>
+        <div id="auto-reward-box" style="display:none;">
+          <div id="auto-reward-list"></div>
+          <button type="button" class="btn ghost small" id="add-auto-reward-btn" style="margin-bottom:10px;">+ 新增一項獎勵</button>
+        </div>
       </div>
+      <button class="btn block" id="create-btn">建立活動</button>
     </div>
 
-    <div class="footer-nav" id="back-link" style="display:none;"><a href="index.html">← 回活動列表</a></div>
-  </div>
-
-  <button class="btn ghost rule-fab" id="rule-fab-btn">📖 規則說明</button>
-  <div class="modal-overlay" id="rule-modal">
-    <div class="modal-card">
-      <h3>🎲 骰子對戰規則</h3>
-      <div id="rule-content"></div>
-      <button class="btn ghost block" id="rule-close-btn">關閉</button>
-    </div>
+    <div id="events-admin-list"></div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="assets/supabase-config.js"></script>
   <script src="assets/db.js"></script>
-  <script src="assets/dice.js"></script>
+  <script src="assets/admin.js"></script>
 </body>
 </html>

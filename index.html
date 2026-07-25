@@ -3,35 +3,75 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>擂台夜市 · 對戰活動</title>
+<title>骰子對戰 · 擂台夜市</title>
 <link rel="stylesheet" href="assets/style.css" />
 </head>
 <body>
   <div class="wrap">
     <div class="marquee">
-      <span class="eyebrow">Battle Night Market</span>
-      <h1>擂台<span>夜市</span></h1>
-      <p>選一場活動按下參加,系統自動幫你配對對手。一路打贏晉級,最後留下的人是冠軍。</p>
+      <span class="eyebrow">🎲 骰子對戰</span>
+      <h1>擲出你的命運</h1>
+      <span class="tag" id="field-mod-tag" style="display:none;margin-top:8px;"></span>
     </div>
 
-    <div class="card" id="who-card" style="display:none;">
-      <label for="name-input">你的暱稱</label>
-      <div style="display:flex;gap:8px;">
-        <input id="name-input" placeholder="輸入暱稱..." maxlength="16" />
-        <button class="btn" id="save-name-btn">儲存</button>
+    <div class="card">
+      <div class="duel-stage">
+        <div class="fighter">
+          <div class="name" id="p1-name">玩家一</div>
+          <div class="hp-dial" id="p1-dial">
+            <svg width="108" height="108" viewBox="0 0 108 108">
+              <circle cx="54" cy="54" r="46" fill="none" stroke="#34304A" stroke-width="10"/>
+              <circle id="p1-ring" cx="54" cy="54" r="46" fill="none" stroke="#3DBE6C" stroke-width="10" stroke-linecap="round" stroke-dasharray="289" stroke-dashoffset="0"/>
+            </svg>
+            <div class="num" id="p1-hp">12</div>
+          </div>
+        </div>
+        <div class="vs-badge">VS<br/><span id="round-num" style="font-size:12px;color:var(--ink-dim);">R1</span></div>
+        <div class="fighter">
+          <div class="name" id="p2-name">玩家二</div>
+          <div class="hp-dial" id="p2-dial">
+            <svg width="108" height="108" viewBox="0 0 108 108">
+              <circle cx="54" cy="54" r="46" fill="none" stroke="#34304A" stroke-width="10"/>
+              <circle id="p2-ring" cx="54" cy="54" r="46" fill="none" stroke="#3DBE6C" stroke-width="10" stroke-linecap="round" stroke-dasharray="289" stroke-dashoffset="0"/>
+            </svg>
+            <div class="num" id="p2-hp">12</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="big-announce" id="big-announce"></div>
+      <div class="log-panel" id="log"></div>
+      <div class="timer-bar"><div id="timer-fill" style="width:100%"></div></div>
+
+      <div id="controls" style="margin-top:12px;">
+        <div id="pre-roll-options" style="display:flex; gap:10px; margin-bottom:12px; justify-content:center; flex-wrap:wrap;">
+          <button class="btn ghost small" id="shield-toggle">🛡️ 使用防禦骰</button>
+          <button class="btn ghost small" id="allin-toggle" style="display:none;">🔥 背水一戰(傷害x2)</button>
+          <button class="btn ghost small" id="freebet-toggle" style="display:none;">🎰 自由加注</button>
+        </div>
+        <div style="text-align:center;margin-bottom:10px;">
+          <span class="reward-badge" id="rage-tag" style="display:none;"></span>
+        </div>
+        <button class="btn block" id="roll-btn">🎲 擲骰</button>
+        <div class="status-msg" id="game-status">等待雙方擲骰...</div>
       </div>
     </div>
 
-    <div id="events-list"></div>
+    <div class="footer-nav" id="back-link" style="display:none;"><a href="index.html">← 回活動列表</a></div>
+  </div>
 
-    <div class="footer-nav">
-      主辦人請到 <a href="admin.html">管理後台</a> 開新活動、設定獎勵
+  <button class="btn ghost rule-fab" id="rule-fab-btn">📖 規則說明</button>
+  <div class="modal-overlay" id="rule-modal">
+    <div class="modal-card">
+      <h3>🎲 骰子對戰規則</h3>
+      <div id="rule-content"></div>
+      <button class="btn ghost block" id="rule-close-btn">關閉</button>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="assets/supabase-config.js"></script>
   <script src="assets/db.js"></script>
-  <script src="assets/home.js"></script>
+  <script src="assets/dice.js"></script>
 </body>
 </html>
