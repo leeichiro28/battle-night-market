@@ -4,9 +4,12 @@ let myParticipant = null;
 let pollTimer = null;
 let unsub1 = null;
 let unsub2 = null;
+let currentEv = null;
 
 const GAME_LABEL = { dice: "🎲 骰子對戰", rps5: "✂️ 五手勢對戰" };
 const GAME_PAGE = { dice: "dice.html", rps5: "rps5.html" };
+const BRACKET_ORDER = { winners: 0, losers: 1, final: 2 };
+const MEDAL = { 1: "🥇", 2: "🥈", 3: "🥉" };
 
 function pulse() {
   const bar = document.getElementById("pulse-bar");
@@ -18,6 +21,12 @@ function pulse() {
   }, 80);
 }
 
+function rankBadge(rank) {
+  if (!rank) return "";
+  if (MEDAL[rank]) return `<span class="rank-badge top3">${MEDAL[rank]}</span> `;
+  return `<span class="rank-badge">第${rank}名</span> `;
+}
+
 async function loadEvent() {
   const ev = await db.getEventSafe(eventId);
   if (!ev) return null;
@@ -27,7 +36,7 @@ async function loadEvent() {
 }
 
 function roundLabel(round, totalRounds) {
-  if (round === totalRounds) return "決賽";
+  if (round === totalRounds) return "🏆 決賽";
   if (round === totalRounds - 1) return "準決賽";
   return `第 ${round} 輪`;
 }
@@ -37,11 +46,11 @@ function matchRowHtml(m, ev, fallbackDoneText) {
   const n2 = m.p2?.name || (m.status === "pending" ? "待定" : fallbackDoneText || "?");
   const w1 = m.winner_id && m.winner_id === m.player1_id;
   const w2 = m.winner_id && m.winner_id === m.player2_id;
-  const watchLink =
-    m.status === "active"
-      ? `<a href="${GAME_PAGE[ev.game_type]}?match=${m.id}&event=${ev.id}" target="_blank" style="font-size:11px;white-space:nowrap;">👀 觀戰</a>`
-      : "";
-  return `<div class="bracket-row"><span class="${w1 ? "win" : m.winner_id ? "lose" : ""}">${n1}</span><span style="color:var(--ink-dim);">vs</span><span class="${w2 ? "win" : m.winner_id ? "lose" : ""}">${n2}</span>${watchLink}</div>`;
+  const isLive = m.status === "active";
+  const watchLink = isLive
+    ? `<a href="${GAME_PAGE[ev.game_type]}?match=${m.id}&event=${ev.id}" target="_blank" style="font-size:11px;white-space:nowrap;">👀 觀戰</a>`
+    : "";
+  return `<div class="bracket-row${isLive ? " live" : ""}">${isLive ? "🔴 " : ""}<span class="${w1 ? "win" : m.winner_id ? "lose" : ""}">${n1}</span><span style="color:var(--ink-dim);">vs</span><span class="${w2 ? "win" : m.winner_id ? "lose" : ""}">${n2}</span>${watchLink}</div>`;
 }
 
 async function renderBracket(ev) {
@@ -70,13 +79,14 @@ async function renderBracket(ev) {
 
   const champion = parts.find((p) => p.status === "champion");
   if (champion) {
-    html += `<div class="bracket-row"><span class="win">🏆 冠軍・${champion.players.name}</span><span></span></div>`;
+    html += `<div class="bracket-row" style="background:rgba(242,183,5,.1);border-radius:8px;padding:8px 10px;border:1px solid var(--gold-d);"><span class="win">🥇 冠軍・${champion.players.name}</span><span></span></div>`;
   }
 
   html += `<h3 style="font-size:13px;color:var(--ink-dim);margin-top:14px;">勝部賽程</h3>`;
   for (let r = 1; r <= totalRounds; r++) {
     const rows = wbMatches.filter((m) => m.round === r).sort((a, b) => a.slot - b.slot);
-    html += `<div style="font-size:11px;color:var(--ink-dim);margin:8px 0 4px;">${roundLabel(r, totalRounds)}</div>`;
+    const big = r >= totalRounds - 1;
+    html += `<div style="font-size:${big ? "13px" : "11px"};color:${big ? "var(--gold)" : "var(--ink-dim)"};font-weight:${big ? "700" : "400"};margin:10px 0 4px;">${roundLabel(r, totalRounds)}</div>`;
     rows.forEach((m) => (html += matchRowHtml(m, ev, "輪空")));
   }
 
@@ -92,7 +102,7 @@ async function renderBracket(ev) {
   }
 
   if (finalMatch) {
-    html += `<h3 style="font-size:13px;color:var(--ink-dim);margin-top:16px;">🏆 總冠軍賽</h3>`;
+    html += `<h3 style="font-size:13px;color:var(--gold);margin-top:16px;">🏆 總冠軍賽</h3>`;
     html += matchRowHtml(finalMatch, ev);
   }
 
@@ -100,11 +110,76 @@ async function renderBracket(ev) {
   if (eliminated.length) {
     html += `<h3 style="font-size:13px;color:var(--ink-dim);margin-top:16px;">已出局</h3>`;
     eliminated.forEach((p) => {
-      html += `<div class="bracket-row"><span class="lose">${p.players.name}</span><span class="mono" style="font-size:12px;">${p.final_rank ? "第" + p.final_rank + "名 " : ""}${p.reward ? "🎁 " + p.reward : ""}</span></div>`;
+      html += `<div class="bracket-row"><span class="lose">${rankBadge(p.final_rank)}${p.players.name}</span><span class="mono" style="font-size:12px;">${p.reward ? "🎁 " + p.reward : ""}</span></div>`;
     });
   }
 
   box.innerHTML = html;
+}
+
+// ---------- 內嵌直播面板:不用另外開分頁就能看到目前這場對戰的即時比分 ----------
+function renderLivePanel(ev, m) {
+  const box = document.getElementById("live-panel-box");
+  if (!m) {
+    box.innerHTML = "";
+    return;
+  }
+  const n1 = m.p1?.name || "玩家一";
+  const n2 = m.p2?.name || "玩家二";
+  const s = m.state || {};
+  const lastLog = s.log && s.log.length ? s.log[s.log.length - 1] : "對戰剛開始!";
+  box.innerHTML = `
+    <div class="live-panel">
+      <div class="live-tag"><span class="dot"></span>直播中・${GAME_LABEL[ev.game_type]}</div>
+      <div class="mini-duel">
+        <span>${n1}</span>
+        <span class="mhp">${Math.max(s.hp1 ?? 0, 0)}</span>
+        <span style="color:var(--ink-dim);">vs</span>
+        <span class="mhp">${Math.max(s.hp2 ?? 0, 0)}</span>
+        <span>${n2}</span>
+      </div>
+      <div class="status-msg" style="margin:6px 0 10px;">${lastLog}</div>
+      <div style="text-align:center;">
+        <a class="btn ghost small" href="${GAME_PAGE[ev.game_type]}?match=${m.id}&event=${eventId}" target="_blank">開新分頁看完整對戰畫面</a>
+      </div>
+    </div>
+  `;
+}
+
+function computeQueuePosition(matches, myMatchId) {
+  const pending = matches
+    .filter((m) => m.status === "pending" && m.player1_id && m.player2_id)
+    .sort((a, b) => {
+      const br = (BRACKET_ORDER[a.bracket] ?? 9) - (BRACKET_ORDER[b.bracket] ?? 9);
+      if (br) return br;
+      const rr = (a.round || 0) - (b.round || 0);
+      if (rr) return rr;
+      const sr = (a.slot ?? 999) - (b.slot ?? 999);
+      if (sr) return sr;
+      return new Date(a.created_at) - new Date(b.created_at);
+    });
+  const idx = pending.findIndex((m) => m.id === myMatchId);
+  return idx === -1 ? null : idx + 1;
+}
+
+async function renderStatusBanner(ev, activeMatch) {
+  const box = document.getElementById("status-banner");
+  if (!ev.locked || ev.status === "closed") {
+    box.innerHTML = "";
+    return;
+  }
+  if (!activeMatch) {
+    box.innerHTML = `<div class="status-banner idle">⏳ 目前沒有對戰進行中,系統排程中...</div>`;
+    return;
+  }
+  const n1 = activeMatch.p1?.name || "?";
+  const n2 = activeMatch.p2?.name || "?";
+  const amPlaying = myParticipant && myParticipant.match_id === activeMatch.id && myParticipant.status === "matched";
+  if (amPlaying) {
+    box.innerHTML = `<div class="status-banner live">🔴 輪到你了!正在對戰:${n1} vs ${n2}</div>`;
+  } else {
+    box.innerHTML = `<div class="status-banner live">🔴 正在進行中:${n1} vs ${n2}</div>`;
+  }
 }
 
 const STATUS_TEXT = {
@@ -116,9 +191,11 @@ const STATUS_TEXT = {
   champion: "🏆 恭喜你是本場活動冠軍!",
 };
 
-async function checkMyStatus(ev) {
+async function checkMyStatus(ev, matches) {
   const local = db.getLocalPlayer();
   const statusEl = document.getElementById("my-status");
+  const quitBtn = document.getElementById("quit-btn");
+  quitBtn.style.display = "none";
 
   if (!local.id) {
     statusEl.innerHTML = `👀 觀戰模式,你目前沒有報名這場活動`;
@@ -133,6 +210,7 @@ async function checkMyStatus(ev) {
 
   if (!ev.locked) {
     statusEl.textContent = "已報名,等主辦人鎖定名單開賽";
+    quitBtn.style.display = "inline-block";
     pulse();
     return;
   }
@@ -149,8 +227,8 @@ async function checkMyStatus(ev) {
     clearInterval(pollTimer);
     clearInterval(window._pulseTimer);
     statusEl.innerHTML = myParticipant.reward
-      ? `你已出局(${myParticipant.final_rank ? "第" + myParticipant.final_rank + "名" : ""})。獲得獎勵 🎁 <b style="color:var(--gold)">${myParticipant.reward}</b>`
-      : "你已出局,感謝參加!獎勵確認後會顯示在這裡";
+      ? `${rankBadge(myParticipant.final_rank)}你已出局。獲得獎勵 🎁 <b style="color:var(--gold)">${myParticipant.reward}</b>`
+      : `${rankBadge(myParticipant.final_rank)}你已出局,感謝參加!獎勵確認後會顯示在這裡`;
     return;
   }
 
@@ -158,22 +236,52 @@ async function checkMyStatus(ev) {
     clearInterval(pollTimer);
     clearInterval(window._pulseTimer);
     statusEl.innerHTML = myParticipant.reward
-      ? `🏆 恭喜奪冠!獎勵 🎁 <b style="color:var(--gold)">${myParticipant.reward}</b>`
+      ? `🥇 恭喜奪冠!獎勵 🎁 <b style="color:var(--gold)">${myParticipant.reward}</b>`
       : STATUS_TEXT.champion;
     return;
   }
 
-  statusEl.textContent = STATUS_TEXT[myParticipant.status] || "狀態確認中...";
+  if (myParticipant.status === "pending" && matches) {
+    const pos = computeQueuePosition(matches, myParticipant.match_id);
+    statusEl.textContent = pos ? `🎯 排隊中,你是第 ${pos} 位等待上場` : STATUS_TEXT.pending;
+  } else {
+    statusEl.textContent = STATUS_TEXT[myParticipant.status] || "狀態確認中...";
+  }
+  if (["waiting", "pending"].includes(myParticipant.status)) {
+    quitBtn.style.display = "inline-block";
+  }
   pulse();
 }
+
+document.getElementById("quit-btn").onclick = async () => {
+  const local = db.getLocalPlayer();
+  if (!local.id) return;
+  if (!confirm("確定要退出這場比賽嗎?退出後如果想再參加要重新報名。")) return;
+  const btn = document.getElementById("quit-btn");
+  btn.disabled = true;
+  try {
+    await db.quitEvent(eventId, local.id);
+    location.href = "index.html";
+  } catch (e) {
+    alert("退出失敗:" + (e.message || "未知錯誤"));
+    btn.disabled = false;
+  }
+};
 
 async function poll(ev) {
   if (ev.locked && ev.status !== "closed") {
     try {
       await db.activateNextMatch(eventId);
     } catch (e) {}
+    try {
+      await db.watchdogActiveMatch(eventId);
+    } catch (e) {}
   }
-  await checkMyStatus(ev);
+  const matches = ev.locked ? await db.listMatches(eventId) : [];
+  const activeMatch = matches.find((m) => m.status === "active") || null;
+  await checkMyStatus(ev, matches);
+  await renderStatusBanner(ev, activeMatch);
+  renderLivePanel(ev, activeMatch);
   await renderBracket(ev);
 }
 
@@ -201,7 +309,7 @@ function renderRules(ev) {
       if (item) html += `<p><b style="color:var(--ink);">${item[0]}</b><br/>${item[1]}</p>`;
     });
   } else {
-    html += `<p>雙方各 10 點 HP,30秒內選手勢(石頭/布/剪刀/蜥蜴/史波克),超時判負。每人1張究極手勢卡,出牌保證獲勝該局(除非雙方同局都用則平手)。HP≤3時,獲勝的那一擊傷害雙倍。</p>`;
+    html += `<p>雙方各 10 點 HP,3秒內選手勢(石頭/布/剪刀/蜥蜴/史波克),超時判負。每人1張究極手勢卡,出牌保證獲勝該局(除非雙方同局都用則平手)。HP≤3時,獲勝的那一擊傷害雙倍。</p>`;
   }
   box.innerHTML = html;
 }
@@ -227,18 +335,18 @@ function bindRuleModal(ev) {
     location.href = "index.html";
     return;
   }
+  currentEv = ev;
   bindRuleModal(ev);
-  await checkMyStatus(ev);
-  await renderBracket(ev);
+  await poll(ev);
 
   pollTimer = setInterval(() => poll(ev), 2500);
 
-  unsub1 = db.onTableChange("event_participants", `event_id=eq.${eventId}`, () => {
-    checkMyStatus(ev);
-    renderBracket(ev);
-  });
-  unsub2 = db.onTableChange("matches", `event_id=eq.${eventId}`, () => {
-    renderBracket(ev);
+  unsub1 = db.onTableChange("event_participants", `event_id=eq.${eventId}`, () => poll(ev));
+  unsub2 = db.onTableChange("matches", `event_id=eq.${eventId}`, () => poll(ev));
+
+  // 分頁從背景切回前景時,馬上刷新一次,避免手機瀏覽器把背景分頁的計時器/連線凍結導致畫面卡在舊狀態
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") poll(ev);
   });
 })();
 

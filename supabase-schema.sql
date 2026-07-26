@@ -144,11 +144,11 @@ begin
     init_state := '{"hp1":10,"hp2":10,"round":1,"ult1":false,"ult2":false,"log":[]}'::jsonb;
   end if;
 
-  insert into matches(event_id, player1_id, player2_id, bracket, round, state)
-  values (p_event_id, p1.player_id, p2.player_id, p_bracket, 1, init_state)
+  insert into matches(event_id, player1_id, player2_id, bracket, round, state, status)
+  values (p_event_id, p1.player_id, p2.player_id, p_bracket, 1, init_state, 'pending')
   returning id into new_match_id;
 
-  update event_participants set status='matched', match_id=new_match_id
+  update event_participants set status='pending', match_id=new_match_id
     where id in (p1.id, p2.id);
 
   return new_match_id;

@@ -402,3 +402,7 @@ window.addEventListener("beforeunload", () => {
   if (unsubParticipants) unsubParticipants();
   if (entryWatchdog) clearInterval(entryWatchdog);
 });
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") refresh();
+});

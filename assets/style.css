@@ -360,3 +360,97 @@ label{
   padding:3px 12px;
   margin-top:8px;
 }
+
+/* ===== 共用導覽列 ===== */
+.site-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  flex-wrap:wrap;
+  padding:12px 20px;
+  border-bottom:1px solid var(--line);
+  background:rgba(20,18,28,.7);
+  backdrop-filter:blur(6px);
+  position:sticky;
+  top:0;
+  z-index:60;
+}
+.site-header-brand{
+  font-family:'Archivo Black';
+  color:var(--gold);
+  font-size:15px;
+  letter-spacing:.02em;
+  white-space:nowrap;
+}
+.site-header-nav{
+  display:flex;
+  align-items:center;
+  gap:16px;
+  flex-wrap:wrap;
+  font-size:13px;
+}
+.site-header-nav a{color:var(--ink-dim);}
+.site-header-nav a:hover{color:var(--ink);}
+.header-account{display:flex;align-items:center;gap:8px;}
+.header-name{color:var(--gold);font-weight:700;}
+
+/* ===== 名次徽章 ===== */
+.rank-badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:11px;
+  font-weight:700;
+  color:var(--ink-dim);
+  min-width:20px;
+}
+.rank-badge.top3{font-size:18px;}
+
+/* ===== 直播中的對戰列會亮框 ===== */
+.bracket-row.live{
+  background:rgba(229,72,77,.1);
+  border:1px solid var(--red);
+  border-radius:8px;
+  padding:8px 10px;
+  animation:live-pulse 1.6s ease-in-out infinite;
+}
+@keyframes live-pulse{
+  0%,100%{box-shadow:0 0 0 rgba(229,72,77,.3);}
+  50%{box-shadow:0 0 14px rgba(229,72,77,.35);}
+}
+.status-banner{
+  text-align:center;
+  border-radius:12px;
+  padding:14px;
+  margin-bottom:16px;
+  font-size:15px;
+  font-weight:700;
+}
+.status-banner.live{background:rgba(229,72,77,.12);border:1px solid var(--red);color:#ffb3b5;}
+.status-banner.queue{background:rgba(242,183,5,.1);border:1px solid var(--gold-d);color:var(--gold);}
+.status-banner.idle{background:var(--panel2);border:1px solid var(--line);color:var(--ink-dim);}
+
+.live-panel{
+  border:1px solid var(--red);
+  border-radius:var(--radius);
+  padding:16px;
+  margin-bottom:16px;
+  background:rgba(229,72,77,.05);
+}
+.live-panel .live-tag{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  font-size:12px;
+  color:var(--red);
+  font-weight:700;
+  margin-bottom:10px;
+}
+.live-panel .live-tag .dot{
+  width:8px;height:8px;border-radius:50%;background:var(--red);
+  animation:live-pulse-dot 1s ease-in-out infinite;
+}
+@keyframes live-pulse-dot{0%,100%{opacity:1;}50%{opacity:.3;}}
+.mini-duel{display:flex;align-items:center;justify-content:center;gap:14px;font-size:14px;margin-bottom:8px;}
+.mini-duel .mhp{font-family:'Space Mono',monospace;color:var(--gold);font-weight:700;}

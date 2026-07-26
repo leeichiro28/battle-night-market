@@ -56,10 +56,21 @@ const db = (function () {
 
   async function ensurePlayerFromSession(session) {
     if (!session) return null;
+    const { data: existing, error: readErr } = await client
+      .from("players")
+      .select("*")
+      .eq("id", session.user.id)
+      .maybeSingle();
+    if (readErr) throw readErr;
+    if (existing) {
+      localStorage.setItem("player_id", existing.id);
+      localStorage.setItem("player_name", existing.name);
+      return existing;
+    }
     const name = discordNameFromSession(session);
     const { data, error } = await client
       .from("players")
-      .upsert({ id: session.user.id, name }, { onConflict: "id" })
+      .insert({ id: session.user.id, name })
       .select()
       .single();
     if (error) throw error;
@@ -433,10 +444,19 @@ const db = (function () {
     // 沒有排隊中的對戰,看看敗部候位區有沒有兩人可以配對開新的一場
     const ev = await getEvent(eventId);
     if (ev.losers_bracket && ev.status !== "closed") {
+      let newMatchId = null;
       try {
-        await tryMatch(eventId, ev.game_type, "losers");
+        newMatchId = await tryMatch(eventId, ev.game_type, "losers");
       } catch (e) {
         // 候位人數不足時 RPC 會回傳 null,忽略即可
+      }
+      if (newMatchId) {
+        // 已經確認過此刻沒有其他場次在進行,直接啟動這場敗部對戰
+        await client.from("matches").update({ status: "active" }).eq("id", newMatchId).eq("status", "pending");
+        await client
+          .from("event_participants")
+          .update({ status: "matched" })
+          .eq("match_id", newMatchId);
       }
     }
   }
@@ -501,10 +521,15 @@ const db = (function () {
 
   // 一場對戰結束後的晉級/淘汰/敗部/總冠軍賽路由邏輯
   async function advanceAfterMatch(match, winnerId, loserId) {
-    await client
+    // 用 status='active' 當條件鎖,避免兩個瀏覽器同時把同一場對戰結算兩次
+    const { data: claimed, error: claimErr } = await client
       .from("matches")
       .update({ status: "done", winner_id: winnerId })
-      .eq("id", match.id);
+      .eq("id", match.id)
+      .eq("status", "active")
+      .select();
+    if (claimErr) throw claimErr;
+    if (!claimed || !claimed.length) return; // 已經被結算過了,不重複處理
 
     const eventId = match.event_id;
     const ev = await getEvent(eventId);
@@ -523,10 +548,7 @@ const db = (function () {
         .update({ status: "champion", final_rank: 1, reward: winnerPart.reward || rewardForRank(ev, 1) })
         .eq("id", winnerPart.id);
       await setEventStatus(eventId, "closed");
-      return;
-    }
-
-    if (match.bracket === "winners") {
+    } else if (match.bracket === "winners") {
       if (match.next_match_id) {
         const slotField = match.next_slot === 1 ? "player1_id" : "player2_id";
         const { data: nm, error } = await client
@@ -571,10 +593,7 @@ const db = (function () {
           })
           .eq("id", loserPart.id);
       }
-      return;
-    }
-
-    if (match.bracket === "losers") {
+    } else if (match.bracket === "losers") {
       await client
         .from("event_participants")
         .update({
@@ -605,8 +624,100 @@ const db = (function () {
       }
     }
 
-    // 這場結束了,看看排隊名單裡有沒有下一場可以開打(同一時間只讓一場對戰進行中)
+    // 這場結束了(不管是勝部/敗部/總冠軍賽哪一種),都要看看有沒有下一場可以開打
+    // 這一行以前只有敗部分支會執行到,勝部分支會提早return跳過,是造成賽程卡住的主因,現在修正為一定會執行
     await activateNextMatch(eventId);
+  }
+
+  const NO_SHOW_GRACE_MS = 75 * 1000; // 一方超過這麼久沒進場,判定對方直接獲勝
+  const BOTH_NO_SHOW_MS = 150 * 1000; // 雙方都超過這麼久沒進場,系統隨機判一方獲勝,避免整個賽程卡死
+
+  // 巡邏檢查目前進行中的那一場對戰,有沒有人遲遲不進場。
+  // 不需要對戰畫面本身開啟也能運作,只要有人開著等候室或後台頁面,定期呼叫這個就會生效。
+  async function watchdogActiveMatch(eventId) {
+    const { data: actives, error } = await client
+      .from("matches")
+      .select("*")
+      .eq("event_id", eventId)
+      .eq("status", "active")
+      .limit(1);
+    if (error) throw error;
+    if (!actives || !actives.length) return;
+    const m = actives[0];
+    if (m.bracket === "final") return; // 總冠軍賽先不自動判,交給主辦人手動處理比較保險
+    if (!m.activated_at) return;
+
+    const elapsed = Date.now() - new Date(m.activated_at).getTime();
+    if (elapsed < NO_SHOW_GRACE_MS) return;
+
+    const p1In = !!m.p1_entered_at;
+    const p2In = !!m.p2_entered_at;
+    if (p1In && p2In) return; // 雙方都進場了,不是「沒入場」的狀況,交給對戰畫面自己的代打機制處理
+
+    let winnerId = null;
+    let loserId = null;
+    let reason = "";
+    if (!p1In && !p2In) {
+      if (elapsed < BOTH_NO_SHOW_MS) return;
+      winnerId = m.player1_id;
+      loserId = m.player2_id;
+      reason = "雙方都太久沒進場,系統隨機判一方直接晉級";
+    } else if (!p1In) {
+      winnerId = m.player2_id;
+      loserId = m.player1_id;
+      reason = "對手太久沒進場,判定棄權";
+    } else {
+      winnerId = m.player1_id;
+      loserId = m.player2_id;
+      reason = "對手太久沒進場,判定棄權";
+    }
+
+    const newState = { ...m.state, log: [...(m.state.log || []), `⌛ ${reason}`] };
+    await client.from("matches").update({ state: newState }).eq("id", m.id);
+    await advanceAfterMatch(m, winnerId, loserId);
+  }
+
+  // 玩家自行退出比賽(例如要換帳號)。還沒開打就直接移除報名;如果正在對戰中,視同棄權,對手直接獲勝晉級。
+  async function quitEvent(eventId, playerId) {
+    const part = await getMyParticipant(eventId, playerId);
+    if (!part) return;
+    if (part.status === "matched" && part.match_id) {
+      const { data: m, error } = await client.from("matches").select("*").eq("id", part.match_id).single();
+      if (error) throw error;
+      if (m.status === "active") {
+        const winnerId = m.player1_id === playerId ? m.player2_id : m.player1_id;
+        const newState = { ...m.state, log: [...(m.state.log || []), "🚪 一方主動退賽,對手直接獲勝"] };
+        await client.from("matches").update({ state: newState }).eq("id", m.id);
+        await advanceAfterMatch(m, winnerId, playerId);
+        return;
+      }
+    }
+    await removeParticipant(part.id);
+  }
+
+  // 改名(登入後可以自訂暱稱,不會被下次登入時的 Discord 名稱蓋掉)
+  async function updatePlayerName(playerId, name) {
+    const { data, error } = await client
+      .from("players")
+      .update({ name })
+      .eq("id", playerId)
+      .select()
+      .single();
+    if (error) throw error;
+    localStorage.setItem("player_name", data.name);
+    return data;
+  }
+
+  async function getActiveMatch(eventId) {
+    const { data, error } = await client
+      .from("matches")
+      .select("*, p1:player1_id(name), p2:player2_id(name)")
+      .eq("event_id", eventId)
+      .eq("status", "active")
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
   }
 
   function onTableChange(table, filter, cb) {
@@ -625,6 +736,9 @@ const db = (function () {
     signInWithDiscord,
     signOut,
     ensurePlayerFromSession,
+    updatePlayerName,
+    quitEvent,
+    watchdogActiveMatch,
     listEvents,
     getEvent,
     getEventSafe,
@@ -636,6 +750,7 @@ const db = (function () {
     getMyParticipant,
     listParticipants,
     listMatches,
+    getActiveMatch,
     setReward,
     removeParticipant,
     markEntered,

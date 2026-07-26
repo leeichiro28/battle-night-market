@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="assets/style.css" />
 </head>
 <body>
+  <div id="site-header"></div>
   <div class="wrap">
     <div class="marquee">
       <span class="eyebrow" id="event-game-tag">Battle Night Market</span>
@@ -14,10 +15,15 @@
       <p id="event-sub"></p>
     </div>
 
+    <div id="status-banner"></div>
+
     <div class="card" style="text-align:center;">
       <div id="my-status" class="status-msg">確認狀態中...</div>
       <div class="timer-bar"><div id="pulse-bar" style="width:0%"></div></div>
+      <button class="btn ghost small" id="quit-btn" style="display:none;margin-top:10px;">🚪 退出比賽</button>
     </div>
+
+    <div id="live-panel-box"></div>
 
     <div class="card">
       <h3 style="font-size:15px;color:var(--ink-dim);">擂台戰況</h3>
@@ -39,6 +45,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="assets/supabase-config.js"></script>
   <script src="assets/db.js"></script>
+  <script src="assets/header.js"></script>
   <script src="assets/lobby.js"></script>
 </body>
 </html>

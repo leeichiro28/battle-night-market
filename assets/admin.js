@@ -230,44 +230,106 @@ async function renderParticipants(container, ev) {
   others.forEach((r) => container.appendChild(participantRow(r, ev, onKicked)));
 }
 
-// ---------- 賽程總覽(含觀戰連結) ----------
-function matchLine(m, ev) {
+// ---------- 賽程總覽(含觀戰連結、卡住時可強制判定) ----------
+function matchRowEl(m, ev, onResolved) {
+  const row = document.createElement("div");
+  row.className = "bracket-row";
+  row.style.flexWrap = "wrap";
+  row.style.gap = "6px";
+  if (m.status === "active") {
+    row.style.background = "rgba(229,72,77,.08)";
+    row.style.border = "1px solid var(--red)";
+    row.style.borderRadius = "8px";
+    row.style.padding = "8px 10px";
+  }
+
   const n1 = m.p1?.name || (m.status === "done" ? "輪空" : "待定");
   const n2 = m.p2?.name || (m.status === "done" ? "輪空" : "待定");
-  const canWatch = m.status === "active";
-  const watchLink = canWatch
-    ? `<a href="${GAME_PAGE[ev.game_type]}?match=${m.id}&event=${ev.id}" target="_blank" style="font-size:11px;">👀 觀戰</a>`
-    : "";
-  return `<div class="bracket-row"><span>${n1}</span><span style="color:var(--ink-dim);">vs</span><span>${n2}</span>${watchLink}</div>`;
+  const top = document.createElement("div");
+  top.style.cssText = "display:flex;justify-content:space-between;align-items:center;width:100%;gap:8px;";
+  top.innerHTML = `<span>${m.status === "active" ? "🔴 " : ""}${n1}</span><span style="color:var(--ink-dim);">vs</span><span>${n2}</span>`;
+  row.appendChild(top);
+
+  if (m.status === "active") {
+    const watchA = document.createElement("a");
+    watchA.href = `${GAME_PAGE[ev.game_type]}?match=${m.id}&event=${ev.id}`;
+    watchA.target = "_blank";
+    watchA.style.fontSize = "11px";
+    watchA.textContent = "👀 觀戰";
+    top.appendChild(watchA);
+
+    if (m.player1_id && m.player2_id) {
+      const forceBox = document.createElement("div");
+      forceBox.style.cssText = "display:flex;gap:6px;width:100%;margin-top:6px;flex-wrap:wrap;";
+      const hint = document.createElement("span");
+      hint.style.cssText = "font-size:11px;color:var(--ink-dim);width:100%;";
+      hint.textContent = "卡住了嗎?可以在這裡強制判定勝負(用於雙方棄權/連線異常時的緊急處理):";
+      forceBox.appendChild(hint);
+
+      [
+        [n1, m.player1_id, m.player2_id],
+        [n2, m.player2_id, m.player1_id],
+      ].forEach(([name, winnerId, loserId]) => {
+        const b = document.createElement("button");
+        b.className = "btn ghost small";
+        b.style.fontSize = "11px";
+        b.textContent = `⚖️ 判 ${name} 勝`;
+        b.onclick = async () => {
+          if (!confirm(`確定要強制判定「${name}」獲勝、直接結束這場對戰嗎?`)) return;
+          b.disabled = true;
+          try {
+            await db.advanceAfterMatch(m, winnerId, loserId);
+            onResolved();
+          } catch (e) {
+            alert("處理失敗:" + (e.message || "未知錯誤"));
+            b.disabled = false;
+          }
+        };
+        forceBox.appendChild(b);
+      });
+      row.appendChild(forceBox);
+    }
+  }
+  return row;
 }
 
 async function renderBracketSummary(container, ev) {
+  container.innerHTML = "";
   const matches = await db.listMatches(ev.id);
-  if (!matches.length) {
-    container.innerHTML = "";
-    return;
-  }
+  if (!matches.length) return;
+
+  const onResolved = () => renderBracketSummary(container, ev);
   const wb = matches.filter((m) => m.bracket === "winners");
   const lb = matches.filter((m) => m.bracket === "losers");
   const final = matches.find((m) => m.bracket === "final");
   const totalRounds = wb.length ? Math.max(...wb.map((m) => m.round)) : 0;
 
-  let html = `<h3 style="font-size:13px;color:var(--ink-dim);margin:14px 0 4px;">賽程總覽</h3>`;
+  const addHeader = (text, color) => {
+    const h = document.createElement("div");
+    h.style.cssText = `font-size:11px;color:${color || "var(--ink-dim)"};margin:8px 0 2px;`;
+    h.textContent = text;
+    container.appendChild(h);
+  };
+
+  const title = document.createElement("h3");
+  title.style.cssText = "font-size:13px;color:var(--ink-dim);margin:14px 0 4px;";
+  title.textContent = "賽程總覽";
+  container.appendChild(title);
+
   for (let r = 1; r <= totalRounds; r++) {
     const rows = wb.filter((m) => m.round === r).sort((a, b) => a.slot - b.slot);
-    const label = r === totalRounds ? "決賽" : r === totalRounds - 1 ? "準決賽" : `第${r}輪`;
-    html += `<div style="font-size:11px;color:var(--ink-dim);margin:6px 0 2px;">${label}</div>`;
-    rows.forEach((m) => (html += matchLine(m, ev)));
+    const label = r === totalRounds ? "🏆 決賽" : r === totalRounds - 1 ? "準決賽" : `第${r}輪`;
+    addHeader(label, r >= totalRounds - 1 ? "var(--gold)" : null);
+    rows.forEach((m) => container.appendChild(matchRowEl(m, ev, onResolved)));
   }
   if (lb.length) {
-    html += `<div style="font-size:11px;color:var(--ink-dim);margin:8px 0 2px;">敗部復活賽</div>`;
-    lb.forEach((m) => (html += matchLine(m, ev)));
+    addHeader("敗部復活賽");
+    lb.forEach((m) => container.appendChild(matchRowEl(m, ev, onResolved)));
   }
   if (final) {
-    html += `<div style="font-size:11px;color:var(--ink-dim);margin:8px 0 2px;">🏆 總冠軍賽</div>`;
-    html += matchLine(final, ev);
+    addHeader("🏆 總冠軍賽", "var(--gold)");
+    container.appendChild(matchRowEl(final, ev, onResolved));
   }
-  container.innerHTML = html;
 }
 
 function formatDeadline(iso) {
@@ -392,3 +454,17 @@ document.getElementById("create-btn").onclick = async () => {
 };
 
 loadAll();
+
+// 背景巡邏:每 5 秒檢查一次所有進行中的活動,叫號排下一場、偵測卡住太久沒人進場的對戰。
+// 這樣只要有人開著後台頁面,就算沒人開著對戰畫面本身,賽程也不會卡死。
+setInterval(async () => {
+  try {
+    const events = await db.listEvents();
+    for (const ev of events) {
+      if (ev.locked && ev.status !== "closed") {
+        await db.activateNextMatch(ev.id);
+        await db.watchdogActiveMatch(ev.id);
+      }
+    }
+  } catch (e) {}
+}, 5000);

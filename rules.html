@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>遊戲規則 · 擂台夜市</title>
+<link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <div id="site-header"></div>
+  <div class="wrap">
+    <div class="marquee">
+      <span class="eyebrow">📖 Rules</span>
+      <h1>遊戲規則</h1>
+      <p>每場活動實際啟用的進階規則以該場活動的「規則說明」按鈕為準,這裡是通用玩法介紹。</p>
+    </div>
+
+    <div class="card">
+      <h3>🏆 賽制怎麼玩</h3>
+      <p style="color:var(--ink-dim);line-height:1.8;">依報名人數自動排出「勝部」賽程樹(人數不是 2 的次方時會自動補輪空)。輸一場原則上就出局。<br/><br/>
+      如果活動有開啟 <b style="color:var(--gold);">🥈敗部復活賽</b>:勝部輸一場不會馬上出局,而是掉進「敗部」繼續打;敗部再輸一場才真的淘汰。最後勝部冠軍會和敗部冠軍打一場總冠軍賽,單場定生死。<br/><br/>
+      同一時間整個活動只會有「一場」對戰在進行,其他人請留在等候室,系統會自動幫你排隊叫號、配對到就自動帶你進場,不用手動刷新。</p>
+    </div>
+
+    <div class="card">
+      <h3>🎲 骰子對戰</h3>
+      <p style="color:var(--ink-dim);line-height:1.8;">
+      雙方各有 12 點 HP,輪流擲一顆骰子(1~6點),每回合限時 5 秒。<br/>
+      點數高的一方讓對方扣「點數差」的血;點數相同則平手,雙方各扣 1 血。<br/>
+      每人有 1 次防禦骰:出招前先啟動,若那一局你會輸,傷害完全免疫(只能觸發一次)。<br/>
+      HP ≤5 時可開啟「背水一戰」,該局傷害雙倍賭一把。血量先歸零者落敗。
+      </p>
+      <h4 style="font-size:13px;color:var(--gold);margin:14px 0 6px;">後台可額外開啟的進階規則</h4>
+      <p style="color:var(--ink-dim);line-height:1.8;">
+      🎁 <b style="color:var(--ink);">道具骰</b>:每逢第 3 回合,雙方各自隨機獲得一個道具:爆擊(+2傷害)、回血(+2HP)、必中(平手你贏)、封印(對方少受1傷)。<br/>
+      🌪️ <b style="color:var(--ink);">戰場修飾骰</b>:開局隨機決定場地效果,全場傷害+1 或防禦骰次數變 2 次,整場固定不變。<br/>
+      🎰 <b style="color:var(--ink);">自由加注</b>:不限血量都能加倍賭注,整場最多使用 2 次。<br/>
+      🔥 <b style="color:var(--ink);">怒氣值</b>:連續輸 2 局,下次獲勝額外多 +2 傷害。
+      </p>
+    </div>
+
+    <div class="card">
+      <h3>✂️ 五手勢對戰</h3>
+      <p style="color:var(--ink-dim);line-height:1.8;">
+      雙方各有 10 點 HP,3 秒內選一個手勢:石頭 🪨 / 布 📄 / 剪刀 ✂️ / 蜥蜴 🦎 / 史波克 🖖。超時未選視為該局落敗。<br/>
+      石頭勝剪刀、蜥蜴;布勝石頭、史波克;剪刀勝布、蜥蜴;蜥蜴勝史波克、布;史波克勝剪刀、石頭。<br/>
+      每人有 1 張「究極手勢」卡:出牌保證獲勝該局,除非對方同一局也出究極手勢,此時雙方抵銷、判定平手。<br/>
+      當你的 HP ≤3 時,獲勝的那一擊傷害會翻倍,適合絕地反擊。血量先歸零者落敗。
+      </p>
+    </div>
+
+    <div class="card">
+      <h3>⌛ 沒有出現在對戰畫面怎麼辦</h3>
+      <p style="color:var(--ink-dim);line-height:1.8;">
+      場次一開打,系統會給雙方一段時間進場。太久沒進場的一方會被判定棄權,對手直接晉級,不會讓整場活動卡住。
+      進場之後如果中途沒動作太久,系統也會自動幫你出普通招式,盡量不影響賽程進行。
+      </p>
+    </div>
+
+    <div class="footer-nav"><a href="index.html">← 回活動列表</a></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="assets/supabase-config.js"></script>
+  <script src="assets/db.js"></script>
+  <script src="assets/header.js"></script>
+</body>
+</html>
