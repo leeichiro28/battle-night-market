@@ -193,10 +193,10 @@ async function checkMyStatus(ev, matches) {
   const local = db.getLocalPlayer();
   const statusEl = document.getElementById("my-status");
   const quitBtn = document.getElementById("quit-btn");
-  quitBtn.style.display = "none";
 
   if (!local.id) {
     statusEl.innerHTML = `👀 觀戰模式,你目前沒有報名這場活動`;
+    quitBtn.style.display = "none";
     stopPulse();
     return;
   }
@@ -204,6 +204,7 @@ async function checkMyStatus(ev, matches) {
   myParticipant = await db.getMyParticipant(eventId, local.id);
   if (!myParticipant) {
     statusEl.innerHTML = `👀 觀戰模式,你目前沒有報名這場活動`;
+    quitBtn.style.display = "none";
     stopPulse();
     return;
   }
@@ -220,6 +221,7 @@ async function checkMyStatus(ev, matches) {
     redirecting = true;
     clearInterval(pollTimer);
     stopPulse();
+    quitBtn.style.display = "none";
     statusEl.textContent = STATUS_TEXT.matched;
     location.href = `${GAME_PAGE[ev.game_type]}?match=${myParticipant.match_id}&event=${eventId}`;
     return;
@@ -228,6 +230,7 @@ async function checkMyStatus(ev, matches) {
   if (myParticipant.status === "eliminated") {
     clearInterval(pollTimer);
     stopPulse();
+    quitBtn.style.display = "none";
     statusEl.innerHTML = myParticipant.reward
       ? `${rankBadge(myParticipant.final_rank)}你已出局。獲得獎勵 🎁 <b style="color:var(--gold)">${myParticipant.reward}</b>`
       : `${rankBadge(myParticipant.final_rank)}你已出局,感謝參加!獎勵確認後會顯示在這裡`;
@@ -237,6 +240,7 @@ async function checkMyStatus(ev, matches) {
   if (myParticipant.status === "champion") {
     clearInterval(pollTimer);
     stopPulse();
+    quitBtn.style.display = "none";
     statusEl.innerHTML = myParticipant.reward
       ? `🥇 恭喜奪冠!獎勵 🎁 <b style="color:var(--gold)">${myParticipant.reward}</b>`
       : STATUS_TEXT.champion;
@@ -249,9 +253,9 @@ async function checkMyStatus(ev, matches) {
   } else {
     statusEl.textContent = STATUS_TEXT[myParticipant.status] || "狀態確認中...";
   }
-  if (["waiting", "pending"].includes(myParticipant.status)) {
-    quitBtn.style.display = "inline-block";
-  }
+  // 只在這裡設定一次,不要先在函式開頭藏起來又在這裡顯示,兩次設定中間如果剛好碰到 await 讓瀏覽器畫面重繪,
+  // 就會真的看到按鈕閃一下消失又出現。整個函式改成每個分支各自只設定一次最終結果。
+  quitBtn.style.display = ["waiting", "pending"].includes(myParticipant.status) ? "inline-block" : "none";
   pulse();
 }
 
