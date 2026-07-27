@@ -30,7 +30,14 @@
 }
 
 *{box-sizing:border-box;}
-html,body{margin:0;padding:0;}
+html,body{
+  margin:0;
+  padding:0;
+  /* RWD:手機上絕對不允許整頁被撐寬而出現橫向捲軸 */
+  max-width:100%;
+  overflow-x:hidden;
+}
+img,svg,iframe,video{max-width:100%;}
 body{
   background:
     radial-gradient(circle at 15% 0%, #241f38 0%, transparent 45%),
@@ -92,30 +99,48 @@ a{color:var(--gold);text-decoration:none;}
   margin-bottom:16px;
 }
 .card + .card{margin-top:16px;}
+.card > h3{margin-bottom:14px;}
 
 .event-card{
   display:flex;
   justify-content:space-between;
-  align-items:center;
+  align-items:flex-start;
   gap:16px;
   flex-wrap:wrap;
 }
-.event-card .meta{flex:1;min-width:180px;}
-.event-card h3{font-size:18px;margin-bottom:4px;}
+.event-card .meta{flex:1 1 260px;min-width:0;}
+.event-card h3{font-size:18px;margin-bottom:10px;}
 .tag{
-  display:inline-block;
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
   font-size:11px;
   letter-spacing:.06em;
-  padding:3px 9px;
+  padding:4px 10px;
   border-radius:999px;
   background:var(--panel2);
   color:var(--ink-dim);
   border:1px solid var(--line);
-  margin-right:6px;
+  white-space:nowrap;      /* 標籤內的中文不換行 */
 }
 .tag.open{color:var(--green);border-color:var(--green);}
 .tag.closed{color:var(--red);border-color:var(--red);}
 .tag.running{color:var(--gold);border-color:var(--gold-d);}
+
+/* 一排標籤:靠 gap 保持間距,不要靠 margin 硬擠在一起 */
+.tag-row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:8px;
+}
+/* 一排按鈕 */
+.action-row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  align-items:center;
+}
 
 /* 按鈕 */
 .btn{
@@ -130,9 +155,13 @@ a{color:var(--gold);text-decoration:none;}
   border-radius:10px;
   padding:11px 20px;
   font-size:14px;
+  line-height:1.2;
   cursor:pointer;
   transition:transform .12s ease, box-shadow .12s ease;
   box-shadow:0 0 0 rgba(242,183,5,0);
+  /* 按鈕裡的中文一律不換行,也不允許被 flex 容器壓扁成一個字一行 */
+  white-space:nowrap;
+  flex-shrink:0;
 }
 .btn:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(242,183,5,.25);}
 .btn:active{transform:translateY(0);}
@@ -144,8 +173,13 @@ a{color:var(--gold);text-decoration:none;}
 }
 .btn.ghost:hover{border-color:var(--gold-d);box-shadow:none;}
 .btn.danger{background:var(--red);color:#2A0B0C;}
-.btn.block{width:100%;}
-.btn.small{padding:7px 14px;font-size:13px;}
+/* 外框式的危險操作(刪除/踢出),取代到處寫 inline style */
+.btn.outline-danger{color:var(--red);border-color:var(--red);}
+.btn.outline-danger:hover{border-color:var(--red);background:rgba(229,72,77,.12);}
+/* 整行寬的按鈕文字比較長,允許正常換行(不是被擠壓成一字一行) */
+.btn.block{width:100%;white-space:normal;}
+.btn.small{padding:8px 14px;font-size:13px;}
+.btn .ico{width:15px;height:15px;}
 
 input,select,textarea{
   width:100%;
@@ -155,6 +189,7 @@ input,select,textarea{
   border-radius:9px;
   padding:11px 13px;
   font-size:14px;
+  line-height:1.4;
   font-family:inherit;
 }
 input:focus,select:focus,textarea:focus{
@@ -276,13 +311,74 @@ label{
   display:flex;
   justify-content:space-between;
   align-items:center;
-  padding:10px 0;
+  gap:12px;
+  padding:12px 0;
   border-bottom:1px solid var(--line);
   font-size:14px;
 }
 .bracket-row:last-child{border-bottom:none;}
 .bracket-row .win{color:var(--green);font-weight:700;}
 .bracket-row .lose{color:var(--ink-dim);text-decoration:line-through;}
+
+/* ===== 對戰列:左選手 / vs / 右選手,vs 永遠在正中央 =====
+   用 grid 的 1fr auto 1fr,兩側再各自靠邊,不管名字多長 vs 都不會被推歪。 */
+.match-row{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  padding:12px 0;
+  border-bottom:1px solid var(--line);
+  font-size:14px;
+}
+.match-row:last-child{border-bottom:none;}
+.vs-row{
+  display:grid;
+  grid-template-columns:1fr auto 1fr;
+  align-items:center;
+  gap:12px;
+  width:100%;
+}
+.vs-row > .side{min-width:0;overflow-wrap:anywhere;display:flex;align-items:center;gap:6px;}
+.vs-row > .side.left{justify-content:flex-start;text-align:left;}
+.vs-row > .side.right{justify-content:flex-end;text-align:right;}
+.vs-row > .vs{
+  color:var(--ink-dim);
+  font-size:12px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  text-align:center;
+  white-space:nowrap;
+}
+.match-row .win{color:var(--green);font-weight:700;}
+.match-row .lose{color:var(--ink-dim);text-decoration:line-through;}
+.match-row .row-note{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  font-size:11px;
+  color:var(--ink-dim);
+}
+.match-row .row-note.live{color:var(--red);}
+.match-row.live{
+  background:rgba(229,72,77,.1);
+  border:1px solid var(--red);
+  border-radius:10px;
+  padding:10px 12px;
+  margin:6px 0;
+  animation:live-pulse 1.6s ease-in-out infinite;
+}
+.match-row.bye .side{color:var(--ink-dim);}
+
+/* 強制判定區(後台用) */
+.force-box{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  align-items:center;
+  padding-top:4px;
+}
+.force-box .hint{width:100%;font-size:11px;color:var(--ink-dim);line-height:1.6;}
 
 .status-msg{
   text-align:center;
@@ -362,38 +458,104 @@ label{
 }
 
 /* ===== 共用導覽列 ===== */
+/* 帳號名稱、改名、登出這些帳號相關的操作只放在這裡,頁面內容區不再重複一份 */
 .site-header{
   display:flex;
   align-items:center;
   justify-content:space-between;
-  gap:12px;
+  gap:16px;
   flex-wrap:wrap;
   padding:12px 20px;
   border-bottom:1px solid var(--line);
-  background:rgba(20,18,28,.7);
-  backdrop-filter:blur(6px);
+  background:rgba(20,18,28,.82);
+  backdrop-filter:blur(8px);
   position:sticky;
   top:0;
   z-index:60;
 }
 .site-header-brand{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
   font-family:'Archivo Black';
   color:var(--gold);
   font-size:15px;
   letter-spacing:.02em;
   white-space:nowrap;
 }
+.site-header-brand .ico{width:18px;height:18px;}
 .site-header-nav{
   display:flex;
   align-items:center;
-  gap:16px;
+  gap:8px;
   flex-wrap:wrap;
   font-size:13px;
 }
-.site-header-nav a{color:var(--ink-dim);}
-.site-header-nav a:hover{color:var(--ink);}
-.header-account{display:flex;align-items:center;gap:8px;}
-.header-name{color:var(--gold);font-weight:700;}
+.site-header-nav a.nav-link{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  color:var(--ink-dim);
+  padding:7px 10px;
+  border-radius:9px;
+  white-space:nowrap;
+  transition:color .12s ease, background .12s ease;
+}
+.site-header-nav a.nav-link:hover{color:var(--ink);background:var(--panel2);}
+.site-header-nav a.nav-link.active{color:var(--gold);background:rgba(242,183,5,.1);}
+
+/* 導覽列右側的帳號區 */
+.header-account{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+  padding-left:8px;
+  margin-left:2px;
+  border-left:1px solid var(--line);
+}
+.header-user{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  max-width:180px;
+  padding:6px 10px;
+  border:1px solid var(--line);
+  border-radius:999px;
+  background:var(--panel2);
+}
+.header-user .ico{width:14px;height:14px;color:var(--gold);flex-shrink:0;}
+.header-name{
+  color:var(--gold);
+  font-weight:700;
+  font-size:13px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.icon-btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  width:32px;height:32px;
+  flex-shrink:0;
+  border:1px solid var(--line);
+  border-radius:9px;
+  background:transparent;
+  color:var(--ink-dim);
+  cursor:pointer;
+  transition:color .12s ease, border-color .12s ease, background .12s ease;
+}
+.icon-btn:hover{color:var(--ink);border-color:var(--gold-d);background:var(--panel2);}
+.icon-btn.danger:hover{color:var(--red);border-color:var(--red);background:rgba(229,72,77,.1);}
+.icon-btn .ico{width:15px;height:15px;}
+@media (max-width:640px){
+  .site-header{padding:10px 14px;gap:10px;}
+  .site-header-nav{gap:4px;width:100%;justify-content:space-between;}
+  .header-account{border-left:none;padding-left:0;margin-left:auto;}
+  .header-user{max-width:120px;}
+}
 
 /* ===== 名次徽章 ===== */
 .rank-badge{
@@ -405,7 +567,10 @@ label{
   color:var(--ink-dim);
   min-width:20px;
 }
-.rank-badge.top3{font-size:18px;}
+.rank-badge .ico{width:18px;height:18px;}
+.rank-badge.rank-1{color:var(--gold);}
+.rank-badge.rank-2{color:#C9C9D4;}
+.rank-badge.rank-3{color:#C98B4B;}
 
 /* ===== 直播中的對戰列會亮框 ===== */
 .bracket-row.live{
@@ -470,5 +635,301 @@ label{
 .bet-btn .pct{font-family:'Space Mono',monospace;font-size:18px;color:var(--gold);font-weight:700;}
 .bet-btn .bar{height:5px;background:var(--line);border-radius:999px;margin-top:5px;overflow:hidden;}
 .bet-btn .bar > div{height:100%;background:var(--gold);}
-.floaty{position:absolute;font-size:22px;bottom:0;animation:float-up 2.5s ease-in forwards;pointer-events:none;}
+.floaty{position:absolute;font-size:22px;bottom:0;animation:float-up 2.5s ease-in forwards;pointer-events:none;color:var(--gold);}
+.floaty .ico{width:24px;height:24px;}
 @keyframes float-up{0%{transform:translateY(0);opacity:1;}100%{transform:translateY(-50px);opacity:0;}}
+
+/* ===================================================================
+   圖示:全站統一 lucide(assets/ui.js 的 ui.icon)
+   =================================================================== */
+.ico{
+  display:inline-block;
+  width:1em;
+  height:1em;
+  flex-shrink:0;
+  vertical-align:-0.14em;
+  stroke-width:2;
+}
+svg.ico{overflow:visible;}
+/* 還沒被 lucide 換成 <svg> 之前先佔位,避免文字左右跳動 */
+i.ico{opacity:0;}
+/* 讀取中的圈圈會自己轉(lucide 會幫 svg 加上 .lucide-<icon-name> 類別) */
+.lucide-loader-circle{animation:ui-spin 1s linear infinite;}
+@keyframes ui-spin{to{transform:rotate(360deg);}}
+.ico.live-dot{color:var(--red);animation:live-pulse-dot 1s ease-in-out infinite;}
+.row-note a{display:inline-flex;align-items:center;gap:6px;}
+
+/* ===================================================================
+   後台參加者列:名字 / 獎勵輸入框 / 操作按鈕
+   用固定欄寬的 grid,不管名字長短,所有輸入框的左右邊界都對齊在同一條線上
+   =================================================================== */
+.admin-row{
+  display:grid;
+  grid-template-columns:minmax(140px,200px) minmax(0,1fr) auto;
+  align-items:center;
+  gap:14px;
+  /* 每一列(含得獎名次的高亮列)用完全相同的框線與內距,輸入框才會切齊在同一條線上 */
+  padding:12px 14px;
+  border:1px solid transparent;
+  border-bottom-color:var(--line);
+}
+.admin-row:last-child{border-bottom-color:transparent;}
+.admin-row-name{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+  flex-wrap:wrap;
+}
+.admin-row-name .pname{
+  font-weight:700;
+  font-size:14px;
+  overflow-wrap:anywhere;
+}
+.admin-row-name .pstate{
+  font-size:11px;
+  color:var(--ink-dim);
+  white-space:nowrap;
+}
+.admin-row-actions{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.admin-row.top3{
+  background:rgba(242,183,5,.07);
+  border-color:var(--gold-d);
+  border-radius:10px;
+  margin:8px 0;
+}
+.admin-row.top3 .pname{font-size:16px;}
+.admin-row.top3 .pstate{color:var(--gold);}
+@media (max-width:720px){
+  .admin-row{grid-template-columns:1fr;gap:10px;}
+  .admin-row-actions{justify-content:flex-end;}
+}
+
+/* 後台表單:勾選規則的清單,每一項之間要有呼吸空間 */
+.check-list{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  margin-top:4px;
+}
+.check-item{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  cursor:pointer;
+  font-size:13px;
+  color:var(--ink);
+  line-height:1.5;
+  padding:8px 10px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:var(--panel2);
+  transition:border-color .12s ease;
+}
+.check-item:hover{border-color:var(--gold-d);}
+.check-item input[type="checkbox"]{width:auto;flex-shrink:0;margin:0;}
+.check-item .ico{width:16px;height:16px;color:var(--gold);}
+.check-item.nested{margin-left:24px;}
+.field + .field{margin-top:14px;}
+.field-group{
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:16px;
+  margin-bottom:16px;
+}
+.field-group > label:first-child{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:13px;
+  color:var(--gold);
+  margin-bottom:12px;
+}
+.auto-reward-row{
+  display:flex;
+  gap:10px;
+  align-items:flex-end;
+  flex-wrap:wrap;
+  margin-bottom:12px;
+}
+.auto-reward-row > div{flex:1 1 160px;min-width:0;}
+
+/* ===================================================================
+   對話框(取代原生 alert / confirm / prompt)
+   =================================================================== */
+body.dialog-open{overflow:hidden;}
+.dialog-overlay{
+  position:fixed;
+  inset:0;
+  z-index:400;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:20px;
+  background:rgba(10,9,15,.72);
+  backdrop-filter:blur(3px);
+  opacity:0;
+  transition:opacity .16s ease;
+}
+.dialog-overlay.show{opacity:1;}
+.dialog-card{
+  width:100%;
+  max-width:420px;
+  max-height:82vh;
+  overflow-y:auto;
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:22px;
+  box-shadow:0 24px 60px rgba(0,0,0,.5);
+  transform:translateY(8px) scale(.98);
+  transition:transform .16s ease;
+}
+.dialog-overlay.show .dialog-card{transform:translateY(0) scale(1);}
+.dialog-head{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-bottom:12px;
+}
+.dialog-icon{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:34px;height:34px;
+  flex-shrink:0;
+  border-radius:10px;
+  background:var(--panel2);
+  border:1px solid var(--line);
+}
+.dialog-icon .ico{width:18px;height:18px;}
+.dialog-icon.tone-danger{color:var(--red);border-color:var(--red);background:rgba(229,72,77,.12);}
+.dialog-icon.tone-question{color:var(--gold);border-color:var(--gold-d);background:rgba(242,183,5,.1);}
+.dialog-icon.tone-success{color:var(--green);border-color:var(--green);background:rgba(61,190,108,.12);}
+.dialog-icon.tone-info{color:var(--gold);}
+.dialog-title{
+  font-size:16px;
+  margin:0;
+  line-height:1.4;
+}
+.dialog-body{
+  font-size:14px;
+  color:var(--ink-dim);
+  line-height:1.75;
+  margin-bottom:16px;
+  overflow-wrap:anywhere;
+}
+.dialog-field{margin-bottom:16px;}
+.dialog-field label{margin-bottom:8px;}
+.dialog-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:10px;
+  flex-wrap:wrap;
+}
+.dialog-actions .btn{min-width:92px;}
+.dialog-card.shake{animation:dialog-shake .3s ease;}
+@keyframes dialog-shake{
+  0%,100%{transform:translateX(0);}
+  25%{transform:translateX(-6px);}
+  75%{transform:translateX(6px);}
+}
+
+/* ===================================================================
+   其他細節間距
+   =================================================================== */
+.marquee .eyebrow{display:inline-flex;align-items:center;gap:8px;}
+.marquee .eyebrow .ico{width:13px;height:13px;}
+.status-banner{display:flex;align-items:center;justify-content:center;gap:8px;}
+.status-msg{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;}
+.live-panel .live-tag{flex-wrap:wrap;line-height:1.6;}
+.reward-badge .ico{width:14px;height:14px;}
+.mini-badge{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;}
+.mini-badge .ico{width:12px;height:12px;}
+.choice-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;}
+.choice-btn .ico{width:26px;height:26px;}
+.empty{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;}
+.footer-nav a{display:inline-flex;align-items:center;gap:6px;}
+.rule-fab{gap:6px;}
+.section-title{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:13px;
+  color:var(--ink-dim);
+  margin:18px 0 6px;
+  font-family:inherit;
+  font-weight:700;
+}
+.section-title.gold{color:var(--gold);}
+.fighter .cicon{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:5px;
+  font-size:13px;
+  color:var(--ink-dim);
+  min-height:20px;
+}
+.fighter .cicon .ico{width:15px;height:15px;}
+.big-announce{display:flex;align-items:center;justify-content:center;gap:8px;}
+.big-announce .ico{width:1em;height:1em;}
+.reaction-bar .btn{padding:8px 12px;}
+.reaction-bar .ico{width:18px;height:18px;}
+
+/* lucide 沒載入成功時,不要留下一格一格的空白佔位 */
+html.no-lucide i.ico{display:none;}
+
+/* ===================================================================
+   RWD:手機不跑版
+   規則:任何 flex / grid 的子項都要能被壓縮(min-width:0),
+        長字串一律 overflow-wrap:anywhere,不要把容器撐爆。
+   =================================================================== */
+.wrap,.card,.event-card,.bracket-row,.match-row,.admin-row,.dialog-card{min-width:0;}
+.event-card .meta,.bracket-row > *,.match-row > *,.admin-row > *{min-width:0;}
+.card,.empty,.log-panel,.dialog-body,.bracket-row,.match-row{overflow-wrap:anywhere;}
+h1,h2,h3,.marquee p,.marquee h1{overflow-wrap:anywhere;}
+.log-panel{overflow-x:hidden;}
+input,select,textarea{max-width:100%;min-width:0;}
+
+@media (max-width:720px){
+  .wrap{padding:20px 14px 72px;}
+  .marquee{padding:26px 4px 22px;}
+  .card{padding:16px;}
+  .event-card{gap:12px;}
+  .event-card .action-row{width:100%;}
+  .event-card .action-row .btn{flex:1 1 auto;}
+  .field-group{padding:14px;}
+  .check-item.nested{margin-left:14px;}
+  .auto-reward-row{gap:8px;}
+  .auto-reward-row > div{flex:1 1 100%;}
+  .duel-stage{gap:8px;}
+  .hp-dial{width:88px;height:88px;}
+  .hp-dial svg{width:88px;height:88px;}
+  .hp-dial .num{font-size:18px;}
+  .vs-badge{font-size:16px;}
+  .vs-row{gap:8px;}
+  .dialog-card{padding:18px;}
+  .dialog-actions .btn{flex:1 1 auto;min-width:0;}
+  /* 手機上規則說明縮成圓形圖示鈕,不要蓋住底下的主要操作按鈕 */
+  .rule-fab{bottom:14px;right:14px;width:46px;height:46px;padding:0;}
+  .rule-fab .fab-label{display:none;}
+  .rule-fab .ico{width:19px;height:19px;}
+}
+
+@media (max-width:420px){
+  .wrap{padding:16px 12px 64px;}
+  .btn{padding:10px 14px;}
+  .btn.small{padding:7px 11px;font-size:12px;}
+  .tag{font-size:10px;padding:3px 8px;}
+  .hp-dial{width:74px;height:74px;}
+  .hp-dial svg{width:74px;height:74px;}
+  .fighter .name{font-size:12px;}
+  .vs-row{grid-template-columns:1fr auto 1fr;gap:6px;}
+  .vs-row > .vs{font-size:10px;letter-spacing:.08em;}
+  .site-header-brand{font-size:14px;}
+}

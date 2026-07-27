@@ -34,20 +34,27 @@ const CIRC = 289;
 const MAX_HP = 30;
 const SUDDEN_DEATH_HP = 6;
 
-const ITEM_LABEL = { crit: "⚡爆擊", heal: "💚回血", truehit: "🎯必中", seal: "🔒封印" };
+const ITEM_LABEL = { crit: "爆擊", heal: "回血", truehit: "必中", seal: "封印" };
 const FIELD_LABEL = {
-  crit: "🔥 熾熱戰場(全場傷害+1)",
-  shield_plus: "🛡️ 堅盾戰場(防禦骰+1次)",
-  lifesteal: "🩸 嗜血戰場(擊中回血1)",
-  chaos_tie: "🎲 混沌戰場(平手傷害變2點)",
-  fast_timer: "⚡ 疾風戰場(思考時間縮短)",
-  shadow: "🌙 暗影戰場(爆擊傷害加倍・防禦骰-1)",
+  crit: { icon: "flame", text: "熾熱戰場(全場傷害+1)" },
+  shield_plus: { icon: "shield-check", text: "堅盾戰場(防禦骰+1次)" },
+  lifesteal: { icon: "droplet", text: "嗜血戰場(擊中回血1)" },
+  chaos_tie: { icon: "dice-5", text: "混沌戰場(平手傷害變2點)" },
+  fast_timer: { icon: "wind", text: "疾風戰場(思考時間縮短)" },
+  shadow: { icon: "moon", text: "暗影戰場(爆擊傷害加倍・防禦骰-1)" },
 };
 const CLASS_INFO = {
-  fighter: { icon: "⚔️", name: "鬥士", ultName: "血怒" },
-  guardian: { icon: "🛡️", name: "守衛", ultName: "金鐘罩" },
-  gambler: { icon: "🎲", name: "賭徒", ultName: "孤注一擲" },
-  assassin: { icon: "🗡️", name: "刺客", ultName: "背刺" },
+  fighter: { icon: "swords", name: "鬥士", ultName: "血怒" },
+  guardian: { icon: "shield", name: "守衛", ultName: "金鐘罩" },
+  gambler: { icon: "dice-5", name: "賭徒", ultName: "孤注一擲" },
+  assassin: { icon: "sword", name: "刺客", ultName: "背刺" },
+};
+// 觀眾表情彈幕:一律用 lucide 圖示,不用 emoji
+const REACTIONS = {
+  cheer: "party-popper",
+  fire: "flame",
+  love: "heart",
+  laugh: "laugh",
 };
 const CLASS_COUNTER = { fighter: "gambler", gambler: "assassin", assassin: "guardian", guardian: "fighter" };
 const FIELD_MODS = ["crit", "shield_plus", "lifesteal", "chaos_tie", "fast_timer", "shadow"];
@@ -56,9 +63,12 @@ function rollTimeFor(state) {
   return state.field_mod === "fast_timer" ? 15000 : 30000;
 }
 
-function announce(text, holdMs) {
+// announce("文字", { icon: "flame" }):圖示一律走 lucide
+function announce(text, opts) {
+  const o = typeof opts === "number" ? { holdMs: opts } : opts || {};
+  const holdMs = o.holdMs;
   const el = document.getElementById("big-announce");
-  el.textContent = text;
+  el.innerHTML = (o.icon ? ui.icon(o.icon) : "") + ui.esc(text);
   el.classList.remove("show");
   void el.offsetWidth;
   el.classList.add("show");
@@ -86,20 +96,21 @@ function d6() {
   return 1 + Math.floor(Math.random() * 6);
 }
 
+// 回傳 { text, icon },交給 announce 去顯示
 function buildHeadline(evt) {
-  if (!evt) return "";
+  if (!evt) return null;
   const [p1Name, p2Name] = names();
-  if (evt.type === "tie") return "⚖️ 平手!雙方扣血";
+  if (evt.type === "tie") return { icon: "scale", text: "平手!雙方扣血" };
   const winnerName = evt.winnerSlot === 1 ? p1Name : p2Name;
   const loserName = evt.winnerSlot === 1 ? p2Name : p1Name;
   if (evt.shieldBlocked) {
-    if (mySlot === evt.loserSlot) return `🛡️ 你擋下了攻擊,毫髮無傷!`;
-    if (mySlot === evt.winnerSlot) return `🛡️ ${loserName} 擋下了你的攻擊!`;
-    return `🛡️ ${loserName} 擋下攻擊!`;
+    if (mySlot === evt.loserSlot) return { icon: "shield-check", text: "你擋下了攻擊,毫髮無傷!" };
+    if (mySlot === evt.winnerSlot) return { icon: "shield", text: `${loserName} 擋下了你的攻擊!` };
+    return { icon: "shield", text: `${loserName} 擋下攻擊!` };
   }
-  if (mySlot === evt.loserSlot) return `😖 你扣了 ${evt.dmg} 點血!`;
-  if (mySlot === evt.winnerSlot) return `🔥 你獲勝了這回合!${loserName} 扣 ${evt.dmg} 血`;
-  return `${winnerName} 獲勝!${loserName} 扣 ${evt.dmg} 血`;
+  if (mySlot === evt.loserSlot) return { icon: "heart-pulse", text: `你扣了 ${evt.dmg} 點血!` };
+  if (mySlot === evt.winnerSlot) return { icon: "flame", text: `你獲勝了這回合!${loserName} 扣 ${evt.dmg} 血` };
+  return { icon: "swords", text: `${winnerName} 獲勝!${loserName} 扣 ${evt.dmg} 血` };
 }
 
 function startTimer(state) {
@@ -121,7 +132,7 @@ function startTimer(state) {
       if (!submittedThisRound) {
         submittedThisRound = true;
         const roll = d6();
-        announce(`⌛ 思考時間到,系統幫你擲出了 ${roll} 點!`);
+        announce(`思考時間到,系統幫你擲出了 ${roll} 點!`, { icon: "hourglass" });
         await db.submitMove(matchId, mySlot, { roll, defend: false, allin: false, freebet: false, gamble: false, stance: null, ult: false });
         resetSelections();
       }
@@ -145,8 +156,12 @@ function renderBadges(elId, state, slot) {
   const combo = slot === 1 ? state.combo1 : state.combo2;
   const comboBonus = slot === 1 ? state.combobonus1 : state.combobonus2;
   const rageready = slot === 1 ? state.rageready1 : state.rageready2;
-  if (rules.combo && combo > 0) badges.push(`<span class="mini-badge combo">🔥連擊x${combo}${comboBonus ? "(+" + comboBonus + ")" : ""}</span>`);
-  if (rules.rage && rageready) badges.push(`<span class="mini-badge rage">😤怒氣滿</span>`);
+  if (rules.combo && combo > 0) {
+    badges.push(
+      `<span class="mini-badge combo">${ui.icon("zap")}連擊x${combo}${comboBonus ? "(+" + comboBonus + ")" : ""}</span>`
+    );
+  }
+  if (rules.rage && rageready) badges.push(`<span class="mini-badge rage">${ui.icon("flame")}怒氣滿</span>`);
   box.innerHTML = badges.join("");
 }
 
@@ -165,13 +180,14 @@ function render(state) {
 
   const c1 = CLASS_INFO[state.class1];
   const c2 = CLASS_INFO[state.class2];
-  document.getElementById("p1-class-icon").textContent = c1 ? `${c1.icon} ${c1.name}` : "";
-  document.getElementById("p2-class-icon").textContent = c2 ? `${c2.icon} ${c2.name}` : "";
+  document.getElementById("p1-class-icon").innerHTML = c1 ? ui.icon(c1.icon) + c1.name : "";
+  document.getElementById("p2-class-icon").innerHTML = c2 ? ui.icon(c2.icon) + c2.name : "";
 
   const fieldTag = document.getElementById("field-mod-tag");
+  const field = FIELD_LABEL[state.field_mod];
   if (state.field_mod) {
-    fieldTag.style.display = "inline-block";
-    fieldTag.textContent = FIELD_LABEL[state.field_mod] || state.field_mod;
+    fieldTag.style.display = "inline-flex";
+    fieldTag.innerHTML = field ? ui.icon(field.icon) + `<span>${field.text}</span>` : ui.esc(state.field_mod);
   } else {
     fieldTag.style.display = "none";
   }
@@ -181,10 +197,10 @@ function render(state) {
 
   if (lastSeenRound !== null && state.round !== lastSeenRound) {
     const headline = buildHeadline(state.lastEvent);
-    if (headline) announce(headline);
+    if (headline) announce(headline.text, { icon: headline.icon });
     if (mySlot && !submittedThisRound) {
       setTimeout(() => {
-        if (!submittedThisRound) announce("⚔️ 輪到你了!");
+        if (!submittedThisRound) announce("輪到你了!", { icon: "swords" });
       }, 2000);
     }
   }
@@ -204,13 +220,17 @@ function render(state) {
     document.getElementById("rage-tag").style.display = "none";
     const winnerName = state.hp1 <= 0 ? p2Name : p1Name;
     if (!mySlot) {
-      statusEl.innerHTML = `🏆 ${winnerName} 獲勝了這場對戰!`;
+      statusEl.innerHTML = ui.icon("trophy") + `${ui.esc(winnerName)} 獲勝了這場對戰!`;
     } else {
       const iWon = (mySlot === 1 && state.hp2 <= 0) || (mySlot === 2 && state.hp1 <= 0);
-      statusEl.innerHTML = iWon ? "🏆 你贏了這場對戰!回等候室看看下一步" : "💀 你被擊敗了,感謝參戰!";
+      statusEl.innerHTML = iWon
+        ? ui.icon("trophy") + "你贏了這場對戰!回等候室看看下一步"
+        : ui.icon("skull") + "你被擊敗了,感謝參戰!";
     }
     document.getElementById("back-link").style.display = "block";
-    document.getElementById("back-link").innerHTML = `<a href="lobby.html?event=${eventId}">← 回等候室查看賽況</a>`;
+    document.getElementById("back-link").innerHTML = `<a href="lobby.html?event=${eventId}">${ui.icon(
+      "arrow-left"
+    )}回等候室查看賽況</a>`;
     renderWatchPanel(state, true);
     return;
   }
@@ -221,7 +241,7 @@ function render(state) {
     rollBtn.style.display = "none";
     document.getElementById("rage-tag").style.display = "none";
     document.getElementById("timer-fill").style.width = "0%";
-    statusEl.innerHTML = `👀 觀戰模式・對戰進行中`;
+    statusEl.innerHTML = ui.icon("eye") + "觀戰模式・對戰進行中";
     renderWatchPanel(state, false);
     return;
   }
@@ -241,6 +261,8 @@ function render(state) {
     stanceRow.style.display = "flex";
     const atkBtn = document.getElementById("stance-attack");
     const defBtn = document.getElementById("stance-defense");
+    atkBtn.innerHTML = ui.icon("sword") + "猛攻";
+    defBtn.innerHTML = ui.icon("shield") + "穩紮穩打";
     atkBtn.classList.toggle("active-choice", selectedStance === "attack");
     defBtn.classList.toggle("active-choice", selectedStance === "defense");
     atkBtn.disabled = submittedThisRound;
@@ -251,18 +273,21 @@ function render(state) {
 
   preRollBox.style.display = "flex";
   const shieldBtn = document.getElementById("shield-toggle");
-  shieldBtn.textContent =
-    myShield <= 0
-      ? "🛡️ 防禦骰已用完"
+  shieldBtn.innerHTML =
+    ui.icon("shield") +
+    (myShield <= 0
+      ? "防禦骰已用完"
       : selectedShield
-      ? `🛡️ 防禦骰:已啟動(剩 ${myShield} 次)`
-      : `🛡️ 使用防禦骰(剩 ${myShield} 次)`;
+      ? `防禦骰:已啟動(剩 ${myShield} 次)`
+      : `使用防禦骰(剩 ${myShield} 次)`);
+  shieldBtn.classList.toggle("active-choice", selectedShield && myShield > 0);
   shieldBtn.disabled = myShield <= 0 || submittedThisRound;
 
   const allinBtn = document.getElementById("allin-toggle");
   if (myHp <= MAX_HP * 0.4 && myHp > 0) {
     allinBtn.style.display = "inline-flex";
-    allinBtn.textContent = selectedAllin ? "🔥 背水一戰:已啟動" : "🔥 背水一戰(傷害x2)";
+    allinBtn.innerHTML = ui.icon("flame") + (selectedAllin ? "背水一戰:已啟動" : "背水一戰(傷害x2)");
+    allinBtn.classList.toggle("active-choice", selectedAllin);
     allinBtn.disabled = submittedThisRound;
   } else {
     allinBtn.style.display = "none";
@@ -272,12 +297,10 @@ function render(state) {
   if (rules.free_bet) {
     const left = 2 - (myFreebet || 0);
     freebetBtn.style.display = "inline-flex";
-    freebetBtn.textContent =
-      left <= 0
-        ? "🎰 自由加注已用完"
-        : selectedFreebet
-        ? `🎰 自由加注:已啟動(剩${left}次)`
-        : `🎰 自由加注(傷害x2,剩${left}次)`;
+    freebetBtn.innerHTML =
+      ui.icon("coins") +
+      (left <= 0 ? "自由加注已用完" : selectedFreebet ? `自由加注:已啟動(剩${left}次)` : `自由加注(傷害x2,剩${left}次)`);
+    freebetBtn.classList.toggle("active-choice", selectedFreebet && left > 0);
     freebetBtn.disabled = left <= 0 || submittedThisRound;
   } else {
     freebetBtn.style.display = "none";
@@ -289,12 +312,15 @@ function render(state) {
     const left = 2 - (myGamble || 0);
     gambleBtn.style.display = "inline-flex";
     if (unlimited) {
-      gambleBtn.textContent = selectedGamble ? "🎲 雙骰豪賭:已啟動" : "🎲 雙骰豪賭(不限次數)";
+      gambleBtn.innerHTML = ui.icon("dice-5") + (selectedGamble ? "雙骰豪賭:已啟動" : "雙骰豪賭(不限次數)");
       gambleBtn.disabled = submittedThisRound;
     } else {
-      gambleBtn.textContent = left <= 0 ? "🎲 雙骰豪賭已用完" : selectedGamble ? `🎲 雙骰豪賭:已啟動(剩${left}次)` : `🎲 雙骰豪賭(剩${left}次)`;
+      gambleBtn.innerHTML =
+        ui.icon("dice-5") +
+        (left <= 0 ? "雙骰豪賭已用完" : selectedGamble ? `雙骰豪賭:已啟動(剩${left}次)` : `雙骰豪賭(剩${left}次)`);
       gambleBtn.disabled = left <= 0 || submittedThisRound;
     }
+    gambleBtn.classList.toggle("active-choice", selectedGamble && (unlimited || left > 0));
   } else {
     gambleBtn.style.display = "none";
   }
@@ -303,7 +329,9 @@ function render(state) {
   if (rules.classes && myClass && CLASS_INFO[myClass]) {
     const info = CLASS_INFO[myClass];
     ultBtn.style.display = "inline-flex";
-    ultBtn.textContent = myUltUsed ? `⚡ 大招已使用` : selectedUlt ? `⚡ 大招:${info.ultName}(已啟動)` : `⚡ 使出大招:${info.ultName}`;
+    ultBtn.innerHTML =
+      ui.icon("zap") +
+      (myUltUsed ? "大招已使用" : selectedUlt ? `大招:${info.ultName}(已啟動)` : `使出大招:${info.ultName}`);
     ultBtn.disabled = !!myUltUsed || submittedThisRound;
   } else {
     ultBtn.style.display = "none";
@@ -311,21 +339,21 @@ function render(state) {
 
   const rageTag = document.getElementById("rage-tag");
   if (rules.rage && myRageReady) {
-    rageTag.style.display = "inline-block";
-    rageTag.textContent = "🔥 怒氣已滿,下次獲勝額外+2傷害";
+    rageTag.style.display = "inline-flex";
+    rageTag.innerHTML = ui.icon("flame") + "怒氣已滿,下次獲勝額外+2傷害";
   } else {
     rageTag.style.display = "none";
   }
 
   if (submittedThisRound) {
-    statusEl.textContent = "已擲出,等待對方出手...";
-    rollBtn.style.display = "block";
+    statusEl.innerHTML = ui.icon("hourglass") + "已擲出,等待對方出手...";
+    rollBtn.style.display = "flex";
     rollBtn.disabled = true;
     document.getElementById("timer-fill").style.width = "0%";
   } else {
     const secs = Math.round(rollTimeFor(state) / 1000);
-    statusEl.textContent = `輪到你了,選好策略後擲骰(${secs}秒內動作)`;
-    rollBtn.style.display = "block";
+    statusEl.innerHTML = ui.icon("timer") + `輪到你了,選好策略後擲骰(${secs}秒內動作)`;
+    rollBtn.style.display = "flex";
     rollBtn.disabled = false;
     startTimer(state);
   }
@@ -366,18 +394,19 @@ async function refreshBets(state) {
   const [p1Name, p2Name] = names();
   box.style.display = "flex";
   box.style.gap = "8px";
+  const crown = (slot) => (over && winnerSlot === slot ? " " + ui.icon("crown") : "");
   box.innerHTML = `
     <div class="bet-btn" id="bet-btn-1" style="${myBet === 1 ? "border-color:var(--gold);" : ""}">
-      <div>${p1Name}${over && winnerSlot === 1 ? " 🏆" : ""}</div>
+      <div>${ui.esc(p1Name)}${crown(1)}</div>
       <div class="pct">${pct1}%</div>
       <div class="bar"><div style="width:${pct1}%;"></div></div>
-      <div style="font-size:10px;color:var(--ink-dim);margin-top:3px;">${n1}人下注</div>
+      <div style="font-size:10px;color:var(--ink-dim);margin-top:5px;">${n1}人下注</div>
     </div>
     <div class="bet-btn" id="bet-btn-2" style="${myBet === 2 ? "border-color:var(--gold);" : ""}">
-      <div>${p2Name}${over && winnerSlot === 2 ? " 🏆" : ""}</div>
+      <div>${ui.esc(p2Name)}${crown(2)}</div>
       <div class="pct">${pct2}%</div>
       <div class="bar"><div style="width:${pct2}%;"></div></div>
-      <div style="font-size:10px;color:var(--ink-dim);margin-top:3px;">${n2}人下注</div>
+      <div style="font-size:10px;color:var(--ink-dim);margin-top:5px;">${n2}人下注</div>
     </div>
   `;
   if (!over && !myBet) {
@@ -397,37 +426,52 @@ async function refreshBets(state) {
   if (over && myBet) {
     const guessedRight = myBet === winnerSlot;
     const hint = document.createElement("div");
-    hint.style.cssText = "width:100%;text-align:center;font-size:12px;color:" + (guessedRight ? "var(--green)" : "var(--ink-dim)") + ";margin-top:6px;";
-    hint.textContent = guessedRight ? "🎉 你猜對了!" : "😅 猜錯了,下次加油";
+    hint.style.cssText =
+      "width:100%;display:flex;align-items:center;justify-content:center;gap:6px;font-size:12px;color:" +
+      (guessedRight ? "var(--green)" : "var(--ink-dim)") +
+      ";margin-top:8px;";
+    hint.innerHTML = guessedRight ? ui.icon("party-popper") + "你猜對了!" : ui.icon("smile") + "猜錯了,下次加油";
     box.appendChild(hint);
   }
 }
 
 async function ensureLocalForBet() {
-  let local = db.getLocalPlayer();
+  const local = db.getLocalPlayer();
   if (local.id) return local;
-  const name = prompt("下注前先取個暱稱吧(之後可以在右上角改名)");
-  if (!name || !name.trim()) return null;
-  return db.ensurePlayer(name.trim());
+  // 身分一律走 Discord 登入(導覽列也有同一顆按鈕),這裡不再另外要使用者手打暱稱
+  const go = await ui.confirm("下注前要先用 Discord 登入,登入後就能參加投票。", {
+    title: "還沒登入",
+    icon: "log-in",
+    confirmText: "用 Discord 登入",
+  });
+  if (go) await db.signInWithDiscord();
+  return null;
 }
 
-function spawnFloaty(emoji) {
+// 表情彈幕:key 是 REACTIONS 的鍵值,舊版本傳來的 emoji 字串也照樣顯示
+function spawnFloaty(key) {
   const box = document.getElementById("floaties");
   if (!box) return;
   const span = document.createElement("span");
   span.className = "floaty";
-  span.textContent = emoji;
+  if (REACTIONS[key]) span.innerHTML = ui.icon(REACTIONS[key]);
+  else span.textContent = key;
   span.style.left = 20 + Math.random() * 60 + "%";
   box.appendChild(span);
   setTimeout(() => span.remove(), 2500);
 }
 
 function bindWatchPanel() {
-  document.querySelectorAll("#emoji-bar button").forEach((btn) => {
+  const bar = document.getElementById("emoji-bar");
+  if (!bar) return;
+  bar.innerHTML = Object.keys(REACTIONS)
+    .map((key) => `<button class="btn ghost small" data-reaction="${key}">${ui.icon(REACTIONS[key])}</button>`)
+    .join("");
+  bar.querySelectorAll("button").forEach((btn) => {
     btn.onclick = () => {
-      const emoji = btn.dataset.emoji;
-      spawnFloaty(emoji);
-      if (reactionChannel) reactionChannel.send(emoji);
+      const key = btn.dataset.reaction;
+      spawnFloaty(key);
+      if (reactionChannel) reactionChannel.send(key);
     };
   });
 }
@@ -602,7 +646,7 @@ async function resolveRoundIfReady(state) {
         if (loserSlot === 1) hp1 -= dmg;
         else hp2 -= dmg;
         const hpAfter = loserSlot === 1 ? hp1 : hp2;
-        entry += `${winnerName}技高一籌,${loserName}扣了 ${dmg} 點血${allinActive ? "(加注雙倍!)" : ""}${suddenDeath ? "⚰️生死局雙倍!" : ""}(${hpBefore}→${Math.max(hpAfter, 0)})。`;
+        entry += `${winnerName}技高一籌,${loserName}扣了 ${dmg} 點血${allinActive ? "(加注雙倍!)" : ""}${suddenDeath ? "生死局雙倍!" : ""}(${hpBefore}→${Math.max(hpAfter, 0)})。`;
         lastEvent = { type: "hit", winnerSlot, loserSlot, dmg, shieldBlocked: false };
         if (state.field_mod === "lifesteal" && dmg > 0) {
           if (winnerSlot === 1) hp1 = Math.min(MAX_HP, hp1 + 1);
@@ -619,7 +663,7 @@ async function resolveRoundIfReady(state) {
           combo2 = 0;
           if (Math.floor(combo1 / 3) > Math.floor(prev / 3)) {
             combobonus1 += 1;
-            entry += `⭐${winnerName}連擊升級!永久+1傷害。`;
+            entry += `${winnerName}連擊升級!永久+1傷害。`;
           }
         } else {
           const prev = combo2;
@@ -627,7 +671,7 @@ async function resolveRoundIfReady(state) {
           combo1 = 0;
           if (Math.floor(combo2 / 3) > Math.floor(prev / 3)) {
             combobonus2 += 1;
-            entry += `⭐${winnerName}連擊升級!永久+1傷害。`;
+            entry += `${winnerName}連擊升級!永久+1傷害。`;
           }
         }
       }
@@ -715,7 +759,11 @@ async function maybeAutoAdvance(state) {
     if (winnerPart && winnerPart.status === "matched" && winnerPart.match_id && winnerPart.match_id !== matchId) {
       autoFollowTriggered = true;
       const hint = document.getElementById("game-status");
-      if (hint) hint.innerHTML = mySlot ? "🏆 你贏了!正在前往下一場..." : "👀 這場結束了,正在前往下一場...";
+      if (hint) {
+        hint.innerHTML = mySlot
+          ? ui.icon("trophy") + "你贏了!正在前往下一場..."
+          : ui.icon("eye") + "這場結束了,正在前往下一場...";
+      }
       setTimeout(() => {
         location.href = `dice.html?match=${winnerPart.match_id}&event=${eventId}`;
       }, 2500);
@@ -742,7 +790,7 @@ async function checkEntryTimeout() {
     autopilotAnnounced = true;
     const oppName = oppSlot === 1 ? match.p1?.name : match.p2?.name;
     db
-      .appendMatchLog(matchId, `⌛ ${oppName || "對手"} 超過1分鐘沒有進入對戰畫面,系統開始自動幫他出招(不會用防禦骰/加注/大招等技能),他隨時進場都能接手。`)
+      .appendMatchLog(matchId, `${oppName || "對手"} 超過1分鐘沒有進入對戰畫面,系統開始自動幫他出招(不會用防禦骰/加注/大招等技能),他隨時進場都能接手。`)
       .catch(() => {});
   }
 }
@@ -765,7 +813,10 @@ async function refresh() {
   if (!m) {
     if (!goneAway) {
       goneAway = true;
-      alert("這場對戰已經不存在了(活動可能已被刪除),帶你回首頁。");
+      await ui.alert("這場對戰已經不存在了(活動可能已被刪除),帶你回首頁。", {
+        title: "找不到這場對戰",
+        tone: "danger",
+      });
       location.href = "index.html";
     }
     return;
@@ -776,7 +827,10 @@ async function refresh() {
     if (!ev) {
       if (!goneAway) {
         goneAway = true;
-        alert("這場活動已經不存在了(可能已被主辦人刪除),帶你回首頁。");
+        await ui.alert("這場活動已經不存在了(可能已被主辦人刪除),帶你回首頁。", {
+          title: "找不到這場活動",
+          tone: "danger",
+        });
         location.href = "index.html";
       }
       return;
@@ -798,39 +852,40 @@ async function refresh() {
 }
 
 function bindControls() {
+  document.getElementById("roll-btn").innerHTML = ui.icon("dices") + "擲骰";
   document.getElementById("shield-toggle").onclick = () => {
     selectedShield = !selectedShield;
-    if (selectedShield) announce("🛡️ 你準備使用防禦骰!");
+    if (selectedShield) announce("你準備使用防禦骰!", { icon: "shield" });
     refresh();
   };
   document.getElementById("allin-toggle").onclick = () => {
     selectedAllin = !selectedAllin;
-    if (selectedAllin) announce("🔥 你決定背水一戰!");
+    if (selectedAllin) announce("你決定背水一戰!", { icon: "flame" });
     refresh();
   };
   document.getElementById("freebet-toggle").onclick = () => {
     selectedFreebet = !selectedFreebet;
-    if (selectedFreebet) announce("🎰 你使出了自由加注!");
+    if (selectedFreebet) announce("你使出了自由加注!", { icon: "coins" });
     refresh();
   };
   document.getElementById("gamble-toggle").onclick = () => {
     selectedGamble = !selectedGamble;
-    if (selectedGamble) announce("🎲 你決定雙骰豪賭!");
+    if (selectedGamble) announce("你決定雙骰豪賭!", { icon: "dice-5" });
     refresh();
   };
   document.getElementById("ult-toggle").onclick = () => {
     selectedUlt = !selectedUlt;
-    if (selectedUlt) announce("⚡ 大招蓄力中!");
+    if (selectedUlt) announce("大招蓄力中!", { icon: "zap" });
     refresh();
   };
   document.getElementById("stance-attack").onclick = () => {
     selectedStance = selectedStance === "attack" ? null : "attack";
-    if (selectedStance === "attack") announce("🗡️ 你選擇了猛攻姿態!");
+    if (selectedStance === "attack") announce("你選擇了猛攻姿態!", { icon: "sword" });
     refresh();
   };
   document.getElementById("stance-defense").onclick = () => {
     selectedStance = selectedStance === "defense" ? null : "defense";
-    if (selectedStance === "defense") announce("🛡️ 你選擇了穩紮穩打!");
+    if (selectedStance === "defense") announce("你選擇了穩紮穩打!", { icon: "shield" });
     refresh();
   };
   document.getElementById("roll-btn").onclick = async () => {
@@ -845,7 +900,7 @@ function bindControls() {
     }
     document.getElementById("roll-btn").disabled = true;
     clearInterval(timerInterval);
-    announce(`🎲 你擲出了 ${roll} 點!`);
+    announce(`你擲出了 ${roll} 點!`, { icon: "dices" });
     await db.submitMove(matchId, mySlot, {
       roll,
       defend: selectedShield,
@@ -861,18 +916,18 @@ function bindControls() {
 }
 
 const RULE_EXPLAIN = {
-  item_die: ["🎁 道具骰", "每逢第 3 回合,雙方會各自隨機獲得一個道具效果:爆擊(該局傷害+2)、回血(+2HP)、必中(平手時你直接獲勝)、封印(讓對方那局少受 1 點傷害)。"],
-  field_mod: ["🌪️ 戰場修飾骰", "開局隨機決定這場對戰的場地效果,6 選 1:熾熱(全場傷害+1)、堅盾(防禦骰+1次)、嗜血(擊中回血1)、混沌(平手傷害變2點)、疾風(思考時間縮短)、暗影(爆擊傷害加倍但防禦骰-1)。"],
-  dynamic_field: ["🌀 動態戰場", "戰場特性每回合都重新隨機一次,而不是整場固定一種。"],
-  free_bet: ["🎰 自由加注", "不限血量都能加倍賭注(該局傷害x2),但整場最多使用 2 次。"],
-  rage: ["🔥 怒氣值", "連續輸 2 局會讓你下一次獲勝時額外多 +2 傷害,是低血量時的逆轉機會。"],
-  stance: ["🗡️ 出招姿態", "每回合可選「猛攻」(獲勝多+1傷害,落敗多扣1血)或「穩紮穩打」(獲勝落敗的傷害都減半)。"],
-  combo: ["🔥 連擊值", "連續獲勝會累積連擊,每滿 3 層會升級,永久 +1 傷害(不會因斷連而消失)。"],
-  dice_gamble: ["🎲 雙骰豪賭", "隨時可以選擇擲 2 顆骰子取總和(2~12點),波動更大,一般職業整場限 2 次。"],
-  sudden_death: ["⚰️ 生死局", "當雙方 HP 都低於 20% 時自動啟動,該回合傷害固定雙倍。"],
-  classes: ["⚔️ 職業系統", "報名時可選擇職業:鬥士、守衛、賭徒、刺客,各自有被動加成跟一次性大招,職業之間也有克制關係(鬥士克賭徒、賭徒克刺客、刺客克守衛、守衛克鬥士)。"],
-  betting: ["👀 觀眾下注", "觀戰的人可以投票猜誰會贏,純娛樂不影響勝負。"],
-  reactions: ["💬 表情彈幕", "觀戰或對戰中都可以發送表情符號互動。"],
+  item_die: "每逢第 3 回合,雙方會各自隨機獲得一個道具效果:爆擊(該局傷害+2)、回血(+2HP)、必中(平手時你直接獲勝)、封印(讓對方那局少受 1 點傷害)。",
+  field_mod: "開局隨機決定這場對戰的場地效果,6 選 1:熾熱(全場傷害+1)、堅盾(防禦骰+1次)、嗜血(擊中回血1)、混沌(平手傷害變2點)、疾風(思考時間縮短)、暗影(爆擊傷害加倍但防禦骰-1)。",
+  dynamic_field: "戰場特性每回合都重新隨機一次,而不是整場固定一種。",
+  free_bet: "不限血量都能加倍賭注(該局傷害x2),但整場最多使用 2 次。",
+  rage: "連續輸 2 局會讓你下一次獲勝時額外多 +2 傷害,是低血量時的逆轉機會。",
+  stance: "每回合可選「猛攻」(獲勝多+1傷害,落敗多扣1血)或「穩紮穩打」(獲勝落敗的傷害都減半)。",
+  combo: "連續獲勝會累積連擊,每滿 3 層會升級,永久 +1 傷害(不會因斷連而消失)。",
+  dice_gamble: "隨時可以選擇擲 2 顆骰子取總和(2~12點),波動更大,一般職業整場限 2 次。",
+  sudden_death: "當雙方 HP 都低於 20% 時自動啟動,該回合傷害固定雙倍。",
+  classes: "報名時可選擇職業:鬥士、守衛、賭徒、刺客,各自有被動加成跟一次性大招,職業之間也有克制關係(鬥士克賭徒、賭徒克刺客、刺客克守衛、守衛克鬥士)。",
+  betting: "觀戰的人可以投票猜誰會贏,純娛樂不影響勝負。",
+  reactions: "觀戰或對戰中都可以發送表情圖示互動。",
 };
 
 function renderRules() {
@@ -888,14 +943,18 @@ function renderRules() {
   if (active.length) {
     html += `<h4>本場活動額外開啟的機制</h4>`;
     active.forEach((k) => {
-      const item = RULE_EXPLAIN[k];
-      if (item) html += `<p><b style="color:var(--ink);">${item[0]}</b><br/>${item[1]}</p>`;
+      const desc = RULE_EXPLAIN[k];
+      const meta = ui.RULE[k];
+      if (desc && meta) {
+        html += `<p><b style="color:var(--ink);">${ui.icon(meta.icon)} ${meta.label}</b><br/>${desc}</p>`;
+      }
     });
   }
   box.innerHTML = html;
 }
 
 function bindRuleModal() {
+  document.getElementById("rule-fab-btn").innerHTML = ui.icon("book-open") + '<span class="fab-label">規則說明</span>';
   document.getElementById("rule-fab-btn").onclick = () => {
     renderRules();
     document.getElementById("rule-modal").classList.add("show");
@@ -910,10 +969,12 @@ function bindRuleModal() {
     location.href = "index.html";
     return;
   }
+  document.getElementById("page-eyebrow").innerHTML = ui.icon("dices") + "骰子對戰";
+  document.getElementById("sudden-death-banner").innerHTML = ui.icon("skull") + "生死局啟動!雙方傷害固定雙倍";
   bindControls();
   bindRuleModal();
   await refresh();
-  reactionChannel = db.openReactionChannel(matchId, (emoji) => spawnFloaty(emoji));
+  reactionChannel = db.openReactionChannel(matchId, (key) => spawnFloaty(key));
   unsub = db.onTableChange("matches", `id=eq.${matchId}`, () => refresh());
   unsubParticipants = db.onTableChange("event_participants", `event_id=eq.${eventId}`, () => refresh());
   unsubBets = db.onTableChange("match_bets", `match_id=eq.${matchId}`, () => {

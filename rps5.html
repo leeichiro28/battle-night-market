@@ -4,13 +4,14 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>五手勢對戰 · 擂台夜市</title>
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
 <link rel="stylesheet" href="assets/style.css" />
 </head>
 <body>
   <div id="site-header"></div>
   <div class="wrap">
     <div class="marquee">
-      <span class="eyebrow">✂️ 五手勢對戰</span>
+      <span class="eyebrow" id="page-eyebrow">五手勢對戰</span>
       <h1>石頭剪刀布蜥蜴史波克</h1>
     </div>
 
@@ -44,33 +45,29 @@
 
       <div class="timer-bar"><div id="timer-fill" style="width:100%"></div></div>
 
-      <div class="choice-row" id="choice-row">
-        <button class="choice-btn" data-g="rock">🪨<span class="lbl">石頭</span></button>
-        <button class="choice-btn" data-g="paper">📄<span class="lbl">布</span></button>
-        <button class="choice-btn" data-g="scissors">✂️<span class="lbl">剪刀</span></button>
-        <button class="choice-btn" data-g="lizard">🦎<span class="lbl">蜥蜴</span></button>
-        <button class="choice-btn" data-g="spock">🖖<span class="lbl">史波克</span></button>
-      </div>
-      <button class="btn ghost block" id="ult-btn" style="margin-top:10px;">⚡ 使出究極手勢(尚未使用,保證獲勝該回合)</button>
+      <div class="choice-row" id="choice-row"></div>
+      <button class="btn ghost block" id="ult-btn" style="margin-top:12px;">使出究極手勢(尚未使用,保證獲勝該回合)</button>
 
       <div class="status-msg" id="game-status">選擇你的手勢!</div>
     </div>
 
-    <div class="footer-nav" id="back-link" style="display:none;"><a href="index.html">← 回活動列表</a></div>
+    <div class="footer-nav" id="back-link" style="display:none;"><a href="index.html"><i data-lucide="arrow-left" class="ico"></i>回活動列表</a></div>
   </div>
 
-  <button class="btn ghost rule-fab" id="rule-fab-btn">📖 規則說明</button>
+  <button class="btn ghost rule-fab" id="rule-fab-btn"><i data-lucide="book-open" class="ico"></i><span class="fab-label">規則說明</span></button>
   <div class="modal-overlay" id="rule-modal">
     <div class="modal-card">
-      <h3>✂️ 五手勢對戰規則</h3>
+      <h3>五手勢對戰規則</h3>
       <div id="rule-content"></div>
-      <button class="btn ghost block" id="rule-close-btn">關閉</button>
+      <button class="btn ghost block" id="rule-close-btn" style="margin-top:14px;">關閉</button>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@1.27.0/dist/umd/lucide.min.js"></script>
   <script src="assets/supabase-config.js"></script>
   <script src="assets/db.js"></script>
+  <script src="assets/ui.js"></script>
   <script src="assets/header.js"></script>
   <script src="assets/rps5.js"></script>
 </body>
