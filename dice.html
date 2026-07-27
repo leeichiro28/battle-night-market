@@ -4,23 +4,24 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>骰子對戰 · 擂台夜市</title>
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
 <link rel="stylesheet" href="assets/style.css" />
 </head>
 <body>
   <div id="site-header"></div>
   <div class="wrap">
     <div class="marquee">
-      <span class="eyebrow">🎲 骰子對戰</span>
+      <span class="eyebrow" id="page-eyebrow">骰子對戰</span>
       <h1>擲出你的命運</h1>
-      <span class="tag" id="field-mod-tag" style="display:none;margin-top:8px;"></span>
+      <span class="tag" id="field-mod-tag" style="display:none;margin-top:10px;"></span>
     </div>
 
-    <div class="sudden-death" id="sudden-death-banner" style="display:none;">⚰️ 生死局啟動!雙方傷害固定雙倍</div>
+    <div class="sudden-death" id="sudden-death-banner" style="display:none;">生死局啟動!雙方傷害固定雙倍</div>
 
     <div class="card">
       <div class="duel-stage">
         <div class="fighter">
-          <div class="cicon" id="p1-class-icon" style="font-size:18px;"></div>
+          <div class="cicon" id="p1-class-icon"></div>
           <div class="name" id="p1-name">玩家一</div>
           <div class="hp-dial" id="p1-dial">
             <svg width="108" height="108" viewBox="0 0 108 108">
@@ -29,11 +30,11 @@
             </svg>
             <div class="num" id="p1-hp">30</div>
           </div>
-          <div class="badges-row" id="p1-badges" style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;margin-top:4px;"></div>
+          <div class="badges-row" id="p1-badges" style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:8px;"></div>
         </div>
         <div class="vs-badge">VS<br/><span id="round-num" style="font-size:12px;color:var(--ink-dim);">R1</span></div>
         <div class="fighter">
-          <div class="cicon" id="p2-class-icon" style="font-size:18px;"></div>
+          <div class="cicon" id="p2-class-icon"></div>
           <div class="name" id="p2-name">玩家二</div>
           <div class="hp-dial" id="p2-dial">
             <svg width="108" height="108" viewBox="0 0 108 108">
@@ -42,7 +43,7 @@
             </svg>
             <div class="num" id="p2-hp">30</div>
           </div>
-          <div class="badges-row" id="p2-badges" style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;margin-top:4px;"></div>
+          <div class="badges-row" id="p2-badges" style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:8px;"></div>
         </div>
       </div>
 
@@ -50,53 +51,50 @@
       <div class="log-panel" id="log"></div>
       <div class="timer-bar"><div id="timer-fill" style="width:100%"></div></div>
 
-      <div id="controls" style="margin-top:12px;">
-        <div id="stance-row" style="display:none; gap:10px; margin-bottom:10px; justify-content:center; flex-wrap:wrap;">
-          <button class="btn ghost small" id="stance-attack">🗡️ 猛攻</button>
-          <button class="btn ghost small" id="stance-defense">🛡️ 穩紮穩打</button>
+      <div id="controls" style="margin-top:14px;">
+        <div id="stance-row" class="action-row" style="display:none;justify-content:center;margin-bottom:12px;">
+          <button class="btn ghost small" id="stance-attack">猛攻</button>
+          <button class="btn ghost small" id="stance-defense">穩紮穩打</button>
         </div>
-        <div id="pre-roll-options" style="display:flex; gap:10px; margin-bottom:12px; justify-content:center; flex-wrap:wrap;">
-          <button class="btn ghost small" id="shield-toggle">🛡️ 使用防禦骰</button>
-          <button class="btn ghost small" id="allin-toggle" style="display:none;">🔥 背水一戰(傷害x2)</button>
-          <button class="btn ghost small" id="freebet-toggle" style="display:none;">🎰 自由加注</button>
-          <button class="btn ghost small" id="gamble-toggle" style="display:none;">🎲 雙骰豪賭</button>
+        <div id="pre-roll-options" class="action-row" style="justify-content:center;margin-bottom:14px;">
+          <button class="btn ghost small" id="shield-toggle">使用防禦骰</button>
+          <button class="btn ghost small" id="allin-toggle" style="display:none;">背水一戰(傷害x2)</button>
+          <button class="btn ghost small" id="freebet-toggle" style="display:none;">自由加注</button>
+          <button class="btn ghost small" id="gamble-toggle" style="display:none;">雙骰豪賭</button>
           <button class="btn ghost small" id="ult-toggle" style="display:none;border-color:var(--gold);color:var(--gold);"></button>
         </div>
-        <div style="text-align:center;margin-bottom:10px;">
+        <div style="text-align:center;margin-bottom:12px;">
           <span class="reward-badge" id="rage-tag" style="display:none;"></span>
         </div>
-        <button class="btn block" id="roll-btn">🎲 擲骰</button>
+        <button class="btn block" id="roll-btn">擲骰</button>
         <div class="status-msg" id="game-status">等待雙方擲骰...</div>
       </div>
     </div>
 
     <div class="card" id="watch-panel" style="display:none;">
-      <div style="text-align:center;font-size:12px;color:var(--ink-dim);margin-bottom:8px;">👀 觀眾互動(純娛樂,不影響勝負)</div>
+      <div style="text-align:center;font-size:12px;color:var(--ink-dim);margin-bottom:12px;">觀眾互動(純娛樂,不影響勝負)</div>
       <div id="bet-row" style="display:none;"></div>
-      <div class="emoji-bar" id="emoji-bar" style="display:flex;gap:10px;justify-content:center;margin-top:10px;">
-        <button class="btn ghost small" data-emoji="👏">👏</button>
-        <button class="btn ghost small" data-emoji="🔥">🔥</button>
-        <button class="btn ghost small" data-emoji="😱">😱</button>
-        <button class="btn ghost small" data-emoji="🤯">🤯</button>
-      </div>
+      <div class="reaction-bar action-row" id="emoji-bar" style="justify-content:center;margin-top:12px;"></div>
       <div id="floaties" style="position:relative;height:50px;"></div>
     </div>
 
-    <div class="footer-nav" id="back-link" style="display:none;"><a href="index.html">← 回活動列表</a></div>
+    <div class="footer-nav" id="back-link" style="display:none;"><a href="index.html"><i data-lucide="arrow-left" class="ico"></i>回活動列表</a></div>
   </div>
 
-  <button class="btn ghost rule-fab" id="rule-fab-btn">📖 規則說明</button>
+  <button class="btn ghost rule-fab" id="rule-fab-btn"><i data-lucide="book-open" class="ico"></i><span class="fab-label">規則說明</span></button>
   <div class="modal-overlay" id="rule-modal">
     <div class="modal-card">
-      <h3>🎲 骰子對戰規則</h3>
+      <h3>骰子對戰規則</h3>
       <div id="rule-content"></div>
-      <button class="btn ghost block" id="rule-close-btn">關閉</button>
+      <button class="btn ghost block" id="rule-close-btn" style="margin-top:14px;">關閉</button>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@1.27.0/dist/umd/lucide.min.js"></script>
   <script src="assets/supabase-config.js"></script>
   <script src="assets/db.js"></script>
+  <script src="assets/ui.js"></script>
   <script src="assets/header.js"></script>
   <script src="assets/dice.js"></script>
 </body>

@@ -9,8 +9,10 @@ const BEATS = {
   lizard: ["spock", "paper"],
   spock: ["scissors", "rock"],
 };
-const GESTURE_ICON = { rock: "🪨", paper: "📄", scissors: "✂️", lizard: "🦎", spock: "🖖" };
+// 手勢圖示一律用 lucide,不用 emoji
+const GESTURE_ICON = { rock: "mountain", paper: "hand", scissors: "scissors", lizard: "bug", spock: "hand-metal" };
 const GESTURE_NAME = { rock: "石頭", paper: "布", scissors: "剪刀", lizard: "蜥蜴", spock: "史波克" };
+const GESTURE_ORDER = ["rock", "paper", "scissors", "lizard", "spock"];
 
 let match = null;
 let mySlot = null;
@@ -34,9 +36,12 @@ const ENTRY_TIMEOUT_MS = 60000; // 超過1分鐘對手沒入場,自動開始幫�
 
 const CIRC = 289;
 
-function announce(text, holdMs) {
+// announce("文字", { icon: "zap" }):圖示一律走 lucide
+function announce(text, opts) {
+  const o = typeof opts === "number" ? { holdMs: opts } : opts || {};
+  const holdMs = o.holdMs;
   const el = document.getElementById("big-announce");
-  el.textContent = text;
+  el.innerHTML = (o.icon ? ui.icon(o.icon) : "") + ui.esc(text);
   el.classList.remove("show");
   void el.offsetWidth;
   el.classList.add("show");
@@ -48,16 +53,17 @@ function names() {
   return [match.p1?.name || "玩家一", match.p2?.name || "玩家二"];
 }
 
+// 回傳 { text, icon },交給 announce 去顯示
 function buildHeadline(evt) {
-  if (!evt) return "";
+  if (!evt) return null;
   const [p1Name, p2Name] = names();
-  if (evt.type === "tie") return "⚖️ 平手,雙方不掉血";
-  if (evt.type === "timeout_both") return "⌛ 雙方都逾時,平手";
+  if (evt.type === "tie") return { icon: "scale", text: "平手,雙方不掉血" };
+  if (evt.type === "timeout_both") return { icon: "hourglass", text: "雙方都逾時,平手" };
   const winnerName = evt.winnerSlot === 1 ? p1Name : p2Name;
   const loserName = evt.winnerSlot === 1 ? p2Name : p1Name;
-  if (mySlot === evt.loserSlot) return `😖 你扣了 ${evt.dmg} 點血!`;
-  if (mySlot === evt.winnerSlot) return `🔥 你獲勝了這回合!${loserName} 扣 ${evt.dmg} 血`;
-  return `${winnerName} 獲勝!${loserName} 扣 ${evt.dmg} 血`;
+  if (mySlot === evt.loserSlot) return { icon: "heart-pulse", text: `你扣了 ${evt.dmg} 點血!` };
+  if (mySlot === evt.winnerSlot) return { icon: "flame", text: `你獲勝了這回合!${loserName} 扣 ${evt.dmg} 血` };
+  return { icon: "swords", text: `${winnerName} 獲勝!${loserName} 扣 ${evt.dmg} 血` };
 }
 
 function ringUpdate(el, hp, maxHp) {
@@ -91,7 +97,7 @@ function startTimer(state) {
       clearInterval(timerInterval);
       if (!submittedThisRound) {
         submittedThisRound = true;
-        announce("⌛ 思考時間到,判定逾時...");
+        announce("思考時間到,判定逾時...", { icon: "hourglass" });
         await db.submitMove(matchId, mySlot, { gesture: null, ult: false, timeout: true });
       }
     }
@@ -111,10 +117,10 @@ function render(state) {
 
   if (lastSeenRound !== null && state.round !== lastSeenRound) {
     const headline = buildHeadline(state.lastEvent);
-    if (headline) announce(headline);
+    if (headline) announce(headline.text, { icon: headline.icon });
     if (mySlot && !submittedThisRound) {
       setTimeout(() => {
-        if (!submittedThisRound) announce("⚔️ 輪到你了!");
+        if (!submittedThisRound) announce("輪到你了!", { icon: "swords" });
       }, 1600);
     }
   }
@@ -130,13 +136,17 @@ function render(state) {
     document.getElementById("timer-fill").style.width = "0%";
     const winnerName = state.hp1 <= 0 ? p2Name : p1Name;
     if (!mySlot) {
-      statusEl.innerHTML = `🏆 ${winnerName} 獲勝了這場對戰!`;
+      statusEl.innerHTML = ui.icon("trophy") + `${ui.esc(winnerName)} 獲勝了這場對戰!`;
     } else {
       const iWon = (mySlot === 1 && state.hp2 <= 0) || (mySlot === 2 && state.hp1 <= 0);
-      statusEl.innerHTML = iWon ? "🏆 你贏了這場對戰!回等候室看看下一步" : "💀 你被擊敗了,感謝參戰!";
+      statusEl.innerHTML = iWon
+        ? ui.icon("trophy") + "你贏了這場對戰!回等候室看看下一步"
+        : ui.icon("skull") + "你被擊敗了,感謝參戰!";
     }
     document.getElementById("back-link").style.display = "block";
-    document.getElementById("back-link").innerHTML = `<a href="lobby.html?event=${eventId}">← 回等候室查看賽況</a>`;
+    document.getElementById("back-link").innerHTML = `<a href="lobby.html?event=${eventId}">${ui.icon(
+      "arrow-left"
+    )}回等候室查看賽況</a>`;
     return;
   }
 
@@ -144,22 +154,27 @@ function render(state) {
     document.getElementById("choice-row").style.display = "none";
     ultBtn.style.display = "none";
     document.getElementById("timer-fill").style.width = "0%";
-    statusEl.innerHTML = "👀 觀戰模式・對戰進行中";
+    statusEl.innerHTML = ui.icon("eye") + "觀戰模式・對戰進行中";
     return;
   }
 
   document.getElementById("choice-row").style.display = "grid";
   const myUltUsed = mySlot === 1 ? state.ult1 : state.ult2;
-  ultBtn.style.display = "block";
-  ultBtn.textContent = myUltUsed
-    ? "⚡ 究極手勢已使用"
-    : useUlt
-    ? "⚡ 究極手勢:已啟動(選一個手勢送出即可保證獲勝)"
-    : "⚡ 使出究極手勢(尚未使用,保證獲勝該回合)";
+  ultBtn.style.display = "flex";
+  ultBtn.innerHTML =
+    ui.icon("zap") +
+    (myUltUsed
+      ? "究極手勢已使用"
+      : useUlt
+      ? "究極手勢:已啟動(選一個手勢送出即可保證獲勝)"
+      : "使出究極手勢(尚未使用,保證獲勝該回合)");
+  ultBtn.classList.toggle("active-choice", useUlt && !myUltUsed);
   ultBtn.disabled = !!myUltUsed || submittedThisRound;
 
   choiceBtns.forEach((b) => (b.disabled = submittedThisRound));
-  statusEl.textContent = submittedThisRound ? "已送出,等待對方..." : "30 秒內選一個手勢!";
+  statusEl.innerHTML = submittedThisRound
+    ? ui.icon("hourglass") + "已送出,等待對方..."
+    : ui.icon("timer") + "30 秒內選一個手勢!";
   startTimer(state);
 }
 
@@ -183,8 +198,8 @@ async function resolveRoundIfReady(state) {
     if (m2.ult) ult2 = true;
 
     let winnerSlot = null;
-    const g1 = m1.gesture ? `${GESTURE_ICON[m1.gesture]}${GESTURE_NAME[m1.gesture]}` : "⌛逾時未出招";
-    const g2 = m2.gesture ? `${GESTURE_ICON[m2.gesture]}${GESTURE_NAME[m2.gesture]}` : "⌛逾時未出招";
+    const g1 = m1.gesture ? GESTURE_NAME[m1.gesture] : "逾時未出招";
+    const g2 = m2.gesture ? GESTURE_NAME[m2.gesture] : "逾時未出招";
     let entry = `第${state.round}回合:${p1Name} 出了 ${g1},${p2Name} 出了 ${g2}。`;
 
     if (!m1.gesture && !m2.gesture) {
@@ -266,7 +281,11 @@ async function maybeAutoAdvance(state) {
     if (winnerPart && winnerPart.status === "matched" && winnerPart.match_id && winnerPart.match_id !== matchId) {
       autoFollowTriggered = true;
       const hint = document.getElementById("game-status");
-      if (hint) hint.innerHTML = mySlot ? "🏆 你贏了!正在前往下一場..." : "👀 這場結束了,正在前往下一場...";
+      if (hint) {
+        hint.innerHTML = mySlot
+          ? ui.icon("trophy") + "你贏了!正在前往下一場..."
+          : ui.icon("eye") + "這場結束了,正在前往下一場...";
+      }
       setTimeout(() => {
         location.href = `rps5.html?match=${winnerPart.match_id}&event=${eventId}`;
       }, 2500);
@@ -295,7 +314,7 @@ async function checkEntryTimeout() {
     autopilotAnnounced = true;
     const oppName = oppSlot === 1 ? match.p1?.name : match.p2?.name;
     db
-      .appendMatchLog(matchId, `⌛ ${oppName || "對手"} 超過1分鐘沒有進入對戰畫面,系統開始自動幫他出招(逾時判定,不會使用究極手勢),他隨時進場都能接手。`)
+      .appendMatchLog(matchId, `${oppName || "對手"} 超過1分鐘沒有進入對戰畫面,系統開始自動幫他出招(逾時判定,不會使用究極手勢),他隨時進場都能接手。`)
       .catch(() => {});
   }
 }
@@ -318,7 +337,10 @@ async function refresh() {
   if (!m) {
     if (!goneAway) {
       goneAway = true;
-      alert("這場對戰已經不存在了(活動可能已被刪除),帶你回首頁。");
+      await ui.alert("這場對戰已經不存在了(活動可能已被刪除),帶你回首頁。", {
+        title: "找不到這場對戰",
+        tone: "danger",
+      });
       location.href = "index.html";
     }
     return;
@@ -342,10 +364,18 @@ async function refresh() {
   maybeAutopilotSubmit();
 }
 
+function renderChoiceButtons() {
+  document.getElementById("choice-row").innerHTML = GESTURE_ORDER.map(
+    (g) => `<button class="choice-btn" data-g="${g}">${ui.icon(GESTURE_ICON[g])}<span class="lbl">${GESTURE_NAME[g]}</span></button>`
+  ).join("");
+}
+
 function bindControls() {
+  renderChoiceButtons();
+  document.getElementById("ult-btn").innerHTML = ui.icon("zap") + "使出究極手勢(尚未使用,保證獲勝該回合)";
   document.getElementById("ult-btn").onclick = () => {
     useUlt = !useUlt;
-    if (useUlt) announce("⚡ 你準備使出究極手勢!");
+    if (useUlt) announce("你準備使出究極手勢!", { icon: "zap" });
     refresh();
   };
   document.querySelectorAll(".choice-btn").forEach((btn) => {
@@ -354,7 +384,7 @@ function bindControls() {
       submittedThisRound = true;
       clearInterval(timerInterval);
       const gesture = btn.dataset.g;
-      announce(`${GESTURE_ICON[gesture]} 你使出了${GESTURE_NAME[gesture]}!`);
+      announce(`你使出了${GESTURE_NAME[gesture]}!`, { icon: GESTURE_ICON[gesture] });
       await db.submitMove(matchId, mySlot, { gesture, ult: useUlt, timeout: false });
       useUlt = false;
     };
@@ -364,7 +394,7 @@ function bindControls() {
 function renderRules() {
   const box = document.getElementById("rule-content");
   box.innerHTML = `
-    <p>雙方各有 10 點 HP,30 秒內選一個手勢:石頭 🪨 / 布 📄 / 剪刀 ✂️ / 蜥蜴 🦎 / 史波克 🖖。超時未選視為該局落敗。</p>
+    <p>雙方各有 10 點 HP,30 秒內選一個手勢:石頭 / 布 / 剪刀 / 蜥蜴 / 史波克。超時未選視為該局落敗。</p>
     <p>石頭勝剪刀、蜥蜴;布勝石頭、史波克;剪刀勝布、蜥蜴;蜥蜴勝史波克、布;史波克勝剪刀、石頭。</p>
     <p>每人有 1 張「究極手勢」卡:出牌保證獲勝該局,除非對方同一局也出究極手勢,此時雙方抵銷、判定平手。</p>
     <p>當你的 HP ≤3 時,獲勝的那一擊傷害會翻倍,適合絕地反擊。血量先歸零者落敗。</p>
@@ -372,6 +402,7 @@ function renderRules() {
 }
 
 function bindRuleModal() {
+  document.getElementById("rule-fab-btn").innerHTML = ui.icon("book-open") + '<span class="fab-label">規則說明</span>';
   document.getElementById("rule-fab-btn").onclick = () => {
     renderRules();
     document.getElementById("rule-modal").classList.add("show");
@@ -386,6 +417,7 @@ function bindRuleModal() {
     location.href = "index.html";
     return;
   }
+  document.getElementById("page-eyebrow").innerHTML = ui.icon("scissors") + "五手勢對戰";
   bindControls();
   bindRuleModal();
   await refresh();

@@ -715,7 +715,7 @@ const db = (function () {
       reason = "對手太久沒進場,判定棄權";
     }
 
-    const newState = { ...m.state, log: [...(m.state.log || []), `⌛ ${reason}`] };
+    const newState = { ...m.state, log: [...(m.state.log || []), `${reason}`] };
     await client.from("matches").update({ state: newState }).eq("id", m.id);
     await advanceAfterMatch(m, winnerId, loserId);
   }
@@ -729,7 +729,7 @@ const db = (function () {
       if (error) throw error;
       if (m.status === "active") {
         const winnerId = m.player1_id === playerId ? m.player2_id : m.player1_id;
-        const newState = { ...m.state, log: [...(m.state.log || []), "🚪 一方主動退賽,對手直接獲勝"] };
+        const newState = { ...m.state, log: [...(m.state.log || []), "一方主動退賽,對手直接獲勝"] };
         await client.from("matches").update({ state: newState }).eq("id", m.id);
         await advanceAfterMatch(m, winnerId, playerId);
         return;
@@ -820,6 +820,7 @@ const db = (function () {
     signInWithDiscord,
     signOut,
     ensurePlayerFromSession,
+    discordNameFromSession,
     updatePlayerName,
     quitEvent,
     watchdogActiveMatch,
