@@ -31,7 +31,6 @@ alter table events add column if not exists rules jsonb not null default '{}';
 alter table events add column if not exists final_match_id uuid;
 alter table events add column if not exists registration_deadline timestamptz;
 alter table events add column if not exists reward_plan jsonb not null default '{}';
-alter table events add column if not exists reward_plan jsonb not null default '{}';
 
 -- 參加者
 create table if not exists event_participants (
@@ -48,6 +47,7 @@ create table if not exists event_participants (
   unique(event_id, player_id)
 );
 alter table event_participants add column if not exists bracket text not null default 'winners';
+alter table event_participants add column if not exists class text; -- fighter | guardian | gambler | assassin | null(素體)
 
 -- 對戰場次
 create table if not exists matches (
@@ -73,6 +73,19 @@ alter table matches add column if not exists next_slot int;
 alter table matches add column if not exists activated_at timestamptz;
 alter table matches add column if not exists p1_entered_at timestamptz;
 alter table matches add column if not exists p2_entered_at timestamptz;
+
+-- 對戰下注(觀眾用,純娛樂不影響勝負)。放在 matches 表之後,因為外鍵要參照 matches。
+create table if not exists match_bets (
+  id uuid primary key default gen_random_uuid(),
+  match_id uuid references matches(id) on delete cascade,
+  player_id uuid references players(id) on delete cascade,
+  bet_on int not null, -- 1 或 2,對應player1/player2
+  created_at timestamptz default now(),
+  unique(match_id, player_id)
+);
+alter table match_bets enable row level security;
+drop policy if exists "anon all bets" on match_bets;
+create policy "anon all bets" on match_bets for all using (true) with check (true);
 
 -- 場次一變成「可開打」狀態,自動記錄開打時間、重置雙方入場記錄。
 -- 前端用這個時間點來判斷「超過1分鐘沒入場」要不要自動判定棄權。
@@ -108,10 +121,13 @@ declare
   new_match_id uuid;
   init_state jsonb;
   ev record;
+  field_val text;
+  shield1_n int;
+  shield2_n int;
 begin
   select * into ev from events where id = p_event_id;
 
-  select id, player_id into p1
+  select id, player_id, class into p1
   from event_participants
   where event_id = p_event_id and status = 'waiting' and bracket = p_bracket
   order by created_at
@@ -122,7 +138,7 @@ begin
     return null;
   end if;
 
-  select id, player_id into p2
+  select id, player_id, class into p2
   from event_participants
   where event_id = p_event_id and status = 'waiting' and bracket = p_bracket and id <> p1.id
   order by created_at
@@ -134,12 +150,25 @@ begin
   end if;
 
   if ev.game_type = 'dice' then
-    init_state := jsonb_build_object('hp1',12,'hp2',12,'round',1,'shield1',false,'shield2',false,
-      'rage1',0,'rage2',0,'rageready1',false,'rageready2',false,'freebet1',0,'freebet2',0,'log','[]'::jsonb,
-      'field_mod', case when ev.rules->>'field_mod' = 'true' then
-        (array['crit','shield_plus'])[floor(random()*2+1)]
-        else null end
-      );
+    if ev.rules->>'field_mod' = 'true' then
+      field_val := (array['crit','shield_plus','lifesteal','chaos_tie','fast_timer','shadow'])[floor(random()*6+1)];
+    else
+      field_val := null;
+    end if;
+    shield1_n := 2 + (case when p1.class='guardian' then 1 else 0 end) + (case when field_val='shield_plus' then 1 else 0 end) - (case when field_val='shadow' then 1 else 0 end);
+    shield2_n := 2 + (case when p2.class='guardian' then 1 else 0 end) + (case when field_val='shield_plus' then 1 else 0 end) - (case when field_val='shadow' then 1 else 0 end);
+    init_state := jsonb_build_object(
+      'hp1',30,'hp2',30,'round',1,
+      'shield1',greatest(shield1_n,0),'shield2',greatest(shield2_n,0),
+      'rage1',0,'rage2',0,'rageready1',false,'rageready2',false,
+      'freebet1',0,'freebet2',0,
+      'combo1',0,'combo2',0,'combobonus1',0,'combobonus2',0,
+      'gamble1',0,'gamble2',0,
+      'classult1',false,'classult2',false,
+      'class1',p1.class,'class2',p2.class,
+      'field_mod',field_val,
+      'log','[]'::jsonb
+    );
   else
     init_state := '{"hp1":10,"hp2":10,"round":1,"ult1":false,"ult2":false,"log":[]}'::jsonb;
   end if;
@@ -176,8 +205,13 @@ declare
   ev record;
   wb_champ uuid;
   lb_champ uuid;
+  wb_class text;
+  lb_class text;
   new_id uuid;
   init_state jsonb;
+  field_val text;
+  shield1_n int;
+  shield2_n int;
 begin
   select * into ev from events where id = p_event_id for update;
 
@@ -185,9 +219,9 @@ begin
     return ev.final_match_id;
   end if;
 
-  select player_id into wb_champ from event_participants
+  select player_id, class into wb_champ, wb_class from event_participants
     where event_id = p_event_id and status = 'wb_champion' limit 1;
-  select player_id into lb_champ from event_participants
+  select player_id, class into lb_champ, lb_class from event_participants
     where event_id = p_event_id and status = 'lb_champion' limit 1;
 
   if wb_champ is null or lb_champ is null then
@@ -195,7 +229,25 @@ begin
   end if;
 
   if ev.game_type = 'dice' then
-    init_state := '{"hp1":12,"hp2":12,"round":1,"shield1":false,"shield2":false,"rage1":0,"rage2":0,"rageready1":false,"rageready2":false,"freebet1":0,"freebet2":0,"log":[]}'::jsonb;
+    if ev.rules->>'field_mod' = 'true' then
+      field_val := (array['crit','shield_plus','lifesteal','chaos_tie','fast_timer','shadow'])[floor(random()*6+1)];
+    else
+      field_val := null;
+    end if;
+    shield1_n := 2 + (case when wb_class='guardian' then 1 else 0 end) + (case when field_val='shield_plus' then 1 else 0 end) - (case when field_val='shadow' then 1 else 0 end);
+    shield2_n := 2 + (case when lb_class='guardian' then 1 else 0 end) + (case when field_val='shield_plus' then 1 else 0 end) - (case when field_val='shadow' then 1 else 0 end);
+    init_state := jsonb_build_object(
+      'hp1',30,'hp2',30,'round',1,
+      'shield1',greatest(shield1_n,0),'shield2',greatest(shield2_n,0),
+      'rage1',0,'rage2',0,'rageready1',false,'rageready2',false,
+      'freebet1',0,'freebet2',0,
+      'combo1',0,'combo2',0,'combobonus1',0,'combobonus2',0,
+      'gamble1',0,'gamble2',0,
+      'classult1',false,'classult2',false,
+      'class1',wb_class,'class2',lb_class,
+      'field_mod',field_val,
+      'log','[]'::jsonb
+    );
   else
     init_state := '{"hp1":10,"hp2":10,"round":1,"ult1":false,"ult2":false,"log":[]}'::jsonb;
   end if;
@@ -234,6 +286,8 @@ create policy "anon all matches" on matches for all using (true) with check (tru
 -- ============================================
 -- 執行完以上內容後,記得手動開啟 Realtime:
 -- 左側選單 Database → Replication →
--- 把 events / event_participants / matches 三張表的開關打開
--- (v1 升級上來的專案,這步應該已經開過,不用重做)
+-- 把 events / event_participants / matches / match_bets 四張表的開關打開
+-- (舊專案升級上來,前三張應該已經開過,這次新增的 match_bets 記得也要開)
+-- 或是直接在 SQL Editor 執行下面這行也可以:
+-- alter publication supabase_realtime add table match_bets;
 -- ============================================

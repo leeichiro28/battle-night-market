@@ -262,20 +262,30 @@ const db = (function () {
     return a;
   }
 
-  function diceInitState(fieldMod) {
+  function diceInitState() {
     return {
-      hp1: 12,
-      hp2: 12,
+      hp1: 30,
+      hp2: 30,
       round: 1,
-      shield1: 1,
-      shield2: 1,
+      shield1: 2,
+      shield2: 2,
       rage1: 0,
       rage2: 0,
       rageready1: false,
       rageready2: false,
       freebet1: 0,
       freebet2: 0,
-      field_mod: fieldMod || null,
+      combo1: 0,
+      combo2: 0,
+      combobonus1: 0,
+      combobonus2: 0,
+      gamble1: 0,
+      gamble2: 0,
+      classult1: false,
+      classult2: false,
+      class1: null,
+      class2: null,
+      field_mod: null,
       log: [],
     };
   }
@@ -284,17 +294,36 @@ const db = (function () {
     return { hp1: 10, hp2: 10, round: 1, ult1: false, ult2: false, log: [] };
   }
 
-  function makeInitState(gameType, rules) {
+  function makeInitState(gameType) {
+    return gameType === "dice" ? diceInitState() : rps5InitState();
+  }
+
+  const FIELD_MODS = ["crit", "shield_plus", "lifesteal", "chaos_tie", "fast_timer", "shadow"];
+
+  // 對戰真正要開打前(狀態轉為 active 那一刻),依實際上場的兩位玩家職業重新計算
+  // 防禦骰次數、戰場特性等資料。放到這一刻才算,才能正確反映勝部賽程樹裡「事先不知道是誰」的後面幾輪對戰。
+  async function finalizeDiceState(eventId, gameType, rules, state, player1Id, player2Id) {
+    if (gameType !== "dice") return state;
+    const { data: rows } = await client
+      .from("event_participants")
+      .select("player_id, class")
+      .eq("event_id", eventId)
+      .in("player_id", [player1Id, player2Id]);
+    const class1 = rows?.find((r) => r.player_id === player1Id)?.class || null;
+    const class2 = rows?.find((r) => r.player_id === player2Id)?.class || null;
     let fieldMod = null;
-    if (gameType === "dice" && rules && rules.field_mod) {
-      fieldMod = Math.random() < 0.5 ? "crit" : "shield_plus";
+    if (rules && rules.field_mod) {
+      fieldMod = FIELD_MODS[Math.floor(Math.random() * FIELD_MODS.length)];
     }
-    const state = gameType === "dice" ? diceInitState(fieldMod) : rps5InitState();
-    if (gameType === "dice" && fieldMod === "shield_plus") {
-      state.shield1 = 2;
-      state.shield2 = 2;
-    }
-    return state;
+    const shield1 = Math.max(
+      0,
+      2 + (class1 === "guardian" ? 1 : 0) + (fieldMod === "shield_plus" ? 1 : 0) - (fieldMod === "shadow" ? 1 : 0)
+    );
+    const shield2 = Math.max(
+      0,
+      2 + (class2 === "guardian" ? 1 : 0) + (fieldMod === "shield_plus" ? 1 : 0) - (fieldMod === "shadow" ? 1 : 0)
+    );
+    return { ...state, class1, class2, shield1, shield2, field_mod: fieldMod };
   }
 
   async function lockAndGenerateBracket(eventId) {
@@ -304,16 +333,28 @@ const db = (function () {
     if (entrants.length < 2) throw new Error("至少需要 2 人才能開賽");
 
     const size = nextPow2(entrants.length);
-    const seeded = shuffle(entrants);
-    while (seeded.length < size) seeded.push(null);
+    const byes = size - entrants.length;
+    const shuffled = shuffle(entrants);
+
+    // 把輪空平均分散配對,每個輪空都各自配一位真人,絕對不會出現「輪空 vs 輪空」
+    // (以前的寫法是輪空全部塞在陣列最後面,只要輪空數 >=2 一定會湊出一組雙輪空,導致該場沒有勝負、後面卡死)
+    const seededPairs = [];
+    let idx = 0;
+    for (let i = 0; i < byes; i++) {
+      seededPairs.push([shuffled[idx], null]);
+      idx++;
+    }
+    while (idx < shuffled.length) {
+      seededPairs.push([shuffled[idx], shuffled[idx + 1]]);
+      idx += 2;
+    }
 
     const rounds = Math.log2(size);
     const allMatches = [];
     let prevRound = [];
 
-    for (let i = 0; i < size / 2; i++) {
-      const a = seeded[i * 2];
-      const b = seeded[i * 2 + 1];
+    for (let i = 0; i < seededPairs.length; i++) {
+      const [a, b] = seededPairs[i];
       const m = {
         id: crypto.randomUUID(),
         event_id: eventId,
@@ -323,7 +364,7 @@ const db = (function () {
         player1_id: a ? a.player_id : null,
         player2_id: b ? b.player_id : null,
         status: "pending", // 不立刻開打,交給 activateNextMatch 一場一場排隊啟動
-        state: makeInitState(ev.game_type, ev.rules),
+        state: makeInitState(ev.game_type),
         _pa: a,
         _pb: b,
       };
@@ -350,7 +391,7 @@ const db = (function () {
           player1_id: feederA.status === "done" ? feederA.winner_id : null,
           player2_id: feederB.status === "done" ? feederB.winner_id : null,
           status: "pending", // 不立刻開打,交給 activateNextMatch 一場一場排隊啟動
-          state: makeInitState(ev.game_type, ev.rules),
+          state: makeInitState(ev.game_type),
         };
         feederA.next_match_id = m.id;
         feederA.next_slot = 1;
@@ -412,6 +453,8 @@ const db = (function () {
     if (activeErr) throw activeErr;
     if (actives && actives.length) return; // 已經有一場在打,先不排下一場
 
+    const ev = await getEvent(eventId);
+
     const { data: pending, error: pendErr } = await client
       .from("matches")
       .select("*")
@@ -432,7 +475,8 @@ const db = (function () {
         return new Date(a.created_at) - new Date(b.created_at);
       });
       const next = pending[0];
-      await client.from("matches").update({ status: "active" }).eq("id", next.id);
+      const finalState = await finalizeDiceState(eventId, ev.game_type, ev.rules, next.state, next.player1_id, next.player2_id);
+      await client.from("matches").update({ status: "active", state: finalState }).eq("id", next.id);
       await client
         .from("event_participants")
         .update({ status: "matched", match_id: next.id })
@@ -442,7 +486,6 @@ const db = (function () {
     }
 
     // 沒有排隊中的對戰,看看敗部候位區有沒有兩人可以配對開新的一場
-    const ev = await getEvent(eventId);
     if (ev.losers_bracket && ev.status !== "closed") {
       let newMatchId = null;
       try {
@@ -720,6 +763,47 @@ const db = (function () {
     return data;
   }
 
+  // 設定/更新玩家在這場活動的職業(報名時或開賽前都可以改)
+  async function setPlayerClass(eventId, playerId, klass) {
+    const { error } = await client
+      .from("event_participants")
+      .update({ class: klass || null })
+      .eq("event_id", eventId)
+      .eq("player_id", playerId);
+    if (error) throw error;
+  }
+
+  // ---------- 觀眾下注(純娛樂) ----------
+  async function placeBet(matchId, playerId, betOn) {
+    const { error } = await client
+      .from("match_bets")
+      .upsert({ match_id: matchId, player_id: playerId, bet_on: betOn }, { onConflict: "match_id,player_id" });
+    if (error) throw error;
+  }
+
+  async function getBets(matchId) {
+    const { data, error } = await client.from("match_bets").select("*").eq("match_id", matchId);
+    if (error) throw error;
+    return data || [];
+  }
+
+  // ---------- 觀眾即時表情彈幕(不存資料庫,純即時廣播) ----------
+  function openReactionChannel(matchId, onReaction) {
+    const channel = client.channel(`reactions-${matchId}`);
+    if (onReaction) {
+      channel.on("broadcast", { event: "emoji" }, (msg) => onReaction(msg.payload.emoji));
+    }
+    channel.subscribe();
+    return {
+      send(emoji) {
+        channel.send({ type: "broadcast", event: "emoji", payload: { emoji } });
+      },
+      close() {
+        client.removeChannel(channel);
+      },
+    };
+  }
+
   function onTableChange(table, filter, cb) {
     const channel = client
       .channel(`${table}-${filter || "all"}-${Math.random()}`)
@@ -752,6 +836,10 @@ const db = (function () {
     listMatches,
     getActiveMatch,
     setReward,
+    setPlayerClass,
+    placeBet,
+    getBets,
+    openReactionChannel,
     removeParticipant,
     markEntered,
     appendMatchLog,

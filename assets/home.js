@@ -47,6 +47,36 @@ document.getElementById("logout-btn").onclick = async () => {
   updateAuthUI();
 };
 
+const CLASS_INFO = {
+  fighter: { icon: "⚔️", name: "鬥士", desc: "猛攻姿態加成更高,大招:血怒(怒氣值全滿)" },
+  guardian: { icon: "🛡️", name: "守衛", desc: "防禦骰基礎次數+1,大招:金鐘罩(完全免疫一次)" },
+  gambler: { icon: "🎲", name: "賭徒", desc: "雙骰豪賭不限次數+1傷害,大招:孤注一擲(必定爆擊)" },
+  assassin: { icon: "🗡️", name: "刺客", desc: "連擊值疊加x2,大招:背刺(對方穩紮穩打時x3傷害)" },
+};
+
+function pickClass() {
+  const box = document.getElementById("class-options");
+  box.innerHTML = "";
+  Object.keys(CLASS_INFO).forEach((key) => {
+    const info = CLASS_INFO[key];
+    const card = document.createElement("div");
+    card.className = "card";
+    card.style.cssText = "margin:0;padding:12px;text-align:center;cursor:pointer;";
+    card.innerHTML = `<div style="font-size:26px;">${info.icon}</div><div style="font-weight:700;margin:4px 0;">${info.name}</div><div style="font-size:10px;color:var(--ink-dim);line-height:1.5;">${info.desc}</div>`;
+    card.onclick = () => finishPick(key);
+    box.appendChild(card);
+  });
+  document.getElementById("class-modal").classList.add("show");
+  return new Promise((resolve) => {
+    window._classPickResolve = resolve;
+  });
+}
+function finishPick(key) {
+  document.getElementById("class-modal").classList.remove("show");
+  if (window._classPickResolve) window._classPickResolve(key);
+}
+document.getElementById("class-skip-btn").onclick = () => finishPick(null);
+
 function formatDeadline(iso) {
   if (!iso) return null;
   const d = new Date(iso);
@@ -91,6 +121,10 @@ function eventRow(ev) {
       btn.textContent = "報名中...";
       const player = await ensureLogin();
       await db.joinEvent(ev.id, player.id);
+      if (ev.game_type === "dice" && ev.rules && ev.rules.classes) {
+        const chosen = await pickClass();
+        if (chosen) await db.setPlayerClass(ev.id, player.id, chosen);
+      }
       location.href = `lobby.html?event=${ev.id}`;
     };
   }

@@ -1,7 +1,20 @@
 const GAME_LABEL = { dice: "🎲 骰子對戰", rps5: "✂️ 五手勢對戰" };
 const GAME_PAGE = { dice: "dice.html", rps5: "rps5.html" };
 const STATUS_LABEL = { open: "開放參加", running: "進行中", closed: "已結束" };
-const RULE_LABEL = { item_die: "🎁道具骰", field_mod: "🌪️戰場修飾", free_bet: "🎰自由加注", rage: "🔥怒氣值" };
+const RULE_LABEL = {
+  item_die: "🎁道具骰",
+  field_mod: "🌪️戰場修飾",
+  dynamic_field: "🌀動態戰場",
+  free_bet: "🎰自由加注",
+  rage: "🔥怒氣值",
+  stance: "🗡️出招姿態",
+  combo: "🔥連擊值",
+  dice_gamble: "🎲雙骰豪賭",
+  sudden_death: "⚰️生死局",
+  classes: "⚔️職業系統",
+  betting: "👀觀眾下注",
+  reactions: "💬表情彈幕",
+};
 const MEDAL = { 1: "🥇", 2: "🥈", 3: "🥉" };
 
 document.getElementById("new-type").onchange = (e) => {

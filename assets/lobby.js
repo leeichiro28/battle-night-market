@@ -11,7 +11,10 @@ const GAME_PAGE = { dice: "dice.html", rps5: "rps5.html" };
 const BRACKET_ORDER = { winners: 0, losers: 1, final: 2 };
 const MEDAL = { 1: "🥇", 2: "🥈", 3: "🥉" };
 
+let pulseActive = false;
 function pulse() {
+  if (pulseActive) return; // 已經在跑了,不要每次輪詢都重新歸零重跑,避免畫面一直跳動
+  pulseActive = true;
   const bar = document.getElementById("pulse-bar");
   let w = 0;
   clearInterval(window._pulseTimer);
@@ -19,6 +22,10 @@ function pulse() {
     w = (w + 4) % 100;
     bar.style.width = w + "%";
   }, 80);
+}
+function stopPulse() {
+  pulseActive = false;
+  clearInterval(window._pulseTimer);
 }
 
 function rankBadge(rank) {
@@ -47,10 +54,7 @@ function matchRowHtml(m, ev, fallbackDoneText) {
   const w1 = m.winner_id && m.winner_id === m.player1_id;
   const w2 = m.winner_id && m.winner_id === m.player2_id;
   const isLive = m.status === "active";
-  const watchLink = isLive
-    ? `<a href="${GAME_PAGE[ev.game_type]}?match=${m.id}&event=${ev.id}" target="_blank" style="font-size:11px;white-space:nowrap;">👀 觀戰</a>`
-    : "";
-  return `<div class="bracket-row${isLive ? " live" : ""}">${isLive ? "🔴 " : ""}<span class="${w1 ? "win" : m.winner_id ? "lose" : ""}">${n1}</span><span style="color:var(--ink-dim);">vs</span><span class="${w2 ? "win" : m.winner_id ? "lose" : ""}">${n2}</span>${watchLink}</div>`;
+  return `<div class="bracket-row${isLive ? " live" : ""}">${isLive ? "🔴 " : ""}<span class="${w1 ? "win" : m.winner_id ? "lose" : ""}">${n1}</span><span style="color:var(--ink-dim);">vs</span><span class="${w2 ? "win" : m.winner_id ? "lose" : ""}">${n2}</span>${isLive ? '<span style="font-size:11px;color:var(--red);">直播中↑</span>' : ""}</div>`;
 }
 
 async function renderBracket(ev) {
@@ -118,30 +122,22 @@ async function renderBracket(ev) {
 }
 
 // ---------- 內嵌直播面板:不用另外開分頁就能看到目前這場對戰的即時比分 ----------
+let currentLiveMatchId = null;
+
 function renderLivePanel(ev, m) {
   const box = document.getElementById("live-panel-box");
   if (!m) {
-    box.innerHTML = "";
+    if (currentLiveMatchId !== null) box.innerHTML = "";
+    currentLiveMatchId = null;
     return;
   }
-  const n1 = m.p1?.name || "玩家一";
-  const n2 = m.p2?.name || "玩家二";
-  const s = m.state || {};
-  const lastLog = s.log && s.log.length ? s.log[s.log.length - 1] : "對戰剛開始!";
+  if (currentLiveMatchId === m.id) return; // 同一場對戰,iframe內部自己會即時更新,不要重建它(重建會閃爍/重新連線)
+  currentLiveMatchId = m.id;
+  const page = GAME_PAGE[ev.game_type];
   box.innerHTML = `
-    <div class="live-panel">
-      <div class="live-tag"><span class="dot"></span>直播中・${GAME_LABEL[ev.game_type]}</div>
-      <div class="mini-duel">
-        <span>${n1}</span>
-        <span class="mhp">${Math.max(s.hp1 ?? 0, 0)}</span>
-        <span style="color:var(--ink-dim);">vs</span>
-        <span class="mhp">${Math.max(s.hp2 ?? 0, 0)}</span>
-        <span>${n2}</span>
-      </div>
-      <div class="status-msg" style="margin:6px 0 10px;">${lastLog}</div>
-      <div style="text-align:center;">
-        <a class="btn ghost small" href="${GAME_PAGE[ev.game_type]}?match=${m.id}&event=${eventId}" target="_blank">開新分頁看完整對戰畫面</a>
-      </div>
+    <div class="live-panel" style="padding:0;overflow:hidden;">
+      <div class="live-tag" style="margin:12px 12px 0;"><span class="dot"></span>直播中・${GAME_LABEL[ev.game_type]}・不用開新分頁,直接在這裡看完整對戰</div>
+      <iframe src="${page}?match=${m.id}&event=${eventId}" style="width:100%;height:840px;border:0;display:block;margin-top:6px;background:transparent;" title="live-match"></iframe>
     </div>
   `;
 }
@@ -191,6 +187,8 @@ const STATUS_TEXT = {
   champion: "🏆 恭喜你是本場活動冠軍!",
 };
 
+let redirecting = false;
+
 async function checkMyStatus(ev, matches) {
   const local = db.getLocalPlayer();
   const statusEl = document.getElementById("my-status");
@@ -199,12 +197,14 @@ async function checkMyStatus(ev, matches) {
 
   if (!local.id) {
     statusEl.innerHTML = `👀 觀戰模式,你目前沒有報名這場活動`;
+    stopPulse();
     return;
   }
 
   myParticipant = await db.getMyParticipant(eventId, local.id);
   if (!myParticipant) {
     statusEl.innerHTML = `👀 觀戰模式,你目前沒有報名這場活動`;
+    stopPulse();
     return;
   }
 
@@ -216,8 +216,10 @@ async function checkMyStatus(ev, matches) {
   }
 
   if (myParticipant.status === "matched" && myParticipant.match_id) {
+    if (redirecting) return;
+    redirecting = true;
     clearInterval(pollTimer);
-    clearInterval(window._pulseTimer);
+    stopPulse();
     statusEl.textContent = STATUS_TEXT.matched;
     location.href = `${GAME_PAGE[ev.game_type]}?match=${myParticipant.match_id}&event=${eventId}`;
     return;
@@ -225,7 +227,7 @@ async function checkMyStatus(ev, matches) {
 
   if (myParticipant.status === "eliminated") {
     clearInterval(pollTimer);
-    clearInterval(window._pulseTimer);
+    stopPulse();
     statusEl.innerHTML = myParticipant.reward
       ? `${rankBadge(myParticipant.final_rank)}你已出局。獲得獎勵 🎁 <b style="color:var(--gold)">${myParticipant.reward}</b>`
       : `${rankBadge(myParticipant.final_rank)}你已出局,感謝參加!獎勵確認後會顯示在這裡`;
@@ -234,7 +236,7 @@ async function checkMyStatus(ev, matches) {
 
   if (myParticipant.status === "champion") {
     clearInterval(pollTimer);
-    clearInterval(window._pulseTimer);
+    stopPulse();
     statusEl.innerHTML = myParticipant.reward
       ? `🥇 恭喜奪冠!獎勵 🎁 <b style="color:var(--gold)">${myParticipant.reward}</b>`
       : STATUS_TEXT.champion;
@@ -268,21 +270,29 @@ document.getElementById("quit-btn").onclick = async () => {
   }
 };
 
+let pollBusy = false;
+
 async function poll(ev) {
-  if (ev.locked && ev.status !== "closed") {
-    try {
-      await db.activateNextMatch(eventId);
-    } catch (e) {}
-    try {
-      await db.watchdogActiveMatch(eventId);
-    } catch (e) {}
+  if (pollBusy) return; // 避免計時器/即時訂閱/切分頁同時觸發,互相干擾造成畫面閃爍或漏掉導向
+  pollBusy = true;
+  try {
+    if (ev.locked && ev.status !== "closed") {
+      try {
+        await db.activateNextMatch(eventId);
+      } catch (e) {}
+      try {
+        await db.watchdogActiveMatch(eventId);
+      } catch (e) {}
+    }
+    const matches = ev.locked ? await db.listMatches(eventId) : [];
+    const activeMatch = matches.find((m) => m.status === "active") || null;
+    await checkMyStatus(ev, matches);
+    await renderStatusBanner(ev, activeMatch);
+    renderLivePanel(ev, activeMatch);
+    await renderBracket(ev);
+  } finally {
+    pollBusy = false;
   }
-  const matches = ev.locked ? await db.listMatches(eventId) : [];
-  const activeMatch = matches.find((m) => m.status === "active") || null;
-  await checkMyStatus(ev, matches);
-  await renderStatusBanner(ev, activeMatch);
-  renderLivePanel(ev, activeMatch);
-  await renderBracket(ev);
 }
 
 const RULE_EXPLAIN = {

@@ -454,3 +454,21 @@ label{
 @keyframes live-pulse-dot{0%,100%{opacity:1;}50%{opacity:.3;}}
 .mini-duel{display:flex;align-items:center;justify-content:center;gap:14px;font-size:14px;margin-bottom:8px;}
 .mini-duel .mhp{font-family:'Space Mono',monospace;color:var(--gold);font-weight:700;}
+
+/* ===== 骰子對戰2.0:生死局/徽章/職業大招/下注/表情彈幕 ===== */
+.sudden-death{
+  text-align:center;background:rgba(229,72,77,.15);border:1px solid var(--red);
+  color:#ffb3b5;border-radius:10px;padding:8px;font-size:13px;font-weight:700;
+  margin-bottom:14px;animation:sd-pulse 1s infinite;
+}
+@keyframes sd-pulse{0%,100%{opacity:1;}50%{opacity:.6;}}
+.mini-badge{font-size:10px;background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:2px 8px;color:var(--ink-dim);}
+.mini-badge.combo{color:var(--gold);border-color:var(--gold-d);}
+.mini-badge.rage{color:var(--red);border-color:var(--red);}
+.choice-btn.picked, .btn.active-choice{background:var(--gold);color:#1B1706;border-color:var(--gold);}
+.bet-btn{flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center;cursor:pointer;}
+.bet-btn .pct{font-family:'Space Mono',monospace;font-size:18px;color:var(--gold);font-weight:700;}
+.bet-btn .bar{height:5px;background:var(--line);border-radius:999px;margin-top:5px;overflow:hidden;}
+.bet-btn .bar > div{height:100%;background:var(--gold);}
+.floaty{position:absolute;font-size:22px;bottom:0;animation:float-up 2.5s ease-in forwards;pointer-events:none;}
+@keyframes float-up{0%{transform:translateY(0);opacity:1;}100%{transform:translateY(-50px);opacity:0;}}

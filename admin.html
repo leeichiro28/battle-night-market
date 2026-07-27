@@ -47,7 +47,11 @@
           </label>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink);">
             <input type="checkbox" class="rule-box" data-rule="field_mod" style="width:auto;" />
-            🌪️ 戰場修飾骰(開局隨機決定當場特殊規則)
+            🌪️ 戰場修飾骰(開局隨機決定當場特殊規則,6選1)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink);padding-left:22px;">
+            <input type="checkbox" class="rule-box" data-rule="dynamic_field" style="width:auto;" />
+            └ 🌀 動態戰場(每回合都重新隨機,需先勾上面的戰場修飾骰)
           </label>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink);">
             <input type="checkbox" class="rule-box" data-rule="free_bet" style="width:auto;" />
@@ -56,6 +60,34 @@
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink);">
             <input type="checkbox" class="rule-box" data-rule="rage" style="width:auto;" />
             🔥 怒氣值(連輸2場,下次獲勝+2傷害)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink);">
+            <input type="checkbox" class="rule-box" data-rule="stance" style="width:auto;" />
+            🗡️ 出招姿態(每回合選猛攻/穩紮穩打)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink);">
+            <input type="checkbox" class="rule-box" data-rule="combo" style="width:auto;" />
+            🔥 連擊值(連勝疊加,滿3層永久+1傷害)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink);">
+            <input type="checkbox" class="rule-box" data-rule="dice_gamble" style="width:auto;" />
+            🎲 雙骰豪賭(隨時可拼2顆骰子,一般職業限2次)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink);">
+            <input type="checkbox" class="rule-box" data-rule="sudden_death" style="width:auto;" />
+            ⚰️ 生死局(雙方低血量時傷害固定雙倍)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink);">
+            <input type="checkbox" class="rule-box" data-rule="classes" style="width:auto;" />
+            ⚔️ 職業系統(玩家報名時可選鬥士/守衛/賭徒/刺客)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink);">
+            <input type="checkbox" class="rule-box" data-rule="betting" style="width:auto;" />
+            👀 觀眾下注(純娛樂,猜誰會贏)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink);">
+            <input type="checkbox" class="rule-box" data-rule="reactions" style="width:auto;" />
+            💬 表情彈幕(觀戰/對戰中都能發表情互動)
           </label>
         </div>
       </div>
