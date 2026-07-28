@@ -478,6 +478,25 @@ label{
 .bt-lines{position:absolute;top:0;left:0;pointer-events:none;overflow:visible;}
 .bt-line{fill:none;stroke:var(--line);stroke-width:2;}
 
+/* ===== 敗部時間軸梯子:即時候位配對沒有固定賽程樹,用先後順序的梯子呈現 ===== */
+.bt-ladder{margin-top:6px;}
+.bt-ladder-item{display:flex;gap:12px;}
+.bt-ladder-dot-col{position:relative;width:14px;flex-shrink:0;display:flex;justify-content:center;}
+.bt-ladder-dot{width:10px;height:10px;border-radius:50%;background:var(--gold-d);margin-top:16px;position:relative;z-index:1;flex-shrink:0;}
+.bt-ladder-dot.live{background:var(--red);box-shadow:0 0 0 3px rgba(229,72,77,.25);}
+.bt-ladder-item:not(:last-child) .bt-ladder-dot-col::after{
+  content:"";
+  position:absolute;
+  top:26px;
+  bottom:-14px;
+  left:50%;
+  width:1px;
+  background:var(--line);
+  transform:translateX(-50%);
+}
+.bt-ladder-card{flex:1;min-width:0;padding-bottom:14px;}
+.bt-ladder-label{font-size:11px;color:var(--ink-dim);margin-bottom:6px;}
+
 /* 強制判定區(後台用) */
 .force-box{
   display:flex;

@@ -141,9 +141,34 @@ function bracketCardInnerHtml(m) {
     ${isLive ? `<div class="bt-live-tag">${ui.icon("radio")}直播中</div>` : ""}`;
 }
 
+// 敗部復活賽是即時候位配對(誰先打完誰先上,贏的人也是直接回候位池等下一場),
+// 不是預先排好的樹狀賽程,沒有「輪次」也沒有固定的晉級關係,所以不能比照勝部畫分支樹。
+// 這裡改用時間軸梯子:照對戰發生的先後順序,一場接一場往下排,單純把清單畫得更有賽制圖的感覺,
+// 不去假裝場次之間有晉級線(那條線畫出來會是假的)。
+function losersLadderHtml(lbMatches) {
+  if (!lbMatches.length) {
+    return `<div class="status-msg" style="margin:4px 0;">還沒有人掉入敗部</div>`;
+  }
+  const sorted = [...lbMatches].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  return `<div class="bt-ladder">
+    ${sorted
+      .map(
+        (m, i) => `
+      <div class="bt-ladder-item">
+        <div class="bt-ladder-dot-col"><div class="bt-ladder-dot${m.status === "active" ? " live" : ""}"></div></div>
+        <div class="bt-ladder-card">
+          <div class="bt-ladder-label">第 ${i + 1} 場</div>
+          <div class="bt-match${m.status === "active" ? " live" : ""}">${bracketCardInnerHtml(m)}</div>
+        </div>
+      </div>`
+      )
+      .join("")}
+  </div>`;
+}
+
 // 賽制圖:只有勝部賽程是固定成形的二元樹(每輪 slot i 由上一輪 slot 2i / 2i+1 晉級而來),
 // 才能用「欄位 = 輪次、SVG 連線」畫出真正的賽制圖。敗部復活賽是動態配對(誰先打完誰先上),
-// 沒有固定賽程樹,所以敗部跟已出局名單維持原本的清單呈現。
+// 沒有固定賽程樹,改用時間軸梯子呈現(見 losersLadderHtml)。
 function renderBracketTreeView(ev, parts, matches) {
   const wbMatches = matches.filter((m) => m.bracket === "winners");
   const finalMatch = matches.find((m) => m.bracket === "final");
@@ -197,13 +222,7 @@ function renderBracketTreeView(ev, parts, matches) {
   if (ev.losers_bracket) {
     const lbMatches = matches.filter((m) => m.bracket === "losers");
     html += sectionTitle("medal", "敗部復活賽戰況");
-    if (!lbMatches.length) {
-      html += `<div class="status-msg" style="margin:4px 0;">還沒有人掉入敗部</div>`;
-    } else {
-      lbMatches
-        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-        .forEach((m) => (html += matchRowHtml(m, ev)));
-    }
+    html += losersLadderHtml(lbMatches);
   }
 
   html += eliminatedListHtml(parts);
