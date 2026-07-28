@@ -417,15 +417,43 @@ function eventAdminCard(ev) {
   return card;
 }
 
+let archiveOpen = false;
+
+// 後台列表跟首頁一樣,已結束的活動收進下面可展開的「活動已結束」區,避免舊活動一直往下堆
 async function loadAll() {
   const list = document.getElementById("events-admin-list");
   list.innerHTML = "";
   const events = await db.listEvents();
+  const live = events.filter((ev) => ev.status !== "closed");
+  const archived = events.filter((ev) => ev.status === "closed");
+
   if (!events.length) {
     list.innerHTML = `<div class="empty">${ui.icon("calendar-clock")}還沒有活動,先在上面建立一個吧</div>`;
+  } else if (!live.length) {
+    list.innerHTML = `<div class="empty">${ui.icon("calendar-clock")}目前沒有報名中或進行中的活動</div>`;
+  } else {
+    live.forEach((ev) => list.appendChild(eventAdminCard(ev)));
+  }
+
+  const archiveBox = document.getElementById("archive-box");
+  const archiveToggle = document.getElementById("archive-toggle");
+  const archiveList = document.getElementById("archive-list");
+  if (!archived.length) {
+    archiveBox.style.display = "none";
+    archiveOpen = false;
     return;
   }
-  events.forEach((ev) => list.appendChild(eventAdminCard(ev)));
+  archiveBox.style.display = "block";
+  archiveToggle.innerHTML = ui.icon(archiveOpen ? "chevron-up" : "chevron-down") + `活動已結束(${archived.length})`;
+  archiveToggle.onclick = () => {
+    archiveOpen = !archiveOpen;
+    loadAll();
+  };
+  archiveList.style.display = archiveOpen ? "block" : "none";
+  archiveList.innerHTML = "";
+  if (archiveOpen) {
+    archived.forEach((ev) => archiveList.appendChild(eventAdminCard(ev)));
+  }
 }
 
 document.getElementById("create-btn").onclick = async () => {
