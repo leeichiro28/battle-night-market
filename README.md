@@ -1,3 +1,4 @@
+# 新連結：https://leeichiro28.github.io/battle-night-market/ #
 # 擂台夜市 · 對戰活動網站(v2)
 
 ## ⚠️⚠️ 這次更新內容很大,一定要重新執行SQL ⚠️⚠️
@@ -36,13 +37,6 @@
 5. 回 Discord Developer Portal → OAuth2 → General → Redirects → 貼上剛剛複製的 Callback URL → Save Changes
 6. 網站部署好、拿到正式網址後,記得回 Supabase → Authentication → URL Configuration,
    把 **Site URL** 設成你的正式網址(例如 `https://xxxx.netlify.app`),不然登入完成後會導錯地方
-
-### 3. 部署到 Netlify
-1. 到 https://app.netlify.com,登入後選擇 **Add new site → Deploy manually**
-2. 把整個 `site` 資料夾拖進網頁的上傳區
-3. 等待部署完成,會拿到一個 `xxxx.netlify.app` 網址
-
-之後要更新網站,改完檔案重新把資料夾拖上去覆蓋即可。
 
 ## 這次同時加入的其他功能
 
