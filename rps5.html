@@ -16,32 +16,7 @@
     </div>
 
     <div class="card">
-      <div class="duel-stage">
-        <div class="fighter">
-          <div class="name" id="p1-name">玩家一</div>
-          <div class="hp-dial" id="p1-dial">
-            <svg width="108" height="108" viewBox="0 0 108 108">
-              <circle cx="54" cy="54" r="46" fill="none" stroke="#34304A" stroke-width="10"/>
-              <circle id="p1-ring" cx="54" cy="54" r="46" fill="none" stroke="#3DBE6C" stroke-width="10" stroke-linecap="round" stroke-dasharray="289" stroke-dashoffset="0"/>
-            </svg>
-            <div class="num" id="p1-hp">10</div>
-          </div>
-        </div>
-        <div class="vs-badge">VS<br/><span id="round-num" style="font-size:12px;color:var(--ink-dim);">R1</span></div>
-        <div class="fighter">
-          <div class="name" id="p2-name">玩家二</div>
-          <div class="hp-dial" id="p2-dial">
-            <svg width="108" height="108" viewBox="0 0 108 108">
-              <circle cx="54" cy="54" r="46" fill="none" stroke="#34304A" stroke-width="10"/>
-              <circle id="p2-ring" cx="54" cy="54" r="46" fill="none" stroke="#3DBE6C" stroke-width="10" stroke-linecap="round" stroke-dasharray="289" stroke-dashoffset="0"/>
-            </svg>
-            <div class="num" id="p2-hp">10</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="big-announce" id="big-announce"></div>
-      <div class="log-panel" id="log"></div>
+      <div id="battle-stage"></div>
 
       <div class="timer-bar"><div id="timer-fill" style="width:100%"></div></div>
 
@@ -69,6 +44,7 @@
   <script src="assets/db.js"></script>
   <script src="assets/ui.js"></script>
   <script src="assets/header.js"></script>
+  <script src="assets/battle-view.js"></script>
   <script src="assets/rps5.js"></script>
 </body>
 </html>

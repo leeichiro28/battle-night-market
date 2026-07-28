@@ -134,15 +134,43 @@ function eventRow(ev) {
   return div;
 }
 
+let archiveOpen = false;
+
+// 首頁只留報名中/進行中的活動,已結束的收進下面可展開的「活動封存」區,避免舊活動一直往下堆
 async function renderEvents() {
   const list = document.getElementById("events-list");
   list.innerHTML = "";
   const events = await db.listEvents();
-  if (!events.length) {
-    list.innerHTML = `<div class="empty">${ui.icon("calendar-clock")}目前還沒有活動,等主辦人開賽吧</div>`;
+  const live = events.filter((ev) => ev.status !== "closed");
+  const archived = events.filter((ev) => ev.status === "closed");
+
+  if (!live.length) {
+    list.innerHTML = `<div class="empty">${ui.icon("calendar-clock")}目前沒有報名中或進行中的活動,等主辦人開賽吧</div>`;
+  } else {
+    live.forEach((ev) => list.appendChild(eventRow(ev)));
+  }
+
+  const archiveBox = document.getElementById("archive-box");
+  const archiveToggle = document.getElementById("archive-toggle");
+  const archiveList = document.getElementById("archive-list");
+  if (!archived.length) {
+    archiveBox.style.display = "none";
+    archiveOpen = false;
     return;
   }
-  events.forEach((ev) => list.appendChild(eventRow(ev)));
+  archiveBox.style.display = "block";
+  archiveToggle.innerHTML = ui.icon(archiveOpen ? "chevron-up" : "chevron-down") + `活動封存(${archived.length})`;
+  archiveToggle.onclick = () => {
+    archiveOpen = !archiveOpen;
+    renderEvents();
+  };
+  archiveList.style.display = archiveOpen ? "block" : "none";
+  if (archiveOpen) {
+    archiveList.innerHTML = "";
+    archived.forEach((ev) => archiveList.appendChild(eventRow(ev)));
+  } else {
+    archiveList.innerHTML = "";
+  }
 }
 
 // Discord 登入狀態一有變化(第一次載入偵測到已登入、或剛授權完成導回來)就會呼叫這裡

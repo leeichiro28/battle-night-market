@@ -24,58 +24,18 @@ let unsubParticipants = null;
 let timerInterval = null;
 let currentRoundKey = null;
 let lastSeenRound = null;
-let announceTimer = null;
 let autoFollowTriggered = false;
 let enteredMarked = false;
 let autopilotSlot = null; // 對手超過1分鐘沒入場時,代替他自動出招的slot
 let autopilotAnnounced = false;
 let entryWatchdog = null;
 let goneAway = false;
+let battleView = null;
 
 const ENTRY_TIMEOUT_MS = 60000; // 超過1分鐘對手沒入場,自動開始幫他出招
 
-const CIRC = 289;
-
-// announce("文字", { icon: "zap" }):圖示一律走 lucide
-function announce(text, opts) {
-  const o = typeof opts === "number" ? { holdMs: opts } : opts || {};
-  const holdMs = o.holdMs;
-  const el = document.getElementById("big-announce");
-  el.innerHTML = (o.icon ? ui.icon(o.icon) : "") + ui.esc(text);
-  el.classList.remove("show");
-  void el.offsetWidth;
-  el.classList.add("show");
-  clearTimeout(announceTimer);
-  announceTimer = setTimeout(() => el.classList.remove("show"), holdMs || 2200);
-}
-
 function names() {
   return [match.p1?.name || "玩家一", match.p2?.name || "玩家二"];
-}
-
-// 回傳 { text, icon },交給 announce 去顯示
-function buildHeadline(evt) {
-  if (!evt) return null;
-  const [p1Name, p2Name] = names();
-  if (evt.type === "tie") return { icon: "scale", text: "平手,雙方不掉血" };
-  if (evt.type === "timeout_both") return { icon: "hourglass", text: "雙方都逾時,平手" };
-  const winnerName = evt.winnerSlot === 1 ? p1Name : p2Name;
-  const loserName = evt.winnerSlot === 1 ? p2Name : p1Name;
-  if (mySlot === evt.loserSlot) return { icon: "heart-pulse", text: `你扣了 ${evt.dmg} 點血!` };
-  if (mySlot === evt.winnerSlot) return { icon: "flame", text: `你獲勝了這回合!${loserName} 扣 ${evt.dmg} 血` };
-  return { icon: "swords", text: `${winnerName} 獲勝!${loserName} 扣 ${evt.dmg} 血` };
-}
-
-function ringUpdate(el, hp, maxHp) {
-  const ratio = Math.max(hp, 0) / maxHp;
-  el.setAttribute("stroke-dashoffset", CIRC * (1 - ratio));
-  el.setAttribute("stroke", hp <= maxHp * 0.25 ? "#E5484D" : hp <= maxHp * 0.5 ? "#F2B705" : "#3DBE6C");
-}
-
-function appendLogLines(log) {
-  const box = document.getElementById("log");
-  box.innerHTML = (log || []).map((l) => `<div>${l}</div>`).join("");
-  box.scrollTop = box.scrollHeight;
 }
 
 function startTimer(state) {
@@ -97,7 +57,7 @@ function startTimer(state) {
       clearInterval(timerInterval);
       if (!submittedThisRound) {
         submittedThisRound = true;
-        announce("思考時間到,判定逾時...", { icon: "hourglass" });
+        battleView.announce("思考時間到,判定逾時...", { icon: "hourglass" });
         await db.submitMove(matchId, mySlot, { gesture: null, ult: false, timeout: true });
       }
     }
@@ -106,25 +66,15 @@ function startTimer(state) {
 
 function render(state) {
   const [p1Name, p2Name] = names();
-  document.getElementById("p1-name").textContent = p1Name;
-  document.getElementById("p2-name").textContent = p2Name;
-  document.getElementById("p1-hp").textContent = Math.max(state.hp1, 0);
-  document.getElementById("p2-hp").textContent = Math.max(state.hp2, 0);
-  ringUpdate(document.getElementById("p1-ring"), state.hp1, 10);
-  ringUpdate(document.getElementById("p2-ring"), state.hp2, 10);
-  document.getElementById("round-num").textContent = "R" + state.round;
-  appendLogLines(state.log);
-
-  if (lastSeenRound !== null && state.round !== lastSeenRound) {
-    const headline = buildHeadline(state.lastEvent);
-    if (headline) announce(headline.text, { icon: headline.icon });
-    if (mySlot && !submittedThisRound) {
-      setTimeout(() => {
-        if (!submittedThisRound) announce("輪到你了!", { icon: "swords" });
-      }, 1600);
-    }
-  }
+  const roundChanged = lastSeenRound !== null && state.round !== lastSeenRound;
+  battleView.update(match, null, mySlot);
   lastSeenRound = state.round;
+
+  if (roundChanged && mySlot && !submittedThisRound) {
+    setTimeout(() => {
+      if (!submittedThisRound) battleView.announce("輪到你了!", { icon: "swords" });
+    }, 1600);
+  }
 
   const statusEl = document.getElementById("game-status");
   const choiceBtns = document.querySelectorAll(".choice-btn");
@@ -375,7 +325,7 @@ function bindControls() {
   document.getElementById("ult-btn").innerHTML = ui.icon("zap") + "使出究極手勢(尚未使用,保證獲勝該回合)";
   document.getElementById("ult-btn").onclick = () => {
     useUlt = !useUlt;
-    if (useUlt) announce("你準備使出究極手勢!", { icon: "zap" });
+    if (useUlt) battleView.announce("你準備使出究極手勢!", { icon: "zap" });
     refresh();
   };
   document.querySelectorAll(".choice-btn").forEach((btn) => {
@@ -384,7 +334,7 @@ function bindControls() {
       submittedThisRound = true;
       clearInterval(timerInterval);
       const gesture = btn.dataset.g;
-      announce(`你使出了${GESTURE_NAME[gesture]}!`, { icon: GESTURE_ICON[gesture] });
+      battleView.announce(`你使出了${GESTURE_NAME[gesture]}!`, { icon: GESTURE_ICON[gesture] });
       await db.submitMove(matchId, mySlot, { gesture, ult: useUlt, timeout: false });
       useUlt = false;
     };
@@ -418,6 +368,12 @@ function bindRuleModal() {
     return;
   }
   document.getElementById("page-eyebrow").innerHTML = ui.icon("scissors") + "五手勢對戰";
+  battleView = BattleView.mount(document.getElementById("battle-stage"), null, {
+    gameType: "rps5",
+    matchId,
+    watch: false, // 五手勢目前沒有下注/表情功能
+    showStatus: false, // 這頁自己的 #game-status 已經處理狀態文字,不要顯示兩份
+  });
   bindControls();
   bindRuleModal();
   await refresh();
@@ -432,6 +388,7 @@ function bindRuleModal() {
 window.addEventListener("beforeunload", () => {
   if (unsub) unsub();
   if (unsubParticipants) unsubParticipants();
+  if (battleView) battleView.destroy();
   if (entryWatchdog) clearInterval(entryWatchdog);
 });
 

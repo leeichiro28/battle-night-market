@@ -13,42 +13,10 @@
     <div class="marquee">
       <span class="eyebrow" id="page-eyebrow">骰子對戰</span>
       <h1>擲出你的命運</h1>
-      <span class="tag" id="field-mod-tag" style="display:none;margin-top:10px;"></span>
     </div>
 
-    <div class="sudden-death" id="sudden-death-banner" style="display:none;">生死局啟動!雙方傷害固定雙倍</div>
-
     <div class="card">
-      <div class="duel-stage">
-        <div class="fighter">
-          <div class="cicon" id="p1-class-icon"></div>
-          <div class="name" id="p1-name">玩家一</div>
-          <div class="hp-dial" id="p1-dial">
-            <svg width="108" height="108" viewBox="0 0 108 108">
-              <circle cx="54" cy="54" r="46" fill="none" stroke="#34304A" stroke-width="10"/>
-              <circle id="p1-ring" cx="54" cy="54" r="46" fill="none" stroke="#3DBE6C" stroke-width="10" stroke-linecap="round" stroke-dasharray="289" stroke-dashoffset="0"/>
-            </svg>
-            <div class="num" id="p1-hp">30</div>
-          </div>
-          <div class="badges-row" id="p1-badges" style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:8px;"></div>
-        </div>
-        <div class="vs-badge">VS<br/><span id="round-num" style="font-size:12px;color:var(--ink-dim);">R1</span></div>
-        <div class="fighter">
-          <div class="cicon" id="p2-class-icon"></div>
-          <div class="name" id="p2-name">玩家二</div>
-          <div class="hp-dial" id="p2-dial">
-            <svg width="108" height="108" viewBox="0 0 108 108">
-              <circle cx="54" cy="54" r="46" fill="none" stroke="#34304A" stroke-width="10"/>
-              <circle id="p2-ring" cx="54" cy="54" r="46" fill="none" stroke="#3DBE6C" stroke-width="10" stroke-linecap="round" stroke-dasharray="289" stroke-dashoffset="0"/>
-            </svg>
-            <div class="num" id="p2-hp">30</div>
-          </div>
-          <div class="badges-row" id="p2-badges" style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:8px;"></div>
-        </div>
-      </div>
-
-      <div class="big-announce" id="big-announce"></div>
-      <div class="log-panel" id="log"></div>
+      <div id="battle-stage"></div>
       <div class="timer-bar"><div id="timer-fill" style="width:100%"></div></div>
 
       <div id="controls" style="margin-top:14px;">
@@ -71,12 +39,7 @@
       </div>
     </div>
 
-    <div class="card" id="watch-panel" style="display:none;">
-      <div style="text-align:center;font-size:12px;color:var(--ink-dim);margin-bottom:12px;">觀眾互動(純娛樂,不影響勝負)</div>
-      <div id="bet-row" style="display:none;"></div>
-      <div class="reaction-bar action-row" id="emoji-bar" style="justify-content:center;margin-top:12px;"></div>
-      <div id="floaties" style="position:relative;height:50px;"></div>
-    </div>
+    <div id="battle-watch"></div>
 
     <div class="footer-nav" id="back-link" style="display:none;"><a href="index.html"><i data-lucide="arrow-left" class="ico"></i>回活動列表</a></div>
   </div>
@@ -96,6 +59,7 @@
   <script src="assets/db.js"></script>
   <script src="assets/ui.js"></script>
   <script src="assets/header.js"></script>
+  <script src="assets/battle-view.js"></script>
   <script src="assets/dice.js"></script>
 </body>
 </html>

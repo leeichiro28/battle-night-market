@@ -462,7 +462,6 @@ label{
 .site-header{
   display:flex;
   align-items:center;
-  justify-content:space-between;
   gap:16px;
   flex-wrap:wrap;
   padding:12px 20px;
@@ -477,6 +476,7 @@ label{
   display:inline-flex;
   align-items:center;
   gap:8px;
+  margin-right:auto; /* 品牌固定靠左,導覽連結/帳號區/漢堡鈕整組靠右 */
   font-family:'Archivo Black';
   color:var(--gold);
   font-size:15px;
@@ -503,6 +503,11 @@ label{
 }
 .site-header-nav a.nav-link:hover{color:var(--ink);background:var(--panel2);}
 .site-header-nav a.nav-link.active{color:var(--gold);background:rgba(242,183,5,.1);}
+
+/* 手機版的三明治選單按鈕:桌機隱藏,窄螢幕才出現。
+   用 .icon-btn.nav-toggle(兩個 class)墊高 specificity,
+   確保蓋過後面 .icon-btn{display:inline-flex} 那條規則,不受規則先後順序影響。 */
+.icon-btn.nav-toggle{display:none;}
 
 /* 導覽列右側的帳號區 */
 .header-account{
@@ -552,8 +557,21 @@ label{
 .icon-btn .ico{width:15px;height:15px;}
 @media (max-width:640px){
   .site-header{padding:10px 14px;gap:10px;}
-  .site-header-nav{gap:4px;width:100%;justify-content:space-between;}
-  .header-account{border-left:none;padding-left:0;margin-left:auto;}
+  /* 第一列只留品牌/帳號/漢堡鈕,3 個導覽連結收進可展開的抽屜,避免全部擠在同一列硬換行 */
+  .icon-btn.nav-toggle{display:inline-flex;}
+  .site-header-nav{
+    display:none;
+    flex-basis:100%;
+    flex-direction:column;
+    align-items:stretch;
+    gap:4px;
+    margin-top:4px;
+    padding-top:10px;
+    border-top:1px solid var(--line);
+  }
+  .site-header-nav.open{display:flex;}
+  .site-header-nav a.nav-link{width:100%;padding:10px 12px;}
+  .header-account{border-left:none;padding-left:0;margin-left:0;}
   .header-user{max-width:120px;}
 }
 
@@ -717,23 +735,28 @@ i.ico{opacity:0;}
   margin-top:4px;
 }
 .check-item{
-  display:flex;
-  align-items:center;
-  gap:10px;
+  display:grid;
+  grid-template-columns:auto auto 1fr;
+  align-items:start;
+  column-gap:10px;
   cursor:pointer;
   font-size:13px;
   color:var(--ink);
   line-height:1.5;
   padding:8px 10px;
+  margin-bottom:0; /* 蓋掉全域 label{margin-bottom:6px},間距一律靠 .check-list 的 gap 控制 */
   border:1px solid var(--line);
   border-radius:10px;
   background:var(--panel2);
   transition:border-color .12s ease;
 }
 .check-item:hover{border-color:var(--gold-d);}
-.check-item input[type="checkbox"]{width:auto;flex-shrink:0;margin:0;}
-.check-item .ico{width:16px;height:16px;color:var(--gold);}
-.check-item.nested{margin-left:24px;}
+.check-item > *{min-width:0;}
+.check-item input[type="checkbox"]{width:auto;flex-shrink:0;margin:0;margin-top:3px;}
+.check-item .ico{width:16px;height:16px;color:var(--gold);margin-top:2px;flex-shrink:0;}
+/* 巢狀規則(例如「動態戰場」依附在「戰場修飾骰」下面)用左邊的金色線標示從屬關係,
+   卡片本身的左右邊界跟其他列保持一致,不要整張卡片內縮變窄 */
+.check-item.nested{padding-left:20px;border-left:3px solid var(--gold-d);}
 .field + .field{margin-top:14px;}
 .field-group{
   border:1px solid var(--line);
@@ -904,7 +927,6 @@ input,select,textarea{max-width:100%;min-width:0;}
   .event-card .action-row{width:100%;}
   .event-card .action-row .btn{flex:1 1 auto;}
   .field-group{padding:14px;}
-  .check-item.nested{margin-left:14px;}
   .auto-reward-row{gap:8px;}
   .auto-reward-row > div{flex:1 1 100%;}
   .duel-stage{gap:8px;}

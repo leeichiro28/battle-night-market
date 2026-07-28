@@ -109,6 +109,14 @@
     if (await maybeAutoRename(player, session)) refreshAccount();
   }
 
+  // 手機版把 3 個連結收進漢堡選單抽屜,帳號區(暱稱/改名/登出)固定留在第一列不會被收起來
+  function setNavOpen(nav, toggle, open) {
+    nav.classList.toggle("open", open);
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    toggle.setAttribute("aria-label", open ? "關閉選單" : "開啟選單");
+    toggle.innerHTML = ui.icon(open ? "x" : "menu");
+  }
+
   function renderHeader() {
     const el = document.getElementById("site-header");
     if (!el) return;
@@ -116,17 +124,37 @@
     el.innerHTML = `
       <div class="site-header">
         <a href="index.html" class="site-header-brand">${ui.icon("dices")}擂台夜市</a>
-        <div class="site-header-nav">
+        <nav class="site-header-nav" id="site-header-nav">
           ${NAV_LINKS.map(
             (l) =>
               `<a href="${l.href}" class="nav-link${page === l.href ? " active" : ""}">${ui.icon(l.icon)}${l.label}</a>`
           ).join("")}
-          <span class="header-account" id="header-account"></span>
-        </div>
+        </nav>
+        <span class="header-account" id="header-account"></span>
+        <button type="button" class="icon-btn nav-toggle" id="nav-toggle" aria-controls="site-header-nav" aria-expanded="false" aria-label="開啟選單"></button>
       </div>
     `;
     refreshAccount();
     db.onAuthChange(() => refreshAccount());
+
+    const nav = document.getElementById("site-header-nav");
+    const toggle = document.getElementById("nav-toggle");
+    setNavOpen(nav, toggle, false);
+    toggle.onclick = () => setNavOpen(nav, toggle, !nav.classList.contains("open"));
+    nav.querySelectorAll(".nav-link").forEach((a) => {
+      a.onclick = () => setNavOpen(nav, toggle, false);
+    });
+    document.addEventListener("click", (e) => {
+      if (!nav.classList.contains("open")) return;
+      if (nav.contains(e.target) || toggle.contains(e.target)) return;
+      setNavOpen(nav, toggle, false);
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && nav.classList.contains("open")) setNavOpen(nav, toggle, false);
+    });
+    window.addEventListener("resize", () => {
+      if (window.innerWidth > 640 && nav.classList.contains("open")) setNavOpen(nav, toggle, false);
+    });
   }
 
   renderHeader();

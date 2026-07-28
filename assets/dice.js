@@ -17,7 +17,6 @@ let unsub = null;
 let unsubParticipants = null;
 let unsubBets = null;
 let lastSeenRound = null;
-let announceTimer = null;
 let timerInterval = null;
 let currentRoundKey = null;
 let autoFollowTriggered = false;
@@ -26,35 +25,18 @@ let goneAway = false;
 let autopilotSlot = null;
 let autopilotAnnounced = false;
 let entryWatchdog = null;
-let reactionChannel = null;
-let myBet = null;
+let battleView = null;
 
 const ENTRY_TIMEOUT_MS = 60000;
-const CIRC = 289;
 const MAX_HP = 30;
 const SUDDEN_DEATH_HP = 6;
 
 const ITEM_LABEL = { crit: "爆擊", heal: "回血", truehit: "必中", seal: "封印" };
-const FIELD_LABEL = {
-  crit: { icon: "flame", text: "熾熱戰場(全場傷害+1)" },
-  shield_plus: { icon: "shield-check", text: "堅盾戰場(防禦骰+1次)" },
-  lifesteal: { icon: "droplet", text: "嗜血戰場(擊中回血1)" },
-  chaos_tie: { icon: "dice-5", text: "混沌戰場(平手傷害變2點)" },
-  fast_timer: { icon: "wind", text: "疾風戰場(思考時間縮短)" },
-  shadow: { icon: "moon", text: "暗影戰場(爆擊傷害加倍・防禦骰-1)" },
-};
 const CLASS_INFO = {
   fighter: { icon: "swords", name: "鬥士", ultName: "血怒" },
   guardian: { icon: "shield", name: "守衛", ultName: "金鐘罩" },
   gambler: { icon: "dice-5", name: "賭徒", ultName: "孤注一擲" },
   assassin: { icon: "sword", name: "刺客", ultName: "背刺" },
-};
-// 觀眾表情彈幕:一律用 lucide 圖示,不用 emoji
-const REACTIONS = {
-  cheer: "party-popper",
-  fire: "flame",
-  love: "heart",
-  laugh: "laugh",
 };
 const CLASS_COUNTER = { fighter: "gambler", gambler: "assassin", assassin: "guardian", guardian: "fighter" };
 const FIELD_MODS = ["crit", "shield_plus", "lifesteal", "chaos_tie", "fast_timer", "shadow"];
@@ -63,54 +45,12 @@ function rollTimeFor(state) {
   return state.field_mod === "fast_timer" ? 15000 : 30000;
 }
 
-// announce("文字", { icon: "flame" }):圖示一律走 lucide
-function announce(text, opts) {
-  const o = typeof opts === "number" ? { holdMs: opts } : opts || {};
-  const holdMs = o.holdMs;
-  const el = document.getElementById("big-announce");
-  el.innerHTML = (o.icon ? ui.icon(o.icon) : "") + ui.esc(text);
-  el.classList.remove("show");
-  void el.offsetWidth;
-  el.classList.add("show");
-  clearTimeout(announceTimer);
-  announceTimer = setTimeout(() => el.classList.remove("show"), holdMs || 2200);
-}
-
-function ringUpdate(el, hp, maxHp) {
-  const ratio = Math.max(hp, 0) / maxHp;
-  el.setAttribute("stroke-dashoffset", CIRC * (1 - ratio));
-  el.setAttribute("stroke", hp <= maxHp * 0.25 ? "#E5484D" : hp <= maxHp * 0.5 ? "#F2B705" : "#3DBE6C");
-}
-
-function appendLogLines(log) {
-  const box = document.getElementById("log");
-  box.innerHTML = (log || []).map((l) => `<div>${l}</div>`).join("");
-  box.scrollTop = box.scrollHeight;
-}
-
 function names() {
   return [match.p1?.name || "玩家一", match.p2?.name || "玩家二"];
 }
 
 function d6() {
   return 1 + Math.floor(Math.random() * 6);
-}
-
-// 回傳 { text, icon },交給 announce 去顯示
-function buildHeadline(evt) {
-  if (!evt) return null;
-  const [p1Name, p2Name] = names();
-  if (evt.type === "tie") return { icon: "scale", text: "平手!雙方扣血" };
-  const winnerName = evt.winnerSlot === 1 ? p1Name : p2Name;
-  const loserName = evt.winnerSlot === 1 ? p2Name : p1Name;
-  if (evt.shieldBlocked) {
-    if (mySlot === evt.loserSlot) return { icon: "shield-check", text: "你擋下了攻擊,毫髮無傷!" };
-    if (mySlot === evt.winnerSlot) return { icon: "shield", text: `${loserName} 擋下了你的攻擊!` };
-    return { icon: "shield", text: `${loserName} 擋下攻擊!` };
-  }
-  if (mySlot === evt.loserSlot) return { icon: "heart-pulse", text: `你扣了 ${evt.dmg} 點血!` };
-  if (mySlot === evt.winnerSlot) return { icon: "flame", text: `你獲勝了這回合!${loserName} 扣 ${evt.dmg} 血` };
-  return { icon: "swords", text: `${winnerName} 獲勝!${loserName} 扣 ${evt.dmg} 血` };
 }
 
 function startTimer(state) {
@@ -132,7 +72,7 @@ function startTimer(state) {
       if (!submittedThisRound) {
         submittedThisRound = true;
         const roll = d6();
-        announce(`思考時間到,系統幫你擲出了 ${roll} 點!`, { icon: "hourglass" });
+        battleView.announce(`思考時間到,系統幫你擲出了 ${roll} 點!`, { icon: "hourglass" });
         await db.submitMove(matchId, mySlot, { roll, defend: false, allin: false, freebet: false, gamble: false, stance: null, ult: false });
         resetSelections();
       }
@@ -149,62 +89,18 @@ function resetSelections() {
   selectedStance = null;
 }
 
-function renderBadges(elId, state, slot) {
-  const box = document.getElementById(elId);
-  const badges = [];
-  const rules = ev.rules || {};
-  const combo = slot === 1 ? state.combo1 : state.combo2;
-  const comboBonus = slot === 1 ? state.combobonus1 : state.combobonus2;
-  const rageready = slot === 1 ? state.rageready1 : state.rageready2;
-  if (rules.combo && combo > 0) {
-    badges.push(
-      `<span class="mini-badge combo">${ui.icon("zap")}連擊x${combo}${comboBonus ? "(+" + comboBonus + ")" : ""}</span>`
-    );
-  }
-  if (rules.rage && rageready) badges.push(`<span class="mini-badge rage">${ui.icon("flame")}怒氣滿</span>`);
-  box.innerHTML = badges.join("");
-}
-
 function render(state) {
   const [p1Name, p2Name] = names();
-  document.getElementById("p1-name").textContent = p1Name;
-  document.getElementById("p2-name").textContent = p2Name;
-  document.getElementById("p1-hp").textContent = Math.max(state.hp1, 0);
-  document.getElementById("p2-hp").textContent = Math.max(state.hp2, 0);
-  ringUpdate(document.getElementById("p1-ring"), state.hp1, MAX_HP);
-  ringUpdate(document.getElementById("p2-ring"), state.hp2, MAX_HP);
-  document.getElementById("round-num").textContent = "R" + state.round;
-  appendLogLines(state.log);
-  renderBadges("p1-badges", state, 1);
-  renderBadges("p2-badges", state, 2);
-
-  const c1 = CLASS_INFO[state.class1];
-  const c2 = CLASS_INFO[state.class2];
-  document.getElementById("p1-class-icon").innerHTML = c1 ? ui.icon(c1.icon) + c1.name : "";
-  document.getElementById("p2-class-icon").innerHTML = c2 ? ui.icon(c2.icon) + c2.name : "";
-
-  const fieldTag = document.getElementById("field-mod-tag");
-  const field = FIELD_LABEL[state.field_mod];
-  if (state.field_mod) {
-    fieldTag.style.display = "inline-flex";
-    fieldTag.innerHTML = field ? ui.icon(field.icon) + `<span>${field.text}</span>` : ui.esc(state.field_mod);
-  } else {
-    fieldTag.style.display = "none";
-  }
-
-  const sdOn = (ev.rules || {}).sudden_death && state.hp1 <= SUDDEN_DEATH_HP && state.hp2 <= SUDDEN_DEATH_HP && state.hp1 > 0 && state.hp2 > 0;
-  document.getElementById("sudden-death-banner").style.display = sdOn ? "block" : "none";
-
-  if (lastSeenRound !== null && state.round !== lastSeenRound) {
-    const headline = buildHeadline(state.lastEvent);
-    if (headline) announce(headline.text, { icon: headline.icon });
-    if (mySlot && !submittedThisRound) {
-      setTimeout(() => {
-        if (!submittedThisRound) announce("輪到你了!", { icon: "swords" });
-      }, 2000);
-    }
-  }
+  const wasFirstRender = lastSeenRound === null;
+  const roundChanged = !wasFirstRender && state.round !== lastSeenRound;
+  battleView.update(match, ev, mySlot);
   lastSeenRound = state.round;
+
+  if (roundChanged && mySlot && !submittedThisRound) {
+    setTimeout(() => {
+      if (!submittedThisRound) battleView.announce("輪到你了!", { icon: "swords" });
+    }, 2000);
+  }
 
   const statusEl = document.getElementById("game-status");
   const rollBtn = document.getElementById("roll-btn");
@@ -231,7 +127,6 @@ function render(state) {
     document.getElementById("back-link").innerHTML = `<a href="lobby.html?event=${eventId}">${ui.icon(
       "arrow-left"
     )}回等候室查看賽況</a>`;
-    renderWatchPanel(state, true);
     return;
   }
 
@@ -242,11 +137,8 @@ function render(state) {
     document.getElementById("rage-tag").style.display = "none";
     document.getElementById("timer-fill").style.width = "0%";
     statusEl.innerHTML = ui.icon("eye") + "觀戰模式・對戰進行中";
-    renderWatchPanel(state, false);
     return;
   }
-
-  renderWatchPanel(state, false);
 
   const rules = ev.rules || {};
   const myClass = mySlot === 1 ? state.class1 : state.class2;
@@ -357,123 +249,6 @@ function render(state) {
     rollBtn.disabled = false;
     startTimer(state);
   }
-}
-
-function renderWatchPanel(state, matchOver) {
-  const rules = ev.rules || {};
-  const panel = document.getElementById("watch-panel");
-  const showBetting = rules.betting && !mySlot;
-  const showEmoji = rules.reactions;
-  if (!showBetting && !showEmoji) {
-    panel.style.display = "none";
-    return;
-  }
-  panel.style.display = "block";
-  document.getElementById("bet-row").style.display = showBetting ? "flex" : "none";
-  document.getElementById("emoji-bar").style.display = showEmoji ? "flex" : "none";
-}
-
-async function refreshBets(state) {
-  const rules = ev.rules || {};
-  if (!rules.betting) return;
-  const box = document.getElementById("bet-row");
-  const bets = await db.getBets(matchId);
-  const n1 = bets.filter((b) => b.bet_on === 1).length;
-  const n2 = bets.filter((b) => b.bet_on === 2).length;
-  const total = n1 + n2 || 1;
-  const pct1 = Math.round((n1 / total) * 100);
-  const pct2 = 100 - pct1;
-  const local = db.getLocalPlayer();
-  if (local.id) {
-    const mine = bets.find((b) => b.player_id === local.id);
-    myBet = mine ? mine.bet_on : null;
-  }
-  const over = state.hp1 <= 0 || state.hp2 <= 0;
-  const winnerSlot = over ? (state.hp1 <= 0 ? 2 : 1) : null;
-
-  const [p1Name, p2Name] = names();
-  box.style.display = "flex";
-  box.style.gap = "8px";
-  const crown = (slot) => (over && winnerSlot === slot ? " " + ui.icon("crown") : "");
-  box.innerHTML = `
-    <div class="bet-btn" id="bet-btn-1" style="${myBet === 1 ? "border-color:var(--gold);" : ""}">
-      <div>${ui.esc(p1Name)}${crown(1)}</div>
-      <div class="pct">${pct1}%</div>
-      <div class="bar"><div style="width:${pct1}%;"></div></div>
-      <div style="font-size:10px;color:var(--ink-dim);margin-top:5px;">${n1}人下注</div>
-    </div>
-    <div class="bet-btn" id="bet-btn-2" style="${myBet === 2 ? "border-color:var(--gold);" : ""}">
-      <div>${ui.esc(p2Name)}${crown(2)}</div>
-      <div class="pct">${pct2}%</div>
-      <div class="bar"><div style="width:${pct2}%;"></div></div>
-      <div style="font-size:10px;color:var(--ink-dim);margin-top:5px;">${n2}人下注</div>
-    </div>
-  `;
-  if (!over && !myBet) {
-    ["1", "2"].forEach((s) => {
-      const b = document.getElementById("bet-btn-" + s);
-      if (b) {
-        b.style.cursor = "pointer";
-        b.onclick = async () => {
-          const local2 = await ensureLocalForBet();
-          if (!local2) return;
-          await db.placeBet(matchId, local2.id, parseInt(s));
-          refreshBets(state);
-        };
-      }
-    });
-  }
-  if (over && myBet) {
-    const guessedRight = myBet === winnerSlot;
-    const hint = document.createElement("div");
-    hint.style.cssText =
-      "width:100%;display:flex;align-items:center;justify-content:center;gap:6px;font-size:12px;color:" +
-      (guessedRight ? "var(--green)" : "var(--ink-dim)") +
-      ";margin-top:8px;";
-    hint.innerHTML = guessedRight ? ui.icon("party-popper") + "你猜對了!" : ui.icon("smile") + "猜錯了,下次加油";
-    box.appendChild(hint);
-  }
-}
-
-async function ensureLocalForBet() {
-  const local = db.getLocalPlayer();
-  if (local.id) return local;
-  // 身分一律走 Discord 登入(導覽列也有同一顆按鈕),這裡不再另外要使用者手打暱稱
-  const go = await ui.confirm("下注前要先用 Discord 登入,登入後就能參加投票。", {
-    title: "還沒登入",
-    icon: "log-in",
-    confirmText: "用 Discord 登入",
-  });
-  if (go) await db.signInWithDiscord();
-  return null;
-}
-
-// 表情彈幕:key 是 REACTIONS 的鍵值,舊版本傳來的 emoji 字串也照樣顯示
-function spawnFloaty(key) {
-  const box = document.getElementById("floaties");
-  if (!box) return;
-  const span = document.createElement("span");
-  span.className = "floaty";
-  if (REACTIONS[key]) span.innerHTML = ui.icon(REACTIONS[key]);
-  else span.textContent = key;
-  span.style.left = 20 + Math.random() * 60 + "%";
-  box.appendChild(span);
-  setTimeout(() => span.remove(), 2500);
-}
-
-function bindWatchPanel() {
-  const bar = document.getElementById("emoji-bar");
-  if (!bar) return;
-  bar.innerHTML = Object.keys(REACTIONS)
-    .map((key) => `<button class="btn ghost small" data-reaction="${key}">${ui.icon(REACTIONS[key])}</button>`)
-    .join("");
-  bar.querySelectorAll("button").forEach((btn) => {
-    btn.onclick = () => {
-      const key = btn.dataset.reaction;
-      spawnFloaty(key);
-      if (reactionChannel) reactionChannel.send(key);
-    };
-  });
 }
 
 async function resolveRoundIfReady(state) {
@@ -848,44 +623,43 @@ async function refresh() {
   resolveRoundIfReady(state);
   maybeAutoAdvance(state);
   maybeAutopilotSubmit();
-  if ((ev.rules || {}).betting) refreshBets(state);
 }
 
 function bindControls() {
   document.getElementById("roll-btn").innerHTML = ui.icon("dices") + "擲骰";
   document.getElementById("shield-toggle").onclick = () => {
     selectedShield = !selectedShield;
-    if (selectedShield) announce("你準備使用防禦骰!", { icon: "shield" });
+    if (selectedShield) battleView.announce("你準備使用防禦骰!", { icon: "shield" });
     refresh();
   };
   document.getElementById("allin-toggle").onclick = () => {
     selectedAllin = !selectedAllin;
-    if (selectedAllin) announce("你決定背水一戰!", { icon: "flame" });
+    if (selectedAllin) battleView.announce("你決定背水一戰!", { icon: "flame" });
     refresh();
   };
   document.getElementById("freebet-toggle").onclick = () => {
     selectedFreebet = !selectedFreebet;
-    if (selectedFreebet) announce("你使出了自由加注!", { icon: "coins" });
+    if (selectedFreebet) battleView.announce("你使出了自由加注!", { icon: "coins" });
     refresh();
   };
   document.getElementById("gamble-toggle").onclick = () => {
     selectedGamble = !selectedGamble;
-    if (selectedGamble) announce("你決定雙骰豪賭!", { icon: "dice-5" });
+    if (selectedGamble) battleView.announce("你決定雙骰豪賭!", { icon: "dice-5" });
     refresh();
   };
   document.getElementById("ult-toggle").onclick = () => {
     selectedUlt = !selectedUlt;
-    if (selectedUlt) announce("大招蓄力中!", { icon: "zap" });
+    if (selectedUlt) battleView.announce("大招蓄力中!", { icon: "zap" });
     refresh();
   };
   document.getElementById("stance-attack").onclick = () => {
     selectedStance = selectedStance === "attack" ? null : "attack";
-    if (selectedStance === "attack") announce("你選擇了猛攻姿態!", { icon: "sword" });
+    if (selectedStance === "attack") battleView.announce("你選擇了猛攻姿態!", { icon: "sword" });
     refresh();
   };
   document.getElementById("stance-defense").onclick = () => {
     selectedStance = selectedStance === "defense" ? null : "defense";
-    if (selectedStance === "defense") announce("你選擇了穩紮穩打!", { icon: "shield" });
+    if (selectedStance === "defense") battleView.announce("你選擇了穩紮穩打!", { icon: "shield" });
     refresh();
   };
   document.getElementById("roll-btn").onclick = async () => {
@@ -900,7 +674,7 @@ function bindControls() {
     }
     document.getElementById("roll-btn").disabled = true;
     clearInterval(timerInterval);
-    announce(`你擲出了 ${roll} 點!`, { icon: "dices" });
+    battleView.announce(`你擲出了 ${roll} 點!`, { icon: "dices" });
     await db.submitMove(matchId, mySlot, {
       roll,
       defend: selectedShield,
@@ -912,7 +686,6 @@ function bindControls() {
     });
     resetSelections();
   };
-  bindWatchPanel();
 }
 
 const RULE_EXPLAIN = {
@@ -970,15 +743,18 @@ function bindRuleModal() {
     return;
   }
   document.getElementById("page-eyebrow").innerHTML = ui.icon("dices") + "骰子對戰";
-  document.getElementById("sudden-death-banner").innerHTML = ui.icon("skull") + "生死局啟動!雙方傷害固定雙倍";
+  battleView = BattleView.mount(document.getElementById("battle-stage"), document.getElementById("battle-watch"), {
+    gameType: "dice",
+    matchId,
+    showStatus: false, // 這頁自己的 #game-status 已經處理狀態文字,不要顯示兩份
+  });
   bindControls();
   bindRuleModal();
   await refresh();
-  reactionChannel = db.openReactionChannel(matchId, (key) => spawnFloaty(key));
   unsub = db.onTableChange("matches", `id=eq.${matchId}`, () => refresh());
   unsubParticipants = db.onTableChange("event_participants", `event_id=eq.${eventId}`, () => refresh());
   unsubBets = db.onTableChange("match_bets", `match_id=eq.${matchId}`, () => {
-    if (match) refreshBets(match.state);
+    if (match) battleView.update(match, ev, mySlot);
   });
   entryWatchdog = setInterval(() => {
     checkEntryTimeout();
@@ -990,7 +766,7 @@ window.addEventListener("beforeunload", () => {
   if (unsub) unsub();
   if (unsubParticipants) unsubParticipants();
   if (unsubBets) unsubBets();
-  if (reactionChannel) reactionChannel.close();
+  if (battleView) battleView.destroy();
   if (entryWatchdog) clearInterval(entryWatchdog);
 });
 

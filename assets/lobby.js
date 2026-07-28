@@ -137,26 +137,61 @@ async function renderBracket(ev) {
 }
 
 // ---------- 內嵌直播面板:不用另外開分頁就能看到目前這場對戰的即時比分 ----------
+// 以前這裡是塞一個 <iframe src="dice.html?..."> 把整頁對戰畫面嵌進來,會多出第二層導覽列/標題/規則按鈕,
+// 看起來像網站自己嵌自己。現在改成跟 dice.html / rps5.html 共用同一份 assets/battle-view.js,
+// 直接在等候室頁面裡渲染同一個 DOM,下注/表情互動也是同一份邏輯,不是唯讀截圖。
 let currentLiveMatchId = null;
+let liveBattleView = null;
+let liveBetsUnsub = null;
+let liveMatchRef = null;
+let liveEvRef = null;
+
+function teardownLivePanel() {
+  if (liveBattleView) liveBattleView.destroy();
+  if (liveBetsUnsub) liveBetsUnsub();
+  liveBattleView = null;
+  liveBetsUnsub = null;
+  liveMatchRef = null;
+  liveEvRef = null;
+}
 
 function renderLivePanel(ev, m) {
   const box = document.getElementById("live-panel-box");
   if (!m) {
-    if (currentLiveMatchId !== null) box.innerHTML = "";
+    if (currentLiveMatchId !== null) {
+      teardownLivePanel();
+      box.innerHTML = "";
+    }
     currentLiveMatchId = null;
     return;
   }
-  if (currentLiveMatchId === m.id) return; // 同一場對戰,iframe內部自己會即時更新,不要重建它(重建會閃爍/重新連線)
+
+  liveMatchRef = m;
+  liveEvRef = ev;
+
+  if (currentLiveMatchId === m.id) {
+    liveBattleView.update(m, ev, null); // 同一場對戰,只更新畫面內容,不要重建 DOM(會閃爍)
+    return;
+  }
+
+  teardownLivePanel();
   currentLiveMatchId = m.id;
-  const page = GAME_PAGE[ev.game_type];
   box.innerHTML = `
-    <div class="live-panel" style="padding:0;overflow:hidden;">
-      <div class="live-tag" style="margin:14px 14px 0;"><span class="dot"></span>直播中・${ui.gameLabel(
+    <div class="live-panel">
+      <div class="live-tag"><span class="dot"></span>直播中・${ui.gameLabel(
         ev.game_type
       )}・不用開新分頁,直接在這裡看完整對戰</div>
-      <iframe src="${page}?match=${m.id}&event=${eventId}" style="width:100%;height:840px;border:0;display:block;margin-top:8px;background:transparent;" title="live-match"></iframe>
+      <div id="live-battle-stage"></div>
     </div>
   `;
+  liveBattleView = BattleView.mount(document.getElementById("live-battle-stage"), null, {
+    gameType: ev.game_type,
+    matchId: m.id,
+  });
+  liveBattleView.update(m, ev, null);
+  liveBetsUnsub = db.onTableChange("match_bets", `match_id=eq.${m.id}`, () => {
+    if (liveBattleView && liveMatchRef) liveBattleView.update(liveMatchRef, liveEvRef, null);
+  });
 }
 
 function computeQueuePosition(matches, myMatchId) {
@@ -406,4 +441,5 @@ function bindRuleModal(ev) {
 window.addEventListener("beforeunload", () => {
   if (unsub1) unsub1();
   if (unsub2) unsub2();
+  teardownLivePanel();
 });
