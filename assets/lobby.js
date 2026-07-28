@@ -68,25 +68,25 @@ function sectionTitle(iconName, text, gold) {
   return `<div class="section-title${gold ? " gold" : ""}">${ui.icon(iconName)}${text}</div>`;
 }
 
-async function renderBracket(ev) {
-  const box = document.getElementById("bracket-list");
-  const parts = await db.listParticipants(eventId);
+// 已出局名單,列表 / 賽制圖兩種檢視都會用到
+function eliminatedListHtml(parts) {
+  const eliminated = parts.filter((p) => p.status === "eliminated").sort((a, b) => (a.final_rank || 99) - (b.final_rank || 99));
+  if (!eliminated.length) return "";
+  let html = sectionTitle("skull", "已出局");
+  eliminated.forEach((p) => {
+    html += `<div class="bracket-row"><span class="lose">${rankBadge(p.final_rank)}${ui.esc(p.players.name)}</span><span class="mono" style="font-size:12px;">${
+      p.reward ? ui.icon("gift") + " " + ui.esc(p.reward) : ""
+    }</span></div>`;
+  });
+  return html;
+}
 
-  if (!parts.length) {
-    box.innerHTML = `<div class="empty">${ui.icon("users")}還沒有人參加</div>`;
-    return;
-  }
+let bracketView = localStorage.getItem("bracket_view") === "tree" ? "tree" : "list";
+document.querySelectorAll(".view-toggle-btn").forEach((btn) => {
+  btn.classList.toggle("active", btn.dataset.view === bracketView);
+});
 
-  if (!ev.locked) {
-    box.innerHTML =
-      `<div class="empty">${ui.icon("users")}報名中,已有 ${parts.length} 人參加,等主辦人鎖定名單開賽</div>` +
-      parts
-        .map((p) => `<div class="bracket-row"><span>${ui.icon("user")} ${ui.esc(p.players.name)}</span></div>`)
-        .join("");
-    return;
-  }
-
-  const matches = await db.listMatches(eventId);
+function renderBracketListView(ev, parts, matches) {
   const wbMatches = matches.filter((m) => m.bracket === "winners");
   const lbMatches = matches.filter((m) => m.bracket === "losers");
   const finalMatch = matches.find((m) => m.bracket === "final");
@@ -123,17 +123,178 @@ async function renderBracket(ev) {
     html += matchRowHtml(finalMatch, ev);
   }
 
-  const eliminated = parts.filter((p) => p.status === "eliminated").sort((a, b) => (a.final_rank || 99) - (b.final_rank || 99));
-  if (eliminated.length) {
-    html += sectionTitle("skull", "已出局");
-    eliminated.forEach((p) => {
-      html += `<div class="bracket-row"><span class="lose">${rankBadge(p.final_rank)}${ui.esc(p.players.name)}</span><span class="mono" style="font-size:12px;">${
-        p.reward ? ui.icon("gift") + " " + ui.esc(p.reward) : ""
-      }</span></div>`;
-    });
+  html += eliminatedListHtml(parts);
+  return html;
+}
+
+// 樹狀對戰卡:同一張卡上下兩位選手,贏家打勾、輸家灰底刪除線
+function bracketCardInnerHtml(m) {
+  const n1 = m.p1?.name || (m.status === "pending" ? "待定" : "輪空");
+  const n2 = m.p2?.name || (m.status === "pending" ? "待定" : "輪空");
+  const w1 = m.winner_id && m.winner_id === m.player1_id;
+  const w2 = m.winner_id && m.winner_id === m.player2_id;
+  const cls = (win) => (win ? "win" : m.winner_id ? "lose" : "");
+  const isLive = m.status === "active";
+  return `
+    <div class="bt-row ${cls(w1)}">${w1 ? ui.icon("check") : ""}<span>${ui.esc(n1)}</span></div>
+    <div class="bt-row ${cls(w2)}">${w2 ? ui.icon("check") : ""}<span>${ui.esc(n2)}</span></div>
+    ${isLive ? `<div class="bt-live-tag">${ui.icon("radio")}直播中</div>` : ""}`;
+}
+
+// 賽制圖:只有勝部賽程是固定成形的二元樹(每輪 slot i 由上一輪 slot 2i / 2i+1 晉級而來),
+// 才能用「欄位 = 輪次、SVG 連線」畫出真正的賽制圖。敗部復活賽是動態配對(誰先打完誰先上),
+// 沒有固定賽程樹,所以敗部跟已出局名單維持原本的清單呈現。
+function renderBracketTreeView(ev, parts, matches) {
+  const wbMatches = matches.filter((m) => m.bracket === "winners");
+  const finalMatch = matches.find((m) => m.bracket === "final");
+  const totalRounds = wbMatches.length ? Math.max(...wbMatches.map((m) => m.round)) : 0;
+  const champion = parts.find((p) => p.status === "champion");
+
+  if (!totalRounds) {
+    return `<div class="empty">${ui.icon("hourglass")}賽程還沒排出來</div>`;
   }
 
-  box.innerHTML = html;
+  let cols = "";
+  for (let r = 1; r <= totalRounds; r++) {
+    const rows = wbMatches.filter((m) => m.round === r).sort((a, b) => a.slot - b.slot);
+    const label = roundLabel(r, totalRounds);
+    cols += `<div class="bt-col">
+      <div class="bt-col-title${r >= totalRounds - 1 ? " gold" : ""}">${ui.icon(label.icon)}${label.text}</div>
+      <div class="bt-col-matches">
+        ${rows
+          .map(
+            (m) =>
+              `<div class="bt-match${m.status === "active" ? " live" : ""}" data-round="${m.round}" data-slot="${m.slot}">${bracketCardInnerHtml(m)}</div>`
+          )
+          .join("")}
+      </div>
+    </div>`;
+  }
+
+  let extraRound = totalRounds + 1;
+  if (ev.losers_bracket && finalMatch) {
+    cols += `<div class="bt-col">
+      <div class="bt-col-title gold">${ui.icon("trophy")}總冠軍賽</div>
+      <div class="bt-col-matches">
+        <div class="bt-match${finalMatch.status === "active" ? " live" : ""}" data-round="${extraRound}" data-slot="0">${bracketCardInnerHtml(finalMatch)}</div>
+      </div>
+    </div>`;
+    extraRound++;
+  }
+  if (champion) {
+    cols += `<div class="bt-col">
+      <div class="bt-col-title gold">${ui.icon("crown")}冠軍</div>
+      <div class="bt-col-matches">
+        <div class="bt-match champion-card" data-round="${extraRound}" data-slot="0">
+          <div class="bt-row win">${ui.icon("crown")}<span>${ui.esc(champion.players.name)}</span></div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  let html = `<div class="bracket-tree-wrap" id="bt-wrap"><div class="bracket-tree" id="bt-tree">${cols}<svg class="bt-lines"></svg></div></div>`;
+
+  if (ev.losers_bracket) {
+    const lbMatches = matches.filter((m) => m.bracket === "losers");
+    html += sectionTitle("medal", "敗部復活賽戰況");
+    if (!lbMatches.length) {
+      html += `<div class="status-msg" style="margin:4px 0;">還沒有人掉入敗部</div>`;
+    } else {
+      lbMatches
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+        .forEach((m) => (html += matchRowHtml(m, ev)));
+    }
+  }
+
+  html += eliminatedListHtml(parts);
+  return html;
+}
+
+// 賽制圖連線:量測每張對戰卡實際渲染的位置,畫出「本場 -> 下一輪對應場次」的 L 形連線。
+// 用實際量測而不是純 CSS 算位置,是因為名字長度不同會讓卡片高度不一,純 CSS 沒辦法算準連線落點。
+function drawBracketConnectors() {
+  const tree = document.getElementById("bt-tree");
+  if (!tree) return;
+  const svg = tree.querySelector(".bt-lines");
+  if (!svg) return;
+  const matchEls = [...tree.querySelectorAll(".bt-match[data-round]")];
+  if (!matchEls.length) return;
+
+  const treeRect = tree.getBoundingClientRect();
+  svg.setAttribute("width", tree.scrollWidth);
+  svg.setAttribute("height", tree.scrollHeight);
+  svg.innerHTML = "";
+
+  const byRound = {};
+  matchEls.forEach((el) => {
+    const r = +el.dataset.round,
+      s = +el.dataset.slot;
+    (byRound[r] = byRound[r] || {})[s] = el;
+  });
+  const rounds = Object.keys(byRound)
+    .map(Number)
+    .sort((a, b) => a - b);
+
+  for (let i = 0; i < rounds.length - 1; i++) {
+    const r = rounds[i],
+      rNext = rounds[i + 1];
+    Object.keys(byRound[r]).forEach((sKey) => {
+      const s = +sKey;
+      const toEl = byRound[rNext] && byRound[rNext][Math.floor(s / 2)];
+      if (!toEl) return;
+      const a = byRound[r][s].getBoundingClientRect();
+      const b = toEl.getBoundingClientRect();
+      const x1 = a.right - treeRect.left;
+      const y1 = a.top + a.height / 2 - treeRect.top;
+      const x2 = b.left - treeRect.left;
+      const y2 = b.top + b.height / 2 - treeRect.top;
+      const midX = x1 + (x2 - x1) / 2;
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", `M${x1},${y1} H${midX} V${y2} H${x2}`);
+      path.setAttribute("class", "bt-line");
+      svg.appendChild(path);
+    });
+  }
+}
+
+function setBracketView(view) {
+  bracketView = view;
+  localStorage.setItem("bracket_view", view);
+  document.querySelectorAll(".view-toggle-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.view === view);
+  });
+  if (currentEv) renderBracket(currentEv);
+}
+
+document.querySelectorAll(".view-toggle-btn").forEach((btn) => {
+  btn.onclick = () => setBracketView(btn.dataset.view);
+});
+
+window.addEventListener("resize", () => {
+  if (bracketView === "tree") drawBracketConnectors();
+});
+
+async function renderBracket(ev) {
+  const box = document.getElementById("bracket-list");
+  const parts = await db.listParticipants(eventId);
+
+  if (!parts.length) {
+    box.innerHTML = `<div class="empty">${ui.icon("users")}還沒有人參加</div>`;
+    return;
+  }
+
+  if (!ev.locked) {
+    box.innerHTML =
+      `<div class="empty">${ui.icon("users")}報名中,已有 ${parts.length} 人參加,等主辦人鎖定名單開賽</div>` +
+      parts
+        .map((p) => `<div class="bracket-row"><span>${ui.icon("user")} ${ui.esc(p.players.name)}</span></div>`)
+        .join("");
+    return;
+  }
+
+  const matches = await db.listMatches(eventId);
+  box.innerHTML = bracketView === "tree" ? renderBracketTreeView(ev, parts, matches) : renderBracketListView(ev, parts, matches);
+  if (bracketView === "tree") drawBracketConnectors();
 }
 
 // ---------- 內嵌直播面板:不用另外開分頁就能看到目前這場對戰的即時比分 ----------
