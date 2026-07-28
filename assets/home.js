@@ -136,7 +136,7 @@ function eventRow(ev) {
 
 let archiveOpen = false;
 
-// 首頁只留報名中/進行中的活動,已結束的收進下面可展開的「活動封存」區,避免舊活動一直往下堆
+// 首頁只留報名中/進行中的活動,已結束的收進下面可展開的「活動已結束」區,避免舊活動一直往下堆
 async function renderEvents() {
   const list = document.getElementById("events-list");
   list.innerHTML = "";
@@ -159,7 +159,7 @@ async function renderEvents() {
     return;
   }
   archiveBox.style.display = "block";
-  archiveToggle.innerHTML = ui.icon(archiveOpen ? "chevron-up" : "chevron-down") + `活動封存(${archived.length})`;
+  archiveToggle.innerHTML = ui.icon(archiveOpen ? "chevron-up" : "chevron-down") + `活動已結束(${archived.length})`;
   archiveToggle.onclick = () => {
     archiveOpen = !archiveOpen;
     renderEvents();
