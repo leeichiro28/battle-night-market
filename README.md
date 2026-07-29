@@ -1,5 +1,5 @@
 # 新連結：https://leeichiro28.github.io/battle-night-market/ #
-# 擂台夜市 · 對戰活動網站(v2)
+# 擂台夜市 · 對戰活動網站(v3)
 
 ## ⚠️⚠️ 這次更新內容很大,一定要重新執行SQL ⚠️⚠️
 
