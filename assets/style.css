@@ -126,6 +126,14 @@ a{color:var(--gold);text-decoration:none;}
 .tag.open{color:var(--green);border-color:var(--green);}
 .tag.closed{color:var(--red);border-color:var(--red);}
 .tag.running{color:var(--gold);border-color:var(--gold-d);}
+[data-el="field-mod-tag"]{
+  font-size:15px !important;
+  font-weight:700;
+  padding:7px 16px !important;
+  color:var(--gold);
+  border-color:var(--gold-d);
+  background:rgba(242,183,5,.08);
+}
 
 /* 一排標籤:靠 gap 保持間距,不要靠 margin 硬擠在一起 */
 .tag-row{

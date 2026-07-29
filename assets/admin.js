@@ -393,7 +393,13 @@ function eventAdminCard(ev) {
       lockBtn.disabled = true;
       lockBtn.innerHTML = ui.icon("loader-circle") + "產生中...";
       try {
-        await db.lockAndGenerateBracket(ev.id);
+        const result = await db.lockAndGenerateBracket(ev.id);
+        if (result && result.losersBracketDowngraded) {
+          await ui.alert("報名人數不足 6 人,敗部復活賽效果不大,系統已自動關閉,改成單敗淘汰賽制。", {
+            title: "已自動調整賽制",
+            tone: "info",
+          });
+        }
         loadAll();
       } catch (e) {
         await ui.alert(e.message || "產生賽程失敗", { title: "產生賽程失敗", tone: "danger" });
@@ -504,18 +510,112 @@ document.getElementById("create-btn").onclick = async () => {
   }
 };
 
-loadAll();
+(async function initAdmin() {
+  const ADMIN_ALLOWLIST = ["5466d3fd-501e-402a-8e49-7bed3b8f0058"];
+  const local = db.getLocalPlayer();
+  const session = await db.getSession().catch(() => null);
+  const myId = (session && session.user && session.user.id) || local.id;
+  if (!myId || !ADMIN_ALLOWLIST.includes(myId)) {
+    document.getElementById("admin-blocked").style.display = "block";
+    return;
+  }
+  document.getElementById("admin-content").style.display = "block";
 
-// 背景巡邏:每 5 秒檢查一次所有進行中的活動,叫號排下一場、偵測卡住太久沒人進場的對戰。
-// 這樣只要有人開著後台頁面,就算沒人開著對戰畫面本身,賽程也不會卡死。
-setInterval(async () => {
-  try {
-    const events = await db.listEvents();
-    for (const ev of events) {
-      if (ev.locked && ev.status !== "closed") {
-        await db.activateNextMatch(ev.id);
-        await db.watchdogActiveMatch(ev.id);
+  loadAll();
+
+  // 背景巡邏:每 5 秒檢查一次所有進行中的活動,叫號排下一場、偵測卡住太久沒人進場的對戰。
+  // 這樣只要有人開著後台頁面,就算沒人開著對戰畫面本身,賽程也不會卡死。
+  setInterval(async () => {
+    try {
+      const events = await db.listEvents();
+      for (const ev of events) {
+        if (ev.locked && ev.status !== "closed") {
+          await db.activateNextMatch(ev.id);
+          await db.watchdogActiveMatch(ev.id);
+        }
       }
-    }
-  } catch (e) {}
-}, 5000);
+    } catch (e) {}
+  }, 5000);
+
+  await loadSponsorSettings();
+})();
+
+// ---------- 贊助名單管理 ----------
+async function loadSponsorSettings() {
+  const [raised, contact] = await Promise.all([db.getSiteSetting("total_raised"), db.getSiteSetting("discord_contact")]);
+  document.getElementById("raised-input").value = raised || "";
+  document.getElementById("contact-input").value = contact || "";
+  await renderSponsorAdminList();
+}
+
+async function renderSponsorAdminList() {
+  const box = document.getElementById("sponsor-admin-list");
+  const sponsors = await db.listSponsors();
+  if (!sponsors.length) {
+    box.innerHTML = `<div class="empty">還沒有贊助紀錄</div>`;
+    return;
+  }
+  box.innerHTML = "";
+  sponsors.forEach((s) => {
+    const row = document.createElement("div");
+    row.className = "bracket-row";
+    row.style.cssText = "flex-wrap:wrap;gap:8px;align-items:flex-start;";
+    row.innerHTML = `
+      <div style="flex:1;min-width:200px;">
+        <b>${ui.esc(s.name)}</b>
+        <div style="font-size:12px;color:var(--ink-dim);white-space:pre-line;margin-top:2px;">${ui.esc(s.items)}</div>
+      </div>
+    `;
+    const delBtn = document.createElement("button");
+    delBtn.className = "btn ghost small";
+    delBtn.style.color = "var(--red)";
+    delBtn.style.borderColor = "var(--red)";
+    delBtn.innerHTML = ui.icon("trash-2") + "刪除";
+    delBtn.onclick = async () => {
+      const confirmed = await ui.confirm(`確定要刪除贊助者「${s.name}」的紀錄嗎?`, { title: "刪除贊助紀錄", tone: "danger" });
+      if (!confirmed) return;
+      await db.deleteSponsor(s.id);
+      renderSponsorAdminList();
+    };
+    row.appendChild(delBtn);
+    box.appendChild(row);
+  });
+  ui.refreshIcons();
+}
+
+document.getElementById("save-settings-btn").onclick = async () => {
+  const btn = document.getElementById("save-settings-btn");
+  btn.disabled = true;
+  try {
+    await db.setSiteSetting("total_raised", document.getElementById("raised-input").value.trim());
+    await db.setSiteSetting("discord_contact", document.getElementById("contact-input").value.trim());
+    await ui.alert("已儲存", { tone: "success" });
+  } catch (e) {
+    await ui.alert(e.message || "儲存失敗", { title: "儲存失敗", tone: "danger" });
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+document.getElementById("add-sponsor-btn").onclick = async () => {
+  const nameInput = document.getElementById("sponsor-name-input");
+  const itemsInput = document.getElementById("sponsor-items-input");
+  const name = nameInput.value.trim();
+  const items = itemsInput.value.trim();
+  if (!name || !items) {
+    await ui.alert("請填寫贊助者名稱跟贊助內容", { title: "缺少資料", tone: "danger" });
+    return;
+  }
+  const btn = document.getElementById("add-sponsor-btn");
+  btn.disabled = true;
+  try {
+    await db.addSponsor(name, items);
+    nameInput.value = "";
+    itemsInput.value = "";
+    await renderSponsorAdminList();
+  } catch (e) {
+    await ui.alert(e.message || "新增失敗", { title: "新增失敗", tone: "danger" });
+  } finally {
+    btn.disabled = false;
+  }
+};

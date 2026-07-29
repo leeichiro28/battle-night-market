@@ -20,6 +20,8 @@ window.BattleView = (function () {
     guardian: { icon: "shield", name: "守衛" },
     gambler: { icon: "dice-5", name: "賭徒" },
     assassin: { icon: "sword", name: "刺客" },
+    mage: { icon: "sparkles", name: "法師" },
+    luckster: { icon: "clover", name: "幸運兒" },
   };
   const FIELD_LABEL = {
     crit: { icon: "flame", text: "熾熱戰場(全場傷害+1)" },
@@ -235,7 +237,10 @@ window.BattleView = (function () {
           statusEl.style.display = "block";
           if (over) {
             const winnerName = state.hp1 <= 0 ? p2Name : p1Name;
-            statusEl.innerHTML = ui.icon("trophy") + `${ui.esc(winnerName)} 獲勝了這場對戰!`;
+            statusEl.innerHTML =
+              state.forfeitReason === "both_afk"
+                ? ui.icon("alert-triangle") + `雙方都太久沒有進場,系統自動判定 ${ui.esc(winnerName)} 晉級`
+                : ui.icon("trophy") + `${ui.esc(winnerName)} 獲勝了這場對戰!`;
           } else {
             statusEl.innerHTML = ui.icon("eye") + "觀戰模式・對戰進行中";
           }
