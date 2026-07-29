@@ -31,6 +31,7 @@ alter table events add column if not exists rules jsonb not null default '{}';
 alter table events add column if not exists final_match_id uuid;
 alter table events add column if not exists registration_deadline timestamptz;
 alter table events add column if not exists reward_plan jsonb not null default '{}';
+alter table events add column if not exists last_match_bracket text;
 
 -- 參加者
 create table if not exists event_participants (
@@ -265,11 +266,28 @@ begin
 end;
 $$;
 
+-- 贊助名單(整個網站共用一份,不綁定特定活動)
+create table if not exists sponsors (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  items text not null, -- 贊助了什麼,可以多行文字列好幾樣
+  sort_order int not null default 0,
+  created_at timestamptz default now()
+);
+
+-- 網站設定(目前用來放募資總額文字、主辦人 Discord 聯絡方式)
+create table if not exists site_settings (
+  key text primary key,
+  value text
+);
+
 -- 開放權限(小型私人活動,信任參加者,不做帳號驗證)
 alter table players enable row level security;
 alter table events enable row level security;
 alter table event_participants enable row level security;
 alter table matches enable row level security;
+alter table sponsors enable row level security;
+alter table site_settings enable row level security;
 
 drop policy if exists "anon all players" on players;
 create policy "anon all players" on players for all using (true) with check (true);
@@ -282,6 +300,12 @@ create policy "anon all participants" on event_participants for all using (true)
 
 drop policy if exists "anon all matches" on matches;
 create policy "anon all matches" on matches for all using (true) with check (true);
+
+drop policy if exists "anon all sponsors" on sponsors;
+create policy "anon all sponsors" on sponsors for all using (true) with check (true);
+
+drop policy if exists "anon all site_settings" on site_settings;
+create policy "anon all site_settings" on site_settings for all using (true) with check (true);
 
 -- ============================================
 -- 執行完以上內容後,記得手動開啟 Realtime:

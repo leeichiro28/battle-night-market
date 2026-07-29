@@ -85,7 +85,10 @@ function render(state) {
     ultBtn.style.display = "none";
     document.getElementById("timer-fill").style.width = "0%";
     const winnerName = state.hp1 <= 0 ? p2Name : p1Name;
-    if (!mySlot) {
+    if (state.forfeitReason === "both_afk") {
+      announce("雙方掛機,已自動棄權", { icon: "alert-triangle", holdMs: 4200 });
+      statusEl.innerHTML = ui.icon("alert-triangle") + `雙方都太久沒有進場,系統自動判定 ${ui.esc(winnerName)} 晉級`;
+    } else if (!mySlot) {
       statusEl.innerHTML = ui.icon("trophy") + `${ui.esc(winnerName)} 獲勝了這場對戰!`;
     } else {
       const iWon = (mySlot === 1 && state.hp2 <= 0) || (mySlot === 2 && state.hp1 <= 0);
@@ -97,6 +100,7 @@ function render(state) {
     document.getElementById("back-link").innerHTML = `<a href="lobby.html?event=${eventId}">${ui.icon(
       "arrow-left"
     )}回等候室查看賽況</a>`;
+    scheduleReturnToLobby();
     return;
   }
 
@@ -221,6 +225,17 @@ async function resolveRoundIfReady(state) {
 }
 
 // 對戰結束後,不管你是剛贏的選手還是純觀戰,自動帶你去看贏家的下一場,不用手動點觀戰
+let returnScheduled = false;
+function scheduleReturnToLobby() {
+  if (returnScheduled) return;
+  returnScheduled = true;
+  setTimeout(() => {
+    if (!autoFollowTriggered) {
+      location.href = `lobby.html?event=${eventId}`;
+    }
+  }, 4500);
+}
+
 async function maybeAutoAdvance(state) {
   if (autoFollowTriggered) return;
   if (!(state.hp1 <= 0 || state.hp2 <= 0)) return;

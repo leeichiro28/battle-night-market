@@ -35,10 +35,12 @@ document.getElementById("discord-login-btn").onclick = async () => {
 document.getElementById("discord-login-btn").innerHTML = LOGIN_BTN_HTML;
 
 const CLASS_INFO = {
-  fighter: { icon: "swords", name: "鬥士", desc: "猛攻姿態加成更高,大招:血怒(怒氣值全滿)" },
-  guardian: { icon: "shield", name: "守衛", desc: "防禦骰基礎次數+1,大招:金鐘罩(完全免疫一次)" },
-  gambler: { icon: "dice-5", name: "賭徒", desc: "雙骰豪賭不限次數+1傷害,大招:孤注一擲(必定爆擊)" },
-  assassin: { icon: "sword", name: "刺客", desc: "連擊值疊加x2,大招:背刺(對方穩紮穩打時x3傷害)" },
+  fighter: { icon: "swords", name: "鬥士", desc: "猛攻姿態加成更高(HP低於40%再更高),大招:血怒(怒氣值全滿)" },
+  guardian: { icon: "shield", name: "守衛", desc: "防禦骰+1次,所有受傷固定-1,擋下2次攻擊後下次命中+3傷害,大招:金鐘罩(完全免疫一次)" },
+  gambler: { icon: "dice-5", name: "賭徒", desc: "雙骰豪賭不限次數+1傷害,但每次有25%機率凸槌自傷1點,大招:孤注一擲(必定爆擊)" },
+  assassin: { icon: "sword", name: "刺客", desc: "連擊值疊加x2,大招:背刺(無視對方防禦骰,對方穩紮穩打時再x3傷害)" },
+  mage: { icon: "sparkles", name: "法師", desc: "道具骰效果加強,大招:法術反射(受到的傷害反彈一半給對方)" },
+  luckster: { icon: "clover", name: "幸運兒", desc: "平手直接判定自己獲勝,大招:命運骰(讓雙方這局重新擲骰)" },
 };
 
 function pickClass() {
@@ -66,7 +68,6 @@ function finishPick(key) {
   document.getElementById("class-modal").classList.remove("show");
   if (window._classPickResolve) window._classPickResolve(key);
 }
-document.getElementById("class-skip-btn").onclick = () => finishPick(null);
 
 function eventRow(ev) {
   const div = document.createElement("div");

@@ -283,6 +283,8 @@ const db = (function () {
       gamble2: 0,
       classult1: false,
       classult2: false,
+      guardstack1: 0,
+      guardstack2: 0,
       class1: null,
       class2: null,
       field_mod: null,
@@ -331,6 +333,14 @@ const db = (function () {
     const parts = await listParticipants(eventId);
     const entrants = parts.filter((p) => p.status !== "eliminated");
     if (entrants.length < 2) throw new Error("至少需要 2 人才能開賽");
+
+    // 人數太少時敗部復活賽意義不大,自動關閉,單敗淘汰就好
+    let losersBracketDowngraded = false;
+    if (ev.losers_bracket && entrants.length < 6) {
+      losersBracketDowngraded = true;
+      await client.from("events").update({ losers_bracket: false }).eq("id", eventId);
+      ev.losers_bracket = false;
+    }
 
     const size = nextPow2(entrants.length);
     const byes = size - entrants.length;
@@ -436,6 +446,8 @@ const db = (function () {
 
     // 排好整個賽程後,只啟動第一場對戰,其他人在等候室排隊等叫號
     await activateNextMatch(eventId);
+
+    return { losersBracketDowngraded };
   }
 
   // 一場一場來:整個活動同一時間只讓一場對戰進行中。
@@ -465,7 +477,13 @@ const db = (function () {
     if (pendErr) throw pendErr;
 
     if (pending && pending.length) {
+      const preferBracket = ev.last_match_bracket === "winners" ? "losers" : ev.last_match_bracket === "losers" ? "winners" : null;
       pending.sort((a, b) => {
+        if (preferBracket) {
+          const pa = a.bracket === preferBracket ? 0 : 1;
+          const pb = b.bracket === preferBracket ? 0 : 1;
+          if (pa !== pb) return pa - pb;
+        }
         const br = (BRACKET_ORDER[a.bracket] ?? 9) - (BRACKET_ORDER[b.bracket] ?? 9);
         if (br) return br;
         const rr = (a.round || 0) - (b.round || 0);
@@ -575,6 +593,7 @@ const db = (function () {
     if (!claimed || !claimed.length) return; // 已經被結算過了,不重複處理
 
     const eventId = match.event_id;
+    await client.from("events").update({ last_match_bracket: match.bracket }).eq("id", eventId);
     const ev = await getEvent(eventId);
     const winnerPart = await getMyParticipant(eventId, winnerId);
     const loserPart = await getMyParticipant(eventId, loserId);
@@ -672,11 +691,19 @@ const db = (function () {
     await activateNextMatch(eventId);
   }
 
-  const NO_SHOW_GRACE_MS = 75 * 1000; // 一方超過這麼久沒進場,判定對方直接獲勝
-  const BOTH_NO_SHOW_MS = 150 * 1000; // 雙方都超過這麼久沒進場,系統隨機判一方獲勝,避免整個賽程卡死
+  const ENTER_GRACE_MS = 60 * 1000; // 一方超過這麼久沒進場,系統開始自動幫他出招(不棄權)
+  const BOTH_NO_SHOW_MS = 180 * 1000; // 雙方都超過這麼久沒進場,才會強制判定,避免整個賽程卡死
+
+  function neutralAutoMove(gameType) {
+    if (gameType === "dice") {
+      return { roll: 1 + Math.floor(Math.random() * 6), defend: false, allin: false, freebet: false, gamble: false, stance: null, ult: false };
+    }
+    return { gesture: null, ult: false, timeout: true };
+  }
 
   // 巡邏檢查目前進行中的那一場對戰,有沒有人遲遲不進場。
   // 不需要對戰畫面本身開啟也能運作,只要有人開著等候室或後台頁面,定期呼叫這個就會生效。
+  // 規則:單方缺席 → 系統自動幫他出招(不棄權)。雙方都缺席太久 → 強制判定,並標記 forfeitReason 讓對戰畫面顯示大字公告。
   async function watchdogActiveMatch(eventId) {
     const { data: actives, error } = await client
       .from("matches")
@@ -689,35 +716,37 @@ const db = (function () {
     const m = actives[0];
     if (m.bracket === "final") return; // 總冠軍賽先不自動判,交給主辦人手動處理比較保險
     if (!m.activated_at) return;
+    if (m.state && (m.state.hp1 <= 0 || m.state.hp2 <= 0)) return; // 已經分出勝負,等待正常結算
 
     const elapsed = Date.now() - new Date(m.activated_at).getTime();
-    if (elapsed < NO_SHOW_GRACE_MS) return;
-
     const p1In = !!m.p1_entered_at;
     const p2In = !!m.p2_entered_at;
-    if (p1In && p2In) return; // 雙方都進場了,不是「沒入場」的狀況,交給對戰畫面自己的代打機制處理
 
-    let winnerId = null;
-    let loserId = null;
-    let reason = "";
     if (!p1In && !p2In) {
       if (elapsed < BOTH_NO_SHOW_MS) return;
-      winnerId = m.player1_id;
-      loserId = m.player2_id;
-      reason = "雙方都太久沒進場,系統隨機判一方直接晉級";
-    } else if (!p1In) {
-      winnerId = m.player2_id;
-      loserId = m.player1_id;
-      reason = "對手太久沒進場,判定棄權";
-    } else {
-      winnerId = m.player1_id;
-      loserId = m.player2_id;
-      reason = "對手太久沒進場,判定棄權";
+      const winnerId = Math.random() < 0.5 ? m.player1_id : m.player2_id;
+      const loserId = winnerId === m.player1_id ? m.player2_id : m.player1_id;
+      const loserIsP1 = loserId === m.player1_id;
+      const newState = {
+        ...m.state,
+        hp1: loserIsP1 ? 0 : m.state.hp1,
+        hp2: loserIsP1 ? m.state.hp2 : 0,
+        forfeitReason: "both_afk",
+        log: [...(m.state.log || []), "雙方都太久沒有進場對戰,系統自動判定一方直接晉級。"],
+      };
+      await client.from("matches").update({ state: newState }).eq("id", m.id);
+      await advanceAfterMatch({ ...m, state: newState }, winnerId, loserId);
+      return;
     }
 
-    const newState = { ...m.state, log: [...(m.state.log || []), `${reason}`] };
-    await client.from("matches").update({ state: newState }).eq("id", m.id);
-    await advanceAfterMatch(m, winnerId, loserId);
+    if (elapsed < ENTER_GRACE_MS) return;
+    if (p1In && p2In) return; // 雙方都進場了,交給對戰畫面自己的代打機制處理即時出招
+
+    const ev = await getEvent(eventId);
+    const absentSlot = !p1In ? 1 : 2;
+    const already = absentSlot === 1 ? m.state.m1 : m.state.m2;
+    if (already) return; // 這回合已經出過招了,等對方出招或下一輪再說
+    await submitMove(m.id, absentSlot, neutralAutoMove(ev.game_type));
   }
 
   // 玩家自行退出比賽(例如要換帳號)。還沒開打就直接移除報名;如果正在對戰中,視同棄權,對手直接獲勝晉級。
@@ -812,6 +841,40 @@ const db = (function () {
     return () => client.removeChannel(channel);
   }
 
+  // ---------- 贊助名單(整站共用一份) ----------
+  async function listSponsors() {
+    const { data, error } = await client.from("sponsors").select("*").order("sort_order", { ascending: true }).order("created_at", { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+
+  async function addSponsor(name, items) {
+    const { data, error } = await client.from("sponsors").insert({ name, items }).select().single();
+    if (error) throw error;
+    return data;
+  }
+
+  async function updateSponsor(id, name, items) {
+    const { error } = await client.from("sponsors").update({ name, items }).eq("id", id);
+    if (error) throw error;
+  }
+
+  async function deleteSponsor(id) {
+    const { error } = await client.from("sponsors").delete().eq("id", id);
+    if (error) throw error;
+  }
+
+  async function getSiteSetting(key) {
+    const { data, error } = await client.from("site_settings").select("value").eq("key", key).maybeSingle();
+    if (error) throw error;
+    return data ? data.value : "";
+  }
+
+  async function setSiteSetting(key, value) {
+    const { error } = await client.from("site_settings").upsert({ key, value }, { onConflict: "key" });
+    if (error) throw error;
+  }
+
   return {
     client,
     getLocalPlayer,
@@ -824,6 +887,12 @@ const db = (function () {
     updatePlayerName,
     quitEvent,
     watchdogActiveMatch,
+    listSponsors,
+    addSponsor,
+    updateSponsor,
+    deleteSponsor,
+    getSiteSetting,
+    setSiteSetting,
     listEvents,
     getEvent,
     getEventSafe,

@@ -39,8 +39,8 @@ async function loadEvent() {
   return ev;
 }
 
-function roundLabel(round, totalRounds) {
-  if (round === totalRounds) return { icon: "trophy", text: "決賽" };
+function roundLabel(round, totalRounds, losersBracketOn) {
+  if (round === totalRounds) return { icon: "trophy", text: losersBracketOn ? "勝部決賽" : "決賽" };
   if (round === totalRounds - 1) return { icon: "swords", text: "準決賽" };
   return { icon: "swords", text: `第 ${round} 輪` };
 }
@@ -102,7 +102,7 @@ function renderBracketListView(ev, parts, matches) {
   html += sectionTitle("swords", "勝部賽程");
   for (let r = 1; r <= totalRounds; r++) {
     const rows = wbMatches.filter((m) => m.round === r).sort((a, b) => a.slot - b.slot);
-    const label = roundLabel(r, totalRounds);
+    const label = roundLabel(r, totalRounds, ev.losers_bracket);
     html += sectionTitle(label.icon, label.text, r >= totalRounds - 1);
     rows.forEach((m) => (html += matchRowHtml(m, ev, "輪空")));
   }
@@ -116,11 +116,18 @@ function renderBracketListView(ev, parts, matches) {
         .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
         .forEach((m) => (html += matchRowHtml(m, ev)));
     }
-  }
 
-  if (finalMatch) {
+    // 總冠軍賽從一開始就顯示佔位,不會等敗部打完才突然冒出來
     html += sectionTitle("trophy", "總冠軍賽", true);
-    html += matchRowHtml(finalMatch, ev);
+    if (finalMatch) {
+      html += matchRowHtml(finalMatch, ev);
+    } else {
+      const wbChamp = parts.find((p) => p.status === "wb_champion");
+      const lbChamp = parts.find((p) => p.status === "lb_champion");
+      const n1 = wbChamp ? ui.esc(wbChamp.players.name) : "待定(等勝部決賽結果)";
+      const n2 = lbChamp ? ui.esc(lbChamp.players.name) : "待定(等敗部打完)";
+      html += `<div class="bracket-row"><div class="vs-row"><span class="side left">${n1}</span><span class="vs">vs</span><span class="side right">${n2}</span></div></div>`;
+    }
   }
 
   html += eliminatedListHtml(parts);
@@ -182,7 +189,7 @@ function renderBracketTreeView(ev, parts, matches) {
   let cols = "";
   for (let r = 1; r <= totalRounds; r++) {
     const rows = wbMatches.filter((m) => m.round === r).sort((a, b) => a.slot - b.slot);
-    const label = roundLabel(r, totalRounds);
+    const label = roundLabel(r, totalRounds, ev.losers_bracket);
     cols += `<div class="bt-col">
       <div class="bt-col-title${r >= totalRounds - 1 ? " gold" : ""}">${ui.icon(label.icon)}${label.text}</div>
       <div class="bt-col-matches">
@@ -197,11 +204,20 @@ function renderBracketTreeView(ev, parts, matches) {
   }
 
   let extraRound = totalRounds + 1;
-  if (ev.losers_bracket && finalMatch) {
+  if (ev.losers_bracket) {
+    // 總冠軍賽欄位從一開始就顯示(待定佔位),不會等敗部打完才突然冒出來,
+    // 才不會讓大家誤以為「勝部決賽」打完整場活動就結束了。
+    const wbChamp = parts.find((p) => p.status === "wb_champion");
+    const lbChamp = parts.find((p) => p.status === "lb_champion");
+    const finalInner = finalMatch
+      ? bracketCardInnerHtml(finalMatch)
+      : `<div class="bt-row">${ui.icon("hourglass")}<span>${wbChamp ? ui.esc(wbChamp.players.name) : "待定(等勝部決賽)"}</span></div><div class="bt-row">${ui.icon(
+          "hourglass"
+        )}<span>${lbChamp ? ui.esc(lbChamp.players.name) : "待定(等敗部打完)"}</span></div>`;
     cols += `<div class="bt-col">
       <div class="bt-col-title gold">${ui.icon("trophy")}總冠軍賽</div>
       <div class="bt-col-matches">
-        <div class="bt-match${finalMatch.status === "active" ? " live" : ""}" data-round="${extraRound}" data-slot="0">${bracketCardInnerHtml(finalMatch)}</div>
+        <div class="bt-match${finalMatch && finalMatch.status === "active" ? " live" : ""}" data-round="${extraRound}" data-slot="0">${finalInner}</div>
       </div>
     </div>`;
     extraRound++;

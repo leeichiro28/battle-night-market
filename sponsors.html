@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>贊助名單 · 擂台夜市</title>
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+<link rel="stylesheet" href="assets/style.css" />
+<style>
+  .sponsor-hero{
+    text-align:center;
+    padding:34px 20px;
+    border-radius:var(--radius);
+    background:radial-gradient(circle at 50% 0%, rgba(242,183,5,.14), transparent 65%), var(--panel);
+    border:1px solid var(--gold-d);
+    margin-bottom:20px;
+  }
+  .sponsor-hero .raised-label{font-size:12px;letter-spacing:.18em;color:var(--gold);text-transform:uppercase;}
+  .sponsor-hero .raised-value{
+    font-family:'Archivo Black','Noto Sans TC',sans-serif;
+    font-size:clamp(28px,6vw,42px);
+    color:var(--gold);
+    margin:10px 0 4px;
+    text-shadow:0 0 22px rgba(242,183,5,.35);
+  }
+  .sponsor-card{
+    position:relative;
+    border:1px solid var(--gold-d);
+    background:linear-gradient(160deg, rgba(242,183,5,.09), rgba(36,32,56,.4));
+    border-radius:14px;
+    padding:18px 20px;
+    margin-bottom:14px;
+    overflow:hidden;
+  }
+  .sponsor-card::before{
+    content:"";
+    position:absolute; top:-40%; left:-20%;
+    width:60%; height:180%;
+    background:linear-gradient(120deg, transparent, rgba(242,183,5,.08), transparent);
+    transform:rotate(20deg);
+    pointer-events:none;
+  }
+  .sponsor-card .sname{
+    display:flex; align-items:center; gap:8px;
+    font-family:'Archivo Black','Noto Sans TC',sans-serif;
+    font-size:17px; color:var(--gold);
+    margin-bottom:8px;
+  }
+  .sponsor-card .sitems{
+    color:var(--ink);
+    font-size:14px;
+    line-height:1.9;
+    white-space:pre-line;
+  }
+  .sponsor-empty{text-align:center;color:var(--ink-dim);padding:40px 10px;}
+  .sponsor-cta{
+    text-align:center;
+    margin-top:28px;
+    padding:22px;
+    border-radius:var(--radius);
+    border:1px dashed var(--gold-d);
+    color:var(--ink-dim);
+    font-size:14px;
+    line-height:1.9;
+  }
+  .sponsor-cta b{color:var(--gold);}
+</style>
+</head>
+<body>
+  <div id="site-header"></div>
+  <div class="wrap">
+    <div class="marquee">
+      <span class="eyebrow"><i data-lucide="gem" class="ico"></i>Sponsors</span>
+      <h1>贊助名單</h1>
+      <p>感謝每一位讓擂台夜市持續舉辦下去的贊助者</p>
+    </div>
+
+    <div class="sponsor-hero">
+      <div class="raised-label"><i data-lucide="sparkles" class="ico"></i> 目前募資總計</div>
+      <div class="raised-value" id="raised-value">載入中...</div>
+    </div>
+
+    <div id="sponsor-list"></div>
+
+    <div class="sponsor-cta" id="sponsor-cta"></div>
+
+    <div class="footer-nav"><a href="index.html"><i data-lucide="arrow-left" class="ico"></i>回活動列表</a></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@1.27.0/dist/umd/lucide.min.js"></script>
+  <script src="assets/supabase-config.js"></script>
+  <script src="assets/db.js"></script>
+  <script src="assets/ui.js"></script>
+  <script src="assets/header.js"></script>
+  <script src="assets/sponsors.js"></script>
+</body>
+</html>

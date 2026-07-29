@@ -97,7 +97,7 @@ const ui = (function () {
     betting: { icon: "eye", label: "觀眾下注" },
     reactions: { icon: "message-circle", label: "表情彈幕" },
   };
-  const CLASS_ICON = { fighter: "swords", guardian: "shield", gambler: "dice-5", assassin: "sword" };
+  const CLASS_ICON = { fighter: "swords", guardian: "shield", gambler: "dice-5", assassin: "sword", mage: "sparkles", luckster: "clover" };
 
   function gameLabel(type) {
     return (GAME[type] && GAME[type].label) || type;
