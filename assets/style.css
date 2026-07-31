@@ -101,6 +101,30 @@ a{color:var(--gold);text-decoration:none;}
 .card + .card{margin-top:16px;}
 .card > h3{margin-bottom:14px;}
 
+/* 資料夾分頁籤:貼在卡片正上方,選中的分頁跟卡片背景連成一片 */
+.folder-tabs{display:flex;gap:4px;padding:0 2px;}
+.folder-tab{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:10px 16px;
+  font-size:13px;font-weight:700;
+  color:var(--ink-dim);
+  background:var(--panel2);
+  border:1px solid var(--line);
+  border-bottom:none;
+  border-radius:10px 10px 0 0;
+  cursor:pointer;
+  white-space:nowrap;
+  transform:translateY(1px);
+}
+.folder-tab .ico{width:14px;height:14px;}
+.folder-tab:hover{color:var(--ink);}
+.folder-tab.active{
+  background:var(--panel);
+  color:var(--gold);
+  transform:translateY(0);
+}
+.folder-tab-card{border-top-left-radius:0;}
+
 /* 規則頁的「遊戲分組」收合區塊,互動方式跟首頁「活動已結束」的收合按鈕一致 */
 .game-group{margin-bottom:16px;}
 .game-toggle{
@@ -1123,6 +1147,7 @@ input,select,textarea{max-width:100%;min-width:0;}
   .rule-fab .ico{width:19px;height:19px;}
   .bt-col{min-width:150px;padding-right:18px;}
   .view-toggle-btn{padding:6px 10px;}
+  .folder-tab{padding:9px 12px;font-size:12px;}
 }
 
 @media (max-width:420px){

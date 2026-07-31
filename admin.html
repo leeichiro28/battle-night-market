@@ -19,8 +19,12 @@
       <p>開新活動、控制活動狀態、幫每位參加者填入獎勵</p>
     </div>
 
-    <div class="card">
-      <h3 style="font-size:15px;">開新活動</h3>
+    <div class="folder-tabs" id="admin-tabs">
+      <button type="button" class="folder-tab active" data-tab="create"><i data-lucide="calendar-plus" class="ico"></i>開新活動</button>
+      <button type="button" class="folder-tab" data-tab="sponsor"><i data-lucide="gem" class="ico"></i>贊助名單</button>
+    </div>
+
+    <div class="card folder-tab-card" data-tab-panel="create">
       <div class="field">
         <label for="new-name">活動名稱</label>
         <input id="new-name" placeholder="例如:週五夜擂台賽" />
@@ -68,8 +72,7 @@
       <button class="btn block" id="create-btn">建立活動</button>
     </div>
 
-    <div class="card">
-      <h3 style="font-size:15px;"><i data-lucide="gem" class="ico"></i> 贊助名單設定</h3>
+    <div class="card folder-tab-card" data-tab-panel="sponsor" style="display:none;">
       <div class="field">
         <label for="raised-input">目前募資總計(顯示在贊助頁面最上方,自己輸入文字就好,例如「嗶幣 5000、鑽石 12、黑玫瑰 8」)</label>
         <input id="raised-input" placeholder="例如:嗶幣 5000、鑽石 12、黑玫瑰 8" />
@@ -94,11 +97,13 @@
       <div id="sponsor-admin-list" style="margin-top:16px;"></div>
     </div>
 
-    <div id="events-admin-list"></div>
+    <div data-tab-panel="create">
+      <div id="events-admin-list"></div>
 
-    <div id="archive-box" style="display:none;margin-top:20px;">
-      <button type="button" class="btn ghost block" id="archive-toggle"></button>
-      <div id="archive-list" style="display:none;margin-top:14px;"></div>
+      <div id="archive-box" style="display:none;margin-top:20px;">
+        <button type="button" class="btn ghost block" id="archive-toggle"></button>
+        <div id="archive-list" style="display:none;margin-top:14px;"></div>
+      </div>
     </div>
   </div>
 
@@ -109,5 +114,16 @@
   <script src="assets/ui.js"></script>
   <script src="assets/header.js"></script>
   <script src="assets/admin.js"></script>
+  <script>
+    document.getElementById("admin-tabs").addEventListener("click", (e) => {
+      const btn = e.target.closest(".folder-tab");
+      if (!btn) return;
+      const tab = btn.dataset.tab;
+      document.querySelectorAll("#admin-tabs .folder-tab").forEach((b) => b.classList.toggle("active", b === btn));
+      document.querySelectorAll("[data-tab-panel]").forEach((p) => {
+        p.style.display = p.dataset.tabPanel === tab ? "" : "none";
+      });
+    });
+  </script>
 </body>
 </html>
