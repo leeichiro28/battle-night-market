@@ -159,7 +159,15 @@ function bindRecordToggles(root) {
 }
 
 async function loadSponsorsPage() {
-  const [sponsorLists, contact] = await Promise.all([db.listSponsorLists(), db.getSiteSetting("discord_contact")]);
+  let sponsorLists, contact;
+  try {
+    [sponsorLists, contact] = await Promise.all([db.listSponsorLists(), db.getSiteSetting("discord_contact")]);
+  } catch (e) {
+    console.error(e);
+    document.getElementById("sponsor-list").innerHTML = `<div class="sponsor-empty">${ui.icon("triangle-alert")}贊助名單載入失敗:${ui.esc(e.message || "未知錯誤")}</div>`;
+    ui.refreshIcons();
+    return;
+  }
 
   const latest = sponsorLists[0] || null;
   const history = sponsorLists.slice(1);

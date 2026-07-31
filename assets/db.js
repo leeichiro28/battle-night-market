@@ -848,14 +848,17 @@ const db = (function () {
   // 用同一個 entry_id 分組,前台/後台顯示時把同一位贊助者底下所有項目依「獎勵名稱」加總,
   // 不會因為前台合併顯示就把原始紀錄刪掉。
   // listSponsorLists() 依建立時間新到舊排序,呼叫端把第一筆當「最新贊助名單」顯示,其餘當「歷史贊助名單」。
+  // 注意:sponsor_rewards 是雙層巢狀(sponsor_lists → sponsors → sponsor_rewards),
+  // PostgREST 對雙層巢狀資源的排序不支援用 foreignTable 直接指定,之前多加的那行排序
+  // 會讓整個查詢直接失敗(前台/後台因此整份名單看起來像「消失了」,其實資料庫資料都還在)。
+  // sponsor_rewards 的顯示順序改成抓回來後在前端排序(groupSponsorEntries 已經有做),這裡不用排。
   async function listSponsorLists() {
     const { data, error } = await client
       .from("sponsor_lists")
       .select("*, sponsors(*, sponsor_rewards(*))")
       .order("created_at", { ascending: false })
       .order("sort_order", { ascending: true, foreignTable: "sponsors" })
-      .order("created_at", { ascending: true, foreignTable: "sponsors" })
-      .order("created_at", { ascending: true, foreignTable: "sponsor_rewards" });
+      .order("created_at", { ascending: true, foreignTable: "sponsors" });
     if (error) throw error;
     return data || [];
   }

@@ -846,7 +846,16 @@ function sponsorHistoryGroup(sl) {
 }
 
 async function renderSponsorLists() {
-  const lists = await db.listSponsorLists();
+  let lists;
+  try {
+    lists = await db.listSponsorLists();
+  } catch (e) {
+    console.error(e);
+    document.getElementById("sponsor-latest").innerHTML = `<div class="empty">${ui.icon("triangle-alert")}贊助名單載入失敗:${ui.esc(e.message || "未知錯誤")}(請確認 supabase-schema.sql 已重新執行)</div>`;
+    document.getElementById("sponsor-archive-box").style.display = "none";
+    ui.refreshIcons();
+    return;
+  }
   const latest = lists[0] || null;
   const history = lists.slice(1);
 
