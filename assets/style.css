@@ -397,6 +397,17 @@ label{
 .bracket-row .win{color:var(--green);font-weight:700;}
 .bracket-row .lose{color:var(--ink-dim);text-decoration:line-through;}
 
+/* 後台贊助名單:每位贊助者一列,跟其他管理列表同一種間距節奏 */
+.sponsor-admin-row{
+  display:flex;justify-content:space-between;align-items:flex-start;
+  gap:12px;padding:12px 0;border-bottom:1px solid var(--line);
+}
+.sponsor-admin-row:last-child{border-bottom:none;}
+.sponsor-admin-row .sar-main{flex:1;min-width:0;}
+.sponsor-admin-row .sar-main b{color:var(--ink);}
+.sponsor-admin-row .sar-items{font-size:12px;color:var(--ink-dim);white-space:pre-line;margin-top:2px;overflow-wrap:anywhere;}
+.sponsor-admin-row .btn{flex-shrink:0;}
+
 /* ===== 對戰列:左選手 / vs / 右選手,vs 永遠在正中央 =====
    用 grid 的 1fr auto 1fr,兩側再各自靠邊,不管名字多長 vs 都不會被推歪。 */
 .match-row{

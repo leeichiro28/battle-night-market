@@ -541,46 +541,15 @@ document.getElementById("create-btn").onclick = async () => {
 })();
 
 // ---------- 贊助名單管理 ----------
+// 主辦人可以自己開好幾份獨立的「贊助名單」,跟活動 events 完全無關。
+// db.listSponsorLists() 依建立時間新到舊排序,第一筆當「最新贊助名單」直接顯示、可編輯,
+// 其餘收進「歷史贊助名單」收合區,樣式跟開新活動分頁的「活動已結束」收合一致,
+// 展開後每份名單各自是一張可收合卡片(跟規則頁「依遊戲分組」同款)。
 async function loadSponsorSettings() {
   const [raised, contact] = await Promise.all([db.getSiteSetting("total_raised"), db.getSiteSetting("discord_contact")]);
   document.getElementById("raised-input").value = raised || "";
   document.getElementById("contact-input").value = contact || "";
-  await renderSponsorAdminList();
-}
-
-async function renderSponsorAdminList() {
-  const box = document.getElementById("sponsor-admin-list");
-  const sponsors = await db.listSponsors();
-  if (!sponsors.length) {
-    box.innerHTML = `<div class="empty">還沒有贊助紀錄</div>`;
-    return;
-  }
-  box.innerHTML = "";
-  sponsors.forEach((s) => {
-    const row = document.createElement("div");
-    row.className = "bracket-row";
-    row.style.cssText = "flex-wrap:wrap;gap:8px;align-items:flex-start;";
-    row.innerHTML = `
-      <div style="flex:1;min-width:200px;">
-        <b>${ui.esc(s.name)}</b>
-        <div style="font-size:12px;color:var(--ink-dim);white-space:pre-line;margin-top:2px;">${ui.esc(s.items)}</div>
-      </div>
-    `;
-    const delBtn = document.createElement("button");
-    delBtn.className = "btn ghost small";
-    delBtn.style.color = "var(--red)";
-    delBtn.style.borderColor = "var(--red)";
-    delBtn.innerHTML = ui.icon("trash-2") + "刪除";
-    delBtn.onclick = async () => {
-      const confirmed = await ui.confirm(`確定要刪除贊助者「${s.name}」的紀錄嗎?`, { title: "刪除贊助紀錄", tone: "danger" });
-      if (!confirmed) return;
-      await db.deleteSponsor(s.id);
-      renderSponsorAdminList();
-    };
-    row.appendChild(delBtn);
-    box.appendChild(row);
-  });
-  ui.refreshIcons();
+  await renderSponsorLists();
 }
 
 document.getElementById("save-settings-btn").onclick = async () => {
@@ -597,25 +566,209 @@ document.getElementById("save-settings-btn").onclick = async () => {
   }
 };
 
-document.getElementById("add-sponsor-btn").onclick = async () => {
-  const nameInput = document.getElementById("sponsor-name-input");
-  const itemsInput = document.getElementById("sponsor-items-input");
-  const name = nameInput.value.trim();
-  const items = itemsInput.value.trim();
-  if (!name || !items) {
-    await ui.alert("請填寫贊助者名稱跟贊助內容", { title: "缺少資料", tone: "danger" });
-    return;
-  }
-  const btn = document.getElementById("add-sponsor-btn");
-  btn.disabled = true;
+document.getElementById("add-sponsor-list-btn").onclick = async () => {
+  const name = await ui.prompt("幫這份贊助名單取個名字(例如活動場次、月份都可以)", {
+    title: "新增贊助名單",
+    placeholder: "例如:擂台夜市 第 13 屆",
+    confirmText: "建立",
+  });
+  if (!name || !name.trim()) return;
   try {
-    await db.addSponsor(name, items);
-    nameInput.value = "";
-    itemsInput.value = "";
-    await renderSponsorAdminList();
+    await db.addSponsorList(name.trim());
+    await renderSponsorLists();
   } catch (e) {
-    await ui.alert(e.message || "新增失敗", { title: "新增失敗", tone: "danger" });
-  } finally {
-    btn.disabled = false;
+    await ui.alert(e.message || "建立失敗", { title: "建立失敗", tone: "danger" });
   }
 };
+
+function sponsorRowEl(s, onDeleted) {
+  const row = document.createElement("div");
+  row.className = "sponsor-admin-row";
+  row.innerHTML = `
+    <div class="sar-main">
+      <b>${ui.esc(s.name)}</b>
+      <div class="sar-items">${ui.esc(s.items)}</div>
+    </div>
+  `;
+  const delBtn = document.createElement("button");
+  delBtn.type = "button";
+  delBtn.className = "btn ghost small outline-danger";
+  delBtn.innerHTML = ui.icon("trash-2") + "刪除";
+  delBtn.onclick = async () => {
+    const ok = await ui.confirm(`確定要刪除贊助者「${s.name}」的紀錄嗎?`, { title: "刪除贊助紀錄", tone: "danger" });
+    if (!ok) return;
+    await db.deleteSponsor(s.id);
+    onDeleted();
+  };
+  row.appendChild(delBtn);
+  return row;
+}
+
+// 產生一份贊助名單的完整編輯區塊(名稱/總額/新增贊助者/贊助者清單),
+// isLatest 只影響標題列要不要加「最新贊助名單」標籤。
+function sponsorListCard(sl, isLatest) {
+  const card = document.createElement("div");
+  card.className = "card";
+  card.innerHTML = `
+    <div class="event-card" style="margin-bottom:14px;">
+      <div class="meta">
+        <h3>${ui.esc(sl.name)}</h3>
+        <div class="tag-row">
+          ${isLatest ? `<span class="tag open">${ui.icon("sparkles")}最新贊助名單</span>` : ""}
+          <span class="tag">${ui.icon("gem")}${sl.sponsors.length} 筆贊助</span>
+        </div>
+      </div>
+      <div class="action-row">
+        <button type="button" class="btn ghost small outline-danger" data-action="delete-list">${ui.icon("trash-2")}刪除這份名單</button>
+      </div>
+    </div>
+
+    <div class="field-group">
+      <label>名單名稱 / 這份名單的贊助總額(自己輸入文字就好,例如 NT$ 18,600)</label>
+      <div class="field">
+        <input class="list-name-input" value="${ui.esc(sl.name)}" />
+      </div>
+      <div class="action-row" style="align-items:flex-start;">
+        <input class="list-raised-input" placeholder="這份名單的贊助總額" value="${ui.esc(sl.raised || "")}" style="flex:1;min-width:160px;" />
+        <button type="button" class="btn ghost small" data-action="save-list">${ui.icon("save")}儲存</button>
+      </div>
+    </div>
+
+    <div class="field-group">
+      <label>新增贊助者</label>
+      <div class="field">
+        <input class="sp-name-input" placeholder="贊助者名稱" />
+      </div>
+      <div class="field">
+        <textarea class="sp-items-input" rows="2" placeholder="贊助了什麼,可以多行,一行一樣"></textarea>
+      </div>
+      <button type="button" class="btn small" data-action="add-sponsor">${ui.icon("plus")}新增贊助者</button>
+    </div>
+
+    <div class="sponsor-admin-list"></div>
+  `;
+
+  const listBox = card.querySelector(".sponsor-admin-list");
+  if (!sl.sponsors.length) {
+    listBox.innerHTML = `<div class="empty">${ui.icon("gem")}這份名單還沒有贊助紀錄</div>`;
+  } else {
+    sl.sponsors.forEach((s) => listBox.appendChild(sponsorRowEl(s, () => renderSponsorLists())));
+  }
+
+  card.querySelector('[data-action="save-list"]').onclick = async () => {
+    const name = card.querySelector(".list-name-input").value.trim();
+    const raised = card.querySelector(".list-raised-input").value.trim();
+    if (!name) {
+      await ui.alert("名單名稱不能空白", { title: "缺少資料", tone: "danger" });
+      return;
+    }
+    await db.updateSponsorList(sl.id, name, raised);
+    await renderSponsorLists();
+  };
+
+  card.querySelector('[data-action="delete-list"]').onclick = async () => {
+    const ok = await ui.confirm(`確定要刪除「${sl.name}」這份贊助名單嗎?裡面的贊助紀錄會一起刪除。`, {
+      title: "刪除贊助名單",
+      confirmText: "永久刪除",
+      tone: "danger",
+    });
+    if (!ok) return;
+    await db.deleteSponsorList(sl.id);
+    await renderSponsorLists();
+  };
+
+  card.querySelector('[data-action="add-sponsor"]').onclick = async () => {
+    const nameInput = card.querySelector(".sp-name-input");
+    const itemsInput = card.querySelector(".sp-items-input");
+    const name = nameInput.value.trim();
+    const items = itemsInput.value.trim();
+    if (!name || !items) {
+      await ui.alert("請填寫贊助者名稱跟贊助內容", { title: "缺少資料", tone: "danger" });
+      return;
+    }
+    const btn = card.querySelector('[data-action="add-sponsor"]');
+    btn.disabled = true;
+    try {
+      await db.addSponsor(sl.id, name, items);
+      await renderSponsorLists();
+    } catch (e) {
+      await ui.alert(e.message || "新增失敗", { title: "新增失敗", tone: "danger" });
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  return card;
+}
+
+// 歷史名單用跟「遊戲規則」分組收合一樣的 .game-group,標題列先看到名稱/總額/筆數,展開才是編輯區
+const sponsorHistoryOpenIds = new Set();
+let sponsorHistoryOpen = false;
+
+function sponsorHistoryGroup(sl) {
+  const group = document.createElement("div");
+  const open = sponsorHistoryOpenIds.has(sl.id);
+  group.className = "game-group" + (open ? " open" : "");
+  group.innerHTML = `
+    <button type="button" class="game-toggle">
+      <i data-lucide="gem" class="ico"></i>
+      <span class="game-toggle-label">${ui.esc(sl.name)}</span>
+      <span class="game-toggle-count">${sl.sponsors.length} 筆 · ${ui.esc(sl.raised && sl.raised.trim() ? sl.raised : "尚未填總額")}</span>
+      <i data-lucide="chevron-down" class="ico chev"></i>
+    </button>
+    <div class="game-body" ${open ? "" : "hidden"}></div>
+  `;
+  const toggle = group.querySelector(".game-toggle");
+  const body = group.querySelector(".game-body");
+  if (open) body.appendChild(sponsorListCard(sl, false));
+  toggle.onclick = () => {
+    const nowOpen = !group.classList.contains("open");
+    group.classList.toggle("open", nowOpen);
+    body.hidden = !nowOpen;
+    if (nowOpen) {
+      sponsorHistoryOpenIds.add(sl.id);
+      body.innerHTML = "";
+      body.appendChild(sponsorListCard(sl, false));
+    } else {
+      sponsorHistoryOpenIds.delete(sl.id);
+    }
+    ui.refreshIcons();
+  };
+  return group;
+}
+
+async function renderSponsorLists() {
+  const lists = await db.listSponsorLists();
+  const latest = lists[0] || null;
+  const history = lists.slice(1);
+
+  const latestBox = document.getElementById("sponsor-latest");
+  latestBox.innerHTML = "";
+  if (!latest) {
+    latestBox.innerHTML = `<div class="empty">${ui.icon("gem")}還沒有任何贊助名單,點上面「新增贊助名單」開始建立</div>`;
+  } else {
+    latestBox.appendChild(sponsorListCard(latest, true));
+  }
+
+  const archiveBox = document.getElementById("sponsor-archive-box");
+  const archiveToggle = document.getElementById("sponsor-archive-toggle");
+  const archiveList = document.getElementById("sponsor-archive-list");
+  if (!history.length) {
+    archiveBox.style.display = "none";
+    sponsorHistoryOpen = false;
+  } else {
+    archiveBox.style.display = "block";
+    archiveToggle.innerHTML = ui.icon(sponsorHistoryOpen ? "chevron-up" : "chevron-down") + `歷史贊助名單(${history.length})`;
+    archiveToggle.onclick = () => {
+      sponsorHistoryOpen = !sponsorHistoryOpen;
+      renderSponsorLists();
+    };
+    archiveList.style.display = sponsorHistoryOpen ? "block" : "none";
+    archiveList.innerHTML = "";
+    if (sponsorHistoryOpen) {
+      history.forEach((sl) => archiveList.appendChild(sponsorHistoryGroup(sl)));
+    }
+  }
+
+  ui.refreshIcons();
+}

@@ -74,27 +74,27 @@
 
     <div class="card folder-tab-card" data-tab-panel="sponsor" style="display:none;">
       <div class="field">
-        <label for="raised-input">目前募資總計(顯示在贊助頁面最上方,自己輸入文字就好,例如「嗶幣 5000、鑽石 12、黑玫瑰 8」)</label>
-        <input id="raised-input" placeholder="例如:嗶幣 5000、鑽石 12、黑玫瑰 8" />
+        <label for="raised-input">全部活動累積贊助總額(顯示在贊助頁面「全部活動累積」模式,自己輸入文字就好)</label>
+        <input id="raised-input" placeholder="例如:NT$ 48,300" />
       </div>
       <div class="field">
         <label for="contact-input">主辦人 Discord 聯絡方式(顯示在贊助頁面最下方的募資 CTA)</label>
         <input id="contact-input" placeholder="例如:@主辦人名稱" />
       </div>
       <button class="btn ghost small" id="save-settings-btn">儲存設定</button>
+    </div>
 
-      <h4 style="font-size:13px;color:var(--ink-dim);margin:20px 0 8px;">新增贊助者</h4>
-      <div class="field">
-        <label for="sponsor-name-input">贊助者名稱</label>
-        <input id="sponsor-name-input" placeholder="例如:XXX" />
+    <div data-tab-panel="sponsor" style="display:none;">
+      <div class="action-row" style="margin:20px 0 4px;">
+        <button type="button" class="btn block" id="add-sponsor-list-btn"><i data-lucide="plus" class="ico"></i>新增贊助名單</button>
       </div>
-      <div class="field">
-        <label for="sponsor-items-input">贊助了什麼(可以多行,一行一樣)</label>
-        <textarea id="sponsor-items-input" rows="3" placeholder="嗶幣 x1000&#10;黑玫瑰 x2"></textarea>
-      </div>
-      <button class="btn block" id="add-sponsor-btn">新增贊助者</button>
 
-      <div id="sponsor-admin-list" style="margin-top:16px;"></div>
+      <div id="sponsor-latest" style="margin-top:16px;"></div>
+
+      <div id="sponsor-archive-box" style="display:none;margin-top:20px;">
+        <button type="button" class="btn ghost block" id="sponsor-archive-toggle"></button>
+        <div id="sponsor-archive-list" style="display:none;margin-top:14px;"></div>
+      </div>
     </div>
 
     <div data-tab-panel="create">

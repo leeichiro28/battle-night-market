@@ -841,15 +841,39 @@ const db = (function () {
     return () => client.removeChannel(channel);
   }
 
-  // ---------- 贊助名單(整站共用一份) ----------
-  async function listSponsors() {
-    const { data, error } = await client.from("sponsors").select("*").order("sort_order", { ascending: true }).order("created_at", { ascending: true });
+  // ---------- 贊助名單 ----------
+  // 主辦人可以自己開好幾份獨立的「贊助名單」(跟活動 events 完全無關),
+  // 每份名單自己取名字、自己填這份的贊助總額,底下掛自己的贊助者清單。
+  // listSponsorLists() 依建立時間新到舊排序,呼叫端把第一筆當「最新贊助名單」顯示,其餘當「歷史贊助名單」。
+  async function listSponsorLists() {
+    const { data, error } = await client
+      .from("sponsor_lists")
+      .select("*, sponsors(*)")
+      .order("created_at", { ascending: false })
+      .order("sort_order", { ascending: true, foreignTable: "sponsors" })
+      .order("created_at", { ascending: true, foreignTable: "sponsors" });
     if (error) throw error;
     return data || [];
   }
 
-  async function addSponsor(name, items) {
-    const { data, error } = await client.from("sponsors").insert({ name, items }).select().single();
+  async function addSponsorList(name) {
+    const { data, error } = await client.from("sponsor_lists").insert({ name }).select().single();
+    if (error) throw error;
+    return data;
+  }
+
+  async function updateSponsorList(id, name, raised) {
+    const { error } = await client.from("sponsor_lists").update({ name, raised }).eq("id", id);
+    if (error) throw error;
+  }
+
+  async function deleteSponsorList(id) {
+    const { error } = await client.from("sponsor_lists").delete().eq("id", id);
+    if (error) throw error;
+  }
+
+  async function addSponsor(listId, name, items) {
+    const { data, error } = await client.from("sponsors").insert({ sponsor_list_id: listId, name, items }).select().single();
     if (error) throw error;
     return data;
   }
@@ -887,7 +911,10 @@ const db = (function () {
     updatePlayerName,
     quitEvent,
     watchdogActiveMatch,
-    listSponsors,
+    listSponsorLists,
+    addSponsorList,
+    updateSponsorList,
+    deleteSponsorList,
     addSponsor,
     updateSponsor,
     deleteSponsor,

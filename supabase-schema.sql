@@ -266,7 +266,15 @@ begin
 end;
 $$;
 
--- 贊助名單(整個網站共用一份,不綁定特定活動)
+-- 贊助名單:主辦人可以自己開好幾份獨立的名單(跟活動 events 完全無關,自己取名字管理)
+create table if not exists sponsor_lists (
+  id uuid primary key default gen_random_uuid(),
+  name text not null, -- 名單名稱,例如「擂台夜市 第 12 屆」,自己取
+  raised text, -- 這份名單的贊助總額,自己填文字,例如「NT$ 18,600」
+  created_at timestamptz default now()
+);
+
+-- 贊助者,每筆歸屬到某一份 sponsor_lists
 create table if not exists sponsors (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -274,6 +282,27 @@ create table if not exists sponsors (
   sort_order int not null default 0,
   created_at timestamptz default now()
 );
+
+-- 升級既有資料庫用:幫 sponsors 補上 sponsor_list_id 欄位,
+-- 如果表裡已經有舊資料(改版前不分名單的贊助紀錄),先開一份「既有贊助名單」把舊資料收進去。
+do $$
+declare
+  default_list_id uuid;
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'sponsors' and column_name = 'sponsor_list_id'
+  ) then
+    alter table sponsors add column sponsor_list_id uuid references sponsor_lists(id) on delete cascade;
+
+    if exists (select 1 from sponsors where sponsor_list_id is null) then
+      insert into sponsor_lists (name) values ('既有贊助名單') returning id into default_list_id;
+      update sponsors set sponsor_list_id = default_list_id where sponsor_list_id is null;
+    end if;
+
+    alter table sponsors alter column sponsor_list_id set not null;
+  end if;
+end $$;
 
 -- 網站設定(目前用來放募資總額文字、主辦人 Discord 聯絡方式)
 create table if not exists site_settings (
@@ -287,6 +316,7 @@ alter table events enable row level security;
 alter table event_participants enable row level security;
 alter table matches enable row level security;
 alter table sponsors enable row level security;
+alter table sponsor_lists enable row level security;
 alter table site_settings enable row level security;
 
 drop policy if exists "anon all players" on players;
@@ -303,6 +333,9 @@ create policy "anon all matches" on matches for all using (true) with check (tru
 
 drop policy if exists "anon all sponsors" on sponsors;
 create policy "anon all sponsors" on sponsors for all using (true) with check (true);
+
+drop policy if exists "anon all sponsor_lists" on sponsor_lists;
+create policy "anon all sponsor_lists" on sponsor_lists for all using (true) with check (true);
 
 drop policy if exists "anon all site_settings" on site_settings;
 create policy "anon all site_settings" on site_settings for all using (true) with check (true);

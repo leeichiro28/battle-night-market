@@ -15,6 +15,7 @@
     border:1px solid var(--gold-d);
     margin-bottom:20px;
   }
+  .sponsor-hero .view-toggle{margin:0 auto 14px;width:max-content;}
   .sponsor-hero .raised-label{font-size:12px;letter-spacing:.18em;color:var(--gold);text-transform:uppercase;}
   .sponsor-hero .raised-value{
     font-family:'Archivo Black','Noto Sans TC',sans-serif;
@@ -23,6 +24,12 @@
     margin:10px 0 4px;
     text-shadow:0 0 22px rgba(242,183,5,.35);
   }
+  .sponsor-section-title{
+    display:flex;align-items:center;gap:8px;
+    font-size:15px;font-weight:700;color:var(--ink);
+    margin:24px 2px 12px;
+  }
+  .sponsor-section-title .ico{color:var(--gold);}
   .sponsor-card{
     position:relative;
     border:1px solid var(--gold-d);
@@ -64,6 +71,18 @@
     line-height:1.9;
   }
   .sponsor-cta b{color:var(--gold);}
+
+  /* 歷史贊助名單:外層跟首頁「活動已結束」同一種收合按鈕,展開後裡面是每份名單各自一個 game-group 收合卡片 */
+  .sponsor-history-box{margin-top:28px;}
+  .sponsor-history-list{margin-top:14px;}
+  .sponsor-history-list .game-group:last-child{margin-bottom:0;}
+  .history-list-total{
+    padding:14px 20px;
+    display:flex;align-items:center;gap:8px;
+    justify-content:flex-end;
+    font-size:13px;color:var(--ink-dim);
+  }
+  .history-list-total b{color:var(--gold);font-size:15px;margin-left:2px;}
 </style>
 </head>
 <body>
@@ -76,11 +95,21 @@
     </div>
 
     <div class="sponsor-hero">
-      <div class="raised-label"><i data-lucide="sparkles" class="ico"></i> 目前募資總計</div>
+      <div class="view-toggle" id="raised-view-toggle">
+        <button type="button" class="view-toggle-btn active" data-view="current"><i data-lucide="flame" class="ico"></i>本次活動</button>
+        <button type="button" class="view-toggle-btn" data-view="total"><i data-lucide="layers" class="ico"></i>全部活動累積</button>
+      </div>
+      <div class="raised-label" id="raised-label">本次活動贊助總額</div>
       <div class="raised-value" id="raised-value">載入中...</div>
     </div>
 
+    <div class="sponsor-section-title"><i data-lucide="sparkles" class="ico"></i>最新贊助名單</div>
     <div id="sponsor-list"></div>
+
+    <div class="sponsor-history-box" id="history-box" style="display:none;">
+      <button type="button" class="btn ghost block" id="history-toggle"></button>
+      <div class="sponsor-history-list" id="history-list" style="display:none;"></div>
+    </div>
 
     <div class="sponsor-cta" id="sponsor-cta"></div>
 
