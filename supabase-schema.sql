@@ -304,6 +304,45 @@ begin
   end if;
 end $$;
 
+-- 升級既有資料庫用:sponsors.items 原本是必填的自由文字欄位,
+-- 改版後贊助內容改成「獎勵名稱 + 數量」存進 sponsor_rewards,items 不再需要必填。
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_name = 'sponsors' and column_name = 'items' and is_nullable = 'NO'
+  ) then
+    alter table sponsors alter column items drop not null;
+  end if;
+end $$;
+
+-- 贊助獎勵項目:每筆歸屬到某一位贊助者(sponsors)。
+-- 同一次「新增贊助」如果填了好幾種獎勵(例如嗶幣+鑽石+黑玫瑰),會共用同一個 entry_id,
+-- 方便後台把同一次贊助的項目分在同一組顯示;同一位贊助者不同次贊助各自是獨立的 entry_id,
+-- 紀錄永遠保留,前台顯示時再依「獎勵名稱」加總成累積總額。
+create table if not exists sponsor_rewards (
+  id uuid primary key default gen_random_uuid(),
+  sponsor_id uuid not null references sponsors(id) on delete cascade,
+  entry_id uuid not null default gen_random_uuid(),
+  reward_name text not null, -- 獎勵名稱,例如「嗶幣」「鑽石」「黑玫瑰」
+  qty numeric not null default 0, -- 數量
+  created_at timestamptz default now()
+);
+
+-- 舊資料轉移:把改版前 sponsors.items 裡的自由文字,轉成一筆「獎勵名稱=原本的文字、數量=1」的紀錄,
+-- 避免升級後舊贊助紀錄憑空消失(只跑一次,已經轉過的贊助者不會重複轉)。
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_name = 'sponsors' and column_name = 'items') then
+    insert into sponsor_rewards (sponsor_id, reward_name, qty, entry_id)
+    select s.id, s.items, 1, gen_random_uuid()
+    from sponsors s
+    where s.items is not null
+      and trim(s.items) <> ''
+      and not exists (select 1 from sponsor_rewards r where r.sponsor_id = s.id);
+  end if;
+end $$;
+
 -- 網站設定(目前用來放募資總額文字、主辦人 Discord 聯絡方式)
 create table if not exists site_settings (
   key text primary key,
@@ -317,6 +356,7 @@ alter table event_participants enable row level security;
 alter table matches enable row level security;
 alter table sponsors enable row level security;
 alter table sponsor_lists enable row level security;
+alter table sponsor_rewards enable row level security;
 alter table site_settings enable row level security;
 
 drop policy if exists "anon all players" on players;
@@ -336,6 +376,9 @@ create policy "anon all sponsors" on sponsors for all using (true) with check (t
 
 drop policy if exists "anon all sponsor_lists" on sponsor_lists;
 create policy "anon all sponsor_lists" on sponsor_lists for all using (true) with check (true);
+
+drop policy if exists "anon all sponsor_rewards" on sponsor_rewards;
+create policy "anon all sponsor_rewards" on sponsor_rewards for all using (true) with check (true);
 
 drop policy if exists "anon all site_settings" on site_settings;
 create policy "anon all site_settings" on site_settings for all using (true) with check (true);

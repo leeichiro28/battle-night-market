@@ -545,9 +545,13 @@ document.getElementById("create-btn").onclick = async () => {
 // db.listSponsorLists() 依建立時間新到舊排序,第一筆當「最新贊助名單」直接顯示、可編輯,
 // 其餘收進「歷史贊助名單」收合區,樣式跟開新活動分頁的「活動已結束」收合一致,
 // 展開後每份名單各自是一張可收合卡片(跟規則頁「依遊戲分組」同款)。
+//
+// 贊助內容改成「獎勵名稱 + 數量」(例如朋友 Discord 遊戲道具:嗶幣/鑽石/黑玫瑰),
+// 同一位贊助者(同一份名單內、名字不分大小寫比對)再次贊助時會自動沿用同一個人、
+// 把數量加總顯示,不會在列表多一筆重複的人名;每一次原始紀錄都保留在資料庫,
+// 後台可以展開查看、個別刪除某一次紀錄。
 async function loadSponsorSettings() {
-  const [raised, contact] = await Promise.all([db.getSiteSetting("total_raised"), db.getSiteSetting("discord_contact")]);
-  document.getElementById("raised-input").value = raised || "";
+  const contact = await db.getSiteSetting("discord_contact");
   document.getElementById("contact-input").value = contact || "";
   await renderSponsorLists();
 }
@@ -556,7 +560,6 @@ document.getElementById("save-settings-btn").onclick = async () => {
   const btn = document.getElementById("save-settings-btn");
   btn.disabled = true;
   try {
-    await db.setSiteSetting("total_raised", document.getElementById("raised-input").value.trim());
     await db.setSiteSetting("discord_contact", document.getElementById("contact-input").value.trim());
     await ui.alert("已儲存", { tone: "success" });
   } catch (e) {
@@ -581,41 +584,136 @@ document.getElementById("add-sponsor-list-btn").onclick = async () => {
   }
 };
 
-function sponsorRowEl(s, onDeleted) {
+function formatDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+// 新增贊助表單裡的一行「獎勵名稱 + 數量」,跟開新活動分頁的自動分配獎勵輸入列同款。
+function addRewardInputRow(container) {
   const row = document.createElement("div");
-  row.className = "sponsor-admin-row";
+  row.className = "auto-reward-row";
   row.innerHTML = `
-    <div class="sar-main">
-      <b>${ui.esc(s.name)}</b>
-      <div class="sar-items">${ui.esc(s.items)}</div>
+    <div>
+      <label style="font-size:12px;">獎勵名稱</label>
+      <input class="reward-name-input" placeholder="例如:嗶幣 / 鑽石 / 黑玫瑰" />
     </div>
+    <div>
+      <label style="font-size:12px;">數量</label>
+      <input type="number" class="reward-qty-input" placeholder="例如:900000" />
+    </div>
+    <button type="button" class="btn ghost small outline-danger remove-reward-row-btn">${ui.icon("trash-2")}刪除</button>
   `;
-  const delBtn = document.createElement("button");
-  delBtn.type = "button";
-  delBtn.className = "btn ghost small outline-danger";
-  delBtn.innerHTML = ui.icon("trash-2") + "刪除";
-  delBtn.onclick = async () => {
-    const ok = await ui.confirm(`確定要刪除贊助者「${s.name}」的紀錄嗎?`, { title: "刪除贊助紀錄", tone: "danger" });
-    if (!ok) return;
-    await db.deleteSponsor(s.id);
-    onDeleted();
+  row.querySelector(".remove-reward-row-btn").onclick = () => {
+    const rows = container.querySelectorAll(":scope > .auto-reward-row");
+    if (rows.length <= 1) {
+      row.querySelector(".reward-name-input").value = "";
+      row.querySelector(".reward-qty-input").value = "";
+      return;
+    }
+    row.remove();
   };
-  row.appendChild(delBtn);
+  container.appendChild(row);
   return row;
 }
 
-// 產生一份贊助名單的完整編輯區塊(名稱/總額/新增贊助者/贊助者清單),
+function collectRewardRows(container) {
+  const rewards = [];
+  container.querySelectorAll(":scope > .auto-reward-row").forEach((row) => {
+    const name = row.querySelector(".reward-name-input").value.trim();
+    const qty = Number(row.querySelector(".reward-qty-input").value);
+    if (name && Number.isFinite(qty) && qty > 0) rewards.push({ name, qty });
+  });
+  return rewards;
+}
+
+// 一位贊助者一列:上排是名字 + 加總後的獎勵標籤 + 次數,展開才看得到每一次原始紀錄。
+function sponsorRowEl(s, onChanged) {
+  const row = document.createElement("div");
+  row.className = "sponsor-admin-row";
+  const totals = db.aggregateRewardTotals([s]);
+  const entries = db.groupSponsorEntries(s);
+  row.innerHTML = `
+    <div class="sar-top">
+      <div class="sar-main">
+        <b>${ui.esc(s.name)}</b>
+        ${entries.length > 1 ? `<div class="sar-count">共 ${entries.length} 次贊助</div>` : ""}
+      </div>
+      <div class="sar-totals">
+        <div class="tag-row">
+          ${totals.map((r) => `<span class="tag">${ui.esc(r.name)} ${r.qty.toLocaleString()}</span>`).join("") || `<span class="tag">尚無獎勵項目</span>`}
+        </div>
+      </div>
+    </div>
+    <div class="action-row">
+      ${entries.length ? `<button type="button" class="sar-history-toggle" data-action="toggle-history">${ui.icon("chevron-down")}展開全部紀錄</button>` : ""}
+      <button type="button" class="btn ghost small outline-danger" data-action="delete-sponsor" style="margin-left:auto;">${ui.icon("trash-2")}整筆刪除這位贊助者</button>
+    </div>
+    <div class="sar-entries" data-role="entries" style="display:none;"></div>
+  `;
+
+  const entriesBox = row.querySelector('[data-role="entries"]');
+  const toggleBtn = row.querySelector('[data-action="toggle-history"]');
+  if (toggleBtn) {
+    toggleBtn.onclick = () => {
+      const open = entriesBox.style.display !== "none";
+      entriesBox.style.display = open ? "none" : "block";
+      toggleBtn.innerHTML = ui.icon(open ? "chevron-down" : "chevron-up") + (open ? "展開全部紀錄" : "收合紀錄");
+      if (!open && !entriesBox.dataset.filled) {
+        entriesBox.dataset.filled = "1";
+        entries.forEach((entry) => {
+          const line = document.createElement("div");
+          line.className = "sar-entry";
+          line.innerHTML = `
+            <div class="sar-entry-items">${entry.items.map((it) => `<b>${ui.esc(it.reward_name)}</b> ${Number(it.qty).toLocaleString()}`).join("、")}</div>
+            <div class="sar-entry-date">${formatDate(entry.createdAt)}</div>
+          `;
+          const delBtn = document.createElement("button");
+          delBtn.type = "button";
+          delBtn.className = "btn ghost small outline-danger";
+          delBtn.innerHTML = ui.icon("trash-2");
+          delBtn.onclick = async () => {
+            const ok = await ui.confirm("確定要刪除這一次的贊助紀錄嗎?", { title: "刪除贊助紀錄", tone: "danger" });
+            if (!ok) return;
+            await db.deleteSponsorEntry(entry.entryId);
+            onChanged();
+          };
+          line.appendChild(delBtn);
+          entriesBox.appendChild(line);
+        });
+      }
+      ui.refreshIcons();
+    };
+  }
+
+  row.querySelector('[data-action="delete-sponsor"]').onclick = async () => {
+    const ok = await ui.confirm(`確定要整筆刪除贊助者「${s.name}」嗎?他底下所有次的贊助紀錄都會一起刪除。`, {
+      title: "刪除贊助者",
+      confirmText: "永久刪除",
+      tone: "danger",
+    });
+    if (!ok) return;
+    await db.deleteSponsor(s.id);
+    onChanged();
+  };
+
+  return row;
+}
+
+// 產生一份贊助名單的完整編輯區塊(名稱/新增贊助/贊助者清單),
 // isLatest 只影響標題列要不要加「最新贊助名單」標籤。
 function sponsorListCard(sl, isLatest) {
   const card = document.createElement("div");
   card.className = "card";
+  const listTotals = db.aggregateRewardTotals(sl.sponsors);
   card.innerHTML = `
     <div class="event-card" style="margin-bottom:14px;">
       <div class="meta">
         <h3>${ui.esc(sl.name)}</h3>
         <div class="tag-row">
           ${isLatest ? `<span class="tag open">${ui.icon("sparkles")}最新贊助名單</span>` : ""}
-          <span class="tag">${ui.icon("gem")}${sl.sponsors.length} 筆贊助</span>
+          <span class="tag">${ui.icon("gem")}${sl.sponsors.length} 位贊助者</span>
         </div>
       </div>
       <div class="action-row">
@@ -624,29 +722,41 @@ function sponsorListCard(sl, isLatest) {
     </div>
 
     <div class="field-group">
-      <label>名單名稱 / 這份名單的贊助總額(自己輸入文字就好,例如 NT$ 18,600)</label>
-      <div class="field">
-        <input class="list-name-input" value="${ui.esc(sl.name)}" />
-      </div>
+      <label>名單名稱</label>
       <div class="action-row" style="align-items:flex-start;">
-        <input class="list-raised-input" placeholder="這份名單的贊助總額" value="${ui.esc(sl.raised || "")}" style="flex:1;min-width:160px;" />
+        <input class="list-name-input" value="${ui.esc(sl.name)}" style="flex:1;min-width:160px;" />
         <button type="button" class="btn ghost small" data-action="save-list">${ui.icon("save")}儲存</button>
       </div>
     </div>
 
-    <div class="field-group">
-      <label>新增贊助者</label>
+    <div class="reward-total-box">
+      <span>${ui.icon("calculator")}這份名單贊助總額(自動加總,不用手動填)</span>
+      <div class="tag-row">
+        ${listTotals.map((r) => `<span class="tag">${ui.esc(r.name)} ${r.qty.toLocaleString()}</span>`).join("") || `<span class="tag">尚無紀錄</span>`}
+      </div>
+    </div>
+
+    <div class="field-group" style="margin-top:18px;">
+      <label>新增一筆贊助</label>
       <div class="field">
         <input class="sp-name-input" placeholder="贊助者名稱" />
+        <div style="font-size:12px;color:var(--ink-dim);margin-top:4px;">
+          ${ui.icon("info")}同一位贊助者再次贊助時,名字打一樣就會自動累加,不會多一筆重複的人名。
+        </div>
       </div>
-      <div class="field">
-        <textarea class="sp-items-input" rows="2" placeholder="贊助了什麼,可以多行,一行一樣"></textarea>
+      <div class="reward-rows"></div>
+      <div class="action-row">
+        <button type="button" class="btn ghost small" data-action="add-reward-row">${ui.icon("plus")}新增一項獎勵</button>
       </div>
-      <button type="button" class="btn small" data-action="add-sponsor">${ui.icon("plus")}新增贊助者</button>
+      <button type="button" class="btn small" style="margin-top:12px;" data-action="add-sponsor">${ui.icon("plus")}新增贊助紀錄</button>
     </div>
 
     <div class="sponsor-admin-list"></div>
   `;
+
+  const rewardRowsBox = card.querySelector(".reward-rows");
+  addRewardInputRow(rewardRowsBox);
+  card.querySelector('[data-action="add-reward-row"]').onclick = () => addRewardInputRow(rewardRowsBox);
 
   const listBox = card.querySelector(".sponsor-admin-list");
   if (!sl.sponsors.length) {
@@ -657,12 +767,11 @@ function sponsorListCard(sl, isLatest) {
 
   card.querySelector('[data-action="save-list"]').onclick = async () => {
     const name = card.querySelector(".list-name-input").value.trim();
-    const raised = card.querySelector(".list-raised-input").value.trim();
     if (!name) {
       await ui.alert("名單名稱不能空白", { title: "缺少資料", tone: "danger" });
       return;
     }
-    await db.updateSponsorList(sl.id, name, raised);
+    await db.updateSponsorList(sl.id, name);
     await renderSponsorLists();
   };
 
@@ -679,17 +788,16 @@ function sponsorListCard(sl, isLatest) {
 
   card.querySelector('[data-action="add-sponsor"]').onclick = async () => {
     const nameInput = card.querySelector(".sp-name-input");
-    const itemsInput = card.querySelector(".sp-items-input");
     const name = nameInput.value.trim();
-    const items = itemsInput.value.trim();
-    if (!name || !items) {
-      await ui.alert("請填寫贊助者名稱跟贊助內容", { title: "缺少資料", tone: "danger" });
+    const rewards = collectRewardRows(rewardRowsBox);
+    if (!name || !rewards.length) {
+      await ui.alert("請填寫贊助者名稱,並至少填一項獎勵名稱跟數量", { title: "缺少資料", tone: "danger" });
       return;
     }
     const btn = card.querySelector('[data-action="add-sponsor"]');
     btn.disabled = true;
     try {
-      await db.addSponsor(sl.id, name, items);
+      await db.addSponsorEntry(sl.id, name, rewards);
       await renderSponsorLists();
     } catch (e) {
       await ui.alert(e.message || "新增失敗", { title: "新增失敗", tone: "danger" });
@@ -713,7 +821,7 @@ function sponsorHistoryGroup(sl) {
     <button type="button" class="game-toggle">
       <i data-lucide="gem" class="ico"></i>
       <span class="game-toggle-label">${ui.esc(sl.name)}</span>
-      <span class="game-toggle-count">${sl.sponsors.length} 筆 · ${ui.esc(sl.raised && sl.raised.trim() ? sl.raised : "尚未填總額")}</span>
+      <span class="game-toggle-count">${sl.sponsors.length} 位贊助者</span>
       <i data-lucide="chevron-down" class="ico chev"></i>
     </button>
     <div class="game-body" ${open ? "" : "hidden"}></div>

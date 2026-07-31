@@ -842,16 +842,20 @@ const db = (function () {
   }
 
   // ---------- 贊助名單 ----------
-  // 主辦人可以自己開好幾份獨立的「贊助名單」(跟活動 events 完全無關),
-  // 每份名單自己取名字、自己填這份的贊助總額,底下掛自己的贊助者清單。
+  // 主辦人可以自己開好幾份獨立的「贊助名單」(跟活動 events 完全無關),每份名單自己取名字。
+  // 贊助者(sponsors)底下掛的是一筆一筆的「贊助獎勵項目」(sponsor_rewards),
+  // 同一位贊助者(同一份名單內、名字視為同一人)每次贊助都是新的一批 sponsor_rewards,
+  // 用同一個 entry_id 分組,前台/後台顯示時把同一位贊助者底下所有項目依「獎勵名稱」加總,
+  // 不會因為前台合併顯示就把原始紀錄刪掉。
   // listSponsorLists() 依建立時間新到舊排序,呼叫端把第一筆當「最新贊助名單」顯示,其餘當「歷史贊助名單」。
   async function listSponsorLists() {
     const { data, error } = await client
       .from("sponsor_lists")
-      .select("*, sponsors(*)")
+      .select("*, sponsors(*, sponsor_rewards(*))")
       .order("created_at", { ascending: false })
       .order("sort_order", { ascending: true, foreignTable: "sponsors" })
-      .order("created_at", { ascending: true, foreignTable: "sponsors" });
+      .order("created_at", { ascending: true, foreignTable: "sponsors" })
+      .order("created_at", { ascending: true, foreignTable: "sponsor_rewards" });
     if (error) throw error;
     return data || [];
   }
@@ -862,8 +866,8 @@ const db = (function () {
     return data;
   }
 
-  async function updateSponsorList(id, name, raised) {
-    const { error } = await client.from("sponsor_lists").update({ name, raised }).eq("id", id);
+  async function updateSponsorList(id, name) {
+    const { error } = await client.from("sponsor_lists").update({ name }).eq("id", id);
     if (error) throw error;
   }
 
@@ -872,20 +876,99 @@ const db = (function () {
     if (error) throw error;
   }
 
-  async function addSponsor(listId, name, items) {
-    const { data, error } = await client.from("sponsors").insert({ sponsor_list_id: listId, name, items }).select().single();
-    if (error) throw error;
-    return data;
+  // 新增一筆贊助:rewards 是 [{ name, qty }, ...]。
+  // 同一份名單內如果已經有同名贊助者(去頭尾空白、不分大小寫比對),就沿用同一個 sponsors 列,
+  // 不會另外新增一筆重複顯示的贊助者;這次贊助的獎勵項目用新的 entry_id 分組寫進 sponsor_rewards。
+  async function addSponsorEntry(listId, name, rewards) {
+    const cleanName = (name || "").trim();
+    const cleanRewards = (rewards || [])
+      .map((r) => ({ name: (r.name || "").trim(), qty: Number(r.qty) }))
+      .filter((r) => r.name && Number.isFinite(r.qty) && r.qty > 0);
+    if (!cleanName) throw new Error("缺少贊助者名稱");
+    if (!cleanRewards.length) throw new Error("至少要填一項獎勵名稱跟數量");
+
+    const { data: existing, error: findErr } = await client
+      .from("sponsors")
+      .select("*")
+      .eq("sponsor_list_id", listId)
+      .ilike("name", cleanName);
+    if (findErr) throw findErr;
+
+    let sponsor = (existing || []).find((s) => s.name.trim().toLowerCase() === cleanName.toLowerCase());
+    if (!sponsor) {
+      const { count, error: countErr } = await client
+        .from("sponsors")
+        .select("id", { count: "exact", head: true })
+        .eq("sponsor_list_id", listId);
+      if (countErr) throw countErr;
+      const { data: created, error: insErr } = await client
+        .from("sponsors")
+        .insert({ sponsor_list_id: listId, name: cleanName, sort_order: count || 0 })
+        .select()
+        .single();
+      if (insErr) throw insErr;
+      sponsor = created;
+    }
+
+    const entryId = window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+    const rows = cleanRewards.map((r) => ({
+      sponsor_id: sponsor.id,
+      entry_id: entryId,
+      reward_name: r.name,
+      qty: r.qty,
+    }));
+    const { error: rewardErr } = await client.from("sponsor_rewards").insert(rows);
+    if (rewardErr) throw rewardErr;
+    return sponsor;
   }
 
-  async function updateSponsor(id, name, items) {
-    const { error } = await client.from("sponsors").update({ name, items }).eq("id", id);
+  // 刪除某位贊助者「這一次」的贊助紀錄(同一個 entry_id 底下的所有獎勵項目),不影響其他次紀錄。
+  async function deleteSponsorEntry(entryId) {
+    const { error } = await client.from("sponsor_rewards").delete().eq("entry_id", entryId);
     if (error) throw error;
   }
 
+  // 整筆刪除這位贊助者(連同他底下所有次的贊助紀錄)。
   async function deleteSponsor(id) {
     const { error } = await client.from("sponsors").delete().eq("id", id);
     if (error) throw error;
+  }
+
+  async function updateSponsorName(id, name) {
+    const { error } = await client.from("sponsors").update({ name }).eq("id", id);
+    if (error) throw error;
+  }
+
+  // 把一群贊助者(sponsors,每個帶著自己的 sponsor_rewards)依「獎勵名稱」加總,
+  // 回傳依第一次出現順序排列的 [{ name, qty }, ...]。用來算單一贊助者總額、
+  // 單份名單總額、或跨所有名單的全部活動累積總額(呼叫端自己決定要傳哪個範圍的 sponsors)。
+  function aggregateRewardTotals(sponsors) {
+    const totals = new Map();
+    const order = [];
+    (sponsors || []).forEach((sp) => {
+      (sp.sponsor_rewards || []).forEach((r) => {
+        const key = r.reward_name;
+        if (!totals.has(key)) {
+          totals.set(key, 0);
+          order.push(key);
+        }
+        totals.set(key, totals.get(key) + Number(r.qty || 0));
+      });
+    });
+    return order.map((name) => ({ name, qty: totals.get(name) }));
+  }
+
+  // 把單一贊助者底下的 sponsor_rewards 依 entry_id(同一次贊助)分組,新到舊排序,
+  // 回傳 [{ entryId, createdAt, items: [{ reward_name, qty }, ...] }, ...]。
+  function groupSponsorEntries(sponsor) {
+    const map = new Map();
+    (sponsor.sponsor_rewards || []).forEach((r) => {
+      if (!map.has(r.entry_id)) {
+        map.set(r.entry_id, { entryId: r.entry_id, createdAt: r.created_at, items: [] });
+      }
+      map.get(r.entry_id).items.push(r);
+    });
+    return Array.from(map.values()).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   }
 
   async function getSiteSetting(key) {
@@ -915,9 +998,12 @@ const db = (function () {
     addSponsorList,
     updateSponsorList,
     deleteSponsorList,
-    addSponsor,
-    updateSponsor,
+    addSponsorEntry,
+    deleteSponsorEntry,
     deleteSponsor,
+    updateSponsorName,
+    aggregateRewardTotals,
+    groupSponsorEntries,
     getSiteSetting,
     setSiteSetting,
     listEvents,

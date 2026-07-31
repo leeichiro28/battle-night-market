@@ -17,13 +17,16 @@
   }
   .sponsor-hero .view-toggle{margin:0 auto 14px;width:max-content;}
   .sponsor-hero .raised-label{font-size:12px;letter-spacing:.18em;color:var(--gold);text-transform:uppercase;}
-  .sponsor-hero .raised-value{
+  .hero-reward-list{margin-top:10px;}
+  .hero-reward-line{
+    display:flex;align-items:baseline;justify-content:center;gap:10px;
     font-family:'Archivo Black','Noto Sans TC',sans-serif;
-    font-size:clamp(28px,6vw,42px);
+    font-size:clamp(20px,4.4vw,30px);
     color:var(--gold);
-    margin:10px 0 4px;
-    text-shadow:0 0 22px rgba(242,183,5,.35);
+    margin:4px 0;
+    text-shadow:0 0 18px rgba(242,183,5,.3);
   }
+  .hero-reward-line .hr-name{font-size:14px;color:var(--ink-dim);font-family:'Noto Sans TC',sans-serif;}
   .sponsor-section-title{
     display:flex;align-items:center;gap:8px;
     font-size:15px;font-weight:700;color:var(--ink);
@@ -47,18 +50,13 @@
     transform:rotate(20deg);
     pointer-events:none;
   }
+  .sponsor-card-top{display:flex;align-items:center;justify-content:space-between;gap:12px;}
   .sponsor-card .sname{
     display:flex; align-items:center; gap:8px;
     font-family:'Archivo Black','Noto Sans TC',sans-serif;
     font-size:17px; color:var(--gold);
-    margin-bottom:8px;
   }
-  .sponsor-card .sitems{
-    color:var(--ink);
-    font-size:14px;
-    line-height:1.9;
-    white-space:pre-line;
-  }
+  .sponsor-card .scount{font-size:11px;color:var(--ink-dim);white-space:nowrap;}
   .sponsor-empty{text-align:center;color:var(--ink-dim);padding:40px 10px;}
   .sponsor-cta{
     text-align:center;
@@ -100,7 +98,7 @@
         <button type="button" class="view-toggle-btn" data-view="total"><i data-lucide="layers" class="ico"></i>全部活動累積</button>
       </div>
       <div class="raised-label" id="raised-label">本次活動贊助總額</div>
-      <div class="raised-value" id="raised-value">載入中...</div>
+      <div class="hero-reward-list" id="raised-value">載入中...</div>
     </div>
 
     <div class="sponsor-section-title"><i data-lucide="sparkles" class="ico"></i>最新贊助名單</div>
