@@ -731,9 +731,7 @@ function sponsorListCard(sl, isLatest) {
 
     <div class="reward-total-box">
       <span>${ui.icon("calculator")}這份名單贊助總額(自動加總,不用手動填)</span>
-      <div class="tag-row">
-        ${listTotals.map((r) => `<span class="tag">${ui.esc(r.name)} ${r.qty.toLocaleString()}</span>`).join("") || `<span class="tag">尚無紀錄</span>`}
-      </div>
+      ${ui.rewardTotalsHtml(listTotals, { align: "right", emptyText: "尚無紀錄" })}
     </div>
 
     <div class="field-group" style="margin-top:18px;">
@@ -853,11 +851,25 @@ async function renderSponsorLists() {
     console.error(e);
     document.getElementById("sponsor-latest").innerHTML = `<div class="empty">${ui.icon("triangle-alert")}贊助名單載入失敗:${ui.esc(e.message || "未知錯誤")}(請確認 supabase-schema.sql 已重新執行)</div>`;
     document.getElementById("sponsor-archive-box").style.display = "none";
+    document.getElementById("sponsor-cumulative-total").style.display = "none";
     ui.refreshIcons();
     return;
   }
   const latest = lists[0] || null;
   const history = lists.slice(1);
+
+  const cumulativeBox = document.getElementById("sponsor-cumulative-total");
+  if (!lists.length) {
+    cumulativeBox.style.display = "none";
+  } else {
+    cumulativeBox.style.display = "flex";
+    const allSponsors = lists.flatMap((sl) => sl.sponsors || []);
+    const cumulativeTotals = db.aggregateRewardTotals(allSponsors);
+    const label = cumulativeBox.querySelector("span");
+    cumulativeBox.innerHTML = "";
+    cumulativeBox.appendChild(label);
+    cumulativeBox.insertAdjacentHTML("beforeend", ui.rewardTotalsHtml(cumulativeTotals, { align: "right", emptyText: "尚無紀錄" }));
+  }
 
   const latestBox = document.getElementById("sponsor-latest");
   latestBox.innerHTML = "";

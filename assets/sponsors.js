@@ -66,11 +66,7 @@ function renderRaised(latestSponsors, allSponsors) {
   const value = document.getElementById("raised-value");
   const totals = raisedView === "current" ? db.aggregateRewardTotals(latestSponsors) : db.aggregateRewardTotals(allSponsors);
   if (label) label.textContent = raisedView === "current" ? "本次活動贊助總額" : "全部活動累積贊助總額";
-  if (value) {
-    value.innerHTML = totals.length
-      ? totals.map((r) => `<div class="hero-reward-line"><span>${r.qty.toLocaleString()}</span><span class="hr-name">${ui.esc(r.name)}</span></div>`).join("")
-      : `<div style="font-size:14px;color:var(--ink-dim);">尚未公布</div>`;
-  }
+  if (value) value.innerHTML = ui.rewardTotalsHtml(totals, { align: "center" });
   document.querySelectorAll("#raised-view-toggle .view-toggle-btn").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.view === raisedView);
   });

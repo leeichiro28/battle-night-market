@@ -28,6 +28,26 @@ const ui = (function () {
     return holder.firstElementChild;
   }
 
+  // ---------- 募資總額(獎勵名稱 + 數量)橫向顯示 ----------
+  // 用在贊助頁的大總額、後台的「這份名單贊助總額」跟「全部活動累積贊助總額」。
+  // totals: [{ name, qty }, ...],一律依數量由多到少排序後再輸出,
+  // 不然同一批獎勵每次重新整理排列順序都不一樣,數量小的擠在最顯眼的位置很醜。
+  function rewardTotalsHtml(totals, opts) {
+    const o = opts || {};
+    if (!totals || !totals.length) {
+      return `<div class="raised-total-empty">${esc(o.emptyText || "尚未公布")}</div>`;
+    }
+    const sorted = totals.slice().sort((a, b) => b.qty - a.qty);
+    const alignCls = o.align ? ` align-${o.align}` : "";
+    const items = sorted
+      .map(
+        (r) =>
+          `<span class="raised-total-item"><span class="rt-name">${esc(r.name)}</span><span class="rt-qty">${Number(r.qty).toLocaleString()}</span></span>`
+      )
+      .join("");
+    return `<div class="raised-total-row${alignCls}">${items}</div>`;
+  }
+
   let iconObserver = null;
   let refreshQueued = false;
   let refreshing = false;
@@ -304,6 +324,7 @@ const ui = (function () {
     icon,
     iconEl,
     refreshIcons,
+    rewardTotalsHtml,
     GAME,
     RULE,
     CLASS_ICON,
