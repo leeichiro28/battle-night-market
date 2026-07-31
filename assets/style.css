@@ -101,6 +101,51 @@ a{color:var(--gold);text-decoration:none;}
 .card + .card{margin-top:16px;}
 .card > h3{margin-bottom:14px;}
 
+/* 規則頁的「遊戲分組」收合區塊,互動方式跟首頁「活動已結束」的收合按鈕一致 */
+.game-group{margin-bottom:16px;}
+.game-toggle{
+  width:100%;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:20px;
+  color:var(--ink);
+  font-size:16px;
+  font-weight:700;
+  font-family:inherit;
+  cursor:pointer;
+  text-align:left;
+  transition:background .15s ease;
+}
+.game-toggle .ico{color:var(--gold);flex-shrink:0;}
+.game-toggle-label{flex:1 1 auto;min-width:0;overflow-wrap:anywhere;}
+.game-toggle-count{font-size:12px;font-weight:400;color:var(--ink-dim);flex-shrink:0;white-space:nowrap;}
+.game-toggle .chev{color:var(--ink-dim);flex-shrink:0;transition:transform .2s ease;}
+.game-toggle:hover{background:var(--panel2);}
+.game-toggle:hover .chev{color:var(--gold);}
+.game-group.open .game-toggle{border-radius:var(--radius) var(--radius) 0 0;}
+.game-group.open .game-toggle .chev{transform:rotate(180deg);}
+.game-body{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-top:none;
+  border-radius:0 0 var(--radius) var(--radius);
+}
+.game-body[hidden]{display:none;}
+.game-section{padding:20px;border-bottom:1px solid var(--line);}
+.game-section:last-child{border-bottom:none;}
+.game-section h4{
+  color:var(--gold);
+  font-size:15px;
+  margin-bottom:10px;
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+
 .event-card{
   display:flex;
   justify-content:space-between;
