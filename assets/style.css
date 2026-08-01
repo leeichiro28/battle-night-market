@@ -524,42 +524,51 @@ label{
 }
 .match-row.bye .side{color:var(--ink-dim);}
 
-/* ===== 卡片標題列:標題 + 右側切換按鈕 ===== */
+/* ===== 卡片標題列:標題 + 右側切換按鈕(資料夾分頁籤風格,貼在卡片正上方) ===== */
 .card-head{
   display:flex;
   align-items:center;
   justify-content:space-between;
   gap:10px;
   flex-wrap:wrap;
-  margin-bottom:14px;
+  padding:0 2px;
+  margin-bottom:0;
 }
+.card-head-title{font-size:15px;color:var(--ink-dim);margin:0;}
 .view-toggle{
   display:flex;
   gap:4px;
-  background:var(--panel2);
-  border:1px solid var(--line);
-  border-radius:999px;
-  padding:3px;
+  background:transparent;
+  border:none;
+  padding:0;
   flex-shrink:0;
 }
 .view-toggle-btn{
   display:inline-flex;
   align-items:center;
-  gap:5px;
+  gap:6px;
   white-space:nowrap;
-  border:none;
-  background:transparent;
+  border:1px solid var(--line);
+  border-bottom:none;
+  background:var(--panel2);
   color:var(--ink-dim);
-  font-size:12px;
-  font-weight:600;
-  padding:6px 12px;
-  border-radius:999px;
+  font-size:13px;
+  font-weight:700;
+  padding:10px 16px;
+  border-radius:10px 10px 0 0;
   cursor:pointer;
   transition:background .15s,color .15s;
+  transform:translateY(1px);
 }
 .view-toggle-btn .ico{width:13px;height:13px;}
 .view-toggle-btn:hover{color:var(--ink);}
-.view-toggle-btn.active{background:var(--gold);color:#000;}
+.view-toggle-btn.active{
+  background:var(--panel);
+  color:var(--gold);
+  transform:translateY(0);
+}
+/* 分頁籤在卡片右側時,把卡片右上角的圓角拿掉,讓選中的分頁跟卡片邊框接成一片 */
+.folder-tab-card-right{border-top-right-radius:0;}
 
 /* ===== 賽制圖(樹狀對戰圖):橫向捲動,每輪一欄,SVG 線連接晉級關係 ===== */
 .bracket-tree-wrap{
