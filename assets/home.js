@@ -192,13 +192,9 @@ function bindAnnounceHeroToggle(root) {
   });
 }
 
-let announceArchiveOpen = false;
-
 async function renderAnnouncements() {
   const heroBox = document.getElementById("announce-hero-box");
-  const archiveBox = document.getElementById("announce-archive-box");
-  const archiveToggle = document.getElementById("announce-archive-toggle");
-  const archiveList = document.getElementById("announce-archive-list");
+  const moreBox = document.getElementById("announce-more-box");
 
   let list = [];
   try {
@@ -210,40 +206,14 @@ async function renderAnnouncements() {
 
   if (!list.length) {
     heroBox.innerHTML = "";
-    archiveBox.style.display = "none";
+    moreBox.style.display = "none";
     return;
   }
 
   const [latest, ...rest] = list;
   heroBox.innerHTML = announceHeroHtml(latest);
   bindAnnounceHeroToggle(heroBox);
-
-  if (!rest.length) {
-    archiveBox.style.display = "none";
-    return;
-  }
-  archiveBox.style.display = "block";
-  archiveToggle.innerHTML = ui.icon(announceArchiveOpen ? "chevron-up" : "chevron-down") + `更多公告(${rest.length})`;
-  archiveToggle.onclick = () => {
-    announceArchiveOpen = !announceArchiveOpen;
-    renderAnnouncements();
-  };
-  archiveList.style.display = announceArchiveOpen ? "block" : "none";
-  archiveList.innerHTML = "";
-  if (announceArchiveOpen) {
-    rest.forEach((a) => {
-      const info = ANNOUNCE_TYPE_INFO[a.type] || ANNOUNCE_TYPE_INFO.general;
-      const d = new Date(a.created_at);
-      const row = document.createElement("div");
-      row.className = "announce-archive-row";
-      row.innerHTML = `
-        ${ui.icon(info.icon)}
-        <div class="aar-title">${ui.esc(a.title)}</div>
-        <div class="aar-date">${d.getMonth() + 1}/${d.getDate()}</div>
-      `;
-      archiveList.appendChild(row);
-    });
-  }
+  moreBox.style.display = rest.length ? "block" : "none";
 }
 
 async function renderEvents() {
