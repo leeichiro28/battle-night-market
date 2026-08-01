@@ -22,6 +22,7 @@
     <div class="folder-tabs" id="admin-tabs">
       <button type="button" class="folder-tab active" data-tab="create"><i data-lucide="calendar-plus" class="ico"></i>開新活動</button>
       <button type="button" class="folder-tab" data-tab="sponsor"><i data-lucide="gem" class="ico"></i>贊助名單</button>
+      <button type="button" class="folder-tab" data-tab="announce"><i data-lucide="megaphone" class="ico"></i>公告</button>
     </div>
 
     <div class="card folder-tab-card" data-tab-panel="create">
@@ -95,6 +96,52 @@
         <button type="button" class="btn ghost block" id="sponsor-archive-toggle"></button>
         <div id="sponsor-archive-list" style="display:none;margin-top:14px;"></div>
       </div>
+    </div>
+
+    <div class="card folder-tab-card" data-tab-panel="announce" style="display:none;">
+      <div class="field">
+        <label for="announce-type">類型</label>
+        <select id="announce-type">
+          <option value="event">新活動</option>
+          <option value="update">版本更新</option>
+          <option value="general">一般公告</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="announce-title">標題</label>
+        <input id="announce-title" placeholder="例如:中元夜市盃・鬼牌對決" />
+      </div>
+      <div class="field">
+        <label for="announce-subtitle">小標(圖片上方那行字,選填)</label>
+        <input id="announce-subtitle" placeholder="例如:報名開放中 · 8/03 開賽" />
+      </div>
+      <div class="field">
+        <label for="announce-body">內文(選填)</label>
+        <textarea id="announce-body" rows="3" placeholder="活動 / 更新內容說明,可以換行"></textarea>
+      </div>
+      <div class="field" style="display:flex;gap:12px;">
+        <div style="flex:1;">
+          <label for="announce-cta-text">按鈕文字(選填)</label>
+          <input id="announce-cta-text" placeholder="例如:立即報名" />
+        </div>
+        <div style="flex:1;">
+          <label for="announce-cta-link">按鈕連結(選填)</label>
+          <input id="announce-cta-link" placeholder="例如:#events-list 或完整網址" />
+        </div>
+      </div>
+      <div class="field">
+        <label>封面圖(選填,沒上傳就用類型預設圖示)</label>
+        <div class="announce-image-upload">
+          <div class="announce-image-preview" id="announce-image-preview"><i data-lucide="image" class="ico"></i></div>
+          <label class="btn ghost small" for="announce-image-input" style="cursor:pointer;"><i data-lucide="upload" class="ico"></i>上傳圖片</label>
+          <input type="file" id="announce-image-input" accept="image/*" />
+        </div>
+      </div>
+      <button type="button" class="btn block" id="announce-submit-btn"><i data-lucide="send" class="ico"></i>發布公告</button>
+    </div>
+
+    <div data-tab-panel="announce" style="display:none;">
+      <div id="announce-admin-list" style="margin-top:16px;"></div>
     </div>
 
     <div data-tab-panel="create">

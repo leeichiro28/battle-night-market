@@ -349,6 +349,33 @@ create table if not exists site_settings (
   value text
 );
 
+-- 公告:首頁用來顯示「新活動 / 版本更新 / 一般公告」的精選卡片,後台可以新增/編輯/刪除、上傳一張封面圖。
+-- 首頁固定抓「最新一則」當精選公告(hero),其餘依建立時間收進「更多公告」收合區(跟贊助名單、活動列表同一套邏輯:最新一則+歷史收合)。
+create table if not exists announcements (
+  id uuid primary key default gen_random_uuid(),
+  type text not null default 'general', -- 'event'新活動 / 'update'版本更新 / 'general'一般公告,對應首頁徽章顏色跟圖示
+  title text not null,
+  subtitle text, -- 圖片上面那行小字,例如「報名開放中 · 8/03 開賽」「v2.0」,選填
+  body text, -- 內文說明
+  image_url text, -- 封面圖網址,選填(沒有的話首頁用該類型的預設圖示墊底)
+  cta_text text, -- 按鈕文字,例如「立即報名」「查看玩法說明」,選填
+  cta_link text, -- 按鈕連結,可以是站內錨點(例如 #events-list)或外部網址,選填
+  created_at timestamptz default now()
+);
+
+-- 公告封面圖存放的 Storage bucket,設成公開讀取(圖片網址不含機密資訊)
+insert into storage.buckets (id, name, public)
+values ('announcement-images', 'announcement-images', true)
+on conflict (id) do nothing;
+
+drop policy if exists "anon read announcement images" on storage.objects;
+create policy "anon read announcement images" on storage.objects
+  for select using (bucket_id = 'announcement-images');
+
+drop policy if exists "anon write announcement images" on storage.objects;
+create policy "anon write announcement images" on storage.objects
+  for all using (bucket_id = 'announcement-images') with check (bucket_id = 'announcement-images');
+
 -- 開放權限(小型私人活動,信任參加者,不做帳號驗證)
 alter table players enable row level security;
 alter table events enable row level security;
@@ -358,6 +385,7 @@ alter table sponsors enable row level security;
 alter table sponsor_lists enable row level security;
 alter table sponsor_rewards enable row level security;
 alter table site_settings enable row level security;
+alter table announcements enable row level security;
 
 drop policy if exists "anon all players" on players;
 create policy "anon all players" on players for all using (true) with check (true);
@@ -382,6 +410,9 @@ create policy "anon all sponsor_rewards" on sponsor_rewards for all using (true)
 
 drop policy if exists "anon all site_settings" on site_settings;
 create policy "anon all site_settings" on site_settings for all using (true) with check (true);
+
+drop policy if exists "anon all announcements" on announcements;
+create policy "anon all announcements" on announcements for all using (true) with check (true);
 
 -- ============================================
 -- 執行完以上內容後,記得手動開啟 Realtime:

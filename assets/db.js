@@ -985,6 +985,63 @@ const db = (function () {
     if (error) throw error;
   }
 
+  // ---------- 公告 ----------
+  // 首頁抓「最新一則」當精選公告(hero),其餘依時間新到舊排序丟進「更多公告」收合區。
+  async function listAnnouncements() {
+    const { data, error } = await client.from("announcements").select("*").order("created_at", { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }
+
+  async function addAnnouncement(fields) {
+    const { data, error } = await client
+      .from("announcements")
+      .insert({
+        type: fields.type,
+        title: fields.title,
+        subtitle: fields.subtitle || null,
+        body: fields.body || null,
+        image_url: fields.imageUrl || null,
+        cta_text: fields.ctaText || null,
+        cta_link: fields.ctaLink || null,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  async function updateAnnouncement(id, fields) {
+    const { error } = await client
+      .from("announcements")
+      .update({
+        type: fields.type,
+        title: fields.title,
+        subtitle: fields.subtitle || null,
+        body: fields.body || null,
+        image_url: fields.imageUrl || null,
+        cta_text: fields.ctaText || null,
+        cta_link: fields.ctaLink || null,
+      })
+      .eq("id", id);
+    if (error) throw error;
+  }
+
+  async function deleteAnnouncement(id) {
+    const { error } = await client.from("announcements").delete().eq("id", id);
+    if (error) throw error;
+  }
+
+  // file 是 <input type="file"> 選出來的檔案,回傳可以直接存進 announcements.image_url 的公開網址
+  async function uploadAnnouncementImage(file) {
+    const ext = (file.name.split(".").pop() || "png").toLowerCase();
+    const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    const { error } = await client.storage.from("announcement-images").upload(path, file, { upsert: false });
+    if (error) throw error;
+    const { data } = client.storage.from("announcement-images").getPublicUrl(path);
+    return data.publicUrl;
+  }
+
   return {
     client,
     getLocalPlayer,
@@ -1009,6 +1066,11 @@ const db = (function () {
     groupSponsorEntries,
     getSiteSetting,
     setSiteSetting,
+    listAnnouncements,
+    addAnnouncement,
+    updateAnnouncement,
+    deleteAnnouncement,
+    uploadAnnouncementImage,
     listEvents,
     getEvent,
     getEventSafe,

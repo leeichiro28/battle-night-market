@@ -138,6 +138,91 @@ function eventRow(ev) {
 let archiveOpen = false;
 
 // 首頁只留報名中/進行中的活動,已結束的收進下面可展開的「活動已結束」區,避免舊活動一直往下堆
+// 公告卡類型對應的圖示跟徽章文字,首頁精選公告(hero)跟後台管理共用同一份對照表(admin.js 也有一份)
+const ANNOUNCE_TYPE_INFO = {
+  event: { icon: "swords", label: "新活動" },
+  update: { icon: "sparkles", label: "版本更新" },
+  general: { icon: "megaphone", label: "公告" },
+};
+
+function announceHeroHtml(a) {
+  const info = ANNOUNCE_TYPE_INFO[a.type] || ANNOUNCE_TYPE_INFO.general;
+  const imgArea = a.image_url
+    ? `<img src="${ui.esc(a.image_url)}" alt="" />`
+    : ui.icon(info.icon);
+  const cta =
+    a.cta_text && a.cta_link
+      ? `<a class="btn" href="${ui.esc(a.cta_link)}" style="text-decoration:none;">${ui.esc(a.cta_text)}${ui.icon("arrow-right")}</a>`
+      : "";
+  return `
+    <div class="announce-hero">
+      <div class="announce-hero-img">
+        <span class="announce-badge">${ui.esc(info.label)}</span>
+        ${imgArea}
+      </div>
+      <div class="announce-hero-body">
+        ${a.subtitle ? `<div class="announce-hero-sub">${ui.esc(a.subtitle)}</div>` : ""}
+        <h3>${ui.esc(a.title)}</h3>
+        ${a.body ? `<p>${ui.esc(a.body).replace(/\n/g, "<br/>")}</p>` : ""}
+        ${cta}
+      </div>
+    </div>
+  `;
+}
+
+let announceArchiveOpen = false;
+
+async function renderAnnouncements() {
+  const heroBox = document.getElementById("announce-hero-box");
+  const archiveBox = document.getElementById("announce-archive-box");
+  const archiveToggle = document.getElementById("announce-archive-toggle");
+  const archiveList = document.getElementById("announce-archive-list");
+
+  let list = [];
+  try {
+    list = await db.listAnnouncements();
+  } catch (e) {
+    console.error(e);
+    return;
+  }
+
+  if (!list.length) {
+    heroBox.innerHTML = "";
+    archiveBox.style.display = "none";
+    return;
+  }
+
+  const [latest, ...rest] = list;
+  heroBox.innerHTML = announceHeroHtml(latest);
+
+  if (!rest.length) {
+    archiveBox.style.display = "none";
+    return;
+  }
+  archiveBox.style.display = "block";
+  archiveToggle.innerHTML = ui.icon(announceArchiveOpen ? "chevron-up" : "chevron-down") + `更多公告(${rest.length})`;
+  archiveToggle.onclick = () => {
+    announceArchiveOpen = !announceArchiveOpen;
+    renderAnnouncements();
+  };
+  archiveList.style.display = announceArchiveOpen ? "block" : "none";
+  archiveList.innerHTML = "";
+  if (announceArchiveOpen) {
+    rest.forEach((a) => {
+      const info = ANNOUNCE_TYPE_INFO[a.type] || ANNOUNCE_TYPE_INFO.general;
+      const d = new Date(a.created_at);
+      const row = document.createElement("div");
+      row.className = "announce-archive-row";
+      row.innerHTML = `
+        ${ui.icon(info.icon)}
+        <div class="aar-title">${ui.esc(a.title)}</div>
+        <div class="aar-date">${d.getMonth() + 1}/${d.getDate()}</div>
+      `;
+      archiveList.appendChild(row);
+    });
+  }
+}
+
 async function renderEvents() {
   const list = document.getElementById("events-list");
   list.innerHTML = "";
@@ -193,6 +278,7 @@ async function handleAuthSession(session) {
 (async function init() {
   // 不用登入就能馬上看到活動列表跟觀戰按鈕;真的要參加比賽時才會跳出 Discord 登入
   renderEvents();
+  renderAnnouncements();
   try {
     const session = await db.getSession();
     await handleAuthSession(session);

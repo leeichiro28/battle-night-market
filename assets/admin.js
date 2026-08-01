@@ -901,3 +901,142 @@ async function renderSponsorLists() {
 
   ui.refreshIcons();
 }
+
+// ---------- 公告管理 ----------
+const ANNOUNCE_TYPE_INFO_ADMIN = {
+  event: { icon: "swords", label: "新活動" },
+  update: { icon: "sparkles", label: "版本更新" },
+  general: { icon: "megaphone", label: "一般公告" },
+};
+
+let editingAnnouncementId = null;
+let pendingAnnouncementImage = null; // { file, url } 選好但還沒上傳/送出的圖片
+
+function resetAnnounceForm() {
+  editingAnnouncementId = null;
+  pendingAnnouncementImage = null;
+  document.getElementById("announce-type").value = "event";
+  document.getElementById("announce-title").value = "";
+  document.getElementById("announce-subtitle").value = "";
+  document.getElementById("announce-body").value = "";
+  document.getElementById("announce-cta-text").value = "";
+  document.getElementById("announce-cta-link").value = "";
+  document.getElementById("announce-image-input").value = "";
+  document.getElementById("announce-image-preview").innerHTML = ui.icon("image");
+  document.getElementById("announce-submit-btn").innerHTML = ui.icon("send") + "發布公告";
+}
+
+document.getElementById("announce-image-input").addEventListener("change", (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  pendingAnnouncementImage = { file, url: URL.createObjectURL(file) };
+  document.getElementById("announce-image-preview").innerHTML = `<img src="${pendingAnnouncementImage.url}" alt="" />`;
+});
+
+function fillAnnounceForm(a) {
+  editingAnnouncementId = a.id;
+  pendingAnnouncementImage = null;
+  document.getElementById("announce-type").value = a.type;
+  document.getElementById("announce-title").value = a.title || "";
+  document.getElementById("announce-subtitle").value = a.subtitle || "";
+  document.getElementById("announce-body").value = a.body || "";
+  document.getElementById("announce-cta-text").value = a.cta_text || "";
+  document.getElementById("announce-cta-link").value = a.cta_link || "";
+  document.getElementById("announce-image-input").value = "";
+  document.getElementById("announce-image-preview").innerHTML = a.image_url
+    ? `<img src="${ui.esc(a.image_url)}" alt="" />`
+    : ui.icon("image");
+  document.getElementById("announce-submit-btn").innerHTML = ui.icon("check") + "儲存修改";
+  document.querySelector('[data-tab-panel="announce"].folder-tab-card').scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+document.getElementById("announce-submit-btn").onclick = async () => {
+  const title = document.getElementById("announce-title").value.trim();
+  if (!title) {
+    await ui.alert("請填標題", { title: "缺少標題", tone: "danger" });
+    return;
+  }
+  const btn = document.getElementById("announce-submit-btn");
+  btn.disabled = true;
+  btn.innerHTML = ui.icon("loader-circle") + "處理中...";
+  try {
+    let imageUrl = editingAnnouncementId ? undefined : null;
+    if (editingAnnouncementId) {
+      const existingImg = document.getElementById("announce-image-preview").querySelector("img");
+      imageUrl = existingImg ? existingImg.getAttribute("src") : null;
+    }
+    if (pendingAnnouncementImage) {
+      imageUrl = await db.uploadAnnouncementImage(pendingAnnouncementImage.file);
+    }
+    const fields = {
+      type: document.getElementById("announce-type").value,
+      title,
+      subtitle: document.getElementById("announce-subtitle").value.trim(),
+      body: document.getElementById("announce-body").value.trim(),
+      ctaText: document.getElementById("announce-cta-text").value.trim(),
+      ctaLink: document.getElementById("announce-cta-link").value.trim(),
+      imageUrl,
+    };
+    if (editingAnnouncementId) {
+      await db.updateAnnouncement(editingAnnouncementId, fields);
+    } else {
+      await db.addAnnouncement(fields);
+    }
+    resetAnnounceForm();
+    await renderAnnounceAdminList();
+  } catch (e) {
+    console.error(e);
+    await ui.alert(e.message || "發布失敗", { title: "發布失敗", tone: "danger" });
+  } finally {
+    btn.disabled = false;
+    if (!editingAnnouncementId) btn.innerHTML = ui.icon("send") + "發布公告";
+  }
+};
+
+async function renderAnnounceAdminList() {
+  const box = document.getElementById("announce-admin-list");
+  box.innerHTML = "";
+  let list = [];
+  try {
+    list = await db.listAnnouncements();
+  } catch (e) {
+    console.error(e);
+    box.innerHTML = `<div class="empty">${ui.icon("triangle-alert")}公告讀取失敗,請確認 supabase-schema.sql 是否已執行最新版</div>`;
+    return;
+  }
+  if (!list.length) {
+    box.innerHTML = `<div class="empty">${ui.icon("megaphone")}還沒有公告,上面新增一則吧</div>`;
+    return;
+  }
+  list.forEach((a, idx) => {
+    const info = ANNOUNCE_TYPE_INFO_ADMIN[a.type] || ANNOUNCE_TYPE_INFO_ADMIN.general;
+    const d = new Date(a.created_at);
+    const row = document.createElement("div");
+    row.className = "announce-admin-row";
+    row.innerHTML = `
+      <div class="aar-thumb">${a.image_url ? `<img src="${ui.esc(a.image_url)}" alt="" />` : ui.icon(info.icon)}</div>
+      <div class="aar-main">
+        <b>${ui.esc(a.title)}</b>
+        <div class="aar-meta">${ui.esc(info.label)} · ${d.getMonth() + 1}/${d.getDate()}${idx === 0 ? " · 目前首頁精選公告" : ""}</div>
+      </div>
+      <button type="button" class="btn ghost small announce-edit-btn">${ui.icon("pencil")}編輯</button>
+      <button type="button" class="btn ghost small outline-danger announce-delete-btn">${ui.icon("trash-2")}刪除</button>
+    `;
+    row.querySelector(".announce-edit-btn").onclick = () => fillAnnounceForm(a);
+    row.querySelector(".announce-delete-btn").onclick = async () => {
+      const ok = await ui.confirm(`確定要刪除「${a.title}」這則公告嗎?`, { title: "刪除公告", tone: "danger", confirmText: "刪除" });
+      if (!ok) return;
+      try {
+        await db.deleteAnnouncement(a.id);
+        if (editingAnnouncementId === a.id) resetAnnounceForm();
+        await renderAnnounceAdminList();
+      } catch (e) {
+        await ui.alert(e.message || "刪除失敗", { title: "刪除失敗", tone: "danger" });
+      }
+    };
+    box.appendChild(row);
+  });
+}
+
+resetAnnounceForm();
+renderAnnounceAdminList();
