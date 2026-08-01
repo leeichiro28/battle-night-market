@@ -117,6 +117,11 @@ const ui = (function () {
     betting: { icon: "eye", label: "觀眾下注" },
     reactions: { icon: "message-circle", label: "表情彈幕" },
     bomb: { icon: "bomb", label: "隱藏第六手勢" },
+    momentum: { icon: "trending-up", label: "氣勢系統" },
+    mutation: { icon: "shuffle", label: "手勢突變" },
+    mindread: { icon: "brain", label: "讀心值" },
+    bo_mode: { icon: "list-ordered", label: "BO制" },
+    dual_hand: { icon: "split", label: "雙手出招" },
   };
   const CLASS_ICON = { fighter: "swords", guardian: "shield", gambler: "dice-5", assassin: "sword", mage: "sparkles", luckster: "clover" };
 

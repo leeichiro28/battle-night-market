@@ -380,6 +380,53 @@ label{
 }
 .field-banner .ico{width:15px;height:15px;flex-shrink:0;}
 
+/* 假動作:出招前先宣告偏攻擊/偏防禦 */
+.feint-row{display:flex;gap:8px;margin-bottom:12px;}
+.feint-btn{
+  flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
+  padding:10px 8px;border-radius:12px;border:1px solid var(--line);
+  background:var(--panel2);color:var(--ink-dim);font-size:13px;font-weight:600;
+  cursor:pointer;transition:border-color .15s ease,color .15s ease;
+}
+.feint-btn .ico{width:14px;height:14px;}
+.feint-btn:hover{border-color:var(--gold-d);}
+.feint-btn.picked{border-color:var(--gold);color:var(--gold);background:rgba(242,183,5,.08);}
+
+/* 手勢突變鎖住提示 */
+#mutation-hint{
+  text-align:center;font-size:12px;color:var(--ink-dim);
+  margin-top:8px;display:flex;align-items:center;justify-content:center;gap:6px;
+}
+#mutation-hint .ico{width:13px;height:13px;color:var(--gold-d);flex-shrink:0;}
+
+/* 雙手出招按鈕,跟究極手勢按鈕共用 .btn.active-choice 的啟動樣式 */
+#dual-btn{display:flex;align-items:center;justify-content:center;gap:6px;}
+
+/* 讀心值:雙方出招傾向統計面板 */
+.mindread-panel{
+  display:flex;flex-direction:column;gap:14px;
+  background:var(--panel2);border:1px solid var(--line);border-radius:14px;
+  padding:14px 16px;margin-bottom:16px;
+}
+.mindread-title{
+  display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;
+  color:var(--gold);margin-bottom:8px;
+}
+.mindread-title .ico{width:14px;height:14px;}
+.stat-row{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px;color:var(--ink-dim);}
+.stat-row .lbl{display:flex;align-items:center;gap:4px;width:64px;flex-shrink:0;}
+.stat-row .lbl .ico{width:13px;height:13px;}
+.stat-row.top .lbl{color:var(--gold);font-weight:700;}
+.stat-bar{flex:1;height:6px;background:var(--panel);border-radius:999px;overflow:hidden;}
+.stat-bar div{height:100%;background:var(--gold-d);border-radius:999px;}
+.stat-row.top .stat-bar div{background:var(--gold);}
+.stat-row .pct{width:34px;text-align:right;font-family:'Space Mono',monospace;flex-shrink:0;}
+
+/* 道具符/氣勢系統徽章顏色,共用既有的 .mini-badge 樣式 */
+.mini-badge.item{color:var(--gold);border-color:var(--gold-d);}
+.mini-badge.momentum-up{color:var(--green);border-color:var(--green);}
+.mini-badge.momentum-down{color:var(--red);border-color:var(--red);}
+
 /* 隱藏第六手勢:炸彈,額外高亮提醒這是限時出現的選項 */
 .choice-btn.bomb{border-color:var(--red);position:relative;animation:bomb-pulse 1.6s ease-in-out infinite;}
 .choice-btn.bomb .ico,.choice-btn.bomb .lbl{color:var(--red);}

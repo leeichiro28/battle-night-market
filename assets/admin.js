@@ -19,6 +19,14 @@ const RULE_ROWS = [
 const RPS5_RULE_ROWS = [
   { key: "bomb", desc: "第3回合起,約15%機率額外開放隱藏手勢:炸彈" },
   { key: "field_mod", desc: "開局隨機決定當局特殊規則,3選1" },
+  { key: "item_die", desc: "每3回合各自隨機拿到護盾符/增幅符/偵測符" },
+  { key: "stance", desc: "出招前先宣告偏攻擊/偏防禦,純情報心理戰" },
+  { key: "combo", desc: "連續3局同招獲勝,額外+2傷害" },
+  { key: "mindread", desc: "剋中對方最常出的招並獲勝,額外+1傷害" },
+  { key: "momentum", desc: "連勝2局+1傷害;連敗2局逆轉時傷害翻倍" },
+  { key: "mutation", desc: "連續3回合出同招,下回合系統強制鎖住" },
+  { key: "bo_mode", desc: "拋開HP累加,每回合定輸贏,先3分獲勝整場" },
+  { key: "dual_hand", desc: "落後方整場限用1次,同時出兩招取其一", nested: true },
 ];
 
 function renderRuleCheckboxes() {
