@@ -542,9 +542,13 @@ document.getElementById("create-btn").onclick = async () => {
 
 // ---------- 贊助名單管理 ----------
 // 主辦人可以自己開好幾份獨立的「贊助名單」,跟活動 events 完全無關。
-// db.listSponsorLists() 依建立時間新到舊排序,第一筆當「最新贊助名單」直接顯示、可編輯,
-// 其餘收進「歷史贊助名單」收合區,樣式跟開新活動分頁的「活動已結束」收合一致,
-// 展開後每份名單各自是一張可收合卡片(跟規則頁「依遊戲分組」同款)。
+// 新建立的名單預設隱藏(草稿),不會搶走前台正在顯示的「最新贊助名單」。
+// db.listSponsorLists() 依建立時間新到舊排序;後台把名單分三區:
+//   1) 有顯示於前台的名單裡最新一份 → 「最新贊助名單」直接顯示、可編輯
+//   2) 隱藏中的名單(草稿,或先收起來的舊名單)→ 獨立一區直接展開列出,不用額外點開
+//   3) 有顯示於前台、但不是最新的那些 → 收進「歷史贊助名單」收合區
+// 樣式跟開新活動分頁的「活動已結束」收合一致,展開後每份名單各自是一張可收合卡片
+// (跟規則頁「依遊戲分組」同款)。
 //
 // 贊助內容改成「獎勵名稱 + 數量」(例如朋友 Discord 遊戲道具:嗶幣/鑽石/黑玫瑰),
 // 同一位贊助者(同一份名單內、名字不分大小寫比對)再次贊助時會自動沿用同一個人、
@@ -579,6 +583,10 @@ document.getElementById("add-sponsor-list-btn").onclick = async () => {
   try {
     await db.addSponsorList(name.trim());
     await renderSponsorLists();
+    await ui.alert("新名單已建立在下面「草稿贊助名單」區,目前前台還不會顯示;等準備好要公開時,再點名單裡的「顯示於前台」。", {
+      title: "已建立(草稿)",
+      tone: "success",
+    });
   } catch (e) {
     await ui.alert(e.message || "建立失敗", { title: "建立失敗", tone: "danger" });
   }
@@ -868,13 +876,21 @@ async function renderSponsorLists() {
   } catch (e) {
     console.error(e);
     document.getElementById("sponsor-latest").innerHTML = `<div class="empty">${ui.icon("triangle-alert")}贊助名單載入失敗:${ui.esc(e.message || "未知錯誤")}(請確認 supabase-schema.sql 已重新執行)</div>`;
+    document.getElementById("sponsor-draft-box").style.display = "none";
     document.getElementById("sponsor-archive-box").style.display = "none";
     document.getElementById("sponsor-cumulative-total").style.display = "none";
     ui.refreshIcons();
     return;
   }
-  const latest = lists[0] || null;
-  const history = lists.slice(1);
+
+  // 「最新贊助名單」跟前台邏輯一致,只從「有顯示於前台」的名單裡挑最新一份;
+  // 隱藏中的名單(不管是新開的草稿、還是舊活動先收起來的)另外獨立一區顯示,
+  // 不會因為建立時間比較新就搶走前台正在顯示的「最新贊助名單/本次活動」位置,
+  // 也不會被誤收進「歷史贊助名單」收合區裡要多點一次才看得到。
+  const visibleLists = lists.filter((sl) => sl.visible !== false);
+  const draftLists = lists.filter((sl) => sl.visible === false);
+  const latest = visibleLists[0] || null;
+  const history = visibleLists.slice(1);
 
   const cumulativeBox = document.getElementById("sponsor-cumulative-total");
   if (!lists.length) {
@@ -892,9 +908,21 @@ async function renderSponsorLists() {
   const latestBox = document.getElementById("sponsor-latest");
   latestBox.innerHTML = "";
   if (!latest) {
-    latestBox.innerHTML = `<div class="empty">${ui.icon("gem")}還沒有任何贊助名單,點上面「新增贊助名單」開始建立</div>`;
+    latestBox.innerHTML = `<div class="empty">${ui.icon("gem")}目前沒有顯示於前台的贊助名單,點上面「新增贊助名單」開始建立,或到下面把某份草稿切成顯示</div>`;
   } else {
     latestBox.appendChild(sponsorListCard(latest, true));
+  }
+
+  const draftBox = document.getElementById("sponsor-draft-box");
+  const draftTitle = document.getElementById("sponsor-draft-title");
+  const draftList = document.getElementById("sponsor-draft-list");
+  if (!draftLists.length) {
+    draftBox.style.display = "none";
+  } else {
+    draftBox.style.display = "block";
+    draftTitle.textContent = `草稿贊助名單,前台隱藏中(${draftLists.length})`;
+    draftList.innerHTML = "";
+    draftLists.forEach((sl) => draftList.appendChild(sponsorListCard(sl, false)));
   }
 
   const archiveBox = document.getElementById("sponsor-archive-box");

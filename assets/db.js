@@ -867,8 +867,11 @@ const db = (function () {
     return data || [];
   }
 
+  // 新建立的名單預設「隱藏」,避免主辦人只是先開一份下一次活動的草稿名單,
+  // 就因為建立時間比較新而立刻搶走前台「最新贊助名單/本次活動」的位置,把還在進行的活動名單推進歷史。
+  // 準備好要公開時,後台手動切成「顯示於前台」即可。
   async function addSponsorList(name) {
-    const { data, error } = await client.from("sponsor_lists").insert({ name }).select().single();
+    const { data, error } = await client.from("sponsor_lists").insert({ name, visible: false }).select().single();
     if (error) throw error;
     return data;
   }
