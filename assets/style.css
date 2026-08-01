@@ -1270,8 +1270,14 @@ input,select,textarea{max-width:100%;min-width:0;}
 }
 .announce-hero-body{padding:18px 20px;}
 .announce-hero-sub{font-family:'Space Mono',monospace;font-size:12px;color:var(--ink-dim);margin-bottom:6px;}
-.announce-hero-body h3{font-size:20px;}
-.announce-hero-body p{font-size:14px;color:var(--ink-dim);line-height:1.6;margin:0 0 16px;}
+.announce-hero-body h3{font-size:18px;margin-bottom:0;}
+.announce-hero-toggle{
+  margin-top:8px;display:inline-flex;align-items:center;gap:6px;
+  font-size:12px;color:var(--ink-dim);background:none;border:none;cursor:pointer;padding:0;
+}
+.announce-hero-toggle:hover{color:var(--gold);}
+.announce-hero-detail{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line);}
+.announce-hero-detail p{font-size:14px;color:var(--ink-dim);line-height:1.6;margin:0 0 14px;}
 
 .announce-archive-row{
   display:flex;

@@ -150,6 +150,8 @@ function announceHeroHtml(a) {
   const imgArea = a.image_url
     ? `<img src="${ui.esc(a.image_url)}" alt="" />`
     : ui.icon(info.icon);
+  const hasMore = !!(a.body || (a.cta_text && a.cta_link));
+  const detailId = "announce-hero-detail";
   const cta =
     a.cta_text && a.cta_link
       ? `<a class="btn" href="${ui.esc(a.cta_link)}" style="text-decoration:none;">${ui.esc(a.cta_text)}${ui.icon("arrow-right")}</a>`
@@ -163,11 +165,31 @@ function announceHeroHtml(a) {
       <div class="announce-hero-body">
         ${a.subtitle ? `<div class="announce-hero-sub">${ui.esc(a.subtitle)}</div>` : ""}
         <h3>${ui.esc(a.title)}</h3>
-        ${a.body ? `<p>${ui.esc(a.body).replace(/\n/g, "<br/>")}</p>` : ""}
-        ${cta}
+        ${
+          hasMore
+            ? `<button type="button" class="announce-hero-toggle" data-target="${detailId}">${ui.icon("chevron-down")}查看更多內容</button>
+               <div class="announce-hero-detail" id="${detailId}" style="display:none;">
+                 ${a.body ? `<p>${ui.esc(a.body).replace(/\n/g, "<br/>")}</p>` : ""}
+                 ${cta}
+               </div>`
+            : ""
+        }
       </div>
     </div>
   `;
+}
+
+function bindAnnounceHeroToggle(root) {
+  root.querySelectorAll(".announce-hero-toggle").forEach((btn) => {
+    btn.onclick = () => {
+      const target = document.getElementById(btn.dataset.target);
+      if (!target) return;
+      const open = target.style.display !== "none";
+      target.style.display = open ? "none" : "block";
+      btn.innerHTML = ui.icon(open ? "chevron-down" : "chevron-up") + "查看更多內容";
+      ui.refreshIcons();
+    };
+  });
 }
 
 let announceArchiveOpen = false;
@@ -194,6 +216,7 @@ async function renderAnnouncements() {
 
   const [latest, ...rest] = list;
   heroBox.innerHTML = announceHeroHtml(latest);
+  bindAnnounceHeroToggle(heroBox);
 
   if (!rest.length) {
     archiveBox.style.display = "none";
