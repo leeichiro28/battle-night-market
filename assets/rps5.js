@@ -10,11 +10,58 @@ const BEATS = {
   spock: ["scissors", "rock"],
 };
 // 手勢圖示一律用 lucide,不用 emoji
-const GESTURE_ICON = { rock: "mountain", paper: "hand", scissors: "scissors", lizard: "bug", spock: "hand-metal" };
-const GESTURE_NAME = { rock: "石頭", paper: "布", scissors: "剪刀", lizard: "蜥蜴", spock: "史波克" };
+const GESTURE_ICON = { rock: "mountain", paper: "hand", scissors: "scissors", lizard: "bug", spock: "hand-metal", bomb: "bomb" };
+const GESTURE_NAME = { rock: "石頭", paper: "布", scissors: "剪刀", lizard: "蜥蜴", spock: "史波克", bomb: "炸彈" };
 const GESTURE_ORDER = ["rock", "paper", "scissors", "lizard", "spock"];
 
+// 專屬戰報敘述:每種對決組合都有獨立描述文字,取代死板的「X勝過Y」
+const FLAVOR = {
+  rock: { scissors: "🪨 巨石狠狠壓扁了剪刀的刀刃!", lizard: "🪨 石塊精準砸中了蜥蜴的頭!" },
+  paper: { rock: "📄 一張紙悄悄把石頭整個包住!", spock: "📄 報紙蓋住了史波克的臉,判定失格!" },
+  scissors: { paper: "✂️ 剪刀俐落地剪碎了那張紙!", lizard: "✂️ 剪刀喀嚓一聲剪斷了蜥蜴的頭!" },
+  lizard: { spock: "🦎 蜥蜴一口毒倒了史波克!", paper: "🦎 蜥蜴悄悄咬爛了那張紙!" },
+  spock: { scissors: "🖖 史波克伸手捏碎了剪刀!", rock: "🖖 史波克用雷射把石頭蒸發了!" },
+};
+
+const FIELD_MODS_RPS = ["rock_boost", "ult_twice", "fast_timer"];
+const FIELD_MOD_LABEL = {
+  rock_boost: { icon: "mountain", text: "磐石戰場:石頭獲勝時傷害額外 +1" },
+  ult_twice: { icon: "zap", text: "手速戰場:究極手勢這局可以用 2 次" },
+  fast_timer: { icon: "wind", text: "疾風戰場:思考時間縮短到 20 秒" },
+};
+
+// 簡單的字串雜湊(FNV-1a),用來讓雙方client不用另外同步狀態,
+// 也能各自算出同一個「這回合有沒有炸彈」「這局場地規則是什麼」的結果。
+function hashStr(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function rulesEnabled(key) {
+  return !!(event && event.rules && event.rules[key]);
+}
+
+// 隱藏第六手勢:炸彈。第3回合起,約15%機率該回合額外開放
+function bombAvailable(state) {
+  if (!rulesEnabled("bomb")) return false;
+  if ((state.round || 1) < 3) return false;
+  const h = hashStr(`${matchId}|${state.game || 1}|${state.round}|bomb`);
+  return h % 100 < 15;
+}
+
+// 場地規則:同一局內固定,開局隨機決定,3選1
+function getFieldMod(state) {
+  if (!rulesEnabled("field_mod")) return null;
+  const h = hashStr(`${matchId}|${state.game || 1}|field`);
+  return FIELD_MODS_RPS[h % FIELD_MODS_RPS.length];
+}
+
 let match = null;
+let event = null;
 let mySlot = null;
 let submittedThisRound = false;
 let useUlt = false;
@@ -51,7 +98,7 @@ function startTimer(state) {
   clearInterval(timerInterval);
   if (submittedThisRound || seriesDecided(state)) return;
 
-  let timeLeft = 30000;
+  let timeLeft = getFieldMod(state) === "fast_timer" ? 20000 : 30000;
   const fill = document.getElementById("timer-fill");
   const started = Date.now();
   timerInterval = setInterval(async () => {
@@ -72,7 +119,7 @@ function startTimer(state) {
 function render(state) {
   const [p1Name, p2Name] = names();
   const roundChanged = lastSeenRound !== null && state.round !== lastSeenRound;
-  battleView.update(match, null, mySlot);
+  battleView.update(match, event, mySlot);
   lastSeenRound = state.round;
 
   if (roundChanged && mySlot && !submittedThisRound) {
@@ -82,10 +129,10 @@ function render(state) {
   }
 
   const statusEl = document.getElementById("game-status");
-  const choiceBtns = document.querySelectorAll(".choice-btn");
   const ultBtn = document.getElementById("ult-btn");
 
   renderSeriesDots(state);
+  renderFieldModBanner(state);
 
   if (seriesDecided(state)) {
     document.getElementById("choice-row").style.display = "none";
@@ -121,20 +168,25 @@ function render(state) {
     return;
   }
 
+  renderAndBindChoiceButtons(state);
   document.getElementById("choice-row").style.display = "grid";
-  const myUltUsed = mySlot === 1 ? state.ult1 : state.ult2;
+  const fieldMod = getFieldMod(state);
+  const maxUlt = fieldMod === "ult_twice" ? 2 : 1;
+  const myUltCount = (mySlot === 1 ? state.ult1 : state.ult2) || 0;
+  const myUltUsed = myUltCount >= maxUlt;
+  const ultLeft = maxUlt - myUltCount;
   ultBtn.style.display = "flex";
   ultBtn.innerHTML =
     ui.icon("zap") +
     (myUltUsed
-      ? "究極手勢已使用"
+      ? "究極手勢已用完"
       : useUlt
-      ? "究極手勢:已啟動(選一個手勢送出即可保證獲勝)"
-      : "使出究極手勢(尚未使用,保證獲勝該回合)");
+      ? `究極手勢:已啟動(選一個手勢送出即可保證獲勝,本局還可用 ${ultLeft} 次)`
+      : `使出究極手勢(本局還可用 ${ultLeft} 次,保證獲勝該回合)`);
   ultBtn.classList.toggle("active-choice", useUlt && !myUltUsed);
   ultBtn.disabled = !!myUltUsed || submittedThisRound;
 
-  choiceBtns.forEach((b) => (b.disabled = submittedThisRound));
+  document.querySelectorAll(".choice-btn").forEach((b) => (b.disabled = submittedThisRound));
   statusEl.innerHTML = submittedThisRound
     ? ui.icon("hourglass") + "已送出,等待對方..."
     : ui.icon("timer") + "30 秒內選一個手勢!";
@@ -165,17 +217,19 @@ async function resolveRoundIfReady(state) {
     const [p1Name, p2Name] = names();
     let hp1 = state.hp1;
     let hp2 = state.hp2;
-    let ult1 = state.ult1;
-    let ult2 = state.ult2;
+    let ult1 = state.ult1 || 0;
+    let ult2 = state.ult2 || 0;
     const log = state.log ? [...state.log] : [];
     const m1 = state.m1;
     const m2 = state.m2;
     let lastEvent = null;
+    const fieldMod = getFieldMod(state);
 
-    if (m1.ult) ult1 = true;
-    if (m2.ult) ult2 = true;
+    if (m1.ult) ult1 += 1;
+    if (m2.ult) ult2 += 1;
 
     let winnerSlot = null;
+    let winGesture = null;
     const g1 = m1.gesture ? GESTURE_NAME[m1.gesture] : "逾時未出招";
     const g2 = m2.gesture ? GESTURE_NAME[m2.gesture] : "逾時未出招";
     let entry = `第${state.round}回合:${p1Name} 出了 ${g1},${p2Name} 出了 ${g2}。`;
@@ -185,9 +239,11 @@ async function resolveRoundIfReady(state) {
       lastEvent = { type: "timeout_both" };
     } else if (!m1.gesture) {
       winnerSlot = 2;
+      winGesture = m2.gesture;
       entry += `${p1Name}逾時未出招,${p2Name}直接獲勝。`;
     } else if (!m2.gesture) {
       winnerSlot = 1;
+      winGesture = m1.gesture;
       entry += `${p2Name}逾時未出招,${p1Name}直接獲勝。`;
     } else if (m1.ult && m2.ult) {
       entry += "雙方都使出究極手勢,強強相抵,平手。";
@@ -198,15 +254,36 @@ async function resolveRoundIfReady(state) {
     } else if (m2.ult) {
       winnerSlot = 2;
       entry += `${p2Name}使出究極手勢,直接獲勝!`;
+    } else if (m1.gesture === "bomb" && m2.gesture === "bomb") {
+      entry += "💣💣 雙方都拿出炸彈,同歸於盡,平手不掉血。";
+      lastEvent = { type: "tie" };
+    } else if (m1.gesture === "bomb" || m2.gesture === "bomb") {
+      const bomberSlot = m1.gesture === "bomb" ? 1 : 2;
+      const otherGesture = bomberSlot === 1 ? m2.gesture : m1.gesture;
+      const bomberName = bomberSlot === 1 ? p1Name : p2Name;
+      if (otherGesture === "spock") {
+        entry += "🖖 史波克冷靜拆彈,邏輯完勝,平手不掉血。";
+        lastEvent = { type: "tie" };
+      } else if (otherGesture === "paper" || otherGesture === "lizard") {
+        winnerSlot = bomberSlot === 1 ? 2 : 1;
+        winGesture = otherGesture;
+        entry += `${GESTURE_NAME[otherGesture]}悶熄了${bomberName}的引信,炸彈失效,${winnerSlot === 1 ? p1Name : p2Name}獲勝。`;
+      } else {
+        winnerSlot = bomberSlot;
+        winGesture = "bomb";
+        entry += `💥 轟隆一聲,${bomberName}的炸彈炸爛了${GESTURE_NAME[otherGesture]},${bomberName}獲勝。`;
+      }
     } else if (m1.gesture === m2.gesture) {
       entry += "出了相同的手勢,平手。";
       lastEvent = { type: "tie" };
     } else if (BEATS[m1.gesture].includes(m2.gesture)) {
       winnerSlot = 1;
-      entry += `${GESTURE_NAME[m1.gesture]}勝過${GESTURE_NAME[m2.gesture]},${p1Name}獲勝。`;
+      winGesture = m1.gesture;
+      entry += `${FLAVOR[m1.gesture][m2.gesture]}${p1Name}獲勝。`;
     } else {
       winnerSlot = 2;
-      entry += `${GESTURE_NAME[m2.gesture]}勝過${GESTURE_NAME[m1.gesture]},${p2Name}獲勝。`;
+      winGesture = m2.gesture;
+      entry += `${FLAVOR[m2.gesture][m1.gesture]}${p2Name}獲勝。`;
     }
 
     if (winnerSlot) {
@@ -214,7 +291,9 @@ async function resolveRoundIfReady(state) {
       const loserName = winnerSlot === 1 ? p2Name : p1Name;
       const winnerHp = winnerSlot === 1 ? hp1 : hp2;
       // HP 上限是 30,低血雙倍傷害的門檻等比例拉高到 9(原本 10 點血制是「≤3」,約剩三成血)
-      const dmg = winnerHp <= 9 ? 2 : 1;
+      let dmg = winnerHp <= 9 ? 2 : 1;
+      // 場地規則「磐石戰場」:靠石頭贏的那一擊,傷害再 +1
+      if (fieldMod === "rock_boost" && winGesture === "rock") dmg += 1;
       const hpBefore = winnerSlot === 1 ? hp2 : hp1;
       if (winnerSlot === 1) hp2 -= dmg;
       else hp1 -= dmg;
@@ -257,8 +336,8 @@ async function resolveRoundIfReady(state) {
           ...state,
           hp1: 30,
           hp2: 30,
-          ult1: false,
-          ult2: false,
+          ult1: 0,
+          ult2: 0,
           log,
           lastEvent: seriesEvent,
           round: 1,
@@ -381,21 +460,31 @@ async function refresh() {
   maybeAutopilotSubmit();
 }
 
-function renderChoiceButtons() {
-  document.getElementById("choice-row").innerHTML = GESTURE_ORDER.map(
-    (g) =>
-      `<button class="choice-btn g-${g}" data-g="${g}">${ui.icon(GESTURE_ICON[g])}<span class="lbl">${GESTURE_NAME[g]}</span></button>`
-  ).join("");
+function renderFieldModBanner(state) {
+  const box = document.getElementById("field-mod-banner");
+  if (!box) return;
+  const mod = getFieldMod(state);
+  const meta = mod && FIELD_MOD_LABEL[mod];
+  if (!meta) {
+    box.style.display = "none";
+    return;
+  }
+  box.style.display = "flex";
+  box.innerHTML = ui.icon(meta.icon) + `<span>本局場地規則:${meta.text}</span>`;
 }
 
-function bindControls() {
-  renderChoiceButtons();
-  document.getElementById("ult-btn").innerHTML = ui.icon("zap") + "使出究極手勢(尚未使用,保證獲勝該回合)";
-  document.getElementById("ult-btn").onclick = () => {
-    useUlt = !useUlt;
-    if (useUlt) battleView.announce("你準備使出究極手勢!", { icon: "zap" });
-    refresh();
-  };
+// 手勢按鈕每次 render 都重建:因為「炸彈這回合有沒有開放」是每回合可能變的
+function renderAndBindChoiceButtons(state) {
+  const gestures = GESTURE_ORDER.slice();
+  if (bombAvailable(state)) gestures.push("bomb");
+  document.getElementById("choice-row").innerHTML = gestures
+    .map(
+      (g) =>
+        `<button class="choice-btn g-${g}${g === "bomb" ? " bomb" : ""}" data-g="${g}">${ui.icon(
+          GESTURE_ICON[g]
+        )}<span class="lbl">${GESTURE_NAME[g]}</span></button>`
+    )
+    .join("");
   document.querySelectorAll(".choice-btn").forEach((btn) => {
     btn.onclick = async () => {
       if (submittedThisRound) return;
@@ -409,6 +498,15 @@ function bindControls() {
   });
 }
 
+function bindControls() {
+  document.getElementById("ult-btn").innerHTML = ui.icon("zap") + "使出究極手勢(保證獲勝該回合)";
+  document.getElementById("ult-btn").onclick = () => {
+    useUlt = !useUlt;
+    if (useUlt) battleView.announce("你準備使出究極手勢!", { icon: "zap" });
+    refresh();
+  };
+}
+
 function renderRules() {
   const box = document.getElementById("rule-content");
   box.innerHTML = `
@@ -417,6 +515,7 @@ function renderRules() {
     <p>石頭勝剪刀、蜥蜴;布勝石頭、史波克;剪刀勝布、蜥蜴;蜥蜴勝史波克、布;史波克勝剪刀、石頭。</p>
     <p>每人每一局都有 1 張「究極手勢」卡:出牌保證獲勝該回合,除非對方同一回合也出究極手勢,此時雙方抵銷、判定平手。</p>
     <p>當你的 HP ≤9 時,獲勝的那一擊傷害會翻倍,適合絕地反擊。系列賽打到 2:2 時會有「賽末點」提示。</p>
+    <p>若主辦人開啟進階規則:第3回合起可能會隨機開放隱藏手勢「炸彈」(剋制石頭、剪刀;怕布、蜥蜴;對上史波克是平手);也可能開局隨機決定一項場地規則(石頭傷害加成 / 究極手勢可用2次 / 思考時間縮短到20秒)。</p>
   `;
 }
 
@@ -437,6 +536,7 @@ function bindRuleModal() {
     return;
   }
   document.getElementById("page-eyebrow").innerHTML = ui.icon("scissors") + "五手勢對戰";
+  event = await db.getEventSafe(eventId);
   battleView = BattleView.mount(document.getElementById("battle-stage"), null, {
     gameType: "rps5",
     matchId,

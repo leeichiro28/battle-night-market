@@ -370,6 +370,24 @@ label{
 .series-dots .sd-dot{width:14px;height:14px;border-radius:50%;border:2px solid var(--line);background:transparent;}
 .series-dots .sd-dot.won{background:var(--gold);border-color:var(--gold);}
 .series-dots .sd-label{font-family:'Space Mono',monospace;font-size:12px;color:var(--ink-dim);}
+
+/* 五手勢對戰場地規則橫幅 */
+.field-banner{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  text-align:center;font-size:13px;font-weight:700;color:var(--gold);
+  background:rgba(242,183,5,.08);border:1px solid var(--gold-d);
+  border-radius:999px;padding:7px 16px;margin-bottom:16px;
+}
+.field-banner .ico{width:15px;height:15px;flex-shrink:0;}
+
+/* 隱藏第六手勢:炸彈,額外高亮提醒這是限時出現的選項 */
+.choice-btn.bomb{border-color:var(--red);position:relative;animation:bomb-pulse 1.6s ease-in-out infinite;}
+.choice-btn.bomb .ico,.choice-btn.bomb .lbl{color:var(--red);}
+.choice-btn.bomb.picked .ico,.choice-btn.bomb.picked .lbl{color:#1B1706;}
+@keyframes bomb-pulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(229,72,77,.35);}
+  50%{box-shadow:0 0 0 6px rgba(229,72,77,0);}
+}
 .choice-btn .lbl{display:block;font-size:11px;color:var(--ink-dim);margin-top:6px;}
 .choice-btn:disabled{opacity:.35;cursor:not-allowed;}
 

@@ -295,7 +295,9 @@ const db = (function () {
   function rps5InitState() {
     // BO5:games1/games2 是系列賽目前局數比分,先取得3局的一方贏得整場對戰;
     // game 是目前打到系列賽第幾局,round 則是「這一局」裡的回合數(每局重打會歸1)。
-    return { hp1: 30, hp2: 30, round: 1, game: 1, games1: 0, games2: 0, ult1: false, ult2: false, log: [] };
+    // ult1/ult2 是這一局已經用掉幾次究極手勢(數字,不是布林值),
+    // 一般情況上限1次,若開了「手速戰場」場地規則,該局上限會變成2次。
+    return { hp1: 30, hp2: 30, round: 1, game: 1, games1: 0, games2: 0, ult1: 0, ult2: 0, log: [] };
   }
 
   function makeInitState(gameType) {

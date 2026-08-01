@@ -16,6 +16,11 @@ const RULE_ROWS = [
   { key: "reactions", desc: "觀戰/對戰中都能發表情互動" },
 ];
 
+const RPS5_RULE_ROWS = [
+  { key: "bomb", desc: "第3回合起,約15%機率額外開放隱藏手勢:炸彈" },
+  { key: "field_mod", desc: "開局隨機決定當局特殊規則,3選1" },
+];
+
 function renderRuleCheckboxes() {
   document.getElementById("dice-rules-list").innerHTML = RULE_ROWS.map((row) => {
     const meta = ui.RULE[row.key];
@@ -30,8 +35,23 @@ function renderRuleCheckboxes() {
 }
 renderRuleCheckboxes();
 
+function renderRps5RuleCheckboxes() {
+  document.getElementById("rps5-rules-list").innerHTML = RPS5_RULE_ROWS.map((row) => {
+    const meta = ui.RULE[row.key];
+    return `
+      <label class="check-item${row.nested ? " nested" : ""}">
+        <input type="checkbox" class="rule-box" data-rule="${row.key}" />
+        ${ui.icon(meta.icon)}
+        <span>${meta.label}(${ui.esc(row.desc)})</span>
+      </label>
+    `;
+  }).join("");
+}
+renderRps5RuleCheckboxes();
+
 document.getElementById("new-type").onchange = (e) => {
   document.getElementById("dice-rules-box").style.display = e.target.value === "dice" ? "block" : "none";
+  document.getElementById("rps5-rules-box").style.display = e.target.value === "rps5" ? "block" : "none";
 };
 
 // ---------- 獎勵設定區 ----------
@@ -469,9 +489,12 @@ document.getElementById("create-btn").onclick = async () => {
   const deadlineVal = document.getElementById("new-deadline").value;
   const deadline = deadlineVal ? new Date(deadlineVal).toISOString() : null;
   const rules = {};
-  document.querySelectorAll(".rule-box").forEach((box) => {
-    if (box.checked) rules[box.dataset.rule] = true;
-  });
+  const activeRulesListId = type === "dice" ? "dice-rules-list" : type === "rps5" ? "rps5-rules-list" : null;
+  if (activeRulesListId) {
+    document.querySelectorAll(`#${activeRulesListId} .rule-box`).forEach((box) => {
+      if (box.checked) rules[box.dataset.rule] = true;
+    });
+  }
   if (!name) {
     await ui.alert("請先幫這場活動取一個名稱。", { title: "還缺活動名稱" });
     document.getElementById("new-name").focus();
@@ -486,7 +509,7 @@ document.getElementById("create-btn").onclick = async () => {
       name,
       gameType: type,
       losersBracket: losers,
-      rules: type === "dice" ? rules : {},
+      rules,
       registrationDeadline: deadline,
       rewardPlan,
     });
@@ -494,7 +517,7 @@ document.getElementById("create-btn").onclick = async () => {
     document.getElementById("new-deadline").value = "";
     document.getElementById("new-losers").checked = false;
     resetAutoRewardRows();
-    document.querySelectorAll(".rule-box").forEach((b) => (b.checked = false));
+    document.querySelectorAll("#dice-rules-list .rule-box, #rps5-rules-list .rule-box").forEach((b) => (b.checked = false));
     renderManualRewardInputs();
     loadAll();
   } catch (e) {

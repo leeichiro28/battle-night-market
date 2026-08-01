@@ -116,6 +116,7 @@ const ui = (function () {
     classes: { icon: "swords", label: "職業系統" },
     betting: { icon: "eye", label: "觀眾下注" },
     reactions: { icon: "message-circle", label: "表情彈幕" },
+    bomb: { icon: "bomb", label: "隱藏第六手勢" },
   };
   const CLASS_ICON = { fighter: "swords", guardian: "shield", gambler: "dice-5", assassin: "sword", mage: "sparkles", luckster: "clover" };
 
