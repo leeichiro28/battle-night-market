@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>遊戲公告 · 擂台夜市</title>
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+<link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <div id="site-header"></div>
+  <div class="wrap">
+    <div class="marquee">
+      <span class="eyebrow"><i data-lucide="megaphone" class="ico"></i>Announcements</span>
+      <h1>遊戲公告</h1>
+      <p>新活動、版本更新、賽事消息都會放在這裡</p>
+    </div>
+
+    <div id="announce-page-list"></div>
+
+    <div class="footer-nav"><a href="index.html"><i data-lucide="arrow-left" class="ico"></i>回活動列表</a></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@1.27.0/dist/umd/lucide.min.js"></script>
+  <script src="assets/supabase-config.js"></script>
+  <script src="assets/db.js"></script>
+  <script src="assets/ui.js"></script>
+  <script src="assets/header.js"></script>
+  <script src="assets/announcements.js"></script>
+</body>
+</html>
