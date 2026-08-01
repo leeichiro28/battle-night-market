@@ -852,13 +852,17 @@ const db = (function () {
   // PostgREST 對雙層巢狀資源的排序不支援用 foreignTable 直接指定,之前多加的那行排序
   // 會讓整個查詢直接失敗(前台/後台因此整份名單看起來像「消失了」,其實資料庫資料都還在)。
   // sponsor_rewards 的顯示順序改成抓回來後在前端排序(groupSponsorEntries 已經有做),這裡不用排。
-  async function listSponsorLists() {
-    const { data, error } = await client
+  // onlyVisible = true 時只抓 visible = true 的名單(前台用,隱藏的名單完全不會出現);
+  // 後台管理要看到全部名單(含隱藏的)才能切換顯示/隱藏,呼叫時不傳這個參數。
+  async function listSponsorLists({ onlyVisible = false } = {}) {
+    let query = client
       .from("sponsor_lists")
       .select("*, sponsors(*, sponsor_rewards(*))")
       .order("created_at", { ascending: false })
       .order("sort_order", { ascending: true, foreignTable: "sponsors" })
       .order("created_at", { ascending: true, foreignTable: "sponsors" });
+    if (onlyVisible) query = query.eq("visible", true);
+    const { data, error } = await query;
     if (error) throw error;
     return data || [];
   }
@@ -871,6 +875,12 @@ const db = (function () {
 
   async function updateSponsorList(id, name) {
     const { error } = await client.from("sponsor_lists").update({ name }).eq("id", id);
+    if (error) throw error;
+  }
+
+  // 切換某份贊助名單是否顯示於前台;隱藏後只是前台不顯示,後台資料與統計都保留,不會刪除任何紀錄。
+  async function setSponsorListVisible(id, visible) {
+    const { error } = await client.from("sponsor_lists").update({ visible: !!visible }).eq("id", id);
     if (error) throw error;
   }
 
@@ -1057,6 +1067,7 @@ const db = (function () {
     listSponsorLists,
     addSponsorList,
     updateSponsorList,
+    setSponsorListVisible,
     deleteSponsorList,
     addSponsorEntry,
     deleteSponsorEntry,
