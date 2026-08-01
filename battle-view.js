@@ -12,7 +12,7 @@
 // (dice.html / rps5.html 本身有更完整的狀態文字跟操作按鈕,不要顯示兩份)。
 window.BattleView = (function () {
   const CIRC = 289;
-  const MAX_HP = { dice: 30, rps5: 10 };
+  const MAX_HP = { dice: 30, rps5: 30 };
   const SUDDEN_DEATH_HP = 6;
 
   const CLASS_INFO = {
@@ -145,6 +145,15 @@ window.BattleView = (function () {
       const [p1Name, p2Name] = names(match);
       if (evt.type === "tie") return { icon: "scale", text: "平手,雙方不掉血" };
       if (evt.type === "timeout_both") return { icon: "hourglass", text: "雙方都逾時,平手" };
+      if (evt.type === "match_point") return { icon: "flame", text: "賽末點!下一局就能分出勝負" };
+      if (evt.type === "series_game_over") {
+        const gWinner = evt.winnerSlot === 1 ? p1Name : p2Name;
+        return { icon: "trophy", text: `${gWinner} 拿下第${evt.gameNum}局!比分 ${evt.games1}:${evt.games2}` };
+      }
+      if (evt.type === "bo_point") {
+        const gWinner = evt.winnerSlot === 1 ? p1Name : p2Name;
+        return { icon: "flag", text: `${gWinner} 拿下一分!比分 ${evt.games1}:${evt.games2}` };
+      }
       const winnerName = evt.winnerSlot === 1 ? p1Name : p2Name;
       const loserName = evt.winnerSlot === 1 ? p2Name : p1Name;
       if (evt.shieldBlocked) {
@@ -170,6 +179,24 @@ window.BattleView = (function () {
         );
       }
       if (rules.rage && rageready) badges.push(`<span class="mini-badge rage">${ui.icon("flame")}怒氣滿</span>`);
+
+      // 五手勢對戰:連段技(連續同招獲勝)、道具符、氣勢系統的徽章
+      const winGestureStreak = slot === 1 ? state.winGestureStreak1 : state.winGestureStreak2;
+      if (rules.combo && winGestureStreak >= 2) {
+        badges.push(`<span class="mini-badge combo">${ui.icon("zap")}連段 x${winGestureStreak}</span>`);
+      }
+      const item = slot === 1 ? state.rpsitem1 : state.rpsitem2;
+      const itemLabels = { shield: { icon: "shield", text: "護盾符" }, amp: { icon: "zap", text: "增幅符" } };
+      if (rules.item_die && item && itemLabels[item]) {
+        badges.push(`<span class="mini-badge item">${ui.icon(itemLabels[item].icon)}${itemLabels[item].text}</span>`);
+      }
+      const streak = slot === 1 ? state.streak1 : state.streak2;
+      if (rules.momentum && streak >= 2) {
+        badges.push(`<span class="mini-badge momentum-up">${ui.icon("trending-up")}連勝 x${streak}</span>`);
+      }
+      if (rules.momentum && streak <= -2) {
+        badges.push(`<span class="mini-badge momentum-down">${ui.icon("trending-down")}背水 x${-streak}</span>`);
+      }
       box.innerHTML = badges.join("");
     }
 

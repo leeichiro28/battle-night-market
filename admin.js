@@ -16,6 +16,19 @@ const RULE_ROWS = [
   { key: "reactions", desc: "觀戰/對戰中都能發表情互動" },
 ];
 
+const RPS5_RULE_ROWS = [
+  { key: "bomb", desc: "第3回合起,約15%機率額外開放隱藏手勢:炸彈" },
+  { key: "field_mod", desc: "開局隨機決定當局特殊規則,3選1" },
+  { key: "item_die", desc: "每3回合各自隨機拿到護盾符/增幅符/偵測符" },
+  { key: "stance", desc: "出招前先宣告偏攻擊/偏防禦,純情報心理戰" },
+  { key: "combo", desc: "連續3局同招獲勝,額外+2傷害" },
+  { key: "mindread", desc: "剋中對方最常出的招並獲勝,額外+1傷害" },
+  { key: "momentum", desc: "連勝2局+1傷害;連敗2局逆轉時傷害翻倍" },
+  { key: "mutation", desc: "連續3回合出同招,下回合系統強制鎖住" },
+  { key: "bo_mode", desc: "拋開HP累加,每回合定輸贏,先3分獲勝整場" },
+  { key: "dual_hand", desc: "落後方整場限用1次,同時出兩招取其一", nested: true },
+];
+
 function renderRuleCheckboxes() {
   document.getElementById("dice-rules-list").innerHTML = RULE_ROWS.map((row) => {
     const meta = ui.RULE[row.key];
@@ -30,8 +43,23 @@ function renderRuleCheckboxes() {
 }
 renderRuleCheckboxes();
 
+function renderRps5RuleCheckboxes() {
+  document.getElementById("rps5-rules-list").innerHTML = RPS5_RULE_ROWS.map((row) => {
+    const meta = ui.RULE[row.key];
+    return `
+      <label class="check-item${row.nested ? " nested" : ""}">
+        <input type="checkbox" class="rule-box" data-rule="${row.key}" />
+        ${ui.icon(meta.icon)}
+        <span>${meta.label}(${ui.esc(row.desc)})</span>
+      </label>
+    `;
+  }).join("");
+}
+renderRps5RuleCheckboxes();
+
 document.getElementById("new-type").onchange = (e) => {
   document.getElementById("dice-rules-box").style.display = e.target.value === "dice" ? "block" : "none";
+  document.getElementById("rps5-rules-box").style.display = e.target.value === "rps5" ? "block" : "none";
 };
 
 // ---------- 獎勵設定區 ----------
@@ -469,9 +497,12 @@ document.getElementById("create-btn").onclick = async () => {
   const deadlineVal = document.getElementById("new-deadline").value;
   const deadline = deadlineVal ? new Date(deadlineVal).toISOString() : null;
   const rules = {};
-  document.querySelectorAll(".rule-box").forEach((box) => {
-    if (box.checked) rules[box.dataset.rule] = true;
-  });
+  const activeRulesListId = type === "dice" ? "dice-rules-list" : type === "rps5" ? "rps5-rules-list" : null;
+  if (activeRulesListId) {
+    document.querySelectorAll(`#${activeRulesListId} .rule-box`).forEach((box) => {
+      if (box.checked) rules[box.dataset.rule] = true;
+    });
+  }
   if (!name) {
     await ui.alert("請先幫這場活動取一個名稱。", { title: "還缺活動名稱" });
     document.getElementById("new-name").focus();
@@ -486,7 +517,7 @@ document.getElementById("create-btn").onclick = async () => {
       name,
       gameType: type,
       losersBracket: losers,
-      rules: type === "dice" ? rules : {},
+      rules,
       registrationDeadline: deadline,
       rewardPlan,
     });
@@ -494,7 +525,7 @@ document.getElementById("create-btn").onclick = async () => {
     document.getElementById("new-deadline").value = "";
     document.getElementById("new-losers").checked = false;
     resetAutoRewardRows();
-    document.querySelectorAll(".rule-box").forEach((b) => (b.checked = false));
+    document.querySelectorAll("#dice-rules-list .rule-box, #rps5-rules-list .rule-box").forEach((b) => (b.checked = false));
     renderManualRewardInputs();
     loadAll();
   } catch (e) {
@@ -542,9 +573,13 @@ document.getElementById("create-btn").onclick = async () => {
 
 // ---------- 贊助名單管理 ----------
 // 主辦人可以自己開好幾份獨立的「贊助名單」,跟活動 events 完全無關。
-// db.listSponsorLists() 依建立時間新到舊排序,第一筆當「最新贊助名單」直接顯示、可編輯,
-// 其餘收進「歷史贊助名單」收合區,樣式跟開新活動分頁的「活動已結束」收合一致,
-// 展開後每份名單各自是一張可收合卡片(跟規則頁「依遊戲分組」同款)。
+// 新建立的名單預設隱藏(草稿),不會搶走前台正在顯示的「最新贊助名單」。
+// db.listSponsorLists() 依建立時間新到舊排序;後台把名單分三區:
+//   1) 有顯示於前台的名單裡最新一份 → 「最新贊助名單」直接顯示、可編輯
+//   2) 隱藏中的名單(草稿,或先收起來的舊名單)→ 獨立一區直接展開列出,不用額外點開
+//   3) 有顯示於前台、但不是最新的那些 → 收進「歷史贊助名單」收合區
+// 樣式跟開新活動分頁的「活動已結束」收合一致,展開後每份名單各自是一張可收合卡片
+// (跟規則頁「依遊戲分組」同款)。
 //
 // 贊助內容改成「獎勵名稱 + 數量」(例如朋友 Discord 遊戲道具:嗶幣/鑽石/黑玫瑰),
 // 同一位贊助者(同一份名單內、名字不分大小寫比對)再次贊助時會自動沿用同一個人、
@@ -579,6 +614,10 @@ document.getElementById("add-sponsor-list-btn").onclick = async () => {
   try {
     await db.addSponsorList(name.trim());
     await renderSponsorLists();
+    await ui.alert("新名單已建立在下面「草稿贊助名單」區,目前前台還不會顯示;等準備好要公開時,再點名單裡的「顯示於前台」。", {
+      title: "已建立(草稿)",
+      tone: "success",
+    });
   } catch (e) {
     await ui.alert(e.message || "建立失敗", { title: "建立失敗", tone: "danger" });
   }
@@ -628,7 +667,8 @@ function collectRewardRows(container) {
   return rewards;
 }
 
-// 一位贊助者一列:上排是名字 + 加總後的獎勵標籤 + 次數,展開才看得到每一次原始紀錄。
+// 一位贊助者一列:上排是名字(可編輯) + 加總後的獎勵標籤 + 次數,展開才看得到每一次原始紀錄,
+// 每一次紀錄裡的每一項獎勵(名稱/數量)都能各自編輯,改完重新整份名單就會自動重算所有加總跟前台顯示。
 function sponsorRowEl(s, onChanged) {
   const row = document.createElement("div");
   row.className = "sponsor-admin-row";
@@ -637,7 +677,15 @@ function sponsorRowEl(s, onChanged) {
   row.innerHTML = `
     <div class="sar-top">
       <div class="sar-main">
-        <b>${ui.esc(s.name)}</b>
+        <div class="sar-name-view">
+          <b>${ui.esc(s.name)}</b>
+          <button type="button" class="sei-icon-btn" data-action="edit-name" title="編輯名稱">${ui.icon("pencil")}</button>
+        </div>
+        <div class="sar-name-edit" style="display:none;">
+          <input class="sar-name-input" value="${ui.esc(s.name)}" />
+          <button type="button" class="btn ghost small" data-action="save-name">${ui.icon("save")}儲存</button>
+          <button type="button" class="btn ghost small" data-action="cancel-name">取消</button>
+        </div>
         ${entries.length > 1 ? `<div class="sar-count">共 ${entries.length} 次贊助</div>` : ""}
       </div>
       <div class="sar-totals">
@@ -653,6 +701,95 @@ function sponsorRowEl(s, onChanged) {
     <div class="sar-entries" data-role="entries" style="display:none;"></div>
   `;
 
+  // 編輯贊助者名稱:改名後同一位贊助者底下所有次的紀錄都還是同一筆,
+  // 前台累積金額、統計都是即時從資料庫算出來的,重新整份名單就會用新名字顯示。
+  const nameView = row.querySelector(".sar-name-view");
+  const nameEdit = row.querySelector(".sar-name-edit");
+  const nameInput = row.querySelector(".sar-name-input");
+  row.querySelector('[data-action="edit-name"]').onclick = () => {
+    nameView.style.display = "none";
+    nameEdit.style.display = "flex";
+    nameInput.value = s.name;
+    nameInput.focus();
+    nameInput.select();
+  };
+  row.querySelector('[data-action="cancel-name"]').onclick = () => {
+    nameEdit.style.display = "none";
+    nameView.style.display = "flex";
+  };
+  row.querySelector('[data-action="save-name"]').onclick = async () => {
+    const newName = nameInput.value.trim();
+    if (!newName) {
+      await ui.alert("名稱不能空白", { title: "缺少資料", tone: "danger" });
+      return;
+    }
+    if (newName === s.name) {
+      nameEdit.style.display = "none";
+      nameView.style.display = "flex";
+      return;
+    }
+    const btn = row.querySelector('[data-action="save-name"]');
+    btn.disabled = true;
+    try {
+      await db.updateSponsorName(s.id, newName);
+      onChanged();
+    } catch (e) {
+      await ui.alert(e.message || "改名失敗", { title: "改名失敗", tone: "danger" });
+      btn.disabled = false;
+    }
+  };
+
+  // 一筆贊助紀錄(entry)底下的每一項獎勵各自可以編輯名稱/數量,或整筆刪除這一次紀錄。
+  function entryItemEl(item, entry) {
+    const wrap = document.createElement("div");
+    wrap.className = "sar-entry-item";
+    wrap.innerHTML = `
+      <div class="sei-view">
+        <b>${ui.esc(item.reward_name)}</b><span>${Number(item.qty).toLocaleString()}</span>
+        <button type="button" class="sei-icon-btn" data-action="edit-item" title="編輯這項獎勵">${ui.icon("pencil")}</button>
+      </div>
+      <div class="sei-edit" style="display:none;">
+        <input class="sei-name-input" value="${ui.esc(item.reward_name)}" placeholder="獎勵名稱" />
+        <input type="number" class="sei-qty-input" value="${Number(item.qty)}" placeholder="數量" />
+        <button type="button" class="btn ghost small" data-action="save-item">${ui.icon("save")}儲存</button>
+        <button type="button" class="btn ghost small" data-action="cancel-item">取消</button>
+      </div>
+    `;
+    const view = wrap.querySelector(".sei-view");
+    const edit = wrap.querySelector(".sei-edit");
+    const nameInput = wrap.querySelector(".sei-name-input");
+    const qtyInput = wrap.querySelector(".sei-qty-input");
+    wrap.querySelector('[data-action="edit-item"]').onclick = () => {
+      nameInput.value = item.reward_name;
+      qtyInput.value = Number(item.qty);
+      view.style.display = "none";
+      edit.style.display = "flex";
+      nameInput.focus();
+    };
+    wrap.querySelector('[data-action="cancel-item"]').onclick = () => {
+      edit.style.display = "none";
+      view.style.display = "flex";
+    };
+    wrap.querySelector('[data-action="save-item"]').onclick = async () => {
+      const name = nameInput.value.trim();
+      const qty = Number(qtyInput.value);
+      if (!name || !Number.isFinite(qty) || qty <= 0) {
+        await ui.alert("請填寫獎勵名稱,數量要是大於 0 的數字", { title: "缺少資料", tone: "danger" });
+        return;
+      }
+      const btn = wrap.querySelector('[data-action="save-item"]');
+      btn.disabled = true;
+      try {
+        await db.updateSponsorReward(item.id, { name, qty });
+        onChanged();
+      } catch (e) {
+        await ui.alert(e.message || "修改失敗", { title: "修改失敗", tone: "danger" });
+        btn.disabled = false;
+      }
+    };
+    return wrap;
+  }
+
   const entriesBox = row.querySelector('[data-role="entries"]');
   const toggleBtn = row.querySelector('[data-action="toggle-history"]');
   if (toggleBtn) {
@@ -666,20 +803,22 @@ function sponsorRowEl(s, onChanged) {
           const line = document.createElement("div");
           line.className = "sar-entry";
           line.innerHTML = `
-            <div class="sar-entry-items">${entry.items.map((it) => `<b>${ui.esc(it.reward_name)}</b> ${Number(it.qty).toLocaleString()}`).join("、")}</div>
-            <div class="sar-entry-date">${formatDate(entry.createdAt)}</div>
+            <div class="sar-entry-top">
+              <div class="sar-entry-date">${formatDate(entry.createdAt)}</div>
+            </div>
+            <div class="sar-entry-items-row">
+              <div class="sar-entry-items-list" data-role="items-list"></div>
+              <button type="button" class="btn ghost small outline-danger" data-action="delete-entry" style="flex-shrink:0;">${ui.icon("trash-2")}刪除這筆紀錄</button>
+            </div>
           `;
-          const delBtn = document.createElement("button");
-          delBtn.type = "button";
-          delBtn.className = "btn ghost small outline-danger";
-          delBtn.innerHTML = ui.icon("trash-2");
-          delBtn.onclick = async () => {
+          const itemsList = line.querySelector('[data-role="items-list"]');
+          entry.items.forEach((it) => itemsList.appendChild(entryItemEl(it, entry)));
+          line.querySelector('[data-action="delete-entry"]').onclick = async () => {
             const ok = await ui.confirm("確定要刪除這一次的贊助紀錄嗎?", { title: "刪除贊助紀錄", tone: "danger" });
             if (!ok) return;
             await db.deleteSponsorEntry(entry.entryId);
             onChanged();
           };
-          line.appendChild(delBtn);
           entriesBox.appendChild(line);
         });
       }
@@ -868,13 +1007,21 @@ async function renderSponsorLists() {
   } catch (e) {
     console.error(e);
     document.getElementById("sponsor-latest").innerHTML = `<div class="empty">${ui.icon("triangle-alert")}贊助名單載入失敗:${ui.esc(e.message || "未知錯誤")}(請確認 supabase-schema.sql 已重新執行)</div>`;
+    document.getElementById("sponsor-draft-box").style.display = "none";
     document.getElementById("sponsor-archive-box").style.display = "none";
     document.getElementById("sponsor-cumulative-total").style.display = "none";
     ui.refreshIcons();
     return;
   }
-  const latest = lists[0] || null;
-  const history = lists.slice(1);
+
+  // 「最新贊助名單」跟前台邏輯一致,只從「有顯示於前台」的名單裡挑最新一份;
+  // 隱藏中的名單(不管是新開的草稿、還是舊活動先收起來的)另外獨立一區顯示,
+  // 不會因為建立時間比較新就搶走前台正在顯示的「最新贊助名單/本次活動」位置,
+  // 也不會被誤收進「歷史贊助名單」收合區裡要多點一次才看得到。
+  const visibleLists = lists.filter((sl) => sl.visible !== false);
+  const draftLists = lists.filter((sl) => sl.visible === false);
+  const latest = visibleLists[0] || null;
+  const history = visibleLists.slice(1);
 
   const cumulativeBox = document.getElementById("sponsor-cumulative-total");
   if (!lists.length) {
@@ -892,9 +1039,21 @@ async function renderSponsorLists() {
   const latestBox = document.getElementById("sponsor-latest");
   latestBox.innerHTML = "";
   if (!latest) {
-    latestBox.innerHTML = `<div class="empty">${ui.icon("gem")}還沒有任何贊助名單,點上面「新增贊助名單」開始建立</div>`;
+    latestBox.innerHTML = `<div class="empty">${ui.icon("gem")}目前沒有顯示於前台的贊助名單,點上面「新增贊助名單」開始建立,或到下面把某份草稿切成顯示</div>`;
   } else {
     latestBox.appendChild(sponsorListCard(latest, true));
+  }
+
+  const draftBox = document.getElementById("sponsor-draft-box");
+  const draftTitle = document.getElementById("sponsor-draft-title");
+  const draftList = document.getElementById("sponsor-draft-list");
+  if (!draftLists.length) {
+    draftBox.style.display = "none";
+  } else {
+    draftBox.style.display = "block";
+    draftTitle.textContent = `草稿贊助名單,前台隱藏中(${draftLists.length})`;
+    draftList.innerHTML = "";
+    draftLists.forEach((sl) => draftList.appendChild(sponsorListCard(sl, false)));
   }
 
   const archiveBox = document.getElementById("sponsor-archive-box");
