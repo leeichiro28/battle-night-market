@@ -293,7 +293,9 @@ const db = (function () {
   }
 
   function rps5InitState() {
-    return { hp1: 10, hp2: 10, round: 1, ult1: false, ult2: false, log: [] };
+    // BO5:games1/games2 是系列賽目前局數比分,先取得3局的一方贏得整場對戰;
+    // game 是目前打到系列賽第幾局,round 則是「這一局」裡的回合數(每局重打會歸1)。
+    return { hp1: 30, hp2: 30, round: 1, game: 1, games1: 0, games2: 0, ult1: false, ult2: false, log: [] };
   }
 
   function makeInitState(gameType) {

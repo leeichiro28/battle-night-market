@@ -38,13 +38,18 @@ function names() {
   return [match.p1?.name || "玩家一", match.p2?.name || "玩家二"];
 }
 
+// BO5:先取得3局勝利才算整場對戰結束,不是單局血量歸零就結束
+function seriesDecided(state) {
+  return (state.games1 || 0) >= 3 || (state.games2 || 0) >= 3;
+}
+
 function startTimer(state) {
   if (!mySlot) return;
   const roundKey = state.round + "-" + mySlot;
   if (currentRoundKey === roundKey) return;
   currentRoundKey = roundKey;
   clearInterval(timerInterval);
-  if (submittedThisRound || state.hp1 <= 0 || state.hp2 <= 0) return;
+  if (submittedThisRound || seriesDecided(state)) return;
 
   let timeLeft = 30000;
   const fill = document.getElementById("timer-fill");
@@ -80,21 +85,25 @@ function render(state) {
   const choiceBtns = document.querySelectorAll(".choice-btn");
   const ultBtn = document.getElementById("ult-btn");
 
-  if (state.hp1 <= 0 || state.hp2 <= 0) {
+  renderSeriesDots(state);
+
+  if (seriesDecided(state)) {
     document.getElementById("choice-row").style.display = "none";
     ultBtn.style.display = "none";
     document.getElementById("timer-fill").style.width = "0%";
-    const winnerName = state.hp1 <= 0 ? p2Name : p1Name;
+    const winnerIsP1 = (state.games1 || 0) >= 3;
+    const winnerName = winnerIsP1 ? p1Name : p2Name;
+    const score = `${state.games1 || 0}:${state.games2 || 0}`;
     if (state.forfeitReason === "both_afk") {
-      announce("雙方掛機,已自動棄權", { icon: "alert-triangle", holdMs: 4200 });
+      battleView.announce("雙方掛機,已自動棄權", { icon: "alert-triangle", holdMs: 4200 });
       statusEl.innerHTML = ui.icon("alert-triangle") + `雙方都太久沒有進場,系統自動判定 ${ui.esc(winnerName)} 晉級`;
     } else if (!mySlot) {
-      statusEl.innerHTML = ui.icon("trophy") + `${ui.esc(winnerName)} 獲勝了這場對戰!`;
+      statusEl.innerHTML = ui.icon("trophy") + `${ui.esc(winnerName)} 以 ${score} 拿下這場系列賽!`;
     } else {
-      const iWon = (mySlot === 1 && state.hp2 <= 0) || (mySlot === 2 && state.hp1 <= 0);
+      const iWon = (mySlot === 1 && winnerIsP1) || (mySlot === 2 && !winnerIsP1);
       statusEl.innerHTML = iWon
-        ? ui.icon("trophy") + "你贏了這場對戰!回等候室看看下一步"
-        : ui.icon("skull") + "你被擊敗了,感謝參戰!";
+        ? ui.icon("trophy") + `你以 ${score} 贏了這場系列賽!回等候室看看下一步`
+        : ui.icon("skull") + `你以 ${score} 落敗了,感謝參戰!`;
     }
     document.getElementById("back-link").style.display = "block";
     document.getElementById("back-link").innerHTML = `<a href="lobby.html?event=${eventId}">${ui.icon(
@@ -130,6 +139,21 @@ function render(state) {
     ? ui.icon("hourglass") + "已送出,等待對方..."
     : ui.icon("timer") + "30 秒內選一個手勢!";
   startTimer(state);
+}
+
+function renderSeriesDots(state) {
+  const box = document.getElementById("series-dots");
+  if (!box) return;
+  const [p1Name, p2Name] = names();
+  const dots = (n) =>
+    Array.from({ length: 3 }, (_, i) => `<span class="sd-dot${i < n ? " won" : ""}"></span>`).join("");
+  box.innerHTML = `
+    <span class="sd-label">${ui.esc(p1Name)}</span>
+    <span class="sd-side">${dots(state.games1 || 0)}</span>
+    <span class="sd-label">第${state.game || 1}局 · BO5</span>
+    <span class="sd-side">${dots(state.games2 || 0)}</span>
+    <span class="sd-label">${ui.esc(p2Name)}</span>
+  `;
 }
 
 async function resolveRoundIfReady(state) {
@@ -189,35 +213,63 @@ async function resolveRoundIfReady(state) {
       const winnerName = winnerSlot === 1 ? p1Name : p2Name;
       const loserName = winnerSlot === 1 ? p2Name : p1Name;
       const winnerHp = winnerSlot === 1 ? hp1 : hp2;
-      const dmg = winnerHp <= 3 ? 2 : 1;
+      // HP 上限是 30,低血雙倍傷害的門檻等比例拉高到 9(原本 10 點血制是「≤3」,約剩三成血)
+      const dmg = winnerHp <= 9 ? 2 : 1;
       const hpBefore = winnerSlot === 1 ? hp2 : hp1;
       if (winnerSlot === 1) hp2 -= dmg;
       else hp1 -= dmg;
       const hpAfter = winnerSlot === 1 ? hp2 : hp1;
-      entry += `${loserName}扣 ${dmg} 血${winnerHp <= 3 ? "(絕境反擊,傷害雙倍!)" : ""}(${hpBefore}→${Math.max(hpAfter, 0)})。`;
+      entry += `${loserName}扣 ${dmg} 血${winnerHp <= 9 ? "(絕境反擊,傷害雙倍!)" : ""}(${hpBefore}→${Math.max(hpAfter, 0)})。`;
       lastEvent = { type: "hit", winnerSlot, loserSlot: winnerSlot === 1 ? 2 : 1, dmg };
     }
     log.push(entry);
 
-    const newState = {
-      ...state,
-      hp1,
-      hp2,
-      ult1,
-      ult2,
-      log,
-      lastEvent,
-      round: state.round + 1,
-      m1: null,
-      m2: null,
-    };
-    await db.updateMatchState(matchId, { state: newState });
+    const gameOver = hp1 <= 0 || hp2 <= 0;
 
-    if (hp1 <= 0 || hp2 <= 0) {
-      const finalWinnerSlot = hp1 <= 0 ? 2 : 1;
-      const winnerId = finalWinnerSlot === 1 ? match.player1_id : match.player2_id;
-      const loserId = finalWinnerSlot === 1 ? match.player2_id : match.player1_id;
-      await db.advanceAfterMatch(match, winnerId, loserId);
+    if (!gameOver) {
+      // 這局還沒分出勝負,正常進下一回合
+      const newState = { ...state, hp1, hp2, ult1, ult2, log, lastEvent, round: state.round + 1, m1: null, m2: null };
+      await db.updateMatchState(matchId, { state: newState });
+    } else {
+      // BO5:這局分出勝負了,但要先取得3局勝利才是整場對戰結束
+      const gameWinnerSlot = hp1 <= 0 ? 2 : 1;
+      const games1 = (state.games1 || 0) + (gameWinnerSlot === 1 ? 1 : 0);
+      const games2 = (state.games2 || 0) + (gameWinnerSlot === 2 ? 1 : 0);
+      const gameNum = state.game || 1;
+      const gameWinnerName = gameWinnerSlot === 1 ? p1Name : p2Name;
+      log.push(`🏆 第${gameNum}局結束,${gameWinnerName}拿下這局!系列賽比分 ${games1}:${games2}。`);
+
+      const seriesOver = games1 >= 3 || games2 >= 3;
+      const seriesEvent = { type: "series_game_over", winnerSlot: gameWinnerSlot, gameNum, games1, games2 };
+
+      if (seriesOver) {
+        const newState = { ...state, hp1, hp2, ult1, ult2, log, lastEvent: seriesEvent, round: state.round + 1, games1, games2, m1: null, m2: null };
+        await db.updateMatchState(matchId, { state: newState });
+
+        const finalWinnerSlot = games1 >= 3 ? 1 : 2;
+        const winnerId = finalWinnerSlot === 1 ? match.player1_id : match.player2_id;
+        const loserId = finalWinnerSlot === 1 ? match.player2_id : match.player1_id;
+        await db.advanceAfterMatch(match, winnerId, loserId);
+      } else {
+        if (games1 === 2 && games2 === 2) log.push("🔥 賽末點!下一局就會分出整場對戰的勝負。");
+        // 系列賽還沒結束,血量全部回滿,開下一局
+        const newState = {
+          ...state,
+          hp1: 30,
+          hp2: 30,
+          ult1: false,
+          ult2: false,
+          log,
+          lastEvent: seriesEvent,
+          round: 1,
+          game: gameNum + 1,
+          games1,
+          games2,
+          m1: null,
+          m2: null,
+        };
+        await db.updateMatchState(matchId, { state: newState });
+      }
     }
   } finally {
     resolving = false;
@@ -238,8 +290,8 @@ function scheduleReturnToLobby() {
 
 async function maybeAutoAdvance(state) {
   if (autoFollowTriggered) return;
-  if (!(state.hp1 <= 0 || state.hp2 <= 0)) return;
-  const winnerId = state.hp1 <= 0 ? match.player2_id : match.player1_id;
+  if (!seriesDecided(state)) return;
+  const winnerId = (state.games1 || 0) >= 3 ? match.player1_id : match.player2_id;
   if (!winnerId) return;
   try {
     const winnerPart = await db.getMyParticipant(eventId, winnerId);
@@ -289,7 +341,7 @@ async function maybeAutopilotSubmit() {
   if (!autopilotSlot || !match) return;
   if (match.status !== "active") return;
   const state = match.state;
-  if (!state || state.hp1 <= 0 || state.hp2 <= 0) return;
+  if (!state || seriesDecided(state)) return;
   const already = autopilotSlot === 1 ? state.m1 : state.m2;
   if (already) return;
   try {
@@ -331,7 +383,8 @@ async function refresh() {
 
 function renderChoiceButtons() {
   document.getElementById("choice-row").innerHTML = GESTURE_ORDER.map(
-    (g) => `<button class="choice-btn" data-g="${g}">${ui.icon(GESTURE_ICON[g])}<span class="lbl">${GESTURE_NAME[g]}</span></button>`
+    (g) =>
+      `<button class="choice-btn g-${g}" data-g="${g}">${ui.icon(GESTURE_ICON[g])}<span class="lbl">${GESTURE_NAME[g]}</span></button>`
   ).join("");
 }
 
@@ -359,10 +412,11 @@ function bindControls() {
 function renderRules() {
   const box = document.getElementById("rule-content");
   box.innerHTML = `
-    <p>雙方各有 10 點 HP,30 秒內選一個手勢:石頭 / 布 / 剪刀 / 蜥蜴 / 史波克。超時未選視為該局落敗。</p>
+    <p>採 BO5 賽制:雙方各有 30 點 HP,先讓對方 HP 歸零的人拿下這一局;率先拿下 3 局的人贏得整場對戰(最多打到第 5 局)。每進入新一局,雙方 HP 會全部回滿。</p>
+    <p>每回合 30 秒內選一個手勢:石頭 / 布 / 剪刀 / 蜥蜴 / 史波克。超時未選視為該回合落敗。</p>
     <p>石頭勝剪刀、蜥蜴;布勝石頭、史波克;剪刀勝布、蜥蜴;蜥蜴勝史波克、布;史波克勝剪刀、石頭。</p>
-    <p>每人有 1 張「究極手勢」卡:出牌保證獲勝該局,除非對方同一局也出究極手勢,此時雙方抵銷、判定平手。</p>
-    <p>當你的 HP ≤3 時,獲勝的那一擊傷害會翻倍,適合絕地反擊。血量先歸零者落敗。</p>
+    <p>每人每一局都有 1 張「究極手勢」卡:出牌保證獲勝該回合,除非對方同一回合也出究極手勢,此時雙方抵銷、判定平手。</p>
+    <p>當你的 HP ≤9 時,獲勝的那一擊傷害會翻倍,適合絕地反擊。系列賽打到 2:2 時會有「賽末點」提示。</p>
   `;
 }
 

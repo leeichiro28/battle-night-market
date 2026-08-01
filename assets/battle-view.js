@@ -12,7 +12,7 @@
 // (dice.html / rps5.html 本身有更完整的狀態文字跟操作按鈕,不要顯示兩份)。
 window.BattleView = (function () {
   const CIRC = 289;
-  const MAX_HP = { dice: 30, rps5: 10 };
+  const MAX_HP = { dice: 30, rps5: 30 };
   const SUDDEN_DEATH_HP = 6;
 
   const CLASS_INFO = {
@@ -145,6 +145,11 @@ window.BattleView = (function () {
       const [p1Name, p2Name] = names(match);
       if (evt.type === "tie") return { icon: "scale", text: "平手,雙方不掉血" };
       if (evt.type === "timeout_both") return { icon: "hourglass", text: "雙方都逾時,平手" };
+      if (evt.type === "match_point") return { icon: "flame", text: "賽末點!下一局就能分出勝負" };
+      if (evt.type === "series_game_over") {
+        const gWinner = evt.winnerSlot === 1 ? p1Name : p2Name;
+        return { icon: "trophy", text: `${gWinner} 拿下第${evt.gameNum}局!比分 ${evt.games1}:${evt.games2}` };
+      }
       const winnerName = evt.winnerSlot === 1 ? p1Name : p2Name;
       const loserName = evt.winnerSlot === 1 ? p2Name : p1Name;
       if (evt.shieldBlocked) {

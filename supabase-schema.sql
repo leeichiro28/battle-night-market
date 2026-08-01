@@ -171,7 +171,7 @@ begin
       'log','[]'::jsonb
     );
   else
-    init_state := '{"hp1":10,"hp2":10,"round":1,"ult1":false,"ult2":false,"log":[]}'::jsonb;
+    init_state := '{"hp1":30,"hp2":30,"round":1,"game":1,"games1":0,"games2":0,"ult1":false,"ult2":false,"log":[]}'::jsonb;
   end if;
 
   insert into matches(event_id, player1_id, player2_id, bracket, round, state, status)
@@ -250,7 +250,7 @@ begin
       'log','[]'::jsonb
     );
   else
-    init_state := '{"hp1":10,"hp2":10,"round":1,"ult1":false,"ult2":false,"log":[]}'::jsonb;
+    init_state := '{"hp1":30,"hp2":30,"round":1,"game":1,"games1":0,"games2":0,"ult1":false,"ult2":false,"log":[]}'::jsonb;
   end if;
 
   insert into matches(event_id, player1_id, player2_id, bracket, round, state, status)
