@@ -636,7 +636,8 @@ function collectRewardRows(container) {
   return rewards;
 }
 
-// 一位贊助者一列:上排是名字 + 加總後的獎勵標籤 + 次數,展開才看得到每一次原始紀錄。
+// 一位贊助者一列:上排是名字(可編輯) + 加總後的獎勵標籤 + 次數,展開才看得到每一次原始紀錄,
+// 每一次紀錄裡的每一項獎勵(名稱/數量)都能各自編輯,改完重新整份名單就會自動重算所有加總跟前台顯示。
 function sponsorRowEl(s, onChanged) {
   const row = document.createElement("div");
   row.className = "sponsor-admin-row";
@@ -645,7 +646,15 @@ function sponsorRowEl(s, onChanged) {
   row.innerHTML = `
     <div class="sar-top">
       <div class="sar-main">
-        <b>${ui.esc(s.name)}</b>
+        <div class="sar-name-view">
+          <b>${ui.esc(s.name)}</b>
+          <button type="button" class="sei-icon-btn" data-action="edit-name" title="編輯名稱">${ui.icon("pencil")}</button>
+        </div>
+        <div class="sar-name-edit" style="display:none;">
+          <input class="sar-name-input" value="${ui.esc(s.name)}" />
+          <button type="button" class="btn ghost small" data-action="save-name">${ui.icon("save")}儲存</button>
+          <button type="button" class="btn ghost small" data-action="cancel-name">取消</button>
+        </div>
         ${entries.length > 1 ? `<div class="sar-count">共 ${entries.length} 次贊助</div>` : ""}
       </div>
       <div class="sar-totals">
@@ -661,6 +670,95 @@ function sponsorRowEl(s, onChanged) {
     <div class="sar-entries" data-role="entries" style="display:none;"></div>
   `;
 
+  // 編輯贊助者名稱:改名後同一位贊助者底下所有次的紀錄都還是同一筆,
+  // 前台累積金額、統計都是即時從資料庫算出來的,重新整份名單就會用新名字顯示。
+  const nameView = row.querySelector(".sar-name-view");
+  const nameEdit = row.querySelector(".sar-name-edit");
+  const nameInput = row.querySelector(".sar-name-input");
+  row.querySelector('[data-action="edit-name"]').onclick = () => {
+    nameView.style.display = "none";
+    nameEdit.style.display = "flex";
+    nameInput.value = s.name;
+    nameInput.focus();
+    nameInput.select();
+  };
+  row.querySelector('[data-action="cancel-name"]').onclick = () => {
+    nameEdit.style.display = "none";
+    nameView.style.display = "flex";
+  };
+  row.querySelector('[data-action="save-name"]').onclick = async () => {
+    const newName = nameInput.value.trim();
+    if (!newName) {
+      await ui.alert("名稱不能空白", { title: "缺少資料", tone: "danger" });
+      return;
+    }
+    if (newName === s.name) {
+      nameEdit.style.display = "none";
+      nameView.style.display = "flex";
+      return;
+    }
+    const btn = row.querySelector('[data-action="save-name"]');
+    btn.disabled = true;
+    try {
+      await db.updateSponsorName(s.id, newName);
+      onChanged();
+    } catch (e) {
+      await ui.alert(e.message || "改名失敗", { title: "改名失敗", tone: "danger" });
+      btn.disabled = false;
+    }
+  };
+
+  // 一筆贊助紀錄(entry)底下的每一項獎勵各自可以編輯名稱/數量,或整筆刪除這一次紀錄。
+  function entryItemEl(item, entry) {
+    const wrap = document.createElement("div");
+    wrap.className = "sar-entry-item";
+    wrap.innerHTML = `
+      <div class="sei-view">
+        <b>${ui.esc(item.reward_name)}</b><span>${Number(item.qty).toLocaleString()}</span>
+        <button type="button" class="sei-icon-btn" data-action="edit-item" title="編輯這項獎勵">${ui.icon("pencil")}</button>
+      </div>
+      <div class="sei-edit" style="display:none;">
+        <input class="sei-name-input" value="${ui.esc(item.reward_name)}" placeholder="獎勵名稱" />
+        <input type="number" class="sei-qty-input" value="${Number(item.qty)}" placeholder="數量" />
+        <button type="button" class="btn ghost small" data-action="save-item">${ui.icon("save")}儲存</button>
+        <button type="button" class="btn ghost small" data-action="cancel-item">取消</button>
+      </div>
+    `;
+    const view = wrap.querySelector(".sei-view");
+    const edit = wrap.querySelector(".sei-edit");
+    const nameInput = wrap.querySelector(".sei-name-input");
+    const qtyInput = wrap.querySelector(".sei-qty-input");
+    wrap.querySelector('[data-action="edit-item"]').onclick = () => {
+      nameInput.value = item.reward_name;
+      qtyInput.value = Number(item.qty);
+      view.style.display = "none";
+      edit.style.display = "flex";
+      nameInput.focus();
+    };
+    wrap.querySelector('[data-action="cancel-item"]').onclick = () => {
+      edit.style.display = "none";
+      view.style.display = "flex";
+    };
+    wrap.querySelector('[data-action="save-item"]').onclick = async () => {
+      const name = nameInput.value.trim();
+      const qty = Number(qtyInput.value);
+      if (!name || !Number.isFinite(qty) || qty <= 0) {
+        await ui.alert("請填寫獎勵名稱,數量要是大於 0 的數字", { title: "缺少資料", tone: "danger" });
+        return;
+      }
+      const btn = wrap.querySelector('[data-action="save-item"]');
+      btn.disabled = true;
+      try {
+        await db.updateSponsorReward(item.id, { name, qty });
+        onChanged();
+      } catch (e) {
+        await ui.alert(e.message || "修改失敗", { title: "修改失敗", tone: "danger" });
+        btn.disabled = false;
+      }
+    };
+    return wrap;
+  }
+
   const entriesBox = row.querySelector('[data-role="entries"]');
   const toggleBtn = row.querySelector('[data-action="toggle-history"]');
   if (toggleBtn) {
@@ -674,20 +772,20 @@ function sponsorRowEl(s, onChanged) {
           const line = document.createElement("div");
           line.className = "sar-entry";
           line.innerHTML = `
-            <div class="sar-entry-items">${entry.items.map((it) => `<b>${ui.esc(it.reward_name)}</b> ${Number(it.qty).toLocaleString()}`).join("、")}</div>
-            <div class="sar-entry-date">${formatDate(entry.createdAt)}</div>
+            <div class="sar-entry-top">
+              <div class="sar-entry-date">${formatDate(entry.createdAt)}</div>
+              <button type="button" class="btn ghost small outline-danger" data-action="delete-entry">${ui.icon("trash-2")}刪除這筆紀錄</button>
+            </div>
           `;
-          const delBtn = document.createElement("button");
-          delBtn.type = "button";
-          delBtn.className = "btn ghost small outline-danger";
-          delBtn.innerHTML = ui.icon("trash-2");
-          delBtn.onclick = async () => {
+          const itemsBox = document.createElement("div");
+          entry.items.forEach((it) => itemsBox.appendChild(entryItemEl(it, entry)));
+          line.appendChild(itemsBox);
+          line.querySelector('[data-action="delete-entry"]').onclick = async () => {
             const ok = await ui.confirm("確定要刪除這一次的贊助紀錄嗎?", { title: "刪除贊助紀錄", tone: "danger" });
             if (!ok) return;
             await db.deleteSponsorEntry(entry.entryId);
             onChanged();
           };
-          line.appendChild(delBtn);
           entriesBox.appendChild(line);
         });
       }

@@ -418,14 +418,27 @@ label{
   font-size:12px;color:var(--ink-dim);background:none;border:none;cursor:pointer;padding:0;
 }
 .sar-history-toggle:hover{color:var(--gold);}
-.sar-entries{width:100%;border-top:1px dashed var(--line);padding-top:8px;display:flex;flex-direction:column;gap:8px;}
+.sar-entries{width:100%;border-top:1px dashed var(--line);padding-top:8px;display:flex;flex-direction:column;gap:10px;}
 .sar-entry{
-  display:flex;align-items:flex-start;justify-content:space-between;gap:10px;
+  display:flex;flex-direction:column;gap:6px;
   font-size:12px;color:var(--ink-dim);
 }
-.sar-entry .sar-entry-items{flex:1;min-width:0;overflow-wrap:anywhere;}
-.sar-entry .sar-entry-items b{color:var(--ink);font-weight:700;}
+.sar-entry-top{display:flex;align-items:center;justify-content:space-between;gap:10px;}
 .sar-entry .sar-entry-date{white-space:nowrap;font-size:11px;}
+.sar-entry-item{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
+.sar-entry-item .sei-view{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;}
+.sar-entry-item .sei-view b{color:var(--ink);font-weight:700;overflow-wrap:anywhere;}
+.sar-entry-item .sei-edit{display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:1;min-width:0;}
+.sar-entry-item .sei-edit input{max-width:120px;}
+.sar-entry-item .sei-edit input.sei-qty-input{max-width:90px;}
+.sei-icon-btn{
+  background:none;border:none;cursor:pointer;padding:2px;
+  color:var(--ink-dim);display:inline-flex;align-items:center;
+}
+.sei-icon-btn:hover{color:var(--gold);}
+.sar-name-edit{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.sar-name-view{display:flex;align-items:center;gap:6px;}
+.sar-name-edit input{max-width:220px;}
 
 /* 加總結果的唯讀顯示框(單份名單總額 / 全部活動累積總額),取代原本手動輸入的欄位 */
 .reward-total-box{

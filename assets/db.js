@@ -950,8 +950,37 @@ const db = (function () {
     if (error) throw error;
   }
 
+  // 改贊助者名稱。跟新增贊助時一樣,同一份名單內名字不分大小寫比對,
+  // 避免改成跟同名單裡另一位贊助者一樣的名字,前台顯示時卻分不出是哪一位。
   async function updateSponsorName(id, name) {
-    const { error } = await client.from("sponsors").update({ name }).eq("id", id);
+    const cleanName = (name || "").trim();
+    if (!cleanName) throw new Error("名稱不能空白");
+
+    const { data: current, error: curErr } = await client.from("sponsors").select("sponsor_list_id").eq("id", id).single();
+    if (curErr) throw curErr;
+
+    const { data: existing, error: findErr } = await client
+      .from("sponsors")
+      .select("id, name")
+      .eq("sponsor_list_id", current.sponsor_list_id)
+      .ilike("name", cleanName);
+    if (findErr) throw findErr;
+
+    const dup = (existing || []).find((s) => s.id !== id && s.name.trim().toLowerCase() === cleanName.toLowerCase());
+    if (dup) throw new Error(`這份名單裡已經有「${dup.name}」了,換一個名字,或直接把紀錄改到那位贊助者底下`);
+
+    const { error } = await client.from("sponsors").update({ name: cleanName }).eq("id", id);
+    if (error) throw error;
+  }
+
+  // 改單筆贊助紀錄裡的「一項獎勵」(reward_name + qty)。用 sponsor_rewards 的列 id 精準指定,
+  // 只改這一列,同一次贊助(entry_id)底下其他獎勵項目、以及其他次贊助紀錄都不受影響。
+  async function updateSponsorReward(rewardId, { name, qty }) {
+    const cleanName = (name || "").trim();
+    const cleanQty = Number(qty);
+    if (!cleanName) throw new Error("獎勵名稱不能空白");
+    if (!Number.isFinite(cleanQty) || cleanQty <= 0) throw new Error("數量要是大於 0 的數字");
+    const { error } = await client.from("sponsor_rewards").update({ reward_name: cleanName, qty: cleanQty }).eq("id", rewardId);
     if (error) throw error;
   }
 
@@ -1076,6 +1105,7 @@ const db = (function () {
     deleteSponsorEntry,
     deleteSponsor,
     updateSponsorName,
+    updateSponsorReward,
     aggregateRewardTotals,
     groupSponsorEntries,
     getSiteSetting,
