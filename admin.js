@@ -11,7 +11,7 @@ const RULE_ROWS = [
   { key: "combo", desc: "連勝疊加,滿3層永久+1傷害" },
   { key: "dice_gamble", desc: "隨時可拼2顆骰子,一般職業限2次" },
   { key: "sudden_death", desc: "雙方低血量時傷害固定雙倍" },
-  { key: "classes", desc: "玩家報名時可選鬥士/守衛/賭徒/刺客" },
+  { key: "classes", desc: "玩家報名時可選鬥士/守衛/賭徒/刺客/法師/幸運兒" },
   { key: "betting", desc: "純娛樂,猜誰會贏" },
   { key: "reactions", desc: "觀戰/對戰中都能發表情互動" },
 ];
@@ -714,9 +714,13 @@ function sponsorListCard(sl, isLatest) {
         <div class="tag-row">
           ${isLatest ? `<span class="tag open">${ui.icon("sparkles")}最新贊助名單</span>` : ""}
           <span class="tag">${ui.icon("gem")}${sl.sponsors.length} 位贊助者</span>
+          ${sl.visible === false ? `<span class="tag closed">${ui.icon("eye-off")}前台已隱藏</span>` : `<span class="tag open">${ui.icon("eye")}前台顯示中</span>`}
         </div>
       </div>
       <div class="action-row">
+        <button type="button" class="btn ghost small" data-action="toggle-visible">${
+          sl.visible === false ? ui.icon("eye") + "顯示於前台" : ui.icon("eye-off") + "隱藏於前台"
+        }</button>
         <button type="button" class="btn ghost small outline-danger" data-action="delete-list">${ui.icon("trash-2")}刪除這份名單</button>
       </div>
     </div>
@@ -773,6 +777,19 @@ function sponsorListCard(sl, isLatest) {
     await renderSponsorLists();
   };
 
+  card.querySelector('[data-action="toggle-visible"]').onclick = async () => {
+    const nextVisible = sl.visible === false;
+    const btn = card.querySelector('[data-action="toggle-visible"]');
+    btn.disabled = true;
+    try {
+      await db.setSponsorListVisible(sl.id, nextVisible);
+      await renderSponsorLists();
+    } catch (e) {
+      await ui.alert(e.message || "切換失敗", { title: "切換失敗", tone: "danger" });
+      btn.disabled = false;
+    }
+  };
+
   card.querySelector('[data-action="delete-list"]').onclick = async () => {
     const ok = await ui.confirm(`確定要刪除「${sl.name}」這份贊助名單嗎?裡面的贊助紀錄會一起刪除。`, {
       title: "刪除贊助名單",
@@ -819,6 +836,7 @@ function sponsorHistoryGroup(sl) {
     <button type="button" class="game-toggle">
       <i data-lucide="gem" class="ico"></i>
       <span class="game-toggle-label">${ui.esc(sl.name)}</span>
+      ${sl.visible === false ? `<i data-lucide="eye-off" class="ico" title="前台已隱藏"></i>` : ""}
       <span class="game-toggle-count">${sl.sponsors.length} 位贊助者</span>
       <i data-lucide="chevron-down" class="ico chev"></i>
     </button>

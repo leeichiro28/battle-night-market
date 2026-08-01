@@ -271,8 +271,20 @@ create table if not exists sponsor_lists (
   id uuid primary key default gen_random_uuid(),
   name text not null, -- 名單名稱,例如「擂台夜市 第 12 屆」,自己取
   raised text, -- 這份名單的贊助總額,自己填文字,例如「NT$ 18,600」
+  visible boolean not null default true, -- 是否顯示於前台;關閉後前台完全不顯示這份名單,但後台資料與統計仍保留
   created_at timestamptz default now()
 );
+
+-- 升級既有資料庫用:幫 sponsor_lists 補上 visible 欄位,舊資料預設為顯示,不影響既有前台畫面。
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'sponsor_lists' and column_name = 'visible'
+  ) then
+    alter table sponsor_lists add column visible boolean not null default true;
+  end if;
+end $$;
 
 -- 贊助者,每筆歸屬到某一份 sponsor_lists
 create table if not exists sponsors (
