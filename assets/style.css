@@ -425,7 +425,7 @@ label{
 }
 .sar-entry-top{display:flex;align-items:center;justify-content:space-between;gap:10px;}
 .sar-entry .sar-entry-date{white-space:nowrap;font-size:11px;}
-.sar-entry-items-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+.sar-entry-items-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
 .sar-entry-items-list{display:flex;flex-direction:column;gap:6px;flex:1;min-width:0;}
 .sar-entry-item{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
 .sar-entry-item .sei-view{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;}
