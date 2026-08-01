@@ -11,7 +11,7 @@ const RULE_ROWS = [
   { key: "combo", desc: "連勝疊加,滿3層永久+1傷害" },
   { key: "dice_gamble", desc: "隨時可拼2顆骰子,一般職業限2次" },
   { key: "sudden_death", desc: "雙方低血量時傷害固定雙倍" },
-  { key: "classes", desc: "玩家報名時可選鬥士/守衛/賭徒/刺客" },
+  { key: "classes", desc: "玩家報名時可選鬥士/守衛/賭徒/刺客/法師/幸運兒" },
   { key: "betting", desc: "純娛樂,猜誰會贏" },
   { key: "reactions", desc: "觀戰/對戰中都能發表情互動" },
 ];
