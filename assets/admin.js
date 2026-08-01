@@ -774,12 +774,14 @@ function sponsorRowEl(s, onChanged) {
           line.innerHTML = `
             <div class="sar-entry-top">
               <div class="sar-entry-date">${formatDate(entry.createdAt)}</div>
-              <button type="button" class="btn ghost small outline-danger" data-action="delete-entry">${ui.icon("trash-2")}刪除這筆紀錄</button>
+            </div>
+            <div class="sar-entry-items-row">
+              <div class="sar-entry-items-list" data-role="items-list"></div>
+              <button type="button" class="btn ghost small outline-danger" data-action="delete-entry" style="flex-shrink:0;">${ui.icon("trash-2")}刪除這筆紀錄</button>
             </div>
           `;
-          const itemsBox = document.createElement("div");
-          entry.items.forEach((it) => itemsBox.appendChild(entryItemEl(it, entry)));
-          line.appendChild(itemsBox);
+          const itemsList = line.querySelector('[data-role="items-list"]');
+          entry.items.forEach((it) => itemsList.appendChild(entryItemEl(it, entry)));
           line.querySelector('[data-action="delete-entry"]').onclick = async () => {
             const ok = await ui.confirm("確定要刪除這一次的贊助紀錄嗎?", { title: "刪除贊助紀錄", tone: "danger" });
             if (!ok) return;
