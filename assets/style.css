@@ -813,6 +813,25 @@ label{
 }
 .modal-card h3{font-size:18px;margin-bottom:12px;}
 .modal-card h4{font-size:13px;color:var(--gold);margin:16px 0 6px;}
+
+/* 職業對照表(規則頁用) */
+.rule-table-wrap{overflow-x:auto;margin-top:10px;border:1px solid var(--line);border-radius:12px;}
+.rule-table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:760px;}
+.rule-table th,.rule-table td{
+  padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);
+  color:var(--ink-dim);line-height:1.6;vertical-align:top;
+}
+.rule-table th{
+  background:var(--panel2);color:var(--gold);font-weight:700;
+  white-space:nowrap;position:sticky;top:0;
+}
+.rule-table td:first-child,.rule-table th:first-child{
+  color:var(--ink);font-weight:700;white-space:nowrap;
+  display:flex;align-items:center;gap:6px;
+}
+.rule-table td:first-child .ico,.rule-table th .ico{width:14px;height:14px;flex-shrink:0;}
+.rule-table tbody tr:last-child td{border-bottom:none;}
+.rule-table tbody tr:hover{background:rgba(242,183,5,.05);}
 .modal-card p{font-size:13px;color:var(--ink-dim);margin:0 0 10px;line-height:1.7;}
 .modal-card p:first-of-type{margin-top:0;}
 
