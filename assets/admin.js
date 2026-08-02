@@ -279,7 +279,7 @@ async function renderParticipants(container, ev) {
 }
 
 // ---------- 賽程總覽(含觀戰連結、卡住時可強制判定) ----------
-function matchRowEl(m, ev, onResolved) {
+function matchRowEl(m, ev, onResolved, classByPlayerId) {
   const row = document.createElement("div");
   row.className = "match-row";
   const isLive = m.status === "active";
@@ -287,13 +287,15 @@ function matchRowEl(m, ev, onResolved) {
 
   const n1 = m.p1?.name || (m.status === "done" ? "輪空" : "待定");
   const n2 = m.p2?.name || (m.status === "done" ? "輪空" : "待定");
+  const c1 = classByPlayerId && m.p1?.name ? ui.classTag(classByPlayerId[m.player1_id]) : "";
+  const c2 = classByPlayerId && m.p2?.name ? ui.classTag(classByPlayerId[m.player2_id]) : "";
 
   const top = document.createElement("div");
   top.className = "vs-row";
   top.innerHTML = `
-    <span class="side left">${isLive ? ui.icon("radio", { cls: "live-dot" }) : ""}${ui.esc(n1)}</span>
+    <span class="side left">${isLive ? ui.icon("radio", { cls: "live-dot" }) : ""}${ui.esc(n1)}${c1}</span>
     <span class="vs">vs</span>
-    <span class="side right">${ui.esc(n2)}</span>
+    <span class="side right">${c2}${ui.esc(n2)}</span>
   `;
   row.appendChild(top);
 
@@ -344,6 +346,13 @@ async function renderBracketSummary(container, ev) {
   const matches = await db.listMatches(ev.id);
   if (!matches.length) return;
 
+  const showClass = ev.game_type === "dice" && !!(ev.rules && ev.rules.classes);
+  let classByPlayerId = {};
+  if (showClass) {
+    const parts = await db.listParticipants(ev.id);
+    parts.forEach((p) => (classByPlayerId[p.player_id] = p.class));
+  }
+
   const onResolved = () => renderBracketSummary(container, ev);
   const wb = matches.filter((m) => m.bracket === "winners");
   const lb = matches.filter((m) => m.bracket === "losers");
@@ -364,15 +373,15 @@ async function renderBracketSummary(container, ev) {
     const isFinal = r === totalRounds;
     const label = isFinal ? "決賽" : r === totalRounds - 1 ? "準決賽" : `第${r}輪`;
     addHeader(isFinal ? "trophy" : "swords", label, r >= totalRounds - 1);
-    rows.forEach((m) => container.appendChild(matchRowEl(m, ev, onResolved)));
+    rows.forEach((m) => container.appendChild(matchRowEl(m, ev, onResolved, classByPlayerId)));
   }
   if (lb.length) {
     addHeader("medal", "敗部復活賽");
-    lb.forEach((m) => container.appendChild(matchRowEl(m, ev, onResolved)));
+    lb.forEach((m) => container.appendChild(matchRowEl(m, ev, onResolved, classByPlayerId)));
   }
   if (final) {
     addHeader("trophy", "總冠軍賽", true);
-    container.appendChild(matchRowEl(final, ev, onResolved));
+    container.appendChild(matchRowEl(final, ev, onResolved, classByPlayerId));
   }
 }
 

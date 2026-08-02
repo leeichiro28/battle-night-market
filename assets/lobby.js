@@ -5,6 +5,7 @@ let pollTimer = null;
 let unsub1 = null;
 let unsub2 = null;
 let currentEv = null;
+let classByPlayerId = {}; // 每次 renderBracket 重新整理,matchRowHtml/bracketCardInnerHtml 讀這份來畫職業小標籤
 
 const GAME_PAGE = { dice: "dice.html", rps5: "rps5.html" };
 const BRACKET_ORDER = { winners: 0, losers: 1, final: 2 };
@@ -53,12 +54,15 @@ function matchRowHtml(m, ev, fallbackDoneText) {
   const w2 = m.winner_id && m.winner_id === m.player2_id;
   const cls = (win) => (win ? "win" : m.winner_id ? "lose" : "");
   const isLive = m.status === "active";
+  const showClass = classesEnabled(ev);
+  const c1 = showClass && m.p1?.name ? ui.classTag(classByPlayerId[m.player1_id]) : "";
+  const c2 = showClass && m.p2?.name ? ui.classTag(classByPlayerId[m.player2_id]) : "";
   return `
     <div class="match-row${isLive ? " live" : ""}">
       <div class="vs-row">
-        <span class="side left ${cls(w1)}">${isLive ? ui.icon("radio", { cls: "live-dot" }) : ""}${ui.esc(n1)}</span>
+        <span class="side left ${cls(w1)}">${isLive ? ui.icon("radio", { cls: "live-dot" }) : ""}${ui.esc(n1)}${c1}</span>
         <span class="vs">vs</span>
-        <span class="side right ${cls(w2)}">${ui.esc(n2)}</span>
+        <span class="side right ${cls(w2)}">${c2}${ui.esc(n2)}</span>
       </div>
       ${isLive ? `<div class="row-note live">${ui.icon("radio")}直播中,往上看即時戰況</div>` : ""}
     </div>`;
@@ -135,16 +139,19 @@ function renderBracketListView(ev, parts, matches) {
 }
 
 // 樹狀對戰卡:同一張卡上下兩位選手,贏家打勾、輸家灰底刪除線
-function bracketCardInnerHtml(m) {
+function bracketCardInnerHtml(m, ev) {
   const n1 = m.p1?.name || (m.status === "pending" ? "待定" : "輪空");
   const n2 = m.p2?.name || (m.status === "pending" ? "待定" : "輪空");
   const w1 = m.winner_id && m.winner_id === m.player1_id;
   const w2 = m.winner_id && m.winner_id === m.player2_id;
   const cls = (win) => (win ? "win" : m.winner_id ? "lose" : "");
   const isLive = m.status === "active";
+  const showClass = ev && classesEnabled(ev);
+  const c1 = showClass && m.p1?.name ? ui.classTag(classByPlayerId[m.player1_id]) : "";
+  const c2 = showClass && m.p2?.name ? ui.classTag(classByPlayerId[m.player2_id]) : "";
   return `
-    <div class="bt-row ${cls(w1)}">${w1 ? ui.icon("check") : ""}<span>${ui.esc(n1)}</span></div>
-    <div class="bt-row ${cls(w2)}">${w2 ? ui.icon("check") : ""}<span>${ui.esc(n2)}</span></div>
+    <div class="bt-row ${cls(w1)}">${w1 ? ui.icon("check") : ""}<span>${ui.esc(n1)}</span>${c1}</div>
+    <div class="bt-row ${cls(w2)}">${w2 ? ui.icon("check") : ""}<span>${ui.esc(n2)}</span>${c2}</div>
     ${isLive ? `<div class="bt-live-tag">${ui.icon("radio")}直播中</div>` : ""}`;
 }
 
@@ -152,7 +159,7 @@ function bracketCardInnerHtml(m) {
 // 不是預先排好的樹狀賽程,沒有「輪次」也沒有固定的晉級關係,所以不能比照勝部畫分支樹。
 // 這裡改用時間軸梯子:照對戰發生的先後順序,一場接一場往下排,單純把清單畫得更有賽制圖的感覺,
 // 不去假裝場次之間有晉級線(那條線畫出來會是假的)。
-function losersLadderHtml(lbMatches) {
+function losersLadderHtml(lbMatches, ev) {
   if (!lbMatches.length) {
     return `<div class="status-msg" style="margin:4px 0;">還沒有人掉入敗部</div>`;
   }
@@ -165,7 +172,7 @@ function losersLadderHtml(lbMatches) {
         <div class="bt-ladder-dot-col"><div class="bt-ladder-dot${m.status === "active" ? " live" : ""}"></div></div>
         <div class="bt-ladder-card">
           <div class="bt-ladder-label">第 ${i + 1} 場</div>
-          <div class="bt-match${m.status === "active" ? " live" : ""}">${bracketCardInnerHtml(m)}</div>
+          <div class="bt-match${m.status === "active" ? " live" : ""}">${bracketCardInnerHtml(m, ev)}</div>
         </div>
       </div>`
       )
@@ -196,7 +203,7 @@ function renderBracketTreeView(ev, parts, matches) {
         ${rows
           .map(
             (m) =>
-              `<div class="bt-match${m.status === "active" ? " live" : ""}" data-round="${m.round}" data-slot="${m.slot}">${bracketCardInnerHtml(m)}</div>`
+              `<div class="bt-match${m.status === "active" ? " live" : ""}" data-round="${m.round}" data-slot="${m.slot}">${bracketCardInnerHtml(m, ev)}</div>`
           )
           .join("")}
       </div>
@@ -210,7 +217,7 @@ function renderBracketTreeView(ev, parts, matches) {
     const wbChamp = parts.find((p) => p.status === "wb_champion");
     const lbChamp = parts.find((p) => p.status === "lb_champion");
     const finalInner = finalMatch
-      ? bracketCardInnerHtml(finalMatch)
+      ? bracketCardInnerHtml(finalMatch, ev)
       : `<div class="bt-row">${ui.icon("hourglass")}<span>${wbChamp ? ui.esc(wbChamp.players.name) : "待定(等勝部決賽)"}</span></div><div class="bt-row">${ui.icon(
           "hourglass"
         )}<span>${lbChamp ? ui.esc(lbChamp.players.name) : "待定(等敗部打完)"}</span></div>`;
@@ -238,7 +245,7 @@ function renderBracketTreeView(ev, parts, matches) {
   if (ev.losers_bracket) {
     const lbMatches = matches.filter((m) => m.bracket === "losers");
     html += sectionTitle("medal", "敗部復活賽戰況");
-    html += losersLadderHtml(lbMatches);
+    html += losersLadderHtml(lbMatches, ev);
   }
 
   html += eliminatedListHtml(parts);
@@ -309,6 +316,11 @@ window.addEventListener("resize", () => {
   if (bracketView === "tree") drawBracketConnectors();
 });
 
+// 是否要在賽程/賽制圖上顯示職業標籤:只有骰子對戰而且主辦人開了職業系統規則才有意義
+function classesEnabled(ev) {
+  return ev.game_type === "dice" && !!(ev.rules && ev.rules.classes);
+}
+
 async function renderBracket(ev) {
   const box = document.getElementById("bracket-list");
   const parts = await db.listParticipants(eventId);
@@ -318,11 +330,20 @@ async function renderBracket(ev) {
     return;
   }
 
+  classByPlayerId = {};
+  parts.forEach((p) => (classByPlayerId[p.player_id] = p.class));
+
   if (!ev.locked) {
+    const showClass = classesEnabled(ev);
     box.innerHTML =
       `<div class="empty">${ui.icon("users")}報名中,已有 ${parts.length} 人參加,等主辦人鎖定名單開賽</div>` +
       parts
-        .map((p) => `<div class="bracket-row"><span>${ui.icon("user")} ${ui.esc(p.players.name)}</span></div>`)
+        .map(
+          (p) =>
+            `<div class="bracket-row"><span>${ui.icon("user")} ${ui.esc(p.players.name)}</span>${
+              showClass && p.class ? `<span>${ui.classTag(p.class)}</span>` : "<span></span>"
+            }</div>`
+        )
         .join("");
     return;
   }
@@ -444,12 +465,14 @@ async function checkMyStatus(ev, matches) {
   const local = db.getLocalPlayer();
   const statusEl = document.getElementById("my-status");
   const quitBtn = document.getElementById("quit-btn");
+  const classBtn = document.getElementById("class-btn");
 
   const spectatorHtml = ui.icon("eye") + "觀戰模式,你目前沒有報名這場活動";
 
   if (!local.id) {
     statusEl.innerHTML = spectatorHtml;
     quitBtn.style.display = "none";
+    classBtn.style.display = "none";
     stopPulse();
     return;
   }
@@ -458,6 +481,7 @@ async function checkMyStatus(ev, matches) {
   if (!myParticipant) {
     statusEl.innerHTML = spectatorHtml;
     quitBtn.style.display = "none";
+    classBtn.style.display = "none";
     stopPulse();
     return;
   }
@@ -465,6 +489,7 @@ async function checkMyStatus(ev, matches) {
   if (!ev.locked) {
     statusEl.innerHTML = ui.icon("circle-check") + "已報名,等主辦人鎖定名單開賽";
     quitBtn.style.display = "inline-flex";
+    classBtn.style.display = classesEnabled(ev) ? "inline-flex" : "none";
     pulse();
     return;
   }
@@ -475,6 +500,7 @@ async function checkMyStatus(ev, matches) {
     clearInterval(pollTimer);
     stopPulse();
     quitBtn.style.display = "none";
+    classBtn.style.display = "none";
     statusEl.innerHTML = statusHtml("matched");
     location.href = `${GAME_PAGE[ev.game_type]}?match=${myParticipant.match_id}&event=${eventId}`;
     return;
@@ -484,6 +510,7 @@ async function checkMyStatus(ev, matches) {
     clearInterval(pollTimer);
     stopPulse();
     quitBtn.style.display = "none";
+    classBtn.style.display = "none";
     statusEl.innerHTML = myParticipant.reward
       ? `${rankBadge(myParticipant.final_rank)}你已出局。獲得獎勵 ${ui.icon("gift")} <b style="color:var(--gold)">${ui.esc(
           myParticipant.reward
@@ -496,6 +523,7 @@ async function checkMyStatus(ev, matches) {
     clearInterval(pollTimer);
     stopPulse();
     quitBtn.style.display = "none";
+    classBtn.style.display = "none";
     statusEl.innerHTML = myParticipant.reward
       ? `${ui.icon("crown")}恭喜奪冠!獎勵 ${ui.icon("gift")} <b style="color:var(--gold)">${ui.esc(myParticipant.reward)}</b>`
       : statusHtml("champion");
@@ -510,9 +538,59 @@ async function checkMyStatus(ev, matches) {
   }
   // 只在這裡設定一次,不要先在函式開頭藏起來又在這裡顯示,兩次設定中間如果剛好碰到 await 讓瀏覽器畫面重繪,
   // 就會真的看到按鈕閃一下消失又出現。整個函式改成每個分支各自只設定一次最終結果。
-  quitBtn.style.display = ["waiting", "pending"].includes(myParticipant.status) ? "inline-flex" : "none";
+  // waiting/pending 都還沒進到自己的對戰(還沒 finalizeDiceState 算防禦骰次數),這時候換職業都還來得及。
+  const stillBeforeOwnMatch = ["waiting", "pending"].includes(myParticipant.status);
+  quitBtn.style.display = stillBeforeOwnMatch ? "inline-flex" : "none";
+  classBtn.style.display = stillBeforeOwnMatch && classesEnabled(ev) ? "inline-flex" : "none";
   pulse();
 }
+
+// 報名後想換職業:跟首頁 pickClass() 同一份 ui.CLASS_NAME/CLASS_ICON/CLASS_DESC,只是這裡開賽前隨時可以再叫出來
+function pickClassLobby() {
+  const box = document.getElementById("class-options");
+  box.innerHTML = "";
+  Object.keys(ui.CLASS_NAME).forEach((key) => {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.style.cssText = "margin:0;padding:14px 12px;text-align:center;cursor:pointer;";
+    card.innerHTML = `
+      <div style="color:var(--gold);">${ui.icon(ui.CLASS_ICON[key], { size: "26px" })}</div>
+      <div style="font-weight:700;margin:8px 0 6px;">${ui.CLASS_NAME[key]}</div>
+      <div style="font-size:10px;color:var(--ink-dim);line-height:1.6;">${ui.esc(ui.CLASS_DESC[key])}</div>
+    `;
+    card.onclick = () => {
+      document.getElementById("class-modal").classList.remove("show");
+      if (window._lobbyClassResolve) window._lobbyClassResolve(key);
+    };
+    box.appendChild(card);
+  });
+  document.getElementById("class-modal").classList.add("show");
+  return new Promise((resolve) => {
+    window._lobbyClassResolve = resolve;
+  });
+}
+
+document.getElementById("class-btn").innerHTML = ui.icon("refresh-ccw") + "更換職業";
+document.getElementById("class-btn").onclick = async () => {
+  const local = db.getLocalPlayer();
+  if (!local.id) return;
+  const chosen = await pickClassLobby();
+  if (!chosen) return;
+  const btn = document.getElementById("class-btn");
+  btn.disabled = true;
+  try {
+    await db.setPlayerClass(eventId, local.id, chosen);
+    if (myParticipant) myParticipant.class = chosen;
+  } catch (e) {
+    await ui.alert("更換失敗:" + (e.message || "未知錯誤"), { title: "操作失敗", tone: "danger" });
+  } finally {
+    btn.disabled = false;
+  }
+};
+document.getElementById("class-modal-close-btn").onclick = () => {
+  document.getElementById("class-modal").classList.remove("show");
+  if (window._lobbyClassResolve) window._lobbyClassResolve(null);
+};
 
 document.getElementById("quit-btn").innerHTML = ui.icon("door-open") + "退出比賽";
 document.getElementById("quit-btn").onclick = async () => {

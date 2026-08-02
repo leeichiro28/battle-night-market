@@ -185,6 +185,95 @@ begin
 end;
 $$;
 
+-- 一場一場來:整個活動同一時間只讓一場對戰進行中。
+-- 以前這段邏輯整個放在前端(db.js 的 activateNextMatch):先 SELECT 有沒有 active 場次,沒有的話才 UPDATE 下一場,
+-- 這兩步中間沒有原子性保證,兩個玩家幾乎同時打完各自的對戰時,兩邊都會查到「沒有 active」然後各自啟動一場,
+-- 造成同時開兩場的 bug。改成這個 RPC,靠 pg_advisory_xact_lock 讓同一場活動同時只有一個呼叫能真的往下跑,
+-- 後面的呼叫會卡住等前面那個呼叫的交易 commit,再重新檢查一次「有沒有 active 場次」,徹底避免競態。
+create or replace function activate_next_match(p_event_id uuid)
+returns uuid
+language plpgsql
+as $$
+declare
+  ev record;
+  next_match record;
+  final_state jsonb;
+  class1 text;
+  class2 text;
+  field_val text;
+  shield1_n int;
+  shield2_n int;
+  prefer_bracket text;
+  new_lb_match_id uuid;
+begin
+  perform pg_advisory_xact_lock(hashtext(p_event_id::text));
+
+  if exists (select 1 from matches where event_id = p_event_id and status = 'active') then
+    return null; -- 已經有一場在打,先不排下一場
+  end if;
+
+  select * into ev from events where id = p_event_id;
+
+  prefer_bracket := case ev.last_match_bracket
+    when 'winners' then 'losers'
+    when 'losers' then 'winners'
+    else null
+  end;
+
+  select * into next_match
+  from matches
+  where event_id = p_event_id and status = 'pending'
+    and player1_id is not null and player2_id is not null
+  order by
+    case when prefer_bracket is not null and bracket = prefer_bracket then 0 else 1 end,
+    case bracket when 'winners' then 0 when 'losers' then 1 when 'final' then 2 else 9 end,
+    coalesce(round, 0),
+    coalesce(slot, 999),
+    created_at
+  limit 1;
+
+  if next_match.id is not null then
+    -- 對戰真正要開打前才重新計算防禦骰次數/戰場特性,跟原本前端 finalizeDiceState 的時機、算法一致
+    if ev.game_type = 'dice' then
+      select class into class1 from event_participants where event_id = p_event_id and player_id = next_match.player1_id;
+      select class into class2 from event_participants where event_id = p_event_id and player_id = next_match.player2_id;
+      if ev.rules->>'field_mod' = 'true' then
+        field_val := (array['crit','shield_plus','lifesteal','chaos_tie','fast_timer','shadow'])[floor(random()*6+1)];
+      else
+        field_val := null;
+      end if;
+      shield1_n := greatest(0, 2 + (case when class1='guardian' then 1 else 0 end) + (case when field_val='shield_plus' then 1 else 0 end) - (case when field_val='shadow' then 1 else 0 end));
+      shield2_n := greatest(0, 2 + (case when class2='guardian' then 1 else 0 end) + (case when field_val='shield_plus' then 1 else 0 end) - (case when field_val='shadow' then 1 else 0 end));
+      final_state := next_match.state || jsonb_build_object(
+        'class1', class1, 'class2', class2,
+        'shield1', shield1_n, 'shield2', shield2_n,
+        'field_mod', field_val
+      );
+    else
+      final_state := next_match.state;
+    end if;
+
+    update matches set status = 'active', state = final_state where id = next_match.id;
+    update event_participants set status = 'matched', match_id = next_match.id
+      where event_id = p_event_id and player_id in (next_match.player1_id, next_match.player2_id);
+
+    return next_match.id;
+  end if;
+
+  -- 沒有排隊中的對戰,看看敗部候位區有沒有兩人可以配對開新的一場
+  if ev.losers_bracket and ev.status <> 'closed' then
+    new_lb_match_id := match_players(p_event_id, ev.game_type, 'losers');
+    if new_lb_match_id is not null then
+      update matches set status = 'active' where id = new_lb_match_id and status = 'pending';
+      update event_participants set status = 'matched' where match_id = new_lb_match_id;
+      return new_lb_match_id;
+    end if;
+  end if;
+
+  return null;
+end;
+$$;
+
 -- 出招提交函式:原子化寫入,避免雙方同時送出時互相覆蓋
 create or replace function submit_move(p_match_id uuid, p_slot int, p_payload jsonb)
 returns void

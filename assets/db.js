@@ -304,33 +304,6 @@ const db = (function () {
     return gameType === "dice" ? diceInitState() : rps5InitState();
   }
 
-  const FIELD_MODS = ["crit", "shield_plus", "lifesteal", "chaos_tie", "fast_timer", "shadow"];
-
-  // 對戰真正要開打前(狀態轉為 active 那一刻),依實際上場的兩位玩家職業重新計算
-  // 防禦骰次數、戰場特性等資料。放到這一刻才算,才能正確反映勝部賽程樹裡「事先不知道是誰」的後面幾輪對戰。
-  async function finalizeDiceState(eventId, gameType, rules, state, player1Id, player2Id) {
-    if (gameType !== "dice") return state;
-    const { data: rows } = await client
-      .from("event_participants")
-      .select("player_id, class")
-      .eq("event_id", eventId)
-      .in("player_id", [player1Id, player2Id]);
-    const class1 = rows?.find((r) => r.player_id === player1Id)?.class || null;
-    const class2 = rows?.find((r) => r.player_id === player2Id)?.class || null;
-    let fieldMod = null;
-    if (rules && rules.field_mod) {
-      fieldMod = FIELD_MODS[Math.floor(Math.random() * FIELD_MODS.length)];
-    }
-    const shield1 = Math.max(
-      0,
-      2 + (class1 === "guardian" ? 1 : 0) + (fieldMod === "shield_plus" ? 1 : 0) - (fieldMod === "shadow" ? 1 : 0)
-    );
-    const shield2 = Math.max(
-      0,
-      2 + (class2 === "guardian" ? 1 : 0) + (fieldMod === "shield_plus" ? 1 : 0) - (fieldMod === "shadow" ? 1 : 0)
-    );
-    return { ...state, class1, class2, shield1, shield2, field_mod: fieldMod };
-  }
 
   async function lockAndGenerateBracket(eventId) {
     const ev = await getEvent(eventId);
@@ -455,75 +428,13 @@ const db = (function () {
   }
 
   // 一場一場來:整個活動同一時間只讓一場對戰進行中。
-  // 每次有對戰結束(或有新玩家掉入敗部候位區)就呼叫這個函式,
-  // 它會找出目前沒有對戰進行中,才從排隊名單挑下一場開打。
-  const BRACKET_ORDER = { winners: 0, losers: 1, final: 2 };
-
+  // 每次有對戰結束(或有新玩家掉入敗部候位區)就呼叫這個函式。
+  // 實際的「查有沒有 active 場次→挑下一場→啟動」全部改放到 Postgres 的 activate_next_match RPC 裡原子執行
+  // (見 supabase-schema.sql),不要在這裡用 select 再 update 兩步做,兩步中間沒有原子性保證,
+  // 兩個玩家幾乎同時打完各自的對戰時會兩邊都查到「沒有 active」然後各自啟動一場,導致同時開兩場對戰的 bug。
   async function activateNextMatch(eventId) {
-    const { data: actives, error: activeErr } = await client
-      .from("matches")
-      .select("id")
-      .eq("event_id", eventId)
-      .eq("status", "active")
-      .limit(1);
-    if (activeErr) throw activeErr;
-    if (actives && actives.length) return; // 已經有一場在打,先不排下一場
-
-    const ev = await getEvent(eventId);
-
-    const { data: pending, error: pendErr } = await client
-      .from("matches")
-      .select("*")
-      .eq("event_id", eventId)
-      .eq("status", "pending")
-      .not("player1_id", "is", null)
-      .not("player2_id", "is", null);
-    if (pendErr) throw pendErr;
-
-    if (pending && pending.length) {
-      const preferBracket = ev.last_match_bracket === "winners" ? "losers" : ev.last_match_bracket === "losers" ? "winners" : null;
-      pending.sort((a, b) => {
-        if (preferBracket) {
-          const pa = a.bracket === preferBracket ? 0 : 1;
-          const pb = b.bracket === preferBracket ? 0 : 1;
-          if (pa !== pb) return pa - pb;
-        }
-        const br = (BRACKET_ORDER[a.bracket] ?? 9) - (BRACKET_ORDER[b.bracket] ?? 9);
-        if (br) return br;
-        const rr = (a.round || 0) - (b.round || 0);
-        if (rr) return rr;
-        const sr = (a.slot ?? 999) - (b.slot ?? 999);
-        if (sr) return sr;
-        return new Date(a.created_at) - new Date(b.created_at);
-      });
-      const next = pending[0];
-      const finalState = await finalizeDiceState(eventId, ev.game_type, ev.rules, next.state, next.player1_id, next.player2_id);
-      await client.from("matches").update({ status: "active", state: finalState }).eq("id", next.id);
-      await client
-        .from("event_participants")
-        .update({ status: "matched", match_id: next.id })
-        .eq("event_id", eventId)
-        .in("player_id", [next.player1_id, next.player2_id]);
-      return;
-    }
-
-    // 沒有排隊中的對戰,看看敗部候位區有沒有兩人可以配對開新的一場
-    if (ev.losers_bracket && ev.status !== "closed") {
-      let newMatchId = null;
-      try {
-        newMatchId = await tryMatch(eventId, ev.game_type, "losers");
-      } catch (e) {
-        // 候位人數不足時 RPC 會回傳 null,忽略即可
-      }
-      if (newMatchId) {
-        // 已經確認過此刻沒有其他場次在進行,直接啟動這場敗部對戰
-        await client.from("matches").update({ status: "active" }).eq("id", newMatchId).eq("status", "pending");
-        await client
-          .from("event_participants")
-          .update({ status: "matched" })
-          .eq("match_id", newMatchId);
-      }
-    }
+    const { error } = await client.rpc("activate_next_match", { p_event_id: eventId });
+    if (error) throw error;
   }
 
   // ---------- 對戰 ----------

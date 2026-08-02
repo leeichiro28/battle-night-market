@@ -21,6 +21,7 @@
     <div class="card" style="text-align:center;">
       <div id="my-status" class="status-msg">確認狀態中...</div>
       <div class="timer-bar"><div id="pulse-bar" style="width:0%"></div></div>
+      <button class="btn ghost small" id="class-btn" style="display:none;margin-top:14px;margin-right:8px;">更換職業</button>
       <button class="btn ghost small" id="quit-btn" style="display:none;margin-top:14px;">退出比賽</button>
     </div>
 
@@ -46,6 +47,14 @@
       <h3>賽制與玩法規則</h3>
       <div id="rule-content"></div>
       <button class="btn ghost block" id="rule-close-btn" style="margin-top:14px;">關閉</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="class-modal">
+    <div class="modal-card">
+      <h3>選擇職業</h3>
+      <div id="class-options" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;"></div>
+      <button class="btn ghost block" id="class-modal-close-btn" style="margin-top:14px;">取消</button>
     </div>
   </div>
 

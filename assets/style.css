@@ -195,6 +195,15 @@ a{color:var(--gold);text-decoration:none;}
 .tag.open{color:var(--green);border-color:var(--green);}
 .tag.closed{color:var(--red);border-color:var(--red);}
 .tag.running{color:var(--gold);border-color:var(--gold-d);}
+
+/* 職業小標籤:賽程列表/賽制圖裡玩家名字旁邊用,每個職業一個顏色方便一眼認出 */
+.class-tag{font-size:10px;padding:3px 8px;}
+.class-tag-fighter{color:#E5484D;border-color:#E5484D;}
+.class-tag-guardian{color:#3DBE6C;border-color:#3DBE6C;}
+.class-tag-gambler{color:#F2B705;border-color:#C99A04;}
+.class-tag-assassin{color:#9C97B0;border-color:#9C97B0;}
+.class-tag-mage{color:#7C9CF2;border-color:#7C9CF2;}
+.class-tag-luckster{color:#4DD0C9;border-color:#4DD0C9;}
 [data-el="field-mod-tag"]{
   font-size:15px !important;
   font-weight:700;

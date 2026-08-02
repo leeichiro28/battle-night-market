@@ -124,6 +124,15 @@ const ui = (function () {
     dual_hand: { icon: "split", label: "雙手出招" },
   };
   const CLASS_ICON = { fighter: "swords", guardian: "shield", gambler: "dice-5", assassin: "sword", mage: "sparkles", luckster: "clover" };
+  const CLASS_NAME = { fighter: "鬥士", guardian: "守衛", gambler: "賭徒", assassin: "刺客", mage: "法師", luckster: "幸運兒" };
+  const CLASS_DESC = {
+    fighter: "猛攻姿態加成更高(HP低於40%再更高),大招:血怒(怒氣值全滿)",
+    guardian: "防禦骰+1次,所有受傷固定-1,擋下2次攻擊後下次命中+3傷害,大招:金鐘罩(完全免疫一次)",
+    gambler: "雙骰豪賭不限次數+1傷害,但每次有35%機率凸槌自傷2點,大招:孤注一擲(必定爆擊)",
+    assassin: "連擊值疊加x2,大招:背刺(無視對方防禦骰,對方穩紮穩打時再x3傷害)",
+    mage: "道具骰效果加強,大招:法術反射(不管有沒有被防禦骰擋下,都反彈對方原本傷害的一半給對方)",
+    luckster: "平手直接判定自己獲勝,大招:命運骰(讓雙方這局重新擲骰)",
+  };
 
   function gameLabel(type) {
     return (GAME[type] && GAME[type].label) || type;
@@ -147,6 +156,11 @@ const ui = (function () {
   }
   function losersTag() {
     return tag("medal", "敗部復活賽");
+  }
+  // 賽程列表/賽制圖裡玩家名字旁邊的職業小標籤,沒選職業就不顯示
+  function classTag(key) {
+    if (!key || !CLASS_NAME[key]) return "";
+    return tag(CLASS_ICON[key], CLASS_NAME[key], "class-tag class-tag-" + key);
   }
   function ruleTags(rules) {
     return Object.keys(rules || {})
@@ -334,6 +348,8 @@ const ui = (function () {
     GAME,
     RULE,
     CLASS_ICON,
+    CLASS_NAME,
+    CLASS_DESC,
     gameLabel,
     gameIcon,
     statusLabel,
@@ -341,6 +357,7 @@ const ui = (function () {
     gameTag,
     statusTag,
     losersTag,
+    classTag,
     ruleTags,
     formatDeadline,
     deadlineTag,

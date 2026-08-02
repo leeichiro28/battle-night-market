@@ -34,27 +34,18 @@ document.getElementById("discord-login-btn").onclick = async () => {
 };
 document.getElementById("discord-login-btn").innerHTML = LOGIN_BTN_HTML;
 
-const CLASS_INFO = {
-  fighter: { icon: "swords", name: "鬥士", desc: "猛攻姿態加成更高(HP低於40%再更高),大招:血怒(怒氣值全滿)" },
-  guardian: { icon: "shield", name: "守衛", desc: "防禦骰+1次,所有受傷固定-1,擋下2次攻擊後下次命中+3傷害,大招:金鐘罩(完全免疫一次)" },
-  gambler: { icon: "dice-5", name: "賭徒", desc: "雙骰豪賭不限次數+1傷害,但每次有25%機率凸槌自傷1點,大招:孤注一擲(必定爆擊)" },
-  assassin: { icon: "sword", name: "刺客", desc: "連擊值疊加x2,大招:背刺(無視對方防禦骰,對方穩紮穩打時再x3傷害)" },
-  mage: { icon: "sparkles", name: "法師", desc: "道具骰效果加強,大招:法術反射(受到的傷害反彈一半給對方)" },
-  luckster: { icon: "clover", name: "幸運兒", desc: "平手直接判定自己獲勝,大招:命運骰(讓雙方這局重新擲骰)" },
-};
-
+// 職業圖示/名稱/說明統一放在 assets/ui.js 的 CLASS_ICON / CLASS_NAME / CLASS_DESC,這裡不要自己再寫一份
 function pickClass() {
   const box = document.getElementById("class-options");
   box.innerHTML = "";
-  Object.keys(CLASS_INFO).forEach((key) => {
-    const info = CLASS_INFO[key];
+  Object.keys(ui.CLASS_NAME).forEach((key) => {
     const card = document.createElement("div");
     card.className = "card";
     card.style.cssText = "margin:0;padding:14px 12px;text-align:center;cursor:pointer;";
     card.innerHTML = `
-      <div style="color:var(--gold);">${ui.icon(info.icon, { size: "26px" })}</div>
-      <div style="font-weight:700;margin:8px 0 6px;">${info.name}</div>
-      <div style="font-size:10px;color:var(--ink-dim);line-height:1.6;">${ui.esc(info.desc)}</div>
+      <div style="color:var(--gold);">${ui.icon(ui.CLASS_ICON[key], { size: "26px" })}</div>
+      <div style="font-weight:700;margin:8px 0 6px;">${ui.CLASS_NAME[key]}</div>
+      <div style="font-size:10px;color:var(--ink-dim);line-height:1.6;">${ui.esc(ui.CLASS_DESC[key])}</div>
     `;
     card.onclick = () => finishPick(key);
     box.appendChild(card);
