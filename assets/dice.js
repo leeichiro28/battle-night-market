@@ -508,10 +508,10 @@ async function resolveRoundIfReady(state) {
         }
       }
 
-      // 法師大招:法術反射,不看這局傷害有沒有被防禦骰/金鐘罩擋下,一律照對方原本要打出的傷害反彈一半,
+      // 法師大招:法術反射,不看這局傷害有沒有被防禦骰/金鐘罩擋下,一律照對方原本要打出的傷害 100% 反彈回去,
       // 這樣防禦骰(擋自己)跟反射(彈對方)可以同時生效,大招才不會因為剛好防到就直接白開。
       if (rules.classes && loserUltThis && loserClass === "mage" && dmgBeforeBlock > 0) {
-        const reflectDmg = Math.floor(dmgBeforeBlock / 2);
+        const reflectDmg = dmgBeforeBlock;
         if (reflectDmg > 0) {
           if (winnerSlot === 1) hp1 = Math.max(0, hp1 - reflectDmg);
           else hp2 = Math.max(0, hp2 - reflectDmg);
