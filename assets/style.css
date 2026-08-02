@@ -827,11 +827,14 @@ label{
 }
 .rule-table td:first-child,.rule-table th:first-child{
   color:var(--ink);font-weight:700;white-space:nowrap;
-  display:flex;align-items:center;gap:6px;
+  display:flex;align-items:flex-start;gap:6px;
 }
 .rule-table td:first-child .ico,.rule-table th .ico{width:14px;height:14px;flex-shrink:0;}
 .rule-table tbody tr:last-child td{border-bottom:none;}
 .rule-table tbody tr:hover{background:rgba(242,183,5,.05);}
+.rule-table.calc-table{min-width:520px;}
+.rule-table.calc-table td:first-child{display:table-cell;color:var(--gold-d);font-family:'Space Mono',monospace;width:32px;}
+.rule-table.calc-table td:nth-child(2){color:var(--ink);}
 .modal-card p{font-size:13px;color:var(--ink-dim);margin:0 0 10px;line-height:1.7;}
 .modal-card p:first-of-type{margin-top:0;}
 
