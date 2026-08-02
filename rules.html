@@ -103,7 +103,7 @@
               </thead>
               <tbody>
                 <tr>
-                  <td><i data-lucide="swords" class="ico"></i> 鬥士</td>
+                  <td><span class="row-label"><i data-lucide="swords" class="ico"></i> 鬥士</span></td>
                   <td><b style="color:var(--gold);">+2</b>(HP≤40%時 +3,其他職業 +1)</td>
                   <td>一般</td>
                   <td>一般</td>
@@ -112,7 +112,7 @@
                   <td>血怒:讓怒氣值直接就緒,下次獲勝多 +2 傷害(要主辦人有開「怒氣值」規則才有效果)</td>
                 </tr>
                 <tr>
-                  <td><i data-lucide="shield" class="ico"></i> 守衛</td>
+                  <td><span class="row-label"><i data-lucide="shield" class="ico"></i> 守衛</span></td>
                   <td>一般</td>
                   <td>一般</td>
                   <td>一般</td>
@@ -121,7 +121,7 @@
                   <td>金鐘罩:完全免疫下一次傷害,不消耗防禦骰</td>
                 </tr>
                 <tr>
-                  <td><i data-lucide="dice-5" class="ico"></i> 賭徒</td>
+                  <td><span class="row-label"><i data-lucide="dice-5" class="ico"></i> 賭徒</span></td>
                   <td>一般</td>
                   <td>一般</td>
                   <td>一般</td>
@@ -130,7 +130,7 @@
                   <td>孤注一擲:這局必定爆擊,額外 +2 傷害</td>
                 </tr>
                 <tr>
-                  <td><i data-lucide="sword" class="ico"></i> 刺客</td>
+                  <td><span class="row-label"><i data-lucide="sword" class="ico"></i> 刺客</span></td>
                   <td>一般</td>
                   <td>疊加速度 <b style="color:var(--gold);">x2</b>(贏1局+2層,其他職業+1層)</td>
                   <td>一般</td>
@@ -139,7 +139,7 @@
                   <td>背刺:這局無視對方防禦骰(守衛「金鐘罩」除外);若對方那局選了穩紮穩打,傷害再 x3</td>
                 </tr>
                 <tr>
-                  <td><i data-lucide="sparkles" class="ico"></i> 法師</td>
+                  <td><span class="row-label"><i data-lucide="sparkles" class="ico"></i> 法師</span></td>
                   <td>一般</td>
                   <td>一般</td>
                   <td>抽到爆擊多 <b style="color:var(--gold);">+1</b>;抽到回血多 <b style="color:var(--gold);">+1</b></td>
@@ -148,7 +148,7 @@
                   <td>法術反射:這局如果自己受到傷害,反彈 50% 給對方</td>
                 </tr>
                 <tr>
-                  <td><i data-lucide="clover" class="ico"></i> 幸運兒</td>
+                  <td><span class="row-label"><i data-lucide="clover" class="ico"></i> 幸運兒</span></td>
                   <td>一般</td>
                   <td>一般</td>
                   <td>一般</td>
@@ -235,30 +235,78 @@
 
         <div class="game-section">
           <h4><i data-lucide="gift" class="ico"></i> 後台可額外開啟的進階規則</h4>
-          <p style="color:var(--ink-dim);line-height:1.9;">
-          <i data-lucide="bomb" class="ico"></i> <b style="color:var(--ink);">隱藏第六手勢:炸彈</b>:第 3 回合起,每回合約有 15% 機率額外開放「炸彈」這個選項。炸彈 勝 石頭、剪刀(直接炸爛);炸彈 敗 布、蜥蜴(布悶熄引信、蜥蜴咬斷引信不怕死);炸彈 對 史波克 是特殊平局(邏輯拆彈,雙方不掉血)。<br/><br/>
-          <i data-lucide="tornado" class="ico"></i> <b style="color:var(--ink);">場地規則</b>:開局隨機決定這一局固定生效的特殊效果,3 選 1:<br/>
-          &nbsp;&nbsp;• 磐石戰場:靠石頭獲勝時,傷害額外 +1<br/>
-          &nbsp;&nbsp;• 手速戰場:究極手勢這局可以用 2 次<br/>
-          &nbsp;&nbsp;• 疾風戰場:思考時間縮短到 20 秒<br/><br/>
-          <i data-lucide="gift" class="ico"></i> <b style="color:var(--ink);">道具符</b>:每 3 回合,雙方各自隨機拿到一個道具(兩人不一定相同),持有到觸發時機才會消耗,不會被下一輪重新洗掉:<br/>
-          &nbsp;&nbsp;• <i data-lucide="shield" class="ico"></i> 護盾符:下次你落敗要扣血時,直接免傷,只是把這次的傷害歸零<br/>
-          &nbsp;&nbsp;• <i data-lucide="zap" class="ico"></i> 增幅符:下次你獲勝時,傷害額外 +2<br/>
-          &nbsp;&nbsp;• <i data-lucide="eye" class="ico"></i> 偵測符:立刻看到對方上一次(不是這次)出了什麼手勢,情報用<br/><br/>
-          <i data-lucide="venetian-mask" class="ico"></i> <b style="color:var(--ink);">假動作</b>:出招前可以先公開宣告這局「偏攻擊」或「偏防禦」,但不講具體是哪個手勢。這個宣告純粹是情報,不會直接影響傷害計算,對方看得到但不知道真假,誠實或唬人都可以;唬多了容易被〈讀心值〉或對方肉眼抓到規律。宣告會跟手勢一起在戰報揭曉。<br/><br/>
-          <i data-lucide="zap" class="ico"></i> <b style="color:var(--ink);">連段技</b>:系統會記錄你最近用哪個手勢獲勝。如果你連續 3 局都用同一個手勢獲勝,額外 +2 傷害,並跳出「連段技發動!」的大字公告;之後只要繼續用同一招連勝下去,每一局都會持續拿到這個加成。要不要賭一把繼續出同一招,風險自負,對手也可能已經看出你的規律。<br/><br/>
-          <i data-lucide="brain" class="ico"></i> <b style="color:var(--ink);">讀心值</b>:系統會偷偷統計對方整場出招的習慣分布(例如「最常出剪刀」)。如果你選中「剋制對方最常出的那招」並獲勝,會跳出「讀心成功!」,額外 +1 傷害。開啟這項規則時,對戰畫面也會顯示對方的即時出招傾向統計,讓你邊打邊分析;純觀眾則兩邊的統計都看得到。<br/><br/>
-          <i data-lucide="trending-up" class="ico"></i> <b style="color:var(--ink);">氣勢系統</b>:連勝 2 局起,下一擊額外 +1 傷害,氣勢會一直維持到你輸掉一局為止;連續落敗 2 局後,如果靠獲勝逆轉,那一擊的傷害會直接翻倍(背水一戰)。避免一面倒的場次讓落後方直接躺平放棄。<br/><br/>
-          <i data-lucide="shuffle" class="ico"></i> <b style="color:var(--ink);">手勢突變</b>:如果你連續 3 回合都出同一個手勢,下一回合系統會強制把那個手勢從你的選項裡鎖住,逼你換一招,防止有人靠「無腦一直出同一招」硬撐。
-          </p>
+          <div class="rule-table-wrap">
+            <table class="rule-table">
+              <thead>
+                <tr><th>規則</th><th>觸發時機</th><th>效果</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="row-label"><i data-lucide="bomb" class="ico"></i> 隱藏第六手勢:炸彈</span></td>
+                  <td>第 3 回合起,每回合約 15% 機率額外開放</td>
+                  <td>勝 石頭、剪刀;敗 布、蜥蜴;對 史波克 是特殊平局,雙方不掉血</td>
+                </tr>
+                <tr>
+                  <td><span class="row-label"><i data-lucide="tornado" class="ico"></i> 場地規則</span></td>
+                  <td>開局隨機 3 選 1,整局固定生效</td>
+                  <td>磐石戰場:石頭獲勝 +1 傷害 / 手速戰場:究極手勢可用 2 次 / 疾風戰場:限時縮短到 20 秒</td>
+                </tr>
+                <tr>
+                  <td><span class="row-label"><i data-lucide="gift" class="ico"></i> 道具符</span></td>
+                  <td>每 3 回合雙方各自隨機拿 1 個,持有到觸發時機才消耗</td>
+                  <td><i data-lucide="shield" class="ico"></i> 護盾符:下次落敗免傷 / <i data-lucide="zap" class="ico"></i> 增幅符:下次獲勝 +2 傷害 / <i data-lucide="eye" class="ico"></i> 偵測符:看到對方上一手出了什麼</td>
+                </tr>
+                <tr>
+                  <td><span class="row-label"><i data-lucide="venetian-mask" class="ico"></i> 假動作</span></td>
+                  <td>出招前先公開宣告</td>
+                  <td>宣告「偏攻擊」或「偏防禦」,純情報不影響傷害,跟手勢一起在戰報揭曉,唬多了容易被看出規律</td>
+                </tr>
+                <tr>
+                  <td><span class="row-label"><i data-lucide="zap" class="ico"></i> 連段技</span></td>
+                  <td>連續 3 局用同一手勢獲勝</td>
+                  <td>額外 <b style="color:var(--gold);">+2</b> 傷害,之後繼續用同招連勝,每局都持續拿到加成</td>
+                </tr>
+                <tr>
+                  <td><span class="row-label"><i data-lucide="brain" class="ico"></i> 讀心值</span></td>
+                  <td>選中對方最常出的招並獲勝</td>
+                  <td>額外 <b style="color:var(--gold);">+1</b> 傷害;對戰畫面會顯示對方即時出招傾向統計</td>
+                </tr>
+                <tr>
+                  <td><span class="row-label"><i data-lucide="trending-up" class="ico"></i> 氣勢系統</span></td>
+                  <td>連勝 2 局起 / 連敗 2 局後逆轉</td>
+                  <td>下一擊 <b style="color:var(--gold);">+1</b> 傷害 / 逆轉那一擊傷害直接 <b style="color:var(--gold);">x2</b>(背水一戰)</td>
+                </tr>
+                <tr>
+                  <td><span class="row-label"><i data-lucide="shuffle" class="ico"></i> 手勢突變</span></td>
+                  <td>連續 3 回合出同一手勢</td>
+                  <td>下一回合系統把那個手勢鎖住,逼你換一招</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div class="game-section">
           <h4><i data-lucide="list-ordered" class="ico"></i> 結構性改版(可選,會改變整場對戰的玩法節奏)</h4>
-          <p style="color:var(--ink-dim);line-height:1.9;">
-          <i data-lucide="list-ordered" class="ico"></i> <b style="color:var(--ink);">BO制</b>:開啟後,整場對戰會拋開「HP 累加」這一層機制,改成每回合雙方直接出招定輸贏,贏的一方直接拿下這一分,率先取得 <b style="color:var(--ink);">3</b> 分的一方贏得整場對戰。原本「HP ≤9 雙倍傷害」的緊張感,改成打到 2:2 時觸發「賽末點!」的大字公告來製造氣氛,效果相近但不用管理血量。開啟 BO制 時,道具符裡的護盾符/增幅符(靠傷害運作)不會發放,其餘規則(炸彈、場地規則、假動作、連段技的判定基準改成局數、讀心值、氣勢系統改成局分、手勢突變)都照樣可以搭配使用。<br/><br/>
-          <i data-lucide="split" class="ico"></i> <b style="color:var(--ink);">雙手出招</b>:落後的一方整場限用 <b style="color:var(--ink);">1</b> 次「雙手符」,可以同時出兩個手勢,只要其中一個贏過對方的招就算贏。觸發資格:HP 制下,自己 HP ≤15(約半血)才能使用;BO制下,自己的局分落後對方才能使用。限用 1 次是殘局翻盤手段,不會變成必勝招,保留原本猜拳的公平性。
-          </p>
+          <div class="rule-table-wrap">
+            <table class="rule-table">
+              <thead>
+                <tr><th>機制</th><th>觸發資格</th><th>效果</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="row-label"><i data-lucide="list-ordered" class="ico"></i> BO制</span></td>
+                  <td>開啟後整場適用</td>
+                  <td>拋開 HP 累加,每回合直接分出這一分的勝負,率先取得 3 分的一方贏得整場;打到 2:2 觸發「賽末點」;道具符裡的護盾符/增幅符(靠傷害運作)不會發放,其餘規則照樣可以搭配</td>
+                </tr>
+                <tr>
+                  <td><span class="row-label"><i data-lucide="split" class="ico"></i> 雙手出招</span></td>
+                  <td>HP制:自己 HP ≤15 才能用;BO制:自己局分落後才能用;整場限用 1 次</td>
+                  <td>同時出兩個手勢,只要其中一個贏過對方的招就算贏</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
       </div>
