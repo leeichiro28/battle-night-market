@@ -828,6 +828,23 @@ const db = (function () {
       const { error: insertErr } = await client.from("auction_lots").insert(rows);
       if (insertErr) throw insertErr;
     }
+    // 順便排一批夜市任務(問答/猜謎),平均分散在整場預估時長內,自動開放作答。
+    const totalDurationSec = Math.max(waves.length, 1) * waveIntervalSec;
+    const tasks = buildAuctionTaskSchedule(totalDurationSec);
+    if (tasks.length) {
+      const taskRows = tasks.map((t) => ({
+        event_id: eventId,
+        question: t.q,
+        options: t.options,
+        correct_index: t.correct,
+        task_type: t.type,
+        reward: t.reward,
+        status: "scheduled",
+        scheduled_at: new Date(now + t.offsetSec * 1000).toISOString(),
+      }));
+      const { error: taskErr } = await client.from("auction_tasks").insert(taskRows);
+      if (taskErr) throw taskErr;
+    }
     const { error } = await client
       .from("events")
       .update({ locked: true, status: "running" })
@@ -884,6 +901,18 @@ const db = (function () {
             .from("auction_participants")
             .update({ coins: Math.max(0, part.coins - lot.current_price) })
             .eq("id", part.id);
+        }
+      }
+      // 參與退補:這件商品有出過價、但最後沒標到的人,結標後每人退一小筆財神幣當參與獎勵,
+      // 鼓勵大家踴躍出手而不是全場觀望。金額 = 這件商品的最小加價單位 * 倍率,越稀有的商品退越多。
+      const { data: bidRows, error: bidErr } = await client.from("auction_bids").select("player_id").eq("lot_id", lot.id);
+      if (bidErr) throw bidErr;
+      const refund = lot.min_increment * AUCTION_PARTICIPATION_REFUND_MULT;
+      const losingBidderIds = Array.from(new Set((bidRows || []).map((b) => b.player_id))).filter((pid) => pid !== lot.current_bidder_id);
+      for (const pid of losingBidderIds) {
+        const losingPart = await getMyAuctionParticipant(lot.event_id, pid);
+        if (losingPart) {
+          await client.from("auction_participants").update({ coins: losingPart.coins + refund }).eq("id", losingPart.id);
         }
       }
       await client.from("auction_lots").update({ settled: true }).eq("id", lot.id);
@@ -945,6 +974,117 @@ const db = (function () {
     if (error) throw error;
     if (!updated || !updated.length) throw new Error("手慢了,請再按一次");
     return { gain, participant: updated[0] };
+  }
+
+  // ---------- 夜市任務(問答／猜謎) ----------
+  async function listAuctionTasks(eventId) {
+    const { data, error } = await client
+      .from("auction_tasks")
+      .select("*")
+      .eq("event_id", eventId)
+      .order("scheduled_at", { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+
+  // 每個看拍賣畫面的人,瀏覽器背景每秒都會呼叫這兩個函式來推進任務,
+  // 跟商品排程一樣用 status 當條件鎖,避免好幾個人同時呼叫時同一題被推進兩次。
+  async function activateDueAuctionTasks(eventId) {
+    const nowIso = new Date().toISOString();
+    const { data: due, error } = await client
+      .from("auction_tasks")
+      .select("id")
+      .eq("event_id", eventId)
+      .eq("status", "scheduled")
+      .lte("scheduled_at", nowIso);
+    if (error) throw error;
+    if (!due || !due.length) return;
+    const endsAt = new Date(Date.now() + AUCTION_TASK_DURATION_SEC * 1000).toISOString();
+    for (const t of due) {
+      await client.from("auction_tasks").update({ status: "live", ends_at: endsAt }).eq("id", t.id).eq("status", "scheduled");
+    }
+  }
+
+  async function settleExpiredAuctionTasks(eventId) {
+    const nowIso = new Date().toISOString();
+    const { error } = await client
+      .from("auction_tasks")
+      .update({ status: "done" })
+      .eq("event_id", eventId)
+      .eq("status", "live")
+      .lte("ends_at", nowIso);
+    if (error) throw error;
+  }
+
+  // 玩家作答:靠 auction_task_answers 的 unique(task_id, player_id) 限制擋重複作答,
+  // 答對才會發財神幣,答錯不倒扣、但這題也不能再猜第二次。
+  async function answerAuctionTask(taskId, eventId, playerId, choiceIndex) {
+    const { data: task, error: taskErr } = await client.from("auction_tasks").select("*").eq("id", taskId).single();
+    if (taskErr) throw taskErr;
+    if (task.status !== "live" || (task.ends_at && new Date(task.ends_at).getTime() < Date.now())) {
+      throw new Error("這題已經結束了,晚了一步");
+    }
+    const correct = choiceIndex === task.correct_index;
+    const { error: insErr } = await client
+      .from("auction_task_answers")
+      .insert({ task_id: taskId, event_id: eventId, player_id: playerId, correct });
+    if (insErr) {
+      if (insErr.code === "23505") throw new Error("這題你已經回答過了");
+      throw insErr;
+    }
+    let gain = 0;
+    let participant = null;
+    if (correct) {
+      const part = await getMyAuctionParticipant(eventId, playerId);
+      if (part) {
+        gain = task.reward;
+        const { data: updated, error: updErr } = await client
+          .from("auction_participants")
+          .update({ coins: part.coins + gain })
+          .eq("id", part.id)
+          .select();
+        if (updErr) throw updErr;
+        participant = updated && updated[0];
+      }
+    }
+    return { correct, gain, participant };
+  }
+
+  // 一次撈出這位玩家在這場活動裡「已經回答過的任務」,前端拿來判斷每題要顯示選項還是顯示結果。
+  async function listMyAuctionTaskAnswers(eventId, playerId) {
+    const { data, error } = await client
+      .from("auction_task_answers")
+      .select("*")
+      .eq("event_id", eventId)
+      .eq("player_id", playerId);
+    if (error) throw error;
+    return data || [];
+  }
+
+  // ---------- 幸運攤位(快速小賭注) ----------
+  // 下注:先驗證金額跟冷卻,骰子結果用 resolveAuctionLuckyBet()(auction-catalog.js)純計算算出,
+  // 寫回財神幣時用「coins 沒變 + 冷卻沒變」當樂觀鎖,避免跟打工/出價/任務同時發生時互相蓋掉。
+  async function placeAuctionLuckyBet(eventId, playerId, betAmount, guess) {
+    if (guess !== "big" && guess !== "small") throw new Error("請選大或小");
+    const amount = Math.floor(betAmount);
+    if (!amount || amount < AUCTION_LUCKY_MIN_BET) throw new Error(`下注至少要 ${AUCTION_LUCKY_MIN_BET} 財神幣`);
+    if (amount > AUCTION_LUCKY_MAX_BET) throw new Error(`單次下注最多 ${AUCTION_LUCKY_MAX_BET} 財神幣`);
+    const part = await getMyAuctionParticipant(eventId, playerId);
+    if (!part) throw new Error("還沒報名這場拍賣");
+    if (new Date(part.lucky_ready_at).getTime() > Date.now()) throw new Error("還在冷卻中");
+    if (part.coins < amount) throw new Error("財神幣不夠下注這個金額");
+    const { die, outcome, win, delta } = resolveAuctionLuckyBet(amount, guess);
+    const nextReady = new Date(Date.now() + AUCTION_LUCKY_COOLDOWN_SEC * 1000).toISOString();
+    const { data: updated, error } = await client
+      .from("auction_participants")
+      .update({ coins: Math.max(0, part.coins + delta), lucky_ready_at: nextReady })
+      .eq("id", part.id)
+      .eq("coins", part.coins)
+      .eq("lucky_ready_at", part.lucky_ready_at)
+      .select();
+    if (error) throw error;
+    if (!updated || !updated.length) throw new Error("手慢了,財神幣剛剛被別的動作改變了,請重新下注");
+    return { die, outcome, win, delta, betAmount: amount, participant: updated[0] };
   }
 
   // 目前積分 = 得標商品分數總和 + 剩餘財神幣 * 折算比例(不管活動是否已結束都能算,用來做即時排行榜)
@@ -1313,6 +1453,12 @@ const db = (function () {
     settleExpiredAuctionLots,
     placeAuctionBid,
     workForAuctionCoins,
+    listAuctionTasks,
+    activateDueAuctionTasks,
+    settleExpiredAuctionTasks,
+    answerAuctionTask,
+    listMyAuctionTaskAnswers,
+    placeAuctionLuckyBet,
     computeAuctionStandings,
     closeAuctionEvent,
     setAuctionReward,

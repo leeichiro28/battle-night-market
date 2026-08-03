@@ -44,8 +44,28 @@
       </div>
     </div>
 
+    <!-- 幸運攤位:快速小賭注 -->
+    <div class="card" id="lucky-card" style="display:none;">
+      <h3><i data-lucide="dices" class="ico" style="color:var(--gold);"></i> 幸運攤位</h3>
+      <p class="section-note" style="margin:0 0 12px;">花一點財神幣骰骰子,猜對雙倍拿回,猜錯拿回一半</p>
+      <div class="lucky-row">
+        <div class="lucky-input-wrap">
+          <label for="lucky-bet">下注金額</label>
+          <input type="number" id="lucky-bet" inputmode="numeric" />
+        </div>
+        <div class="lucky-btns">
+          <button class="btn" id="lucky-big"><i data-lucide="trending-up" class="ico"></i>大(4~6)</button>
+          <button class="btn" id="lucky-small"><i data-lucide="trending-down" class="ico"></i>小(1~3)</button>
+        </div>
+      </div>
+      <div class="section-note" id="lucky-note" style="margin-top:8px;"></div>
+    </div>
+
     <!-- 目前這一波拍賣 -->
     <div id="lot-section"></div>
+
+    <!-- 目前開放中的夜市任務(問答/猜謎) -->
+    <div id="task-section"></div>
 
     <!-- 商品預告 -->
     <div class="card" id="upnext-card" style="display:none;">
@@ -71,17 +91,17 @@
         <div class="income-card">
           <i data-lucide="puzzle" class="ico-big"></i>
           <div class="title">夜市任務</div>
-          <div class="desc">問答／找彩蛋／猜謎,之後陸續推出</div>
+          <div class="desc">偶爾跳出問答／猜謎,答對現領財神幣</div>
         </div>
         <div class="income-card">
           <i data-lucide="dice-5" class="ico-big"></i>
           <div class="title">幸運攤位</div>
-          <div class="desc">小賭注拿雙倍或賠一半,之後陸續推出</div>
+          <div class="desc">花財神幣下注大小,猜對雙倍拿回</div>
         </div>
         <div class="income-card">
           <i data-lucide="undo-2" class="ico-big"></i>
           <div class="title">參與退補</div>
-          <div class="desc">出過價沒標到,結標退一小筆,之後陸續推出</div>
+          <div class="desc">出過價沒標到,結標自動退一小筆</div>
         </div>
       </div>
     </div>

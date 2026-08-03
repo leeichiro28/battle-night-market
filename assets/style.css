@@ -1517,6 +1517,23 @@ input,select,textarea{max-width:100%;min-width:0;}
   .labor-action{text-align:center;}
 }
 
+/* 幸運攤位:下注金額輸入框 + 大/小按鈕同一排,窄螢幕自動換行置中 */
+.lucky-row{
+  display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;
+}
+.lucky-input-wrap{display:flex;flex-direction:column;gap:6px;}
+.lucky-input-wrap label{font-size:12px;color:var(--ink-dim);}
+.lucky-input-wrap input{
+  width:120px;padding:9px 10px;border-radius:8px;
+  border:1px solid var(--line);background:var(--panel2);color:var(--ink);
+  font-family:'Space Mono',monospace;font-size:15px;
+}
+.lucky-btns{display:flex;gap:8px;flex-wrap:wrap;}
+@media (max-width:520px){
+  .lucky-row{justify-content:center;text-align:center;}
+  .lucky-input-wrap{align-items:center;}
+}
+
 .countdown-dial{position:relative;width:96px;height:96px;flex-shrink:0;}
 .countdown-dial svg{position:absolute;top:0;left:0;transform:rotate(-90deg);}
 .countdown-dial .num{
@@ -1573,6 +1590,36 @@ input,select,textarea{max-width:100%;min-width:0;}
 .income-card .title{font-size:13px;font-weight:700;margin-bottom:4px;}
 .income-card .desc{font-size:11.5px;color:var(--ink-dim);line-height:1.5;}
 .income-card .status{margin-top:10px;font-size:11px;}
+
+/* 夜市任務卡片(問答/猜謎):沿用拍賣進行中面板骨架,改用藍綠色系跟拍賣的金色區隔開 */
+.auction-task{
+  border:1px solid #3D8FA6;
+  border-radius:var(--radius);
+  padding:18px;
+  margin-bottom:16px;
+  background:rgba(61,143,166,.08);
+}
+.auction-task .live-tag.task-tag{
+  display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;
+  font-size:12px;color:#5FC2DE;font-weight:700;margin-bottom:10px;
+}
+.auction-task .live-tag.task-tag .dot{
+  width:8px;height:8px;border-radius:50%;background:#5FC2DE;
+  animation:live-pulse-dot 1s ease-in-out infinite;
+}
+.auction-task .task-question{
+  display:flex;align-items:flex-start;gap:8px;
+  font-size:17px;margin:0 0 12px;overflow-wrap:anywhere;
+}
+.task-options{display:flex;flex-wrap:wrap;gap:8px;}
+.task-options .task-opt{color:#5FC2DE;border-color:#3D8FA6;}
+.task-options .task-opt:disabled{opacity:.5;}
+.task-result{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:14px;font-weight:700;padding:8px 12px;border-radius:8px;
+}
+.task-result.correct{color:var(--green);background:rgba(61,190,108,.12);}
+.task-result.wrong{color:var(--red);background:rgba(229,72,77,.12);}
 
 /* 商品清單分級標籤 */
 .tier-tag{

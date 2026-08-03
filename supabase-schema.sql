@@ -538,6 +538,7 @@ create table if not exists auction_participants (
   created_at timestamptz default now(),
   unique(event_id, player_id)
 );
+alter table auction_participants add column if not exists lucky_ready_at timestamptz not null default now(); -- 幸運攤位下注的冷卻到期時間
 
 create table if not exists auction_lots (
   id uuid primary key default gen_random_uuid(),
@@ -579,14 +580,56 @@ drop policy if exists "anon all auction_bids" on auction_bids;
 create policy "anon all auction_bids" on auction_bids for all using (true) with check (true);
 
 -- ============================================
+-- 夜市任務(auction_tasks):開始拍賣時系統會順便排一批問答/猜謎題,
+-- 平均分散在整場時間內自動開放作答,答對現領財神幣,不用主辦人手動操作。
+--   auction_tasks         — 每一題排定要開放的任務(題目、選項、正解、獎金、狀態、時間)
+--   auction_task_answers  — 每位玩家對每一題的作答紀錄(靠 unique 限制一人一題只能答一次)
+-- ============================================
+
+create table if not exists auction_tasks (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid references events(id) on delete cascade,
+  question text not null,
+  options jsonb not null,                 -- ["選項A","選項B","選項C","選項D"]
+  correct_index int not null,             -- options 裡正確答案的索引(從 0 開始)
+  task_type text not null default 'quiz', -- quiz(問答) | riddle(猜謎) | egg(彩蛋題),目前邏輯相同、只是顯示用圖示/文案不同
+  reward int not null default 0,          -- 答對可以拿到的財神幣
+  status text not null default 'scheduled', -- scheduled(排隊等開放) | live(開放作答中) | done(已結束)
+  scheduled_at timestamptz not null,      -- 預計開放時間
+  ends_at timestamptz,                    -- 這題的作答截止時間(進入 live 才會有值)
+  created_at timestamptz default now()
+);
+
+create table if not exists auction_task_answers (
+  id uuid primary key default gen_random_uuid(),
+  task_id uuid references auction_tasks(id) on delete cascade,
+  event_id uuid references events(id) on delete cascade,
+  player_id uuid references players(id) on delete cascade,
+  correct boolean not null,
+  created_at timestamptz default now(),
+  unique(task_id, player_id)
+);
+
+alter table auction_tasks enable row level security;
+drop policy if exists "anon all auction_tasks" on auction_tasks;
+create policy "anon all auction_tasks" on auction_tasks for all using (true) with check (true);
+
+alter table auction_task_answers enable row level security;
+drop policy if exists "anon all auction_task_answers" on auction_task_answers;
+create policy "anon all auction_task_answers" on auction_task_answers for all using (true) with check (true);
+
+-- ============================================
 -- 執行完以上內容後,記得手動開啟 Realtime:
 -- 左側選單 Database → Replication →
 -- 把 events / event_participants / matches / match_bets 四張表的開關打開
 -- (舊專案升級上來,前三張應該已經開過,這次新增的 match_bets 記得也要開)
--- 夜市拍賣新增的三張表也要打開:auction_participants / auction_lots / auction_bids
+-- 夜市拍賣新增的表也要打開:auction_participants / auction_lots / auction_bids /
+-- auction_tasks / auction_task_answers
 -- 或是直接在 SQL Editor 執行下面這幾行也可以:
 -- alter publication supabase_realtime add table match_bets;
 -- alter publication supabase_realtime add table auction_participants;
 -- alter publication supabase_realtime add table auction_lots;
 -- alter publication supabase_realtime add table auction_bids;
+-- alter publication supabase_realtime add table auction_tasks;
+-- alter publication supabase_realtime add table auction_task_answers;
 -- ============================================

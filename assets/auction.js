@@ -7,15 +7,21 @@ let ev = null;
 let myParticipant = null; // 還沒報名是 null
 let lots = [];
 let standings = [];
+let tasks = [];
+let myTaskAnswers = []; // 我在這場活動已經回答過的任務
 let currentPlayer = null; // Discord 登入後的玩家 {id, name},沒登入是 null
 let pendingLoginResolvers = [];
 
 let tickInterval = null;
 let countdownInterval = null;
+let taskCountdownInterval = null;
 let unsubLots = null;
 let unsubParticipants = null;
+let unsubTasks = null;
 let ticking = false;
 let laborFlashUntil = 0;
+let luckyFlashUntil = 0;
+let luckyFlashNote = "";
 
 if (!eventId) location.href = "index.html";
 
@@ -70,12 +76,16 @@ async function loadMyParticipant() {
 }
 
 async function refreshAll() {
-  const [lotList, standingList] = await Promise.all([db.listAuctionLots(eventId), db.computeAuctionStandings(eventId)]);
+  const [lotList, standingList, taskList] = await Promise.all([db.listAuctionLots(eventId), db.computeAuctionStandings(eventId), db.listAuctionTasks(eventId)]);
   lots = lotList;
   standings = standingList;
+  tasks = taskList;
   if (currentPlayer) {
     const mine = standings.find((r) => r.participant.player_id === currentPlayer.id);
     if (mine) myParticipant = mine.participant;
+    myTaskAnswers = await db.listMyAuctionTaskAnswers(eventId, currentPlayer.id).catch(() => []);
+  } else {
+    myTaskAnswers = [];
   }
   render();
 }
@@ -87,6 +97,8 @@ async function tick() {
   try {
     await db.activateDueAuctionLots(eventId);
     await db.settleExpiredAuctionLots(eventId);
+    await db.activateDueAuctionTasks(eventId);
+    await db.settleExpiredAuctionTasks(eventId);
     await refreshAll();
   } catch (e) {
     console.error(e);
@@ -129,6 +141,38 @@ document.getElementById("labor-btn").onclick = async () => {
   }
 };
 
+// ---------- 幸運攤位 ----------
+async function placeLuckyBet(guess) {
+  const player = await ensureLogin();
+  const input = document.getElementById("lucky-bet");
+  const amount = parseInt(input.value);
+  if (!amount || amount < AUCTION_LUCKY_MIN_BET) {
+    await ui.alert(`下注至少要 ${AUCTION_LUCKY_MIN_BET} 財神幣。`, { title: "金額太小", tone: "danger" });
+    return;
+  }
+  if (amount > AUCTION_LUCKY_MAX_BET) {
+    await ui.alert(`單次下注最多 ${AUCTION_LUCKY_MAX_BET} 財神幣。`, { title: "金額太大", tone: "danger" });
+    return;
+  }
+  document.getElementById("lucky-big").disabled = true;
+  document.getElementById("lucky-small").disabled = true;
+  try {
+    const result = await db.placeAuctionLuckyBet(eventId, player.id, amount, guess);
+    myParticipant = result.participant;
+    luckyFlashUntil = Date.now() + 2200;
+    const dieLabel = `${ui.icon("dices")}骰出 ${result.die} 點(${result.outcome === "big" ? "大" : "小"})`;
+    luckyFlashNote = result.win
+      ? `${dieLabel} · ${ui.icon("circle-check")}猜對了!淨賺 ${result.delta} 財神幣`
+      : `${dieLabel} · ${ui.icon("circle-x")}猜錯了,拿回一半,淨虧 ${Math.abs(result.delta)} 財神幣`;
+    await refreshAll();
+  } catch (e) {
+    await ui.alert(e.message || "下注失敗", { title: "下注失敗", tone: "danger" });
+    await refreshAll();
+  }
+}
+document.getElementById("lucky-big").onclick = () => placeLuckyBet("big");
+document.getElementById("lucky-small").onclick = () => placeLuckyBet("small");
+
 // ---------- 出價 ----------
 async function bid(lot, amount) {
   const player = await ensureLogin();
@@ -155,6 +199,24 @@ async function customBid(lot) {
     return;
   }
   bid(lot, amount);
+}
+
+// ---------- 夜市任務作答 ----------
+async function answerTask(task, idx) {
+  const player = await ensureLogin();
+  const box = document.getElementById("task-options");
+  if (box) box.querySelectorAll(".task-opt").forEach((b) => (b.disabled = true));
+  try {
+    const result = await db.answerAuctionTask(task.id, eventId, player.id, idx);
+    if (result.correct) {
+      myParticipant = result.participant || myParticipant;
+      laborFlashUntil = Date.now() + 1600;
+    }
+    await refreshAll();
+  } catch (e) {
+    await ui.alert(e.message || "作答失敗", { title: "作答失敗", tone: "danger" });
+    await refreshAll();
+  }
 }
 
 // ---------- 畫面渲染 ----------
@@ -186,6 +248,41 @@ function renderBalance() {
     note.textContent = "拍賣開始後才能打工";
   } else if (cooldownMs > 0) {
     note.textContent = `冷卻中・${Math.ceil(cooldownMs / 1000)} 秒後可再按一次`;
+  } else {
+    note.textContent = "";
+  }
+}
+
+function renderLucky() {
+  const box = document.getElementById("lucky-card");
+  if (!myParticipant) {
+    box.style.display = "none";
+    return;
+  }
+  box.style.display = "block";
+  const input = document.getElementById("lucky-bet");
+  if (!input.value) input.value = String(Math.min(AUCTION_LUCKY_MIN_BET * 2, myParticipant.coins || AUCTION_LUCKY_MIN_BET));
+  input.min = String(AUCTION_LUCKY_MIN_BET);
+  input.max = String(AUCTION_LUCKY_MAX_BET);
+
+  const cooldownMs = new Date(myParticipant.lucky_ready_at).getTime() - Date.now();
+  const canBet = ev.locked && ev.status !== "closed" && cooldownMs <= 0 && myParticipant.coins >= AUCTION_LUCKY_MIN_BET;
+  document.getElementById("lucky-big").disabled = !canBet;
+  document.getElementById("lucky-small").disabled = !canBet;
+  document.getElementById("lucky-big").innerHTML = ui.icon("trending-up") + "大(4~6)";
+  document.getElementById("lucky-small").innerHTML = ui.icon("trending-down") + "小(1~3)";
+
+  const note = document.getElementById("lucky-note");
+  if (Date.now() < luckyFlashUntil) {
+    note.innerHTML = luckyFlashNote;
+  } else if (ev.status === "closed") {
+    note.textContent = "活動已結束";
+  } else if (!ev.locked) {
+    note.textContent = "拍賣開始後才能下注";
+  } else if (myParticipant.coins < AUCTION_LUCKY_MIN_BET) {
+    note.textContent = `財神幣不夠下注(至少要 ${AUCTION_LUCKY_MIN_BET})`;
+  } else if (cooldownMs > 0) {
+    note.textContent = `冷卻中・${Math.ceil(cooldownMs / 1000)} 秒後可再下注一次`;
   } else {
     note.textContent = "";
   }
@@ -327,6 +424,67 @@ function renderLotSection() {
   }
 }
 
+function stopTaskCountdown() {
+  clearInterval(taskCountdownInterval);
+  taskCountdownInterval = null;
+}
+
+function taskStageHtml(task, myAnswer) {
+  const icon = (typeof AUCTION_TASK_ICON !== "undefined" && AUCTION_TASK_ICON[task.task_type]) || "help-circle";
+  const label = (typeof AUCTION_TASK_LABEL !== "undefined" && AUCTION_TASK_LABEL[task.task_type]) || "夜市任務";
+  const secLeft = Math.max(0, Math.ceil((new Date(task.ends_at).getTime() - Date.now()) / 1000));
+  let bodyHtml;
+  if (!currentPlayer || !myParticipant) {
+    bodyHtml = `<div class="section-note" style="margin:10px 0 0;">${ui.icon("info")}先報名才能作答,但作答不用出財神幣</div>`;
+  } else if (myAnswer) {
+    bodyHtml = myAnswer.correct
+      ? `<div class="task-result correct">${ui.icon("circle-check")}答對了!拿到 ${task.reward} 財神幣</div>`
+      : `<div class="task-result wrong">${ui.icon("circle-x")}答錯了,這題只能猜一次,下一題再拚</div>`;
+  } else {
+    bodyHtml = `<div class="task-options" id="task-options">
+      ${task.options.map((opt, idx) => `<button class="btn ghost task-opt" data-idx="${idx}">${ui.esc(opt)}</button>`).join("")}
+    </div>`;
+  }
+  return `
+    <div class="card auction-task">
+      <span class="live-tag task-tag"><span class="dot"></span>${ui.esc(label)} · 答對送 ${task.reward} 財神幣 · <span id="task-cd">${secLeft}</span> 秒後結束</span>
+      <h3 class="task-question">${ui.icon(icon, { size: "18px" })}${ui.esc(task.question)}</h3>
+      ${bodyHtml}
+    </div>
+  `;
+}
+
+function startTaskCountdown(task) {
+  stopTaskCountdown();
+  const tick2 = () => {
+    const secLeft = Math.max(0, Math.ceil((new Date(task.ends_at).getTime() - Date.now()) / 1000));
+    const el = document.getElementById("task-cd");
+    if (el) el.textContent = secLeft;
+    if (secLeft <= 0) stopTaskCountdown();
+  };
+  tick2();
+  taskCountdownInterval = setInterval(tick2, 1000);
+}
+
+function renderTaskSection() {
+  const box = document.getElementById("task-section");
+  if (!box) return;
+  const liveTask = tasks.find((t) => t.status === "live");
+  if (!liveTask || !ev.locked || ev.status === "closed") {
+    stopTaskCountdown();
+    box.innerHTML = "";
+    return;
+  }
+  const myAnswer = currentPlayer ? myTaskAnswers.find((a) => a.task_id === liveTask.id) : null;
+  box.innerHTML = taskStageHtml(liveTask, myAnswer);
+  if (currentPlayer && myParticipant && !myAnswer) {
+    box.querySelectorAll(".task-opt").forEach((btn) => {
+      btn.onclick = () => answerTask(liveTask, parseInt(btn.dataset.idx));
+    });
+  }
+  startTaskCountdown(liveTask);
+}
+
 function upnextCardHtml(lot) {
   return `
     <div class="upnext-card">
@@ -430,7 +588,9 @@ function render() {
   document.getElementById("event-title").innerHTML = `${ui.esc(ev.name)}`;
   renderJoinGate();
   renderBalance();
+  renderLucky();
   renderLotSection();
+  renderTaskSection();
   renderUpnext();
   renderBag();
   renderLeaderboard();
@@ -468,13 +628,16 @@ function render() {
   tickInterval = setInterval(tick, 1000);
   unsubLots = db.onTableChange("auction_lots", `event_id=eq.${eventId}`, () => refreshAll());
   unsubParticipants = db.onTableChange("auction_participants", `event_id=eq.${eventId}`, () => refreshAll());
+  unsubTasks = db.onTableChange("auction_tasks", `event_id=eq.${eventId}`, () => refreshAll());
 })();
 
 window.addEventListener("beforeunload", () => {
   if (tickInterval) clearInterval(tickInterval);
   stopCountdown();
+  stopTaskCountdown();
   if (unsubLots) unsubLots();
   if (unsubParticipants) unsubParticipants();
+  if (unsubTasks) unsubTasks();
 });
 
 document.addEventListener("visibilitychange", () => {
