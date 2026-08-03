@@ -35,13 +35,14 @@
         <select id="new-type">
           <option value="dice">骰子對戰</option>
           <option value="rps5">五手勢對戰</option>
+          <option value="auction">夜市拍賣</option>
         </select>
       </div>
       <div class="field">
         <label for="new-deadline">報名截止時間(選填,不填就一直開放到主辦人鎖定名單為止)</label>
         <input type="datetime-local" id="new-deadline" />
       </div>
-      <div class="field">
+      <div class="field" id="losers-field">
         <label class="check-item" style="margin-bottom:0;">
           <input type="checkbox" id="new-losers" />
           <span>開啟敗部復活賽(輸一場先掉敗部,敗部再輸才淘汰。報名不足6人時系統會自動關閉,單敗淘汰就好)</span>
@@ -56,6 +57,23 @@
       <div class="field-group" id="rps5-rules-box" style="display:none;">
         <label>五手勢對戰・進階規則(不勾就是最原始版本)</label>
         <div class="check-list" id="rps5-rules-list"></div>
+      </div>
+
+      <div class="field-group" id="auction-settings-box" style="display:none;">
+        <label>夜市拍賣・活動設定</label>
+        <div class="field">
+          <label for="auction-budget" style="font-size:12px;">每人起始財神幣(公平起跑,人人一樣)</label>
+          <input type="number" id="auction-budget" min="1" value="1000" />
+        </div>
+        <div class="field">
+          <label for="auction-wave-interval" style="font-size:12px;">每波開拍間隔秒數(全自動排程)</label>
+          <input type="number" id="auction-wave-interval" min="10" value="90" />
+        </div>
+        <div class="field">
+          <label for="auction-items-per-wave" style="font-size:12px;">每波商品件數</label>
+          <input type="number" id="auction-items-per-wave" min="1" max="3" value="1" />
+        </div>
+        <p style="font-size:12px;color:var(--ink-dim);margin:0;">商品清單(普通/稀有/史詩/傳說)是固定的,出場順序由系統自動排程(先普通、中段穿插稀有/史詩、尾聲壓軸傳說)。建立活動後,回下方列表按「開始拍賣」就會依這裡的設定自動產生整場排程。</p>
       </div>
 
       <div class="field-group">
@@ -172,6 +190,7 @@
   <script src="assets/db.js"></script>
   <script src="assets/ui.js"></script>
   <script src="assets/header.js"></script>
+  <script src="assets/auction-catalog.js"></script>
   <script src="assets/admin.js"></script>
   <script>
     document.getElementById("admin-tabs").addEventListener("click", (e) => {

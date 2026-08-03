@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>夜市拍賣 · 擂台夜市</title>
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+<link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <div id="site-header"></div>
+  <div class="wrap">
+    <div class="marquee">
+      <span class="eyebrow">Battle Night Market · 夜市拍賣</span>
+      <h1 id="event-title">夜市<span>拍賣</span></h1>
+      <p>公平起跑,人人同額財神幣。系統自動開拍,邊搶標邊賺錢,看誰把商品跟分數都搬回家。</p>
+    </div>
+
+    <!-- 還沒登入:提示卡(跟首頁同款) -->
+    <div class="card" id="who-card" style="display:none;text-align:center;">
+      <p style="margin:0 0 14px;color:var(--ink-dim);">要參加拍賣、出價或打工,請先用 Discord 登入(觀戰不需要登入)</p>
+      <button class="btn block" id="discord-login-btn">使用 Discord 登入</button>
+    </div>
+
+    <!-- 已登入但還沒報名這場拍賣 -->
+    <div class="card" id="join-card" style="display:none;text-align:center;">
+      <p style="margin:0 0 14px;color:var(--ink-dim);" id="join-note">報名時會發一筆固定財神幣,大家起跑點完全一樣。</p>
+      <button class="btn block" id="join-btn"><i data-lucide="ticket" class="ico"></i>參加這場拍賣</button>
+    </div>
+
+    <!-- 我的財神幣 / 打工 -->
+    <div class="card" id="balance-card" style="display:none;">
+      <span class="tag running" id="event-status-tag"></span>
+      <h3 style="margin:10px 0 2px;">我的財神幣</h3>
+      <div class="balance-row">
+        <div class="price-row" style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
+          <span class="cur"><i data-lucide="coins" class="ico" style="width:32px;height:32px;"></i> <span id="my-balance">0</span></span>
+          <span class="unit" id="my-rank-note"></span>
+        </div>
+        <div class="labor-action">
+          <button class="btn" id="labor-btn"><i data-lucide="hand-coins" class="ico"></i>打工賺財神幣</button>
+          <div class="section-note" id="labor-note" style="margin:6px 0 0;text-align:right;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 目前這一波拍賣 -->
+    <div id="lot-section"></div>
+
+    <!-- 商品預告 -->
+    <div class="card" id="upnext-card" style="display:none;">
+      <h3><i data-lucide="list" class="ico" style="color:var(--gold);"></i> 商品預告(接下來幾波)</h3>
+      <div class="upnext-scroll" id="upnext-scroll"></div>
+    </div>
+
+    <!-- 我的背包 -->
+    <div class="card" id="bag-card" style="display:none;">
+      <h3><i data-lucide="backpack" class="ico" style="color:var(--gold);"></i> 我的背包<span class="bag-count" id="bag-count-badge">0</span></h3>
+      <div id="bag-list"></div>
+    </div>
+
+    <!-- 賺財神幣管道 -->
+    <div class="card">
+      <h3><i data-lucide="sparkles" class="ico" style="color:var(--gold);"></i> 途中賺財神幣</h3>
+      <div class="income-grid">
+        <div class="income-card">
+          <i data-lucide="hand-coins" class="ico-big"></i>
+          <div class="title">打工賺財神幣</div>
+          <div class="desc">冷卻式按鈕,按下去領一筆隨機獎金</div>
+        </div>
+        <div class="income-card">
+          <i data-lucide="puzzle" class="ico-big"></i>
+          <div class="title">夜市任務</div>
+          <div class="desc">問答／找彩蛋／猜謎,之後陸續推出</div>
+        </div>
+        <div class="income-card">
+          <i data-lucide="dice-5" class="ico-big"></i>
+          <div class="title">幸運攤位</div>
+          <div class="desc">小賭注拿雙倍或賠一半,之後陸續推出</div>
+        </div>
+        <div class="income-card">
+          <i data-lucide="undo-2" class="ico-big"></i>
+          <div class="title">參與退補</div>
+          <div class="desc">出過價沒標到,結標退一小筆,之後陸續推出</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 商品清單 -->
+    <div class="card">
+      <h3><i data-lucide="list-tree" class="ico" style="color:var(--gold);"></i> 商品清單</h3>
+      <div class="folder-tabs" id="tier-tabs">
+        <div class="folder-tab active" data-tier="common"><span class="tier-tag common" style="border:none;padding:0;">普通</span></div>
+        <div class="folder-tab" data-tier="rare"><span class="tier-tag rare" style="border:none;padding:0;">稀有</span></div>
+        <div class="folder-tab" data-tier="epic"><span class="tier-tag epic" style="border:none;padding:0;">史詩</span></div>
+        <div class="folder-tab" data-tier="legendary"><span class="tier-tag legendary" style="border:none;padding:0;">傳說</span></div>
+      </div>
+      <div class="card folder-tab-card" style="margin-top:0;" id="tier-list"></div>
+      <div class="section-note" id="tier-note"></div>
+    </div>
+
+    <!-- 排行榜 -->
+    <div class="card">
+      <h3><i data-lucide="trophy" class="ico" style="color:var(--gold);"></i> 即時排行榜</h3>
+      <div id="leaderboard-list"></div>
+      <div class="section-note">前五名套用主辦人設定的獎勵機制;沒花完的財神幣會折算成分數</div>
+    </div>
+
+    <div class="footer-nav" id="back-link"><a href="index.html"><i data-lucide="arrow-left" class="ico"></i>回活動列表</a></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@1.27.0/dist/umd/lucide.min.js"></script>
+  <script src="assets/supabase-config.js"></script>
+  <script src="assets/db.js"></script>
+  <script src="assets/ui.js"></script>
+  <script src="assets/header.js"></script>
+  <script src="assets/auction-catalog.js"></script>
+  <script src="assets/auction.js"></script>
+</body>
+</html>

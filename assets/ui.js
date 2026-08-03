@@ -100,7 +100,11 @@ const ui = (function () {
   const GAME = {
     dice: { icon: "dices", label: "骰子對戰" },
     rps5: { icon: "scissors", label: "五手勢對戰" },
+    auction: { icon: "gavel", label: "夜市拍賣" },
   };
+  // 夜市拍賣・商品分級圖示與中文名稱(共用給後台商品清單、拍賣畫面、我的背包)
+  const TIER_ICON = { common: "package", rare: "gem", epic: "flame", legendary: "crown" };
+  const TIER_NAME = { common: "普通", rare: "稀有", epic: "史詩", legendary: "傳說" };
   const STATUS = { open: "開放參加", running: "進行中", closed: "已結束" };
   const STATUS_ICON = { open: "door-open", running: "swords", closed: "flag" };
   const RULE = {
@@ -161,6 +165,11 @@ const ui = (function () {
   function classTag(key) {
     if (!key || !CLASS_NAME[key]) return "";
     return tag(CLASS_ICON[key], CLASS_NAME[key], "class-tag class-tag-" + key);
+  }
+  // 夜市拍賣商品分級小標籤(普通/稀有/史詩/傳說),樣式定義在 style.css 的 .tier-tag
+  function tierTag(tier) {
+    if (!tier || !TIER_NAME[tier]) return "";
+    return `<span class="tier-tag ${tier}">${icon(TIER_ICON[tier])}<span>${TIER_NAME[tier]}</span></span>`;
   }
   function ruleTags(rules) {
     return Object.keys(rules || {})
@@ -359,6 +368,9 @@ const ui = (function () {
     losersTag,
     classTag,
     ruleTags,
+    tierTag,
+    TIER_ICON,
+    TIER_NAME,
     formatDeadline,
     deadlineTag,
     rankBadge,

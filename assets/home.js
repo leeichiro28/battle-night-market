@@ -64,6 +64,9 @@ function eventRow(ev) {
   const div = document.createElement("div");
   div.className = "card event-card";
   const deadlinePassed = ev.registration_deadline && new Date() > new Date(ev.registration_deadline);
+  // 夜市拍賣完全獨立、沒有賽程/晉級,不走 lobby.html,直接進 auction.html
+  const isAuction = ev.game_type === "auction";
+  const playPage = isAuction ? "auction.html" : "lobby.html";
   div.innerHTML = `
     <div class="meta">
       <h3>${ui.esc(ev.name)}</h3>
@@ -82,13 +85,13 @@ function eventRow(ev) {
     btn.innerHTML = ui.icon("list-ordered") + "查看結果";
     btn.onclick = async () => {
       await ensureLogin();
-      location.href = `lobby.html?event=${ev.id}`;
+      location.href = `${playPage}?event=${ev.id}`;
     };
   } else if (ev.locked) {
-    btn.innerHTML = ui.icon("swords") + "已開賽,查看戰況";
+    btn.innerHTML = isAuction ? ui.icon("gavel") + "拍賣進行中" : ui.icon("swords") + "已開賽,查看戰況";
     btn.onclick = async () => {
       await ensureLogin();
-      location.href = `lobby.html?event=${ev.id}`;
+      location.href = `${playPage}?event=${ev.id}`;
     };
   } else if (deadlinePassed) {
     btn.innerHTML = ui.icon("ban") + "報名已截止";
@@ -99,12 +102,16 @@ function eventRow(ev) {
       btn.disabled = true;
       btn.innerHTML = ui.icon("loader-circle") + "報名中...";
       const player = await ensureLogin();
-      await db.joinEvent(ev.id, player.id);
-      if (ev.game_type === "dice" && ev.rules && ev.rules.classes) {
-        const chosen = await pickClass();
-        if (chosen) await db.setPlayerClass(ev.id, player.id, chosen);
+      if (isAuction) {
+        await db.joinAuctionEvent(ev.id, player.id);
+      } else {
+        await db.joinEvent(ev.id, player.id);
+        if (ev.game_type === "dice" && ev.rules && ev.rules.classes) {
+          const chosen = await pickClass();
+          if (chosen) await db.setPlayerClass(ev.id, player.id, chosen);
+        }
       }
-      location.href = `lobby.html?event=${ev.id}`;
+      location.href = `${playPage}?event=${ev.id}`;
     };
   }
 
@@ -117,7 +124,7 @@ function eventRow(ev) {
     const watchBtn = document.createElement("button");
     watchBtn.className = "btn ghost";
     watchBtn.innerHTML = ui.icon("eye") + "觀戰";
-    watchBtn.onclick = () => window.open(`lobby.html?event=${ev.id}`, "_blank");
+    watchBtn.onclick = () => window.open(`${playPage}?event=${ev.id}`, "_blank");
     actions.appendChild(watchBtn);
   }
 

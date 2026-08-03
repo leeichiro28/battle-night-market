@@ -748,6 +748,251 @@ const db = (function () {
     };
   }
 
+  // ---------- 夜市拍賣 ----------
+  // 報名(等於「開局全自動」企劃裡的公平起跑):第一次報名時依活動設定的起始預算發財神幣,
+  // 之後重複呼叫(例如重整頁面)不會重發,直接回傳原本那筆資料。
+  async function joinAuctionEvent(eventId, playerId) {
+    const existing = await getMyAuctionParticipant(eventId, playerId);
+    if (existing) return existing;
+    const ev = await getEvent(eventId);
+    const startingBudget = (ev.rules && ev.rules.startingBudget) || AUCTION_DEFAULT_BUDGET;
+    const { data, error } = await client
+      .from("auction_participants")
+      .upsert(
+        { event_id: eventId, player_id: playerId, coins: startingBudget, work_ready_at: new Date().toISOString() },
+        { onConflict: "event_id,player_id", ignoreDuplicates: false }
+      )
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  async function getMyAuctionParticipant(eventId, playerId) {
+    const { data, error } = await client
+      .from("auction_participants")
+      .select("*")
+      .eq("event_id", eventId)
+      .eq("player_id", playerId)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
+  async function listAuctionParticipants(eventId) {
+    const { data, error } = await client
+      .from("auction_participants")
+      .select("*, players(name)")
+      .eq("event_id", eventId)
+      .order("created_at", { ascending: true });
+    if (error) throw error;
+    return data;
+  }
+
+  async function listAuctionLots(eventId) {
+    const { data, error } = await client
+      .from("auction_lots")
+      .select("*, bidder:current_bidder_id(name)")
+      .eq("event_id", eventId)
+      .order("wave_number", { ascending: true })
+      .order("created_at", { ascending: true });
+    if (error) throw error;
+    return data;
+  }
+
+  // 主辦人按下「開始拍賣」:把已報名的人鎖住(不能再中途加入拿預算),
+  // 依商品排程算好每一波的開拍時間,整場一次寫進 auction_lots。
+  async function startAuction(eventId, opts) {
+    const waveIntervalSec = opts.waveIntervalSec || AUCTION_DEFAULT_WAVE_INTERVAL_SEC;
+    const waves = opts.waves; // buildAuctionWaves() 產生的結果,呼叫端(admin.js)已經算好
+    const now = Date.now();
+    const rows = [];
+    waves.forEach((wave, waveIdx) => {
+      const scheduledAt = new Date(now + waveIdx * waveIntervalSec * 1000).toISOString();
+      wave.forEach((item) => {
+        rows.push({
+          event_id: eventId,
+          wave_number: waveIdx + 1,
+          item_name: item.itemName,
+          item_tier: item.itemTier,
+          points: item.points,
+          base_price: item.basePrice,
+          min_increment: item.minIncrement,
+          current_price: item.basePrice,
+          status: "scheduled",
+          scheduled_at: scheduledAt,
+        });
+      });
+    });
+    if (rows.length) {
+      const { error: insertErr } = await client.from("auction_lots").insert(rows);
+      if (insertErr) throw insertErr;
+    }
+    const { error } = await client
+      .from("events")
+      .update({ locked: true, status: "running" })
+      .eq("id", eventId);
+    if (error) throw error;
+  }
+
+  // 每個看拍賣畫面的人,瀏覽器背景每秒都會呼叫這兩個函式來推進排程,
+  // 用 status 當條件鎖(.eq status)確保就算好幾個人同時呼叫,同一件商品也只會被推進一次。
+  async function activateDueAuctionLots(eventId) {
+    const nowIso = new Date().toISOString();
+    const { data: due, error } = await client
+      .from("auction_lots")
+      .select("id, base_price")
+      .eq("event_id", eventId)
+      .eq("status", "scheduled")
+      .lte("scheduled_at", nowIso);
+    if (error) throw error;
+    if (!due || !due.length) return;
+    const endsAt = new Date(Date.now() + AUCTION_LOT_DURATION_SEC * 1000).toISOString();
+    for (const lot of due) {
+      await client
+        .from("auction_lots")
+        .update({ status: "live", current_price: lot.base_price, ends_at: endsAt })
+        .eq("id", lot.id)
+        .eq("status", "scheduled");
+    }
+  }
+
+  async function settleExpiredAuctionLots(eventId) {
+    const nowIso = new Date().toISOString();
+    const { data: due, error } = await client
+      .from("auction_lots")
+      .select("*")
+      .eq("event_id", eventId)
+      .eq("status", "live")
+      .lte("ends_at", nowIso);
+    if (error) throw error;
+    if (!due || !due.length) return;
+    for (const lot of due) {
+      // 用 status='live' 當鎖,先搶到才處理結算,沒搶到的人就跳過(已經有人處理過了)
+      const { data: claimed, error: claimErr } = await client
+        .from("auction_lots")
+        .update({ status: "done" })
+        .eq("id", lot.id)
+        .eq("status", "live")
+        .select();
+      if (claimErr) throw claimErr;
+      if (!claimed || !claimed.length) continue;
+      if (lot.current_bidder_id) {
+        const part = await getMyAuctionParticipant(lot.event_id, lot.current_bidder_id);
+        if (part) {
+          await client
+            .from("auction_participants")
+            .update({ coins: Math.max(0, part.coins - lot.current_price) })
+            .eq("id", part.id);
+        }
+      }
+      await client.from("auction_lots").update({ settled: true }).eq("id", lot.id);
+    }
+  }
+
+  // 出價:用「目前最高價沒變」當樂觀鎖條件,避免兩個人同時搶標時其中一口價憑空消失。
+  // 出價前會檢查:這位玩家手上財神幣扣掉他「目前正領先中的其他商品」的金額後,夠不夠付這一口價。
+  async function placeAuctionBid(lot, playerId, amount) {
+    const newPrice = lot.current_price + amount;
+    const part = await getMyAuctionParticipant(lot.event_id, playerId);
+    if (!part) throw new Error("還沒報名這場拍賣");
+    const { data: myLiveLeads, error: leadErr } = await client
+      .from("auction_lots")
+      .select("id, current_price")
+      .eq("event_id", lot.event_id)
+      .eq("status", "live")
+      .eq("current_bidder_id", playerId);
+    if (leadErr) throw leadErr;
+    const committed = (myLiveLeads || []).filter((l) => l.id !== lot.id).reduce((s, l) => s + l.current_price, 0);
+    if (part.coins - committed < newPrice) {
+      throw new Error("財神幣不夠喊這個價(要扣掉你目前其他領先中的商品)");
+    }
+    const now = new Date();
+    let endsAt = lot.ends_at;
+    const remainingMs = new Date(lot.ends_at).getTime() - now.getTime();
+    if (remainingMs <= AUCTION_ANTI_SNIPE_WINDOW_SEC * 1000) {
+      endsAt = new Date(now.getTime() + AUCTION_ANTI_SNIPE_EXTEND_SEC * 1000).toISOString();
+    }
+    const { data: updated, error } = await client
+      .from("auction_lots")
+      .update({ current_price: newPrice, current_bidder_id: playerId, ends_at: endsAt })
+      .eq("id", lot.id)
+      .eq("status", "live")
+      .eq("current_price", lot.current_price)
+      .select();
+    if (error) throw error;
+    if (!updated || !updated.length) throw new Error("手慢了,價格剛剛被別人改變了,請重新出價");
+    await client.from("auction_bids").insert({ lot_id: lot.id, event_id: lot.event_id, player_id: playerId, amount: newPrice });
+    return updated[0];
+  }
+
+  // 打工賺財神幣:用 work_ready_at<=now 當樂觀鎖,同一秒連點兩次也只會成功一次。
+  async function workForAuctionCoins(eventId, playerId) {
+    const part = await getMyAuctionParticipant(eventId, playerId);
+    if (!part) throw new Error("還沒報名這場拍賣");
+    const nowIso = new Date().toISOString();
+    if (new Date(part.work_ready_at).getTime() > Date.now()) {
+      throw new Error("還在冷卻中");
+    }
+    const gain = AUCTION_WORK_MIN + Math.floor(Math.random() * (AUCTION_WORK_MAX - AUCTION_WORK_MIN + 1));
+    const nextReady = new Date(Date.now() + AUCTION_WORK_COOLDOWN_SEC * 1000).toISOString();
+    const { data: updated, error } = await client
+      .from("auction_participants")
+      .update({ coins: part.coins + gain, work_ready_at: nextReady })
+      .eq("id", part.id)
+      .eq("work_ready_at", part.work_ready_at)
+      .select();
+    if (error) throw error;
+    if (!updated || !updated.length) throw new Error("手慢了,請再按一次");
+    return { gain, participant: updated[0] };
+  }
+
+  // 目前積分 = 得標商品分數總和 + 剩餘財神幣 * 折算比例(不管活動是否已結束都能算,用來做即時排行榜)
+  async function computeAuctionStandings(eventId) {
+    const [parts, lots] = await Promise.all([listAuctionParticipants(eventId), listAuctionLots(eventId)]);
+    const wonByPlayer = {};
+    lots
+      .filter((l) => l.status === "done" && l.current_bidder_id)
+      .forEach((l) => {
+        wonByPlayer[l.current_bidder_id] = wonByPlayer[l.current_bidder_id] || [];
+        wonByPlayer[l.current_bidder_id].push(l);
+      });
+    const rows = parts.map((p) => {
+      const won = wonByPlayer[p.player_id] || [];
+      const itemScore = won.reduce((s, l) => s + l.points, 0);
+      const coinScore = Math.round(p.coins * AUCTION_COIN_TO_SCORE * 10) / 10;
+      return { participant: p, wonLots: won, itemScore, coinScore, score: itemScore + coinScore };
+    });
+    rows.sort((a, b) => b.score - a.score);
+    return rows;
+  }
+
+  // 主辦人結束活動:結算名次,套用現有的獎勵設定(reward_plan)自動填獎勵。
+  async function closeAuctionEvent(eventId) {
+    const ev = await getEvent(eventId);
+    const standings = await computeAuctionStandings(eventId);
+    for (let i = 0; i < standings.length; i++) {
+      const rank = i + 1;
+      const row = standings[i];
+      await client
+        .from("auction_participants")
+        .update({ final_rank: rank, reward: row.participant.reward || rewardForRank(ev, rank) })
+        .eq("id", row.participant.id);
+    }
+    await setEventStatus(eventId, "closed");
+    return standings;
+  }
+
+  // 主辦人手動覆蓋某位拍賣參加者的獎勵文字(結束活動時 closeAuctionEvent 已經自動套用一次,
+  // 這個函式讓主辦人事後還能個別修改)
+  async function setAuctionReward(participantId, reward) {
+    const { error } = await client
+      .from("auction_participants")
+      .update({ reward })
+      .eq("id", participantId);
+    if (error) throw error;
+  }
+
   function onTableChange(table, filter, cb) {
     const channel = client
       .channel(`${table}-${filter || "all"}-${Math.random()}`)
@@ -1059,5 +1304,17 @@ const db = (function () {
     tryCreateGrandFinal,
     advanceAfterMatch,
     onTableChange,
+    joinAuctionEvent,
+    getMyAuctionParticipant,
+    listAuctionParticipants,
+    listAuctionLots,
+    startAuction,
+    activateDueAuctionLots,
+    settleExpiredAuctionLots,
+    placeAuctionBid,
+    workForAuctionCoins,
+    computeAuctionStandings,
+    closeAuctionEvent,
+    setAuctionReward,
   };
 })();

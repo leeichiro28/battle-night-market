@@ -1454,3 +1454,181 @@ input,select,textarea{max-width:100%;min-width:0;}
 .announce-admin-row .aar-main{flex:1;min-width:0;}
 .announce-admin-row .aar-main b{font-size:14px;}
 .announce-admin-row .aar-meta{font-size:12px;color:var(--ink-dim);margin-top:2px;}
+
+/* ========= 夜市拍賣專用補充樣式（沿用既有 tokens，不新增衝突色） ========= */
+:root{
+  --epic:#8B7FD1;      /* 史詩：延伸自背景本來就有的紫色系 */
+}
+
+/* 拍賣進行中面板：沿用既有卡片骨架，但改金色系（拍賣＝興奮而非危險） */
+.auction-live{
+  border:1px solid var(--gold-d);
+  border-radius:var(--radius);
+  padding:18px;
+  margin-bottom:16px;
+  background:rgba(242,183,5,.06);
+}
+.auction-live .live-tag{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:12px;color:var(--gold);font-weight:700;margin-bottom:12px;
+}
+.auction-live .live-tag .dot{
+  width:8px;height:8px;border-radius:50%;background:var(--gold);
+  animation:live-pulse-dot 1s ease-in-out infinite;
+}
+@keyframes live-pulse-dot{
+  0%,100%{opacity:1;}
+  50%{opacity:.3;}
+}
+
+.lot-stage{
+  display:grid;
+  grid-template-columns:1fr auto;
+  gap:18px;
+  align-items:center;
+}
+@media (max-width:520px){
+  .lot-stage{grid-template-columns:1fr;justify-items:center;text-align:center;}
+}
+.lot-info{min-width:0;}
+.lot-info h3{font-size:20px;margin-bottom:6px;overflow-wrap:anywhere;}
+.lot-info .price-row{display:flex;align-items:baseline;gap:8px;margin:10px 0 4px;flex-wrap:wrap;}
+.lot-info .bidder{font-size:13px;color:var(--ink-dim);overflow-wrap:anywhere;}
+.lot-info .bidder b{color:var(--ink);}
+
+/* 大數字（財神幣餘額／目前最高價）：沿用贊助名單「募資總額」的數字樣式，
+   不是 Space Mono 等寬數字，是 Archivo Black + 金色光暈 */
+.cur{
+  display:inline-flex;align-items:center;gap:6px;
+  font-family:'Archivo Black','Noto Sans TC',sans-serif;
+  font-size:46px;font-weight:900;color:var(--gold);
+  text-shadow:0 0 18px rgba(242,183,5,.3);
+  line-height:1;
+}
+.unit{font-size:13px;color:var(--ink-dim);}
+
+/* 打工按鈕跟財神幣數字同一行，按鈕靠右對齊在那塊留白處 */
+.balance-row{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
+}
+.labor-action{text-align:right;}
+@media (max-width:520px){
+  .balance-row{justify-content:center;text-align:center;}
+  .labor-action{text-align:center;}
+}
+
+.countdown-dial{position:relative;width:96px;height:96px;flex-shrink:0;}
+.countdown-dial svg{position:absolute;top:0;left:0;transform:rotate(-90deg);}
+.countdown-dial .num{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-family:'Space Mono',monospace;font-size:26px;font-weight:700;color:var(--gold);
+}
+.countdown-dial .lbl{
+  position:absolute;bottom:-20px;left:0;right:0;text-align:center;
+  font-size:11px;color:var(--ink-dim);
+}
+
+.bid-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px;}
+.bid-row .btn.ghost{color:var(--gold);border-color:var(--gold-d);}
+
+/* 商品預告橫向卡片：手機上靠原生橫向捲動即可，不做額外拖曳把手 */
+.upnext-scroll{
+  display:grid;
+  grid-template-columns:repeat(4, 1fr);
+  gap:10px;
+  margin-top:2px;
+}
+@media (max-width:640px){
+  .upnext-scroll{
+    display:flex;overflow-x:auto;padding-bottom:4px;
+    scrollbar-width:none;
+    -ms-overflow-style:none;
+  }
+  .upnext-scroll::-webkit-scrollbar{display:none;width:0;height:0;}
+  .upnext-card{flex:0 0 132px;}
+}
+.upnext-card{
+  min-width:0;
+  background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+  padding:12px 10px;text-align:center;
+}
+.upnext-card .ico-wrap{
+  width:40px;height:40px;margin:0 auto 8px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(242,183,5,.08);
+}
+.upnext-card .name{font-size:12px;line-height:1.35;height:32px;overflow:hidden;overflow-wrap:anywhere;}
+.upnext-card .tier-tag{margin-top:8px;}
+
+/* 賺財神幣管道卡片 */
+.income-grid{
+  display:grid;grid-template-columns:repeat(2,1fr);gap:10px;
+}
+@media (min-width:640px){.income-grid{grid-template-columns:repeat(4,1fr);}}
+.income-card{
+  background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+  padding:14px 12px;text-align:center;
+}
+.income-card .ico-big{width:26px;height:26px;color:var(--gold);margin-bottom:8px;}
+.income-card .title{font-size:13px;font-weight:700;margin-bottom:4px;}
+.income-card .desc{font-size:11.5px;color:var(--ink-dim);line-height:1.5;}
+.income-card .status{margin-top:10px;font-size:11px;}
+
+/* 商品清單分級標籤 */
+.tier-tag{
+  display:inline-flex;align-items:center;gap:4px;
+  font-size:10.5px;letter-spacing:.04em;padding:3px 9px;border-radius:999px;
+  border:1px solid var(--line);white-space:nowrap;
+}
+.tier-tag.common{color:var(--ink-dim);border-color:var(--line);}
+.tier-tag.rare{color:var(--green);border-color:var(--green);}
+.tier-tag.epic{color:var(--epic);border-color:var(--epic);}
+.tier-tag.legendary{color:var(--gold);border-color:var(--gold-d);}
+.tier-tag.special{color:var(--red);border-color:var(--red);}
+
+.item-row{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:12px 4px;border-bottom:1px solid var(--line);
+}
+.item-row:last-child{border-bottom:none;}
+.item-row .name{font-size:14px;min-width:0;overflow-wrap:anywhere;}
+.item-row .pts{
+  font-size:14px;font-weight:700;color:var(--gold-d);
+  text-align:right;flex-shrink:0;white-space:nowrap;
+}
+
+/* 排行榜 */
+.lb-row{
+  display:flex;align-items:center;gap:12px;padding:11px 4px;
+  border-bottom:1px solid var(--line);
+}
+.lb-row:last-child{border-bottom:none;}
+.lb-row .lb-name{flex:1;font-size:14px;min-width:0;overflow-wrap:anywhere;}
+.lb-row .lb-score{font-size:16px;font-weight:700;color:var(--gold);flex-shrink:0;}
+.lb-row.me{background:rgba(242,183,5,.08);border-radius:10px;padding:11px 10px;}
+
+.section-note{font-size:12px;color:var(--ink-dim);margin-top:10px;text-align:center;}
+
+/* 我的背包 */
+.folder-tab .bag-count{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:16px;height:16px;padding:0 4px;margin-left:2px;
+  font-size:10px;font-weight:700;border-radius:999px;
+  background:var(--line);color:var(--ink-dim);
+}
+.folder-tab.active .bag-count{background:rgba(242,183,5,.18);color:var(--gold);}
+.bag-item-row{
+  display:flex;align-items:center;gap:12px;
+  padding:12px 4px;border-bottom:1px solid var(--line);
+}
+.bag-item-row:last-child{border-bottom:none;}
+.bag-item-row .bag-name{flex:1;min-width:0;}
+.bag-item-row .bag-name .n{font-size:14px;display:block;overflow-wrap:anywhere;}
+.bag-item-row .bag-name .sub{font-size:11.5px;color:var(--ink-dim);margin-top:2px;}
+.bag-item-row .bag-paid{
+  font-size:14px;font-weight:700;color:var(--gold-d);white-space:nowrap;
+}
+.bag-empty{text-align:center;color:var(--ink-dim);padding:24px 10px;font-size:13px;}
+
+/* 後台：拍賣參加者列(名字 / 財神幣 / 獎勵輸入框 對齊同一套 .admin-row grid) */
+.admin-row .coin-tag{color:var(--gold);border-color:var(--gold-d);flex-shrink:0;}

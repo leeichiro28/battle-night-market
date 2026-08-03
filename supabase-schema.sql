@@ -516,10 +516,77 @@ drop policy if exists "anon all announcements" on announcements;
 create policy "anon all announcements" on announcements for all using (true) with check (true);
 
 -- ============================================
+-- 夜市拍賣(auction):跟骰子/五手勢完全獨立的活動類型,不走賽程/晉級,
+-- 所以不共用 matches 表,獨立開三張表:
+--   auction_participants — 每位玩家的財神幣/分數/打工冷卻
+--   auction_lots         — 每一件排定要拍賣的商品(含底價、目前最高價、狀態、時間)
+--   auction_bids         — 出價紀錄(目前只用來留歷史,排行/得標都是看 auction_lots/auction_participants)
+-- ============================================
+
+-- 開放 events.game_type 多一個 'auction' 選項
+alter table events drop constraint if exists events_game_type_check;
+alter table events add constraint events_game_type_check check (game_type in ('dice','rps5','auction'));
+
+create table if not exists auction_participants (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid references events(id) on delete cascade,
+  player_id uuid references players(id) on delete cascade,
+  coins int not null default 0,          -- 目前手上財神幣
+  work_ready_at timestamptz not null default now(), -- 打工按鈕的冷卻到期時間
+  final_rank int,
+  reward text,
+  created_at timestamptz default now(),
+  unique(event_id, player_id)
+);
+
+create table if not exists auction_lots (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid references events(id) on delete cascade,
+  wave_number int not null default 1,
+  item_name text not null,
+  item_tier text not null, -- common | rare | epic | legendary
+  points int not null default 0,          -- 得標可以拿到的分數
+  base_price int not null default 0,      -- 起標價
+  min_increment int not null default 10,  -- 最小加價單位
+  current_price int not null default 0,   -- 目前最高價(還沒開拍時等於 base_price)
+  current_bidder_id uuid references players(id),
+  status text not null default 'scheduled', -- scheduled(排隊等開拍) | live(拍賣中) | done(已結標)
+  scheduled_at timestamptz not null,      -- 預計開拍時間
+  ends_at timestamptz,                    -- 目前這波倒數的截標時間(進入 live 才會有值,加價可能延後)
+  settled boolean not null default false, -- 是否已經把得標結果算進得標者的分數(避免重複結算)
+  created_at timestamptz default now()
+);
+
+create table if not exists auction_bids (
+  id uuid primary key default gen_random_uuid(),
+  lot_id uuid references auction_lots(id) on delete cascade,
+  event_id uuid references events(id) on delete cascade,
+  player_id uuid references players(id) on delete cascade,
+  amount int not null,
+  created_at timestamptz default now()
+);
+
+alter table auction_participants enable row level security;
+drop policy if exists "anon all auction_participants" on auction_participants;
+create policy "anon all auction_participants" on auction_participants for all using (true) with check (true);
+
+alter table auction_lots enable row level security;
+drop policy if exists "anon all auction_lots" on auction_lots;
+create policy "anon all auction_lots" on auction_lots for all using (true) with check (true);
+
+alter table auction_bids enable row level security;
+drop policy if exists "anon all auction_bids" on auction_bids;
+create policy "anon all auction_bids" on auction_bids for all using (true) with check (true);
+
+-- ============================================
 -- 執行完以上內容後,記得手動開啟 Realtime:
 -- 左側選單 Database → Replication →
 -- 把 events / event_participants / matches / match_bets 四張表的開關打開
 -- (舊專案升級上來,前三張應該已經開過,這次新增的 match_bets 記得也要開)
--- 或是直接在 SQL Editor 執行下面這行也可以:
+-- 夜市拍賣新增的三張表也要打開:auction_participants / auction_lots / auction_bids
+-- 或是直接在 SQL Editor 執行下面這幾行也可以:
 -- alter publication supabase_realtime add table match_bets;
+-- alter publication supabase_realtime add table auction_participants;
+-- alter publication supabase_realtime add table auction_lots;
+-- alter publication supabase_realtime add table auction_bids;
 -- ============================================
