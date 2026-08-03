@@ -312,9 +312,66 @@
       </div>
     </div>
 
+    <div class="game-group" data-group="auction">
+      <button type="button" class="game-toggle">
+        <i data-lucide="gavel" class="ico"></i>
+        <span class="game-toggle-label">夜市拍賣</span>
+        <span class="game-toggle-count">3 個小節</span>
+        <i data-lucide="chevron-down" class="ico chev"></i>
+      </button>
+      <div class="game-body" hidden>
+
+        <div class="game-section">
+          <h4><i data-lucide="gavel" class="ico"></i> 基礎規則</h4>
+          <p style="color:var(--ink-dim);line-height:1.9;">
+          報名時每個人都會拿到同一筆固定的<b style="color:var(--ink);">財神幣</b>(主辦人設定,預設 1000),公平起跑,不看誰先報名。<br/><br/>
+          主辦人按下「開始拍賣」後,報名就會關閉(不能中途加入拿完整預算),系統會依商品清單自動排出整場拍賣順序:<b style="color:var(--ink);">普通</b>先上,中段<b style="color:var(--ink);">稀有 / 史詩</b>交錯穿插,尾聲壓軸拍<b style="color:var(--ink);">傳說</b>等級,一波接一波全自動開拍,不用主辦人手動按下一件。<br/><br/>
+          每一波商品開拍後預設倒數 <b style="color:var(--ink);">30 秒</b>,倒數期間任何已報名的人都能出價,有三種出價方式:加最小加價單位、直接加 5 倍最小加價、或自訂金額。加價門檻依商品等級而不同(等級越高,最小加價越大)。<br/><br/>
+          <i data-lucide="shield-alert" class="ico"></i> <b style="color:var(--ink);">防偷襲機制</b>:倒數剩 10 秒內如果還有人加價,倒數會重新計到剩 15 秒,避免有人卡在最後一刻偷標,同一波可以一直被延長到沒人再加價為止。<br/><br/>
+          出價前系統會檢查財神幣夠不夠付:你手上的財神幣要先扣掉「你目前正在其他商品領先中」的金額,剩下的錢夠付這一口價才能出價,避免同時對好幾件商品開空頭支票。倒數結束時出價最高的人得標,商品會直接進入「我的背包」,得標金額從財神幣扣除。
+          </p>
+        </div>
+
+        <div class="game-section">
+          <h4><i data-lucide="list-tree" class="ico"></i> 商品分級與積分</h4>
+          <p style="color:var(--ink-dim);line-height:1.9;">
+          商品清單固定分成 4 個等級,底價與最小加價都隨等級提高,得標後拿到的積分 = 底價 ÷ 10(四捨五入,最少 5 分)—— 等級越高,底價、加價門檻、積分都跟著水漲船高:
+          </p>
+          <div class="rule-table-wrap">
+            <table class="rule-table">
+              <thead>
+                <tr><th>等級</th><th>底價區間</th><th>最小加價</th><th>備註</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><span class="tier-tag common" style="border:none;padding:0;">普通</span></td><td>50 ~ 150 財神幣</td><td>10</td><td>整場最先開拍,件數最多</td></tr>
+                <tr><td><span class="tier-tag rare" style="border:none;padding:0;">稀有</span></td><td>300 ~ 500 財神幣</td><td>20</td><td>中段開始穿插出現</td></tr>
+                <tr><td><span class="tier-tag epic" style="border:none;padding:0;">史詩</span></td><td>600 ~ 900 財神幣</td><td>30</td><td>跟稀有交錯,中後段登場</td></tr>
+                <tr><td><span class="tier-tag legendary" style="border:none;padding:0;">傳說</span></td><td>1000 財神幣以上</td><td>50</td><td>整場限量供應,壓軸出場</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p style="color:var(--ink-dim);line-height:1.9;margin-top:10px;">
+          完整商品名稱與底價可以在活動頁面下方的「商品清單」按等級分頁查看;每一波實際出現哪些商品、順序,是系統開活動時自動隨機排定的。
+          </p>
+        </div>
+
+        <div class="game-section">
+          <h4><i data-lucide="coins" class="ico"></i> 賺財神幣 / 積分怎麼算</h4>
+          <p style="color:var(--ink-dim);line-height:1.9;">
+          <i data-lucide="hand-coins" class="ico"></i> <b style="color:var(--ink);">打工賺財神幣</b>:拍賣開始後隨時可以按,每次隨機拿到 20~60 財神幣,按一次要冷卻 75 秒才能再按。<br/><br/>
+          活動頁面「途中賺財神幣」還列了夜市任務、幸運攤位、參與退補三個管道,這些是之後陸續推出的規劃,<b style="color:var(--ink);">目前這個版本還沒開放</b>,現階段能穩定賺財神幣的方式只有打工。<br/><br/>
+          <i data-lucide="trophy" class="ico"></i> <b style="color:var(--ink);">即時排行榜怎麼算分</b>:積分 = 已得標商品的積分總和 + 剩餘財神幣 × 0.5,不管活動有沒有結束都會即時更新,所以財神幣沒花完也不是完全浪費,只是花在標到商品上通常換算效率更高。<br/><br/>
+          活動結束時系統會依最終積分排出名次,自動套用主辦人在建立活動時設定的「前五名獎勵」(跟骰子對戰、五手勢對戰共用同一套獎勵設定機制),現場也能事後手動覆蓋。
+          </p>
+        </div>
+
+      </div>
+    </div>
+
     <div class="card">
-      <h3><i data-lucide="hourglass" class="ico"></i> 沒有進場、掛機了怎麼辦</h3>
+      <h3><i data-lucide="hourglass" class="ico"></i> 沒有進場、掛機了怎麼辦(骰子對戰 / 五手勢對戰)</h3>
       <p style="color:var(--ink-dim);line-height:1.9;">
+      這節只適用於一對一的骰子對戰、五手勢對戰;夜市拍賣沒有「配對進場」的概念,不受這節影響。<br/><br/>
       場次一開打,系統會給雙方時間進場:<br/><br/>
       <b style="color:var(--ink);">只有一方沒進場</b>:超過 1 分鐘,系統會開始自動幫他出普通招式(不會用防禦骰、加注、大招等技能),讓對戰可以繼續進行,不會平白判他棄權。他隨時進場都能接手繼續玩。<br/><br/>
       <b style="color:var(--ink);">雙方都沒進場</b>:超過 3 分鐘,系統會判定其中一方直接晉級,畫面會用明顯的大字公告「雙方掛機,已自動棄權」,幾秒後自動帶所有人(玩家跟觀眾)回到等候室,不會卡在對戰畫面不知道發生什麼事。<br/><br/>
