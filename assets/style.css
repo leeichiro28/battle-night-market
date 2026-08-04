@@ -1645,6 +1645,13 @@ input,select,textarea{max-width:100%;min-width:0;}
   font-size:14px;font-weight:700;color:var(--gold-d);
   text-align:right;flex-shrink:0;white-space:nowrap;
 }
+.item-row.special-item-row{border-bottom:none;padding-bottom:0;}
+.special-item-desc{
+  font-size:12px;color:var(--ink-dim);line-height:1.6;
+  text-align:left;padding:0 4px 14px;margin-top:-4px;
+  border-bottom:1px solid var(--line);
+}
+.special-item-desc:last-child{border-bottom:none;padding-bottom:4px;}
 
 /* 排行榜 */
 .lb-row{
@@ -1696,6 +1703,31 @@ input,select,textarea{max-width:100%;min-width:0;}
   padding:8px 10px;margin:8px 0;
 }
 .priority-banner.mine{color:var(--gold);border-color:var(--gold-d);background:rgba(242,183,5,.1);}
+
+/* 隱藏驚喜商品 / 最後衝刺輪橫幅 */
+.flourish-banner{
+  display:flex;align-items:center;gap:6px;
+  font-size:12.5px;font-weight:700;
+  border-radius:8px;padding:8px 10px;margin:8px 0;
+}
+.flourish-banner.surprise{color:var(--red);background:rgba(229,72,77,.1);border:1px solid var(--red);}
+.flourish-banner.sprint{color:var(--gold);background:rgba(242,183,5,.1);border:1px solid var(--gold-d);}
+
+/* 合夥競標 / 猜價小遊戲小卡 */
+.partner-box,.guess-box{
+  margin-top:12px;padding:12px;border-radius:10px;
+  border:1px solid var(--line);background:var(--panel2);
+  font-size:12.5px;color:var(--ink-dim);
+}
+.partner-box.accepted{color:var(--gold);border-color:var(--gold-d);background:rgba(242,183,5,.1);}
+.partner-box.muted{color:var(--ink-dim);}
+.partner-actions,.guess-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;}
+.partner-actions select,.guess-actions input{
+  padding:8px 10px;border-radius:8px;border:1px solid var(--line);
+  background:var(--bg);color:var(--ink);font-size:12.5px;
+}
+.guess-actions input{width:110px;font-family:'Space Mono',monospace;}
+.partner-actions .btn,.guess-actions .btn{padding:7px 12px;font-size:12.5px;}
 
 /* 我的特殊券卡片 */
 .ticket-row{

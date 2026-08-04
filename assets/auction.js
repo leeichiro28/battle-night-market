@@ -9,6 +9,7 @@ let lots = [];
 let standings = [];
 let tasks = [];
 let myTaskAnswers = []; // 我在這場活動已經回答過的任務
+let myPriceGuesses = []; // 我在這場活動已經猜過價的商品
 let currentPlayer = null; // Discord 登入後的玩家 {id, name},沒登入是 null
 let pendingLoginResolvers = [];
 
@@ -84,8 +85,10 @@ async function refreshAll() {
     const mine = standings.find((r) => r.participant.player_id === currentPlayer.id);
     if (mine) myParticipant = mine.participant;
     myTaskAnswers = await db.listMyAuctionTaskAnswers(eventId, currentPlayer.id).catch(() => []);
+    myPriceGuesses = await db.listMyAuctionPriceGuesses(eventId, currentPlayer.id).catch(() => []);
   } else {
     myTaskAnswers = [];
+    myPriceGuesses = [];
   }
   render();
 }
@@ -99,12 +102,25 @@ async function tick() {
     await db.settleExpiredAuctionLots(eventId);
     await db.activateDueAuctionTasks(eventId);
     await db.settleExpiredAuctionTasks(eventId);
+    await maybeAutoCloseAuction();
     await refreshAll();
   } catch (e) {
     console.error(e);
   } finally {
     ticking = false;
   }
+}
+
+// 商品全部拍賣完畢後(沒有排隊中也沒有拍賣中的商品了),留一段緩衝時間讓大家繼續打工/任務/下注花錢,
+// 緩衝時間一到,系統自動結算活動(等同主辦人按下「結束活動」),不用主辦人手動收尾。
+// 緩衝的起算點是「最後一件商品實際截標的時間」(取全場所有商品 ends_at 的最大值)。
+async function maybeAutoCloseAuction() {
+  if (!lots.length) return;
+  if (lots.some((l) => l.status === "scheduled" || l.status === "live")) return;
+  const maxEndsAt = lots.reduce((max, l) => (l.ends_at ? Math.max(max, new Date(l.ends_at).getTime()) : max), 0);
+  if (!maxEndsAt) return;
+  if (Date.now() < maxEndsAt + AUCTION_FINAL_CLOSE_DELAY_SEC * 1000) return;
+  await db.closeAuctionEvent(eventId);
 }
 
 // ---------- 報名 ----------
@@ -215,6 +231,58 @@ async function answerTask(task, idx) {
     await refreshAll();
   } catch (e) {
     await ui.alert(e.message || "作答失敗", { title: "作答失敗", tone: "danger" });
+    await refreshAll();
+  }
+}
+
+// ---------- 合夥競標 ----------
+async function invitePartner(lot, partnerId) {
+  const player = await ensureLogin();
+  if (!partnerId) return;
+  try {
+    await db.inviteAuctionPartner(lot.id, eventId, player.id, partnerId);
+    await refreshAll();
+  } catch (e) {
+    await ui.alert(e.message || "邀請失敗", { title: "邀請失敗", tone: "danger" });
+    await refreshAll();
+  }
+}
+
+async function respondPartner(lot, accept) {
+  const player = await ensureLogin();
+  try {
+    await db.respondAuctionPartner(lot.id, player.id, accept);
+    await refreshAll();
+  } catch (e) {
+    await ui.alert(e.message || "操作失敗", { title: "操作失敗", tone: "danger" });
+    await refreshAll();
+  }
+}
+
+async function cancelPartner(lot) {
+  const player = await ensureLogin();
+  try {
+    await db.cancelAuctionPartner(lot.id, player.id);
+    await refreshAll();
+  } catch (e) {
+    await ui.alert(e.message || "取消失敗", { title: "取消失敗", tone: "danger" });
+    await refreshAll();
+  }
+}
+
+// ---------- 猜價小遊戲 ----------
+async function submitGuess(lot, value) {
+  const player = await ensureLogin();
+  const amount = parseInt(value);
+  if (!Number.isFinite(amount) || amount < 0) {
+    await ui.alert("請輸入合理的金額。", { title: "金額不對", tone: "danger" });
+    return;
+  }
+  try {
+    await db.submitAuctionPriceGuess(lot.id, eventId, player.id, amount);
+    await refreshAll();
+  } catch (e) {
+    await ui.alert(e.message || "送出失敗", { title: "送出失敗", tone: "danger" });
     await refreshAll();
   }
 }
@@ -410,11 +478,77 @@ function startCountdown(lot) {
   countdownInterval = setInterval(tickDial, 200);
 }
 
+function partnerSectionHtml(lot) {
+  const myId = currentPlayer && currentPlayer.id;
+  if (!myId || !myParticipant) return "";
+  const status = lot.partner_status;
+  const nameOf = (playerId) => {
+    const row = standings.find((r) => r.participant.player_id === playerId);
+    return row ? row.participant.players.name : "夥伴";
+  };
+  if (status === "pending" && lot.partner_b_id === myId) {
+    return `
+      <div class="partner-box">
+        <div>${ui.icon("users")}<b>${ui.esc(nameOf(lot.partner_a_id))}</b> 邀你合夥搶這一波,標到後價錢跟分數各分一半</div>
+        <div class="partner-actions">
+          <button class="btn" id="partner-accept-btn">${ui.icon("circle-check")}接受</button>
+          <button class="btn ghost" id="partner-decline-btn">${ui.icon("circle-x")}婉拒</button>
+        </div>
+      </div>
+    `;
+  }
+  if (status === "pending" && lot.partner_a_id === myId) {
+    return `
+      <div class="partner-box">
+        <div>${ui.icon("hourglass")}等待 ${ui.esc(nameOf(lot.partner_b_id))} 回應合夥邀請中...</div>
+        <div class="partner-actions">
+          <button class="btn ghost" id="partner-cancel-btn">${ui.icon("circle-x")}取消邀請</button>
+        </div>
+      </div>
+    `;
+  }
+  if (status === "accepted" && (lot.partner_a_id === myId || lot.partner_b_id === myId)) {
+    const otherId = lot.partner_a_id === myId ? lot.partner_b_id : lot.partner_a_id;
+    return `<div class="partner-box accepted">${ui.icon("users")}合夥出價中(與 <b>${ui.esc(nameOf(otherId))}</b>)・標到後價錢跟分數各分一半</div>`;
+  }
+  if (!status || status === "declined") {
+    const others = standings.filter((r) => r.participant.player_id !== myId);
+    if (!others.length) return "";
+    const options = others.map((r) => `<option value="${r.participant.player_id}">${ui.esc(r.participant.players.name)}</option>`).join("");
+    return `
+      <div class="partner-box">
+        <div>${ui.icon("users")}想找人一起合夥搶這一波嗎?標到後價錢跟分數各分一半</div>
+        <div class="partner-actions">
+          <select id="partner-select">${options}</select>
+          <button class="btn ghost" id="partner-invite-btn">${ui.icon("send")}邀請合夥</button>
+        </div>
+      </div>
+    `;
+  }
+  return `<div class="partner-box muted">${ui.icon("users")}這一波已經有其他人在合夥搶標了</div>`;
+}
+
+function guessSectionHtml(lot, myGuess) {
+  if (!currentPlayer || !myParticipant) return "";
+  if (myGuess) {
+    return `<div class="guess-box">${ui.icon("target")}你猜這件會標到 <b>${myGuess.guess}</b> 財神幣,結標後看誰最接近就加分</div>`;
+  }
+  return `
+    <div class="guess-box">
+      <div>${ui.icon("target")}猜猜這件最後會標到多少錢?猜中或最接近可以加分,不用出價也能參加</div>
+      <div class="guess-actions">
+        <input type="number" id="guess-input" placeholder="輸入金額" />
+        <button class="btn ghost" id="guess-submit-btn">${ui.icon("send")}送出猜測</button>
+      </div>
+    </div>
+  `;
+}
+
 function priorityWindowActive(lot) {
   return !!(lot.priority_holder_id && lot.priority_until && new Date(lot.priority_until).getTime() > Date.now());
 }
 
-function lotStageHtml(lot) {
+function lotStageHtml(lot, isFinalLot, myGuess) {
   const myId = currentPlayer && currentPlayer.id;
   const isMineLeading = lot.current_bidder_id && myId && lot.current_bidder_id === myId;
   const isSpecial = lot.item_tier === "special";
@@ -430,6 +564,14 @@ function lotStageHtml(lot) {
     priorityBannerHtml = iAmPriorityHolder
       ? `<div class="priority-banner mine">${ui.icon("fast-forward")}你的插隊優先權時間!還有 ${secLeft} 秒只有你能出價</div>`
       : `<div class="priority-banner">${ui.icon("fast-forward")}這波有人插隊優先,還有 ${secLeft} 秒後其他人才能搶標</div>`;
+  }
+
+  let flourishBannerHtml = "";
+  if (lot.is_surprise) {
+    flourishBannerHtml += `<div class="flourish-banner surprise">${ui.icon("gift")}隱藏驚喜商品!商品預告沒有預告到這件</div>`;
+  }
+  if (isFinalLot) {
+    flourishBannerHtml += `<div class="flourish-banner sprint">${ui.icon("flag")}最後衝刺!這是本場最後一波,剩餘財神幣快點花掉,沒花完只值一半分數</div>`;
   }
 
   let extraActionHtml = "";
@@ -461,6 +603,7 @@ function lotStageHtml(lot) {
   return `
     <div class="card auction-live${isSpecial ? " special" : ""}${isMystery ? " mystery" : ""}">
       <span class="live-tag"><span class="dot"></span>LOT ${ui.esc(String(lot.wave_number))} · 本波拍賣進行中</span>
+      ${flourishBannerHtml}
       ${priorityBannerHtml}
       <div class="lot-stage">
         <div class="lot-info">
@@ -477,6 +620,8 @@ function lotStageHtml(lot) {
           </div>
           <div class="bid-row" id="bid-row">${bidRowHtml}</div>
           ${extraActionHtml}
+          ${partnerSectionHtml(lot)}
+          ${guessSectionHtml(lot, myGuess)}
         </div>
         <div class="countdown-dial">
           <svg width="96" height="96" viewBox="0 0 96 96">
@@ -506,7 +651,9 @@ function renderLotSection() {
   }
   const liveLot = lots.find((l) => l.status === "live");
   if (liveLot) {
-    box.innerHTML = lotStageHtml(liveLot);
+    const isFinalLot = !lots.some((l) => l.status === "scheduled");
+    const myGuess = currentPlayer ? myPriceGuesses.find((g) => g.lot_id === liveLot.id) : null;
+    box.innerHTML = lotStageHtml(liveLot, isFinalLot, myGuess);
     const bidMinBtn = document.getElementById("bid-min");
     const bidX5Btn = document.getElementById("bid-x5");
     const bidCustomBtn = document.getElementById("bid-custom");
@@ -515,6 +662,26 @@ function renderLotSection() {
     if (bidCustomBtn) bidCustomBtn.onclick = () => customBid(liveLot);
     const freeCommonBtn = document.getElementById("bid-free-common");
     if (freeCommonBtn) freeCommonBtn.onclick = () => redeemFreeCommon(liveLot);
+    const partnerInviteBtn = document.getElementById("partner-invite-btn");
+    if (partnerInviteBtn) {
+      partnerInviteBtn.onclick = () => {
+        const select = document.getElementById("partner-select");
+        invitePartner(liveLot, select.value);
+      };
+    }
+    const partnerAcceptBtn = document.getElementById("partner-accept-btn");
+    if (partnerAcceptBtn) partnerAcceptBtn.onclick = () => respondPartner(liveLot, true);
+    const partnerDeclineBtn = document.getElementById("partner-decline-btn");
+    if (partnerDeclineBtn) partnerDeclineBtn.onclick = () => respondPartner(liveLot, false);
+    const partnerCancelBtn = document.getElementById("partner-cancel-btn");
+    if (partnerCancelBtn) partnerCancelBtn.onclick = () => cancelPartner(liveLot);
+    const guessSubmitBtn = document.getElementById("guess-submit-btn");
+    if (guessSubmitBtn) {
+      guessSubmitBtn.onclick = () => {
+        const input = document.getElementById("guess-input");
+        submitGuess(liveLot, input.value);
+      };
+    }
     startCountdown(liveLot);
     return;
   }
@@ -527,7 +694,15 @@ function renderLotSection() {
     return;
   }
   if (lots.length) {
-    box.innerHTML = `<div class="card empty">${ui.icon("party-popper")}本場商品已經全部拍賣完畢,等主辦人結算活動吧</div>`;
+    const maxEndsAt = lots.reduce((max, l) => (l.ends_at ? Math.max(max, new Date(l.ends_at).getTime()) : max), 0);
+    const secLeft = maxEndsAt ? Math.max(0, Math.ceil((maxEndsAt + AUCTION_FINAL_CLOSE_DELAY_SEC * 1000 - Date.now()) / 1000)) : null;
+    const closeNote =
+      secLeft === null
+        ? "等主辦人結算活動吧"
+        : secLeft > 0
+        ? `還可以繼續打工/夜市任務/幸運攤位 <b style="color:var(--gold);">${secLeft}</b> 秒,時間到系統會自動結算活動`
+        : "正在自動結算活動,稍等一下...";
+    box.innerHTML = `<div class="card empty">${ui.icon("party-popper")}本場商品已經全部拍賣完畢!${closeNote}</div>`;
   } else {
     box.innerHTML = `<div class="card empty">${ui.icon("hourglass")}拍賣即將開始</div>`;
   }
@@ -606,7 +781,9 @@ function upnextCardHtml(lot) {
 
 function renderUpnext() {
   const card = document.getElementById("upnext-card");
-  const scheduled = lots.filter((l) => l.status === "scheduled").sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
+  const scheduled = lots
+    .filter((l) => l.status === "scheduled" && !l.is_surprise)
+    .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
   if (!scheduled.length) {
     card.style.display = "none";
     return;
@@ -631,7 +808,12 @@ function renderBag() {
     card.style.display = "none";
     return;
   }
-  const won = lots.filter((l) => l.status === "done" && l.current_bidder_id === currentPlayer.id);
+  const won = lots.filter(
+    (l) =>
+      l.status === "done" &&
+      (l.current_bidder_id === currentPlayer.id ||
+        (l.partner_status === "accepted" && (l.partner_a_id === currentPlayer.id || l.partner_b_id === currentPlayer.id)))
+  );
   card.style.display = "block";
   document.getElementById("bag-count-badge").textContent = won.length;
   const box = document.getElementById("bag-list");
@@ -642,6 +824,17 @@ function renderBag() {
   const canRefund = myParticipant.effects && myParticipant.effects.refund > 0;
   box.innerHTML = won
     .map((l) => {
+      const isPrimary = l.current_bidder_id === currentPlayer.id;
+      if (!isPrimary) {
+        // 我是這一波的合夥夥伴(不是主要出價者),價錢跟分數已經各分一半算進我自己的排行分數裡,這裡不能退貨。
+        return `
+      <div class="bag-item-row">
+        ${ui.tierTag(l.item_tier)}
+        <span class="bag-name"><span class="n">${ui.esc(l.item_name)}</span></span>
+        <span class="bag-paid">${ui.icon("users")}合夥得標・價錢分數各半</span>
+      </div>
+    `;
+      }
       const isMysteryReveal = l.item_tier === "mystery" && l.box_reveal_name;
       const priceLabel = isMysteryReveal
         ? `${ui.icon("gift")}開出:${ui.esc(l.box_reveal_name)}(${l.points} 分${l.box_doubled ? "・翻倍!" : ""})`
@@ -678,7 +871,7 @@ function renderTierList(tier) {
       <span class="name">${ui.esc(sp.name)}</span>
       <span class="pts">底價 ${sp.basePrice}</span>
     </div>
-    <div class="section-note" style="margin:-6px 0 10px;">${ui.esc(sp.effectDesc)}</div>
+    <div class="special-item-desc">${ui.esc(sp.effectDesc)}</div>
   `
     ).join("");
     document.getElementById("tier-note").textContent = "不計分,得標後可以使用一次對應的特殊效果,整場各限量一張";
@@ -836,6 +1029,7 @@ function renderRules() {
     <p>主辦人按下「開始拍賣」後,系統會自動依排程開拍,大約每 ${waveInterval} 秒開新的一波,不用主辦人在旁邊一直操作,主辦人也可以下去跟大家一起搶標。</p>
     <p>拍賣採英式競標(價高者得):商品從底價起跳,大家即時喊價加碼,出價至少要比目前最高價高一個「最小加價單位」。倒數最後 ${AUCTION_ANTI_SNIPE_WINDOW_SEC} 秒內如果有人加價,倒數會重新計時到剩 ${AUCTION_ANTI_SNIPE_EXTEND_SEC} 秒,防止蹲點偷襲、最後一秒撿便宜。</p>
     <p>活動結束依「商品得分 + 剩餘財神幣折算分數」加總排行,剩餘財神幣 1 枚可以折算 ${AUCTION_COIN_TO_SCORE} 分,前五名套用活動設定的獎勵機制。</p>
+    <p>商品全部拍賣完畢後,還會留 ${AUCTION_FINAL_CLOSE_DELAY_SEC / 60} 分鐘緩衝時間讓大家繼續打工、答任務、去幸運攤位下注,時間到系統會自動結算活動(主辦人也可以隨時提前手動結束)。</p>
   `;
 
   html += `<h4>${ui.icon("layers")} 商品分類</h4>`;
@@ -860,6 +1054,12 @@ function renderRules() {
   AUCTION_SPECIAL_ITEMS.forEach((sp) => {
     html += `<p><b style="color:var(--red);">${ui.esc(sp.name)}</b><br/>${ui.esc(sp.effectDesc)}</p>`;
   });
+
+  html += `<h4>${ui.icon("sparkles")} 更多玩法</h4>`;
+  html += `<p><b style="color:var(--ink);">${ui.icon("users")} 合夥競標</b><br/>拍賣進行中可以邀請另一位參加者合夥搶這一波,對方接受後,標到的話價錢跟分數兩人各分一半,適合朋友結伴來玩。</p>`;
+  html += `<p><b style="color:var(--ink);">${ui.icon("target")} 猜價小遊戲</b><br/>每件商品拍賣中,大家都可以先猜「這件最後會標到多少錢」(一件只能猜一次,不用出價也能參加),結標後猜中加 ${AUCTION_GUESS_BONUS_EXACT} 分、最接近的人加 ${AUCTION_GUESS_BONUS_CLOSE} 分(平手全部一起拿)。</p>`;
+  html += `<p><b style="color:var(--ink);">${ui.icon("gift")} 隱藏驚喜商品</b><br/>整場會有 1~2 件商品不會出現在「商品預告」清單裡(連搶先情報券都看不到),要等它自己開拍才知道,製造一點意外驚喜。</p>`;
+  html += `<p><b style="color:var(--ink);">${ui.icon("flag")} 最後衝刺輪</b><br/>本場最後一波拍賣會特別標示出來,提醒大家把剩餘財神幣花光光——畢竟折算成分數只有一半效益。</p>`;
 
   box.innerHTML = html;
 }

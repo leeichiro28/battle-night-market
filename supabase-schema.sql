@@ -565,6 +565,26 @@ alter table auction_lots add column if not exists priority_until timestamptz;   
 alter table auction_lots add column if not exists box_reveal_name text;         -- 福袋箱開出的獎項名稱(結標才會有值)
 alter table auction_lots add column if not exists box_reveal_tier text;         -- 福袋箱開出的獎項等級(common/rare/epic/legendary/bust)
 alter table auction_lots add column if not exists box_doubled boolean not null default false; -- 是否套用了福袋箱翻倍券
+alter table auction_lots add column if not exists partner_a_id uuid references players(id); -- 合夥競標:發起邀請的人
+alter table auction_lots add column if not exists partner_b_id uuid references players(id); -- 合夥競標:被邀請的人
+alter table auction_lots add column if not exists partner_status text;          -- 合夥競標狀態:null(沒有合夥) | pending(等對方回應) | accepted(合夥中) | declined(對方婉拒)
+alter table auction_lots add column if not exists is_surprise boolean not null default false; -- 隱藏驚喜商品:true 的話「商品預告」不會顯示這件,開拍才會知道
+alter table auction_participants add column if not exists bonus_points numeric not null default 0; -- 合夥競標分到的分數 + 猜價小遊戲贏得的分數,加總進排行榜分數
+
+-- 猜價小遊戲:每件商品開拍中,大家可以先猜「這件最後會標到多少錢」,不用出價也能參與,
+-- 結標時猜中或最接近的人加一點 bonus_points。一人一件商品只能猜一次。
+create table if not exists auction_price_guesses (
+  id uuid primary key default gen_random_uuid(),
+  lot_id uuid references auction_lots(id) on delete cascade,
+  event_id uuid references events(id) on delete cascade,
+  player_id uuid references players(id) on delete cascade,
+  guess int not null,
+  created_at timestamptz default now(),
+  unique(lot_id, player_id)
+);
+alter table auction_price_guesses enable row level security;
+drop policy if exists "anon all auction_price_guesses" on auction_price_guesses;
+create policy "anon all auction_price_guesses" on auction_price_guesses for all using (true) with check (true);
 
 create table if not exists auction_bids (
   id uuid primary key default gen_random_uuid(),
@@ -632,7 +652,7 @@ create policy "anon all auction_task_answers" on auction_task_answers for all us
 -- 把 events / event_participants / matches / match_bets 四張表的開關打開
 -- (舊專案升級上來,前三張應該已經開過,這次新增的 match_bets 記得也要開)
 -- 夜市拍賣新增的表也要打開:auction_participants / auction_lots / auction_bids /
--- auction_tasks / auction_task_answers
+-- auction_tasks / auction_task_answers / auction_price_guesses
 -- 或是直接在 SQL Editor 執行下面這幾行也可以:
 -- alter publication supabase_realtime add table match_bets;
 -- alter publication supabase_realtime add table auction_participants;
@@ -640,4 +660,5 @@ create policy "anon all auction_task_answers" on auction_task_answers for all us
 -- alter publication supabase_realtime add table auction_bids;
 -- alter publication supabase_realtime add table auction_tasks;
 -- alter publication supabase_realtime add table auction_task_answers;
+-- alter publication supabase_realtime add table auction_price_guesses;
 -- ============================================

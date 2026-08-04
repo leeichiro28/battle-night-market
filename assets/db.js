@@ -822,6 +822,7 @@ const db = (function () {
           status: "scheduled",
           scheduled_at: scheduledAt,
           special_key: item.specialKey || null,
+          is_surprise: !!item.isSurprise,
         });
       });
     });
@@ -876,43 +877,103 @@ const db = (function () {
   }
 
   // 共用結標邏輯:扣得標者的錢(招待券免費兌換時 finalPrice 是 0)、幫其他出過價但沒標到的人辦參與退補、
-  // 如果是特殊券商品就把效果加進得標者的 auction_participants.effects、如果是福袋箱就現場開箱算分數,
-  // 最後標記 settled。呼叫端(settleExpiredAuctionLots / useAuctionFreeCommonTicket)都已經先用 status 條件鎖搶到這件商品的處理權。
+  // 如果是特殊券商品就把效果加進得標者的 auction_participants.effects、如果是福袋箱就現場開箱算分數、
+  // 如果這一波有成立合夥競標就把價錢跟分數分一半給夥伴、幫猜價小遊戲猜中/最接近的人加分,最後標記 settled。
+  // 呼叫端(settleExpiredAuctionLots / useAuctionFreeCommonTicket)都已經先用 status 條件鎖搶到這件商品的處理權。
   async function finalizeAuctionLot(lot, winnerId, finalPrice) {
     let lotUpdates = null;
+    let partnerCredit = null; // { partnerId, coinsDelta, bonusPoints }
     if (winnerId) {
       const part = await getMyAuctionParticipant(lot.event_id, winnerId);
       if (part) {
-        const updates = { coins: Math.max(0, part.coins - finalPrice) };
         const effects = part.effects || {};
         let nextEffects = null;
+        let points = lot.points;
         if (lot.special_key) {
           nextEffects = { ...effects, [lot.special_key]: (effects[lot.special_key] || 0) + 1 };
         }
         if (lot.item_tier === "mystery") {
           const outcome = auctionRollMysteryBoxOutcome();
-          let points = outcome.points;
+          points = outcome.points;
           let doubled = false;
           if (effects.boxDoubleActive) {
             points *= 2;
             doubled = true;
             nextEffects = { ...(nextEffects || effects), boxDoubleActive: false };
           }
-          lotUpdates = { points, box_reveal_name: outcome.name, box_reveal_tier: outcome.tier, box_doubled: doubled };
+          lotUpdates = { ...(lotUpdates || {}), box_reveal_name: outcome.name, box_reveal_tier: outcome.tier, box_doubled: doubled };
         }
+
+        // 合夥競標:這一波如果有成立合夥關係,得標者跟夥伴價錢、分數各分一半(尾數算得標者的)。
+        let myPrice = finalPrice;
+        let myPoints = points;
+        const isPartnered = lot.partner_status === "accepted" && (lot.partner_a_id === winnerId || lot.partner_b_id === winnerId);
+        if (isPartnered) {
+          const partnerId = lot.partner_a_id === winnerId ? lot.partner_b_id : lot.partner_a_id;
+          const myPriceShare = Math.ceil(finalPrice / 2);
+          const myPointsShare = Math.ceil(points / 2);
+          partnerCredit = { partnerId, coinsDelta: -(finalPrice - myPriceShare), bonusPoints: points - myPointsShare };
+          myPrice = myPriceShare;
+          myPoints = myPointsShare;
+        }
+
+        if (lot.item_tier !== "special") {
+          lotUpdates = { ...(lotUpdates || {}), points: myPoints };
+        }
+        const updates = { coins: Math.max(0, part.coins - myPrice) };
         if (nextEffects) updates.effects = nextEffects;
         await client.from("auction_participants").update(updates).eq("id", part.id);
+      }
+    }
+    if (partnerCredit) {
+      const partnerPart = await getMyAuctionParticipant(lot.event_id, partnerCredit.partnerId);
+      if (partnerPart) {
+        await client
+          .from("auction_participants")
+          .update({
+            coins: Math.max(0, partnerPart.coins + partnerCredit.coinsDelta),
+            bonus_points: (partnerPart.bonus_points || 0) + partnerCredit.bonusPoints,
+          })
+          .eq("id", partnerPart.id);
       }
     }
     if (lotUpdates) {
       await client.from("auction_lots").update(lotUpdates).eq("id", lot.id);
     }
+
+    // 猜價小遊戲:這件商品開拍中大家先猜的「最後會標到多少錢」,結標後跟實際成交價比對,
+    // 猜中或最接近的人加 bonus_points(平手全部一起加)。沒人出價流標的話(finalPrice 是 0)就不結算。
+    if (finalPrice > 0) {
+      const { data: guesses, error: guessErr } = await client.from("auction_price_guesses").select("*").eq("lot_id", lot.id);
+      if (guessErr) throw guessErr;
+      if (guesses && guesses.length) {
+        let bestDiff = Infinity;
+        guesses.forEach((g) => {
+          const diff = Math.abs(g.guess - finalPrice);
+          if (diff < bestDiff) bestDiff = diff;
+        });
+        const winners = guesses.filter((g) => Math.abs(g.guess - finalPrice) === bestDiff);
+        const bonus = bestDiff === 0 ? AUCTION_GUESS_BONUS_EXACT : AUCTION_GUESS_BONUS_CLOSE;
+        for (const g of winners) {
+          const guesserPart = await getMyAuctionParticipant(lot.event_id, g.player_id);
+          if (guesserPart) {
+            await client
+              .from("auction_participants")
+              .update({ bonus_points: (guesserPart.bonus_points || 0) + bonus })
+              .eq("id", guesserPart.id);
+          }
+        }
+      }
+    }
+
     // 參與退補:這件商品有出過價、但最後沒標到的人,結標後每人退一小筆財神幣當參與獎勵,
     // 鼓勵大家踴躍出手而不是全場觀望。金額 = 這件商品的最小加價單位 * 倍率,越稀有的商品退越多。
+    // 合夥的夥伴不算「沒標到」,不用再額外領一次參與退補。
     const { data: bidRows, error: bidErr } = await client.from("auction_bids").select("player_id").eq("lot_id", lot.id);
     if (bidErr) throw bidErr;
     const refund = lot.min_increment * AUCTION_PARTICIPATION_REFUND_MULT;
-    const losingBidderIds = Array.from(new Set((bidRows || []).map((b) => b.player_id))).filter((pid) => pid !== winnerId);
+    const excludeIds = new Set([winnerId, partnerCredit ? partnerCredit.partnerId : null]);
+    const losingBidderIds = Array.from(new Set((bidRows || []).map((b) => b.player_id))).filter((pid) => !excludeIds.has(pid));
     for (const pid of losingBidderIds) {
       const losingPart = await getMyAuctionParticipant(lot.event_id, pid);
       if (losingPart) {
@@ -1130,7 +1191,7 @@ const db = (function () {
       });
     const rows = parts.map((p) => {
       const won = wonByPlayer[p.player_id] || [];
-      const itemScore = won.filter((l) => !l.refunded).reduce((s, l) => s + l.points, 0);
+      const itemScore = won.filter((l) => !l.refunded).reduce((s, l) => s + l.points, 0) + (p.bonus_points || 0);
       const coinScore = Math.round(p.coins * AUCTION_COIN_TO_SCORE * 10) / 10;
       return { participant: p, wonLots: won, itemScore, coinScore, score: itemScore + coinScore };
     });
@@ -1224,6 +1285,79 @@ const db = (function () {
     const { data: updated, error } = await client.from("auction_participants").update({ effects: nextEffects }).eq("id", part.id).select();
     if (error) throw error;
     return updated[0];
+  }
+
+  // ---------- 合夥競標 ----------
+  // 只能在還沒有人成立合夥關係(或對方剛婉拒過)的情況下邀請,一波同時只能有一組合夥關係。
+  async function inviteAuctionPartner(lotId, eventId, inviterId, partnerId) {
+    if (inviterId === partnerId) throw new Error("不能邀請自己合夥");
+    const { data: lot, error: lotErr } = await client.from("auction_lots").select("*").eq("id", lotId).single();
+    if (lotErr) throw lotErr;
+    if (lot.status !== "live") throw new Error("這件商品現在不是拍賣中");
+    if (lot.partner_status === "pending" || lot.partner_status === "accepted") throw new Error("這一波已經有合夥關係在進行了");
+    const partnerPart = await getMyAuctionParticipant(eventId, partnerId);
+    if (!partnerPart) throw new Error("對方還沒報名這場拍賣");
+    const { data: claimed, error: claimErr } = await client
+      .from("auction_lots")
+      .update({ partner_a_id: inviterId, partner_b_id: partnerId, partner_status: "pending" })
+      .eq("id", lotId)
+      .eq("status", "live")
+      .or("partner_status.is.null,partner_status.eq.declined")
+      .select();
+    if (claimErr) throw claimErr;
+    if (!claimed || !claimed.length) throw new Error("手慢了,請重新整理再試一次");
+    return claimed[0];
+  }
+
+  async function respondAuctionPartner(lotId, playerId, accept) {
+    const { data: lot, error: lotErr } = await client.from("auction_lots").select("*").eq("id", lotId).single();
+    if (lotErr) throw lotErr;
+    if (lot.partner_status !== "pending" || lot.partner_b_id !== playerId) throw new Error("沒有邀請你合夥這一波");
+    const { data: updated, error } = await client
+      .from("auction_lots")
+      .update({ partner_status: accept ? "accepted" : "declined" })
+      .eq("id", lotId)
+      .eq("partner_status", "pending")
+      .select();
+    if (error) throw error;
+    if (!updated || !updated.length) throw new Error("手慢了,請重新整理再試一次");
+    return updated[0];
+  }
+
+  async function cancelAuctionPartner(lotId, playerId) {
+    const { data: lot, error: lotErr } = await client.from("auction_lots").select("*").eq("id", lotId).single();
+    if (lotErr) throw lotErr;
+    if (lot.partner_status !== "pending" || (lot.partner_a_id !== playerId && lot.partner_b_id !== playerId)) {
+      throw new Error("沒有可以取消的合夥邀請");
+    }
+    const { error } = await client
+      .from("auction_lots")
+      .update({ partner_status: null, partner_a_id: null, partner_b_id: null })
+      .eq("id", lotId)
+      .eq("partner_status", "pending");
+    if (error) throw error;
+  }
+
+  // ---------- 猜價小遊戲 ----------
+  async function submitAuctionPriceGuess(lotId, eventId, playerId, guess) {
+    const amount = Math.floor(guess);
+    if (!Number.isFinite(amount) || amount < 0) throw new Error("請輸入合理的金額");
+    const part = await getMyAuctionParticipant(eventId, playerId);
+    if (!part) throw new Error("還沒報名這場拍賣");
+    const { data: lot, error: lotErr } = await client.from("auction_lots").select("status").eq("id", lotId).single();
+    if (lotErr) throw lotErr;
+    if (lot.status !== "live") throw new Error("這件商品現在不是拍賣中");
+    const { error } = await client.from("auction_price_guesses").insert({ lot_id: lotId, event_id: eventId, player_id: playerId, guess: amount });
+    if (error) {
+      if (error.code === "23505") throw new Error("這件你已經猜過了");
+      throw error;
+    }
+  }
+
+  async function listMyAuctionPriceGuesses(eventId, playerId) {
+    const { data, error } = await client.from("auction_price_guesses").select("*").eq("event_id", eventId).eq("player_id", playerId);
+    if (error) throw error;
+    return data || [];
   }
 
   // 老闆招待券:直接把一件「拍賣中的普通級商品」免費送給這位玩家,結標流程走跟一般結標同一套
@@ -1609,6 +1743,11 @@ const db = (function () {
     useAuctionRefundTicket,
     useAuctionBoxDoubleTicket,
     useAuctionFreeCommonTicket,
+    inviteAuctionPartner,
+    respondAuctionPartner,
+    cancelAuctionPartner,
+    submitAuctionPriceGuess,
+    listMyAuctionPriceGuesses,
     computeAuctionStandings,
     closeAuctionEvent,
     setAuctionReward,

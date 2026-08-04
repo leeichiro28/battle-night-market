@@ -99,6 +99,11 @@ const AUCTION_MIN_INCREMENT = { common: 10, rare: 20, epic: 30, legendary: 50, s
 const AUCTION_PRIORITY_WINDOW_SEC = 6; // 插隊優先權:專屬優先出價秒數
 const AUCTION_INTEL_PREVIEW_DEFAULT = 4; // 沒有搶先情報券的人,商品預告預設只能看到幾件
 const AUCTION_INTEL_PREVIEW_UNLOCKED = 24; // 用過搶先情報券之後,商品預告可以看到幾件
+const AUCTION_GUESS_BONUS_CLOSE = 10; // 猜價小遊戲:猜最接近的人加幾分
+const AUCTION_GUESS_BONUS_EXACT = 25; // 猜價小遊戲:剛好猜中的人加幾分
+const AUCTION_SURPRISE_CHANCE = 0.05; // 隱藏驚喜商品:每件普通/稀有/史詩/傳說商品被抽中當驚喜商品的機率
+const AUCTION_SURPRISE_MAX_COUNT = 2; // 隱藏驚喜商品:整場最多幾件(太多就不驚喜了)
+const AUCTION_FINAL_CLOSE_DELAY_SEC = 180; // 商品全部拍賣完畢後,留幾秒緩衝(讓大家繼續打工/任務/下注花錢),時間到系統會自動結算活動
 
 const AUCTION_LOT_DURATION_SEC = 30; // 每件商品開拍後的初始倒數秒數
 const AUCTION_ANTI_SNIPE_WINDOW_SEC = 10; // 倒數剩多少秒內加價會觸發重新計時(防偷襲)
@@ -140,9 +145,19 @@ function buildAuctionItemSequence() {
         points: auctionPointsForPrice(basePrice),
         minIncrement: AUCTION_MIN_INCREMENT[tier],
         specialKey: null,
+        isSurprise: false,
         sortKey: AUCTION_TIER_WEIGHT[tier] + Math.random() * 1.6,
       });
     });
+  });
+  // 隱藏驚喜商品:隨機從一般分級商品裡抽幾件標記,這些不會出現在「商品預告」清單,開拍才知道
+  let surpriseCount = 0;
+  auctionShuffle(pool).forEach((item) => {
+    if (surpriseCount >= AUCTION_SURPRISE_MAX_COUNT) return;
+    if (Math.random() < AUCTION_SURPRISE_CHANCE) {
+      item.isSurprise = true;
+      surpriseCount++;
+    }
   });
   auctionShuffle(AUCTION_BUNDLE_ITEMS).forEach((b) => {
     pool.push({
@@ -152,6 +167,7 @@ function buildAuctionItemSequence() {
       points: b.points,
       minIncrement: AUCTION_MIN_INCREMENT.bundle,
       specialKey: null,
+      isSurprise: false,
       sortKey: AUCTION_TIER_WEIGHT.bundle + Math.random() * 1.6,
     });
   });
@@ -163,6 +179,7 @@ function buildAuctionItemSequence() {
       points: 0, // 開箱前不知道分數,結標時 finalizeAuctionLot 會用機率表算出來寫回去
       minIncrement: AUCTION_MIN_INCREMENT.mystery,
       specialKey: null,
+      isSurprise: false,
       sortKey: AUCTION_TIER_WEIGHT.mystery + Math.random() * 1.6,
     });
   });
@@ -174,6 +191,7 @@ function buildAuctionItemSequence() {
       points: 0, // 特殊券不計分,只給功能
       minIncrement: AUCTION_MIN_INCREMENT.special,
       specialKey: sp.key,
+      isSurprise: false,
       sortKey: AUCTION_TIER_WEIGHT.special + Math.random() * 1.6,
     });
   });

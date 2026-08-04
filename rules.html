@@ -312,6 +312,114 @@
       </div>
     </div>
 
+    <div class="game-group" data-group="auction">
+      <button type="button" class="game-toggle">
+        <i data-lucide="gavel" class="ico"></i>
+        <span class="game-toggle-label">夜市拍賣</span>
+        <span class="game-toggle-count">5 個小節</span>
+        <i data-lucide="chevron-down" class="ico chev"></i>
+      </button>
+      <div class="game-body" hidden>
+
+        <div class="game-section">
+          <h4><i data-lucide="coins" class="ico"></i> 基礎規則</h4>
+          <p style="color:var(--ink-dim);line-height:1.9;">
+          不是對戰遊戲,是純社交經濟活動——沒有輸贏對戰,比的是競標策略,適合當開場暖身或中場穿插。<br/><br/>
+          報名時每人固定發放 <b style="color:var(--gold);">1000</b> 財神幣預算(主辦人可調整),不用打怪、不用對戰賺,大家起跑點完全一樣。<br/><br/>
+          主辦人按下「開始拍賣」後,系統會自動依排程開拍(預設每 <b style="color:var(--ink);">90</b> 秒開新的一波,可調整),不用主辦人在旁邊一直操作,主辦人也可以下去跟大家一起搶標。<br/><br/>
+          拍賣採 <b style="color:var(--ink);">英式競標</b>(價高者得):商品從底價起跳,大家即時喊價加碼,出價至少要比目前最高價高一個「最小加價單位」。倒數最後 <b style="color:var(--gold);">10</b> 秒內如果有人加價,倒數會重新計時到剩 <b style="color:var(--gold);">15</b> 秒,防止蹲點偷襲、最後一秒撿便宜。<br/><br/>
+          活動結束依「商品得分 + 剩餘財神幣折算分數」加總排行:剩餘財神幣 <b style="color:var(--ink);">1</b> 枚可以折算 <b style="color:var(--gold);">0.5</b> 分,效益比標到商品低,鼓勵大家積極出手而不是死抱錢包到最後。前五名套用活動設定的獎勵機制。<br/><br/>
+          商品全部拍賣完畢後,還會留 <b style="color:var(--gold);">3</b> 分鐘緩衝時間讓大家繼續打工、答任務、去幸運攤位下注,時間到系統會自動結算活動,不用主辦人手動收尾(主辦人也可以隨時提前手動結束)。
+          </p>
+        </div>
+
+        <div class="game-section">
+          <h4><i data-lucide="layers" class="ico"></i> 商品分級</h4>
+          <p style="color:var(--ink-dim);line-height:1.9;">
+          <span class="tier-tag common" style="border:none;padding:0;">普通</span> 底價 50~150,分數最低。
+          <span class="tier-tag rare" style="border:none;padding:0;">稀有</span> 底價 300~500。
+          <span class="tier-tag epic" style="border:none;padding:0;">史詩</span> 底價 600~900。
+          <span class="tier-tag legendary" style="border:none;padding:0;">傳說</span> 底價 1000 以上,整場限量供應,分數最高。<br/><br/>
+          <span class="tier-tag bundle" style="border:none;padding:0;">組合包</span> 一次多件小東西綁在一起賣,分數比同價位單品略高一點,適合想快速湊分的人。<br/><br/>
+          <span class="tier-tag mystery" style="border:none;padding:0;">福袋箱</span> 底價固定,得標後現場開箱才知道多少分,機率如下:
+          </p>
+          <div class="rule-table-wrap">
+            <table class="rule-table">
+              <thead><tr><th>開箱結果</th><th>機率</th><th>分數</th></tr></thead>
+              <tbody>
+                <tr><td>只有一張參加感謝小卡(雷)</td><td>10%</td><td>5 分</td></tr>
+                <tr><td>普通等級獎項</td><td>40%</td><td>15 分</td></tr>
+                <tr><td>稀有等級獎項</td><td>30%</td><td>40 分</td></tr>
+                <tr><td>史詩等級獎項</td><td>15%</td><td>75 分</td></tr>
+                <tr><td>傳說等級大獎!</td><td>5%</td><td><b style="color:var(--gold);">150 分</b></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p style="color:var(--ink-dim);line-height:1.9;margin-top:10px;">
+          <span class="tier-tag special" style="border:none;padding:0;">特殊</span> 不計分,而是給一個能影響拍賣本身的功能,整場限量供應各一張(詳見下面「特殊券效果」)。
+          </p>
+        </div>
+
+        <div class="game-section">
+          <h4><i data-lucide="hand-coins" class="ico"></i> 途中賺財神幣</h4>
+          <p style="color:var(--ink-dim);line-height:1.9;">
+          預算花完不代表出局旁觀,場上一直有事情做、有機會補血:<br/><br/>
+          <b style="color:var(--ink);"><i data-lucide="hand-coins" class="ico"></i> 打工賺財神幣</b>:每 <b style="color:var(--gold);">75</b> 秒可以按一次,隨機拿到 <b style="color:var(--gold);">20~60</b> 財神幣,穩定的基礎收入管道。<br/><br/>
+          <b style="color:var(--ink);"><i data-lucide="puzzle" class="ico"></i> 夜市任務</b>:拍賣過程中偶爾跳出問答／猜謎題,45 秒內答對現領 <b style="color:var(--gold);">30~80</b> 財神幣,一題一人只能答一次。<br/><br/>
+          <b style="color:var(--ink);"><i data-lucide="dice-5" class="ico"></i> 幸運攤位</b>:花 <b style="color:var(--gold);">20~300</b> 財神幣骰一顆骰子,4~6 點算大、1~3 點算小,猜對雙倍拿回、猜錯拿回一半,每 <b style="color:var(--gold);">20</b> 秒能下注一次。<br/><br/>
+          <b style="color:var(--ink);"><i data-lucide="undo-2" class="ico"></i> 參與退補</b>:某件商品你出過價、但最後沒標到,結標後會自動退還一小筆財神幣(等於那件商品的最小加價單位 x2)當參與獎勵,鼓勵大家踴躍出手而不是全場觀望。
+          </p>
+        </div>
+
+        <div class="game-section">
+          <h4><i data-lucide="ticket" class="ico"></i> 特殊券效果</h4>
+          <div class="rule-table-wrap">
+            <table class="rule-table">
+              <thead><tr><th>特殊券</th><th>底價</th><th>效果</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><span class="row-label"><i data-lucide="eye" class="ico"></i> 搶先情報券</span></td>
+                  <td>400</td>
+                  <td>使用後永久生效:提前看到全場剩餘的完整商品清單(其他人只能看到最近幾件,連隱藏驚喜商品都不會顯示)</td>
+                </tr>
+                <tr>
+                  <td><span class="row-label"><i data-lucide="fast-forward" class="ico"></i> 插隊優先權</span></td>
+                  <td>350</td>
+                  <td>使用後預約下一波:那一波開拍時你有 6 秒專屬優先出價時間,其他人要等時間到才能搶標</td>
+                </tr>
+                <tr>
+                  <td><span class="row-label"><i data-lucide="undo-2" class="ico"></i> 退款保證券</span></td>
+                  <td>450</td>
+                  <td>手上任一件已得標的商品,可以無條件退回一次,拿回一半財神幣(分數也會一起扣掉)</td>
+                </tr>
+                <tr>
+                  <td><span class="row-label"><i data-lucide="package-open" class="ico"></i> 福袋箱翻倍券</span></td>
+                  <td>400</td>
+                  <td>使用後,下一次你標到福袋箱時,開出的分數直接翻倍</td>
+                </tr>
+                <tr>
+                  <td><span class="row-label"><i data-lucide="hand-platter" class="ico"></i> 老闆招待券</span></td>
+                  <td>300</td>
+                  <td>免費兌換一件正在拍賣中的「普通」級商品,不用出財神幣</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="game-section">
+          <h4><i data-lucide="sparkles" class="ico"></i> 更多玩法</h4>
+          <p style="color:var(--ink-dim);line-height:1.9;">
+          <b style="color:var(--ink);"><i data-lucide="users" class="ico"></i> 合夥競標</b>:拍賣進行中可以邀請另一位參加者合夥搶這一波,對方接受後,標到的話價錢跟分數兩人各分一半,適合朋友結伴來玩。<br/><br/>
+          <b style="color:var(--ink);"><i data-lucide="target" class="ico"></i> 猜價小遊戲</b>:每件商品拍賣中,大家都可以先猜「這件最後會標到多少錢」(一件只能猜一次,不用出價也能參加),結標後猜中加 <b style="color:var(--gold);">25</b> 分、最接近的人加 <b style="color:var(--gold);">10</b> 分(平手全部一起拿)。<br/><br/>
+          <b style="color:var(--ink);"><i data-lucide="gift" class="ico"></i> 隱藏驚喜商品</b>:整場會有 1~2 件商品不會出現在「商品預告」清單裡(連搶先情報券都看不到),要等它自己開拍才知道,製造一點意外驚喜。<br/><br/>
+          <b style="color:var(--ink);"><i data-lucide="flag" class="ico"></i> 最後衝刺輪</b>:本場最後一波拍賣會特別標示出來,提醒大家把剩餘財神幣花光光——畢竟折算成分數只有一半效益。
+          </p>
+        </div>
+
+      </div>
+    </div>
+
     <div class="card">
       <h3><i data-lucide="hourglass" class="ico"></i> 沒有進場、掛機了怎麼辦</h3>
       <p style="color:var(--ink-dim);line-height:1.9;">
