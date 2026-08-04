@@ -79,9 +79,9 @@ const AUCTION_BUNDLE_MIN_INCREMENT = 20;
 // 特殊券:不算稀有度分數,而是給一個能影響拍賣本身的功能。固定價位、整場限量供應(各一張)。
 // key 對應 db.js 結標時要加進 auction_participants.effects 的欄位名稱。
 const AUCTION_SPECIAL_ITEMS = [
-  { key: "intel", name: "搶先情報券", basePrice: 400, effectDesc: "使用後,你能提前看到全場剩餘的完整商品清單(其他人只能看到最近幾件)" },
-  { key: "priority", name: "插隊優先權", basePrice: 350, effectDesc: "使用後預約下一波:那一波開拍時你有專屬優先出價時間,其他人要等時間到才能搶標" },
-  { key: "refund", name: "退款保證券", basePrice: 450, effectDesc: "手上任一件已得標的商品,可以無條件退回一次,拿回一半財神幣" },
+  { key: "intel", name: "搶先情報券", basePrice: 400, effectDesc: "使用後永久生效:提前看到全場剩餘的完整商品清單(其他人只能看到最近幾件,連隱藏驚喜商品都不會顯示)" },
+  { key: "priority", name: "插隊優先權", basePrice: 350, effectDesc: "使用後預約下一波:那一波開拍時你有 6 秒專屬優先出價時間,其他人要等時間到才能搶標" },
+  { key: "refund", name: "退款保證券", basePrice: 450, effectDesc: "手上任一件已得標的商品,可以無條件退回一次,拿回一半財神幣(分數也會一起扣掉)" },
   { key: "boxDouble", name: "福袋箱翻倍券", basePrice: 400, effectDesc: "使用後,下一次你標到福袋箱時,開出的分數直接翻倍" },
   { key: "freeCommon", name: "老闆招待券", basePrice: 300, effectDesc: "免費兌換一件正在拍賣中的「普通」級商品,不用出財神幣" },
 ];
