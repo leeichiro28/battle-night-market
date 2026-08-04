@@ -1,0 +1,1713 @@
+/* ===== Design tokens =====
+   主題:夜市博弈攤 — 深夜攤位燈牌氛圍
+   bg      #14121C  深靛黑(攤位陰影)
+   panel   #1E1B2A  面板底
+   line    #34304A  分隔線
+   gold    #F2B705  燈牌金(主要強調色)
+   gold-d  #C99A04  金色深階
+   red     #E5484D  傷害/警示
+   green   #3DBE6C  治療/勝利
+   ink     #EDEAE2  主要文字(暖白)
+   ink-dim #9C97B0  次要文字
+*/
+:root{
+  --bg:#14121C;
+  --panel:#1E1B2A;
+  --panel2:#242038;
+  --line:#34304A;
+  --gold:#F2B705;
+  --gold-d:#C99A04;
+  --red:#E5484D;
+  --green:#3DBE6C;
+  --ink:#EDEAE2;
+  --ink-dim:#9C97B0;
+  --radius:14px;
+}
+
+@font-face{
+  font-family:'Display';
+  src:local('Archivo Black');
+}
+
+*{box-sizing:border-box;}
+html,body{
+  margin:0;
+  padding:0;
+  /* RWD:手機上絕對不允許整頁被撐寬而出現橫向捲軸 */
+  max-width:100%;
+  overflow-x:hidden;
+}
+img,svg,iframe,video{max-width:100%;}
+body{
+  background:
+    radial-gradient(circle at 15% 0%, #241f38 0%, transparent 45%),
+    radial-gradient(circle at 85% 10%, #2a1f2f 0%, transparent 40%),
+    var(--bg);
+  color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang TC","Noto Sans TC",sans-serif;
+  min-height:100vh;
+  line-height:1.55;
+}
+
+.mono{font-family:'Space Mono',ui-monospace,SFMono-Regular,Menlo,monospace;}
+
+h1,h2,h3{
+  font-family:'Archivo Black','PingFang TC','Noto Sans TC',sans-serif;
+  letter-spacing:.01em;
+  margin:0 0 .4em;
+}
+
+a{color:var(--gold);text-decoration:none;}
+
+.wrap{
+  max-width:920px;
+  margin:0 auto;
+  padding:28px 20px 80px;
+}
+
+/* 燈牌招牌標頭 */
+.marquee{
+  text-align:center;
+  padding:38px 20px 30px;
+  position:relative;
+}
+.marquee .eyebrow{
+  display:inline-block;
+  font-size:12px;
+  letter-spacing:.28em;
+  color:var(--gold);
+  text-transform:uppercase;
+  border:1px solid var(--gold-d);
+  border-radius:999px;
+  padding:4px 14px;
+  margin-bottom:14px;
+}
+.marquee h1{
+  font-size:clamp(30px,6vw,52px);
+  color:var(--ink);
+  text-shadow:0 0 18px rgba(242,183,5,.25);
+}
+.marquee h1 span{color:var(--gold);}
+.marquee p{color:var(--ink-dim);font-size:15px;max-width:520px;margin:10px auto 0;}
+
+/* 卡片 */
+.card{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:20px;
+  margin-bottom:16px;
+}
+.card + .card{margin-top:16px;}
+.card > h3{margin-bottom:14px;}
+
+/* 資料夾分頁籤:貼在卡片正上方,選中的分頁跟卡片背景連成一片 */
+.folder-tabs{display:flex;gap:4px;padding:0 2px;}
+.folder-tab{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:10px 16px;
+  font-size:13px;font-weight:700;
+  color:var(--ink-dim);
+  background:var(--panel2);
+  border:1px solid var(--line);
+  border-bottom:none;
+  border-radius:10px 10px 0 0;
+  cursor:pointer;
+  white-space:nowrap;
+  transform:translateY(1px);
+}
+.folder-tab .ico{width:14px;height:14px;}
+.folder-tab:hover{color:var(--ink);}
+.folder-tab.active{
+  background:var(--panel);
+  color:var(--gold);
+  transform:translateY(0);
+}
+.folder-tab-card{border-top-left-radius:0;}
+
+/* 規則頁的「遊戲分組」收合區塊,互動方式跟首頁「活動已結束」的收合按鈕一致 */
+.game-group{margin-bottom:16px;}
+.game-toggle{
+  width:100%;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:20px;
+  color:var(--ink);
+  font-size:16px;
+  font-weight:700;
+  font-family:inherit;
+  cursor:pointer;
+  text-align:left;
+  transition:background .15s ease;
+}
+.game-toggle .ico{color:var(--gold);flex-shrink:0;}
+.game-toggle-label{flex:1 1 auto;min-width:0;overflow-wrap:anywhere;}
+.game-toggle-count{font-size:12px;font-weight:400;color:var(--ink-dim);flex-shrink:0;white-space:nowrap;}
+.game-toggle .chev{color:var(--ink-dim);flex-shrink:0;transition:transform .2s ease;}
+.game-toggle:hover{background:var(--panel2);}
+.game-toggle:hover .chev{color:var(--gold);}
+.game-group.open .game-toggle{border-radius:var(--radius) var(--radius) 0 0;}
+.game-group.open .game-toggle .chev{transform:rotate(180deg);}
+.game-body{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-top:none;
+  border-radius:0 0 var(--radius) var(--radius);
+}
+.game-body[hidden]{display:none;}
+.game-section{padding:20px;border-bottom:1px solid var(--line);}
+.game-section:last-child{border-bottom:none;}
+.game-section h4{
+  color:var(--gold);
+  font-size:15px;
+  margin-bottom:10px;
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+
+.event-card{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:16px;
+  flex-wrap:wrap;
+}
+.event-card .meta{flex:1 1 260px;min-width:0;}
+.event-card h3{font-size:18px;margin-bottom:10px;}
+.tag{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  font-size:11px;
+  letter-spacing:.06em;
+  padding:4px 10px;
+  border-radius:999px;
+  background:var(--panel2);
+  color:var(--ink-dim);
+  border:1px solid var(--line);
+  white-space:nowrap;      /* 標籤內的中文不換行 */
+}
+.tag.open{color:var(--green);border-color:var(--green);}
+.tag.closed{color:var(--red);border-color:var(--red);}
+.tag.running{color:var(--gold);border-color:var(--gold-d);}
+
+/* 職業小標籤:賽程列表/賽制圖裡玩家名字旁邊用,每個職業一個顏色方便一眼認出 */
+.class-tag{font-size:10px;padding:3px 8px;}
+.class-tag-fighter{color:#E5484D;border-color:#E5484D;}
+.class-tag-guardian{color:#3DBE6C;border-color:#3DBE6C;}
+.class-tag-gambler{color:#F2B705;border-color:#C99A04;}
+.class-tag-assassin{color:#9C97B0;border-color:#9C97B0;}
+.class-tag-mage{color:#7C9CF2;border-color:#7C9CF2;}
+.class-tag-luckster{color:#4DD0C9;border-color:#4DD0C9;}
+[data-el="field-mod-tag"]{
+  font-size:15px !important;
+  font-weight:700;
+  padding:7px 16px !important;
+  color:var(--gold);
+  border-color:var(--gold-d);
+  background:rgba(242,183,5,.08);
+}
+
+/* 一排標籤:靠 gap 保持間距,不要靠 margin 硬擠在一起 */
+.tag-row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:8px;
+}
+/* 一排按鈕 */
+.action-row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  align-items:center;
+}
+
+/* 按鈕 */
+.btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  background:var(--gold);
+  color:#1B1706;
+  font-weight:700;
+  border:none;
+  border-radius:10px;
+  padding:11px 20px;
+  font-size:14px;
+  line-height:1.2;
+  cursor:pointer;
+  transition:transform .12s ease, box-shadow .12s ease;
+  box-shadow:0 0 0 rgba(242,183,5,0);
+  /* 按鈕裡的中文一律不換行,也不允許被 flex 容器壓扁成一個字一行 */
+  white-space:nowrap;
+  flex-shrink:0;
+}
+.btn:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(242,183,5,.25);}
+.btn:active{transform:translateY(0);}
+.btn:disabled{opacity:.4;cursor:not-allowed;transform:none;box-shadow:none;}
+.btn.ghost{
+  background:transparent;
+  color:var(--ink);
+  border:1px solid var(--line);
+}
+.btn.ghost:hover{border-color:var(--gold-d);box-shadow:none;}
+.btn.danger{background:var(--red);color:#2A0B0C;}
+/* 外框式的危險操作(刪除/踢出),取代到處寫 inline style */
+.btn.outline-danger{color:var(--red);border-color:var(--red);}
+.btn.outline-danger:hover{border-color:var(--red);background:rgba(229,72,77,.12);}
+/* 整行寬的按鈕文字比較長,允許正常換行(不是被擠壓成一字一行) */
+.btn.block{width:100%;white-space:normal;}
+.btn.small{padding:8px 14px;font-size:13px;}
+.btn .ico{width:15px;height:15px;}
+
+input,select,textarea{
+  width:100%;
+  background:var(--panel2);
+  border:1px solid var(--line);
+  color:var(--ink);
+  border-radius:9px;
+  padding:11px 13px;
+  font-size:14px;
+  line-height:1.4;
+  font-family:inherit;
+}
+input:focus,select:focus,textarea:focus{
+  outline:2px solid var(--gold-d);
+  outline-offset:1px;
+}
+label{
+  display:block;
+  font-size:12px;
+  color:var(--ink-dim);
+  margin-bottom:6px;
+  letter-spacing:.03em;
+}
+.field{margin-bottom:14px;}
+
+.empty{
+  text-align:center;
+  color:var(--ink-dim);
+  padding:40px 20px;
+  border:1px dashed var(--line);
+  border-radius:var(--radius);
+  font-size:14px;
+}
+
+.footer-nav{
+  text-align:center;
+  margin-top:36px;
+  font-size:13px;
+  color:var(--ink-dim);
+}
+
+/* ===== HP 環形錶 (簽名元素) ===== */
+.duel-stage{
+  display:grid;
+  grid-template-columns:1fr auto 1fr;
+  gap:14px;
+  align-items:center;
+  margin:18px 0 26px;
+}
+.fighter{text-align:center;}
+.fighter .name{font-size:14px;color:var(--ink-dim);margin-bottom:8px;}
+.hp-dial{
+  position:relative;
+  width:108px;height:108px;
+  margin:0 auto;
+  border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+}
+.hp-dial svg{position:absolute;top:0;left:0;transform:rotate(-90deg);}
+.hp-dial .num{font-family:'Space Mono',monospace;font-size:22px;font-weight:700;}
+.vs-badge{
+  font-family:'Archivo Black';
+  color:var(--gold);
+  font-size:22px;
+  text-align:center;
+}
+
+.log-panel{
+  background:var(--panel2);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:12px 14px;
+  height:120px;
+  overflow-y:auto;
+  font-size:13px;
+  color:var(--ink-dim);
+  font-family:'Space Mono',monospace;
+}
+.log-panel div{padding:2px 0;border-bottom:1px dashed var(--line);}
+.log-panel div:last-child{border-bottom:none;color:var(--ink);}
+
+.choice-row{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(84px,1fr));
+  gap:10px;
+  margin-top:16px;
+}
+.choice-btn{
+  background:var(--panel2);
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:16px 8px;
+  text-align:center;
+  cursor:pointer;
+  font-size:28px;
+  transition:border-color .12s, transform .12s;
+}
+.choice-btn:hover{border-color:var(--gold-d);transform:translateY(-2px);}
+.choice-btn.picked{border-color:var(--gold);box-shadow:0 0 0 2px rgba(242,183,5,.25) inset;}
+/* 五手勢對戰:每個手勢圖示各給一個鮮明色,深色底下才看得清楚,選中時強制蓋成深色配金底 */
+.choice-btn.g-rock .ico{color:#F2A65A;}
+.choice-btn.g-paper .ico{color:#5AC8F2;}
+.choice-btn.g-scissors .ico{color:#F25A9E;}
+.choice-btn.g-lizard .ico{color:#6CD97E;}
+.choice-btn.g-spock .ico{color:#B48CF2;}
+.choice-btn.picked .ico{color:#1B1706;}
+
+/* 五手勢對戰 BO5 系列賽比分點 */
+.series-dots{display:flex;align-items:center;justify-content:center;gap:14px;margin:0 0 16px;}
+.series-dots .sd-side{display:flex;gap:6px;}
+.series-dots .sd-dot{width:14px;height:14px;border-radius:50%;border:2px solid var(--line);background:transparent;}
+.series-dots .sd-dot.won{background:var(--gold);border-color:var(--gold);}
+.series-dots .sd-label{font-family:'Space Mono',monospace;font-size:12px;color:var(--ink-dim);}
+
+/* 五手勢對戰場地規則橫幅 */
+.field-banner{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  text-align:center;font-size:13px;font-weight:700;color:var(--gold);
+  background:rgba(242,183,5,.08);border:1px solid var(--gold-d);
+  border-radius:999px;padding:7px 16px;margin-bottom:16px;
+}
+.field-banner .ico{width:15px;height:15px;flex-shrink:0;}
+
+/* 假動作:出招前先宣告偏攻擊/偏防禦 */
+.feint-row{display:flex;gap:8px;margin-bottom:12px;}
+.feint-btn{
+  flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
+  padding:10px 8px;border-radius:12px;border:1px solid var(--line);
+  background:var(--panel2);color:var(--ink-dim);font-size:13px;font-weight:600;
+  cursor:pointer;transition:border-color .15s ease,color .15s ease;
+}
+.feint-btn .ico{width:14px;height:14px;}
+.feint-btn:hover{border-color:var(--gold-d);}
+.feint-btn.picked{border-color:var(--gold);color:var(--gold);background:rgba(242,183,5,.08);}
+
+/* 手勢突變鎖住提示 */
+#mutation-hint{
+  text-align:center;font-size:12px;color:var(--ink-dim);
+  margin-top:8px;display:flex;align-items:center;justify-content:center;gap:6px;
+}
+#mutation-hint .ico{width:13px;height:13px;color:var(--gold-d);flex-shrink:0;}
+
+/* 雙手出招按鈕,跟究極手勢按鈕共用 .btn.active-choice 的啟動樣式 */
+#dual-btn{display:flex;align-items:center;justify-content:center;gap:6px;}
+
+/* 讀心值:雙方出招傾向統計面板 */
+.mindread-panel{
+  display:flex;flex-direction:column;gap:14px;
+  background:var(--panel2);border:1px solid var(--line);border-radius:14px;
+  padding:14px 16px;margin-bottom:16px;
+}
+.mindread-title{
+  display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;
+  color:var(--gold);margin-bottom:8px;
+}
+.mindread-title .ico{width:14px;height:14px;}
+.stat-row{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px;color:var(--ink-dim);}
+.stat-row .lbl{display:flex;align-items:center;gap:4px;width:64px;flex-shrink:0;}
+.stat-row .lbl .ico{width:13px;height:13px;}
+.stat-row.top .lbl{color:var(--gold);font-weight:700;}
+.stat-bar{flex:1;height:6px;background:var(--panel);border-radius:999px;overflow:hidden;}
+.stat-bar div{height:100%;background:var(--gold-d);border-radius:999px;}
+.stat-row.top .stat-bar div{background:var(--gold);}
+.stat-row .pct{width:34px;text-align:right;font-family:'Space Mono',monospace;flex-shrink:0;}
+
+/* 道具符/氣勢系統徽章顏色,共用既有的 .mini-badge 樣式 */
+.mini-badge.item{color:var(--gold);border-color:var(--gold-d);}
+.mini-badge.momentum-up{color:var(--green);border-color:var(--green);}
+.mini-badge.momentum-down{color:var(--red);border-color:var(--red);}
+
+/* 隱藏第六手勢:炸彈,額外高亮提醒這是限時出現的選項 */
+.choice-btn.bomb{border-color:var(--red);position:relative;animation:bomb-pulse 1.6s ease-in-out infinite;}
+.choice-btn.bomb .ico,.choice-btn.bomb .lbl{color:var(--red);}
+.choice-btn.bomb.picked .ico,.choice-btn.bomb.picked .lbl{color:#1B1706;}
+@keyframes bomb-pulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(229,72,77,.35);}
+  50%{box-shadow:0 0 0 6px rgba(229,72,77,0);}
+}
+.choice-btn .lbl{display:block;font-size:11px;color:var(--ink-dim);margin-top:6px;}
+.choice-btn:disabled{opacity:.35;cursor:not-allowed;}
+
+.timer-bar{
+  height:6px;
+  background:var(--panel2);
+  border-radius:999px;
+  overflow:hidden;
+  margin:14px 0 4px;
+}
+.timer-bar > div{
+  height:100%;
+  background:var(--gold);
+  transition:width .1s linear;
+}
+
+.reward-badge{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  background:rgba(242,183,5,.12);
+  border:1px solid var(--gold-d);
+  color:var(--gold);
+  border-radius:999px;
+  padding:3px 12px;
+  font-size:12px;
+}
+
+.bracket-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  padding:12px 0;
+  border-bottom:1px solid var(--line);
+  font-size:14px;
+}
+.bracket-row:last-child{border-bottom:none;}
+.bracket-row .win{color:var(--green);font-weight:700;}
+.bracket-row .lose{color:var(--ink-dim);text-decoration:line-through;}
+
+/* 後台贊助名單:每位贊助者一列,跟其他管理列表同一種間距節奏。
+   一位贊助者可能贊助過好幾次,列上顯示的是加總後的獎勵,展開才看得到每一次的原始紀錄。 */
+.sponsor-admin-row{
+  display:flex;flex-direction:column;
+  gap:8px;padding:12px 0;border-bottom:1px solid var(--line);
+}
+.sponsor-admin-row:last-child{border-bottom:none;}
+.sponsor-admin-row .sar-main{flex:1;min-width:0;}
+.sponsor-admin-row .sar-top{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:12px;
+}
+.sponsor-admin-row .sar-top b{color:var(--ink);font-size:14px;}
+.sponsor-admin-row .sar-totals{text-align:right;flex-shrink:0;}
+.sponsor-admin-row .sar-totals .tag{margin-left:6px;}
+.sponsor-admin-row .sar-count{font-size:11px;color:var(--ink-dim);margin-top:4px;}
+.sponsor-admin-row .btn{flex-shrink:0;}
+.sar-history-toggle{
+  align-self:flex-start;display:inline-flex;align-items:center;gap:5px;
+  font-size:12px;color:var(--ink-dim);background:none;border:none;cursor:pointer;padding:0;
+}
+.sar-history-toggle:hover{color:var(--gold);}
+.sar-entries{width:100%;border-top:1px dashed var(--line);padding-top:8px;display:flex;flex-direction:column;gap:10px;}
+.sar-entry{
+  display:flex;flex-direction:column;gap:6px;
+  font-size:12px;color:var(--ink-dim);
+}
+.sar-entry-top{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.sar-entry .sar-entry-date{white-space:nowrap;font-size:11px;}
+.sar-entry-items-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
+.sar-entry-items-list{display:flex;flex-direction:column;gap:6px;flex:1;min-width:0;}
+.sar-entry-item{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
+.sar-entry-item .sei-view{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;}
+.sar-entry-item .sei-view b{color:var(--ink);font-weight:700;overflow-wrap:anywhere;}
+.sar-entry-item .sei-edit{display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:1;min-width:0;}
+.sar-entry-item .sei-edit input{max-width:120px;}
+.sar-entry-item .sei-edit input.sei-qty-input{max-width:90px;}
+.sei-icon-btn{
+  background:none;border:none;cursor:pointer;padding:2px;
+  color:var(--ink-dim);display:inline-flex;align-items:center;
+}
+.sei-icon-btn:hover{color:var(--gold);}
+.sar-name-edit{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.sar-name-view{display:flex;align-items:center;gap:6px;}
+.sar-name-edit input{max-width:220px;}
+
+/* 加總結果的唯讀顯示框(單份名單總額 / 全部活動累積總額),取代原本手動輸入的欄位 */
+.reward-total-box{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
+  background:rgba(242,183,5,.08);border:1px solid var(--gold-d);border-radius:10px;
+  padding:10px 14px;margin-top:12px;font-size:12px;color:var(--ink-dim);
+}
+.reward-total-box .tag-row{margin-top:0;justify-content:flex-end;}
+.reward-total-box .raised-total-row{margin-left:auto;font-size:17px;}
+
+/* 募資總額橫向顯示:一行排完所有獎勵項目(名稱 + 數量),數量由多到少排序。
+   用在贊助頁大總額、後台「這份名單贊助總額」、後台「全部活動累積贊助總額」。
+   字級由外層容器決定(各頁面自己再設定 font-size),這裡只管排版跟顏色。 */
+.raised-total-row{
+  display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 18px;
+}
+.raised-total-row.align-right{justify-content:flex-end;}
+.raised-total-row.align-center{justify-content:center;}
+.raised-total-item{
+  display:inline-flex;align-items:baseline;gap:7px;white-space:nowrap;
+}
+.raised-total-item .rt-name{
+  font-family:'Noto Sans TC',sans-serif;font-weight:400;
+  font-size:.6em;color:var(--gold);opacity:.85;
+}
+.raised-total-item .rt-qty{
+  font-family:'Archivo Black','Noto Sans TC',sans-serif;
+  font-size:1em;font-weight:900;color:var(--gold);
+  text-shadow:0 0 18px rgba(242,183,5,.3);
+}
+.raised-total-empty{color:var(--ink-dim);font-size:13px;}
+
+/* 前台贊助卡片:名字下方一行一種獎勵,累加後的總數量 */
+.sponsor-reward-list{margin-top:8px;display:flex;flex-direction:column;gap:4px;}
+.sponsor-reward-line{
+  display:flex;justify-content:space-between;gap:10px;font-size:14px;color:var(--ink);
+}
+.sponsor-reward-line .r-qty{color:var(--gold);font-weight:700;white-space:nowrap;}
+.sponsor-history-toggle{
+  margin-top:10px;display:inline-flex;align-items:center;gap:6px;
+  font-size:12px;color:var(--ink-dim);background:none;border:none;cursor:pointer;padding:0;
+}
+.sponsor-history-toggle:hover{color:var(--gold);}
+.sponsor-record-list{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);display:flex;flex-direction:column;gap:8px;}
+.sponsor-record-entry .sr-date{font-size:11px;color:var(--ink-dim);margin-bottom:2px;}
+.sponsor-record-entry .sr-line{display:flex;justify-content:space-between;gap:10px;font-size:13px;color:var(--ink-dim);}
+.sponsor-record-entry .sr-line .r-qty{color:var(--ink);font-weight:700;white-space:nowrap;}
+
+/* ===== 對戰列:左選手 / vs / 右選手,vs 永遠在正中央 =====
+   用 grid 的 1fr auto 1fr,兩側再各自靠邊,不管名字多長 vs 都不會被推歪。 */
+.match-row{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  padding:12px 0;
+  border-bottom:1px solid var(--line);
+  font-size:14px;
+}
+.match-row:last-child{border-bottom:none;}
+.vs-row{
+  display:grid;
+  grid-template-columns:1fr auto 1fr;
+  align-items:center;
+  gap:12px;
+  width:100%;
+}
+.vs-row > .side{min-width:0;overflow-wrap:anywhere;display:flex;align-items:center;gap:6px;}
+.vs-row > .side.left{justify-content:flex-start;text-align:left;}
+.vs-row > .side.right{justify-content:flex-end;text-align:right;}
+.vs-row > .vs{
+  color:var(--ink-dim);
+  font-size:12px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  text-align:center;
+  white-space:nowrap;
+}
+.match-row .win{color:var(--green);font-weight:700;}
+.match-row .lose{color:var(--ink-dim);text-decoration:line-through;}
+.match-row .row-note{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  font-size:11px;
+  color:var(--ink-dim);
+}
+.match-row .row-note.live{color:var(--red);}
+.match-row.live{
+  background:rgba(229,72,77,.1);
+  border:1px solid var(--red);
+  border-radius:10px;
+  padding:10px 12px;
+  margin:6px 0;
+  animation:live-pulse 1.6s ease-in-out infinite;
+}
+.match-row.bye .side{color:var(--ink-dim);}
+
+/* ===== 卡片標題列:標題 + 右側切換按鈕(資料夾分頁籤風格,貼在卡片正上方) ===== */
+.card-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  flex-wrap:wrap;
+  padding:0 2px;
+  margin-bottom:0;
+}
+.card-head-title{font-size:15px;color:var(--ink-dim);margin:0;}
+.view-toggle{
+  display:flex;
+  gap:4px;
+  background:transparent;
+  border:none;
+  padding:0;
+  flex-shrink:0;
+}
+.view-toggle-btn{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  white-space:nowrap;
+  border:1px solid var(--line);
+  border-bottom:none;
+  background:var(--panel2);
+  color:var(--ink-dim);
+  font-size:13px;
+  font-weight:700;
+  padding:10px 16px;
+  border-radius:10px 10px 0 0;
+  cursor:pointer;
+  transition:background .15s,color .15s;
+  transform:translateY(1px);
+}
+.view-toggle-btn .ico{width:13px;height:13px;}
+.view-toggle-btn:hover{color:var(--ink);}
+.view-toggle-btn.active{
+  background:var(--panel);
+  color:var(--gold);
+  transform:translateY(0);
+}
+/* 分頁籤在卡片右側時,把卡片右上角的圓角拿掉,讓選中的分頁跟卡片邊框接成一片 */
+.folder-tab-card-right{border-top-right-radius:0;}
+
+/* ===== 賽制圖(樹狀對戰圖):橫向捲動,每輪一欄,SVG 線連接晉級關係 ===== */
+.bracket-tree-wrap{
+  overflow-x:auto;
+  overflow-y:hidden;
+  margin:4px -4px 0;
+  padding:4px;
+}
+.bracket-tree{
+  position:relative;
+  display:flex;
+  align-items:stretch;
+  width:max-content;
+  min-width:100%;
+}
+.bt-col{
+  display:flex;
+  flex-direction:column;
+  min-width:184px;
+  padding:0 26px 0 0;
+}
+.bt-col-title{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:12px;
+  color:var(--ink-dim);
+  margin-bottom:10px;
+  white-space:nowrap;
+}
+.bt-col-title.gold{color:var(--gold);}
+.bt-col-title .ico{width:13px;height:13px;}
+.bt-col-matches{
+  display:flex;
+  flex-direction:column;
+  justify-content:space-around;
+  flex:1;
+  gap:14px;
+}
+.bt-match{
+  position:relative;
+  background:var(--panel2);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:8px 10px;
+  font-size:13px;
+}
+.bt-match.live{border-color:var(--red);box-shadow:0 0 0 1px var(--red);}
+.bt-match.champion-card{background:rgba(242,183,5,.1);border-color:var(--gold-d);}
+.bt-row{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  min-width:0;
+  padding:4px 0;
+}
+.bt-row .ico{width:13px;height:13px;flex-shrink:0;}
+.bt-row span{min-width:0;overflow-wrap:anywhere;}
+.bt-row + .bt-row{border-top:1px solid var(--line);}
+.bt-row.win{color:var(--green);font-weight:700;}
+.bt-row.lose{color:var(--ink-dim);text-decoration:line-through;}
+.bt-live-tag{
+  display:flex;
+  align-items:center;
+  gap:4px;
+  font-size:10px;
+  color:var(--red);
+  margin-top:4px;
+}
+.bt-lines{position:absolute;top:0;left:0;pointer-events:none;overflow:visible;}
+.bt-line{fill:none;stroke:var(--line);stroke-width:2;}
+
+/* ===== 敗部時間軸梯子:即時候位配對沒有固定賽程樹,用先後順序的梯子呈現 ===== */
+.bt-ladder{margin-top:6px;}
+.bt-ladder-item{display:flex;gap:12px;}
+.bt-ladder-dot-col{position:relative;width:14px;flex-shrink:0;display:flex;justify-content:center;}
+.bt-ladder-dot{width:10px;height:10px;border-radius:50%;background:var(--gold-d);margin-top:16px;position:relative;z-index:1;flex-shrink:0;}
+.bt-ladder-dot.live{background:var(--red);box-shadow:0 0 0 3px rgba(229,72,77,.25);}
+.bt-ladder-item:not(:last-child) .bt-ladder-dot-col::after{
+  content:"";
+  position:absolute;
+  top:26px;
+  bottom:-14px;
+  left:50%;
+  width:1px;
+  background:var(--line);
+  transform:translateX(-50%);
+}
+.bt-ladder-card{flex:1;min-width:0;padding-bottom:14px;}
+.bt-ladder-label{font-size:11px;color:var(--ink-dim);margin-bottom:6px;}
+
+/* 強制判定區(後台用) */
+.force-box{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  align-items:center;
+  padding-top:4px;
+}
+.force-box .hint{width:100%;font-size:11px;color:var(--ink-dim);line-height:1.6;}
+
+.status-msg{
+  text-align:center;
+  color:var(--ink-dim);
+  font-size:13px;
+  margin:10px 0;
+}
+
+.toast{
+  position:fixed;
+  bottom:24px;left:50%;
+  transform:translateX(-50%);
+  background:var(--panel2);
+  border:1px solid var(--gold-d);
+  color:var(--ink);
+  padding:10px 18px;
+  border-radius:10px;
+  font-size:13px;
+  z-index:99;
+}
+
+/* ===== 規則說明彈窗 ===== */
+.rule-fab{
+  position:fixed;
+  bottom:22px;right:22px;
+  z-index:80;
+  border-radius:999px;
+  box-shadow:0 6px 20px rgba(0,0,0,.4);
+}
+.modal-overlay{
+  position:fixed;inset:0;
+  background:rgba(10,9,15,.72);
+  display:none;
+  align-items:center;justify-content:center;
+  z-index:200;
+  padding:20px;
+}
+.modal-overlay.show{display:flex;}
+.modal-card{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:24px;
+  max-width:480px;
+  width:100%;
+  max-height:78vh;
+  overflow-y:auto;
+}
+.modal-card h3{font-size:18px;margin-bottom:12px;}
+.modal-card h4{font-size:13px;color:var(--gold);margin:16px 0 6px;}
+
+/* 職業對照表(規則頁用) */
+.rule-table-wrap{overflow-x:auto;margin-top:10px;border:1px solid var(--line);border-radius:12px;}
+.rule-table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:760px;}
+.rule-table th,.rule-table td{
+  padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);
+  color:var(--ink-dim);line-height:1.6;vertical-align:top;
+}
+.rule-table th{
+  background:var(--panel2);color:var(--gold);font-weight:700;
+  white-space:nowrap;position:sticky;top:0;
+}
+.rule-table td:first-child,.rule-table th:first-child{
+  color:var(--ink);font-weight:700;white-space:nowrap;
+}
+.rule-table .row-label{display:inline-flex;align-items:center;gap:6px;}
+.rule-table td:first-child .ico,.rule-table th .ico{width:14px;height:14px;flex-shrink:0;}
+.rule-table tbody tr:last-child td{border-bottom:none;}
+.rule-table tbody tr:hover{background:rgba(242,183,5,.05);}
+.rule-table.calc-table{min-width:520px;}
+.rule-table.calc-table td:first-child{color:var(--gold-d);font-family:'Space Mono',monospace;width:32px;}
+.rule-table.calc-table td:nth-child(2){color:var(--ink);}
+.modal-card p{font-size:13px;color:var(--ink-dim);margin:0 0 10px;line-height:1.7;}
+.modal-card p:first-of-type{margin-top:0;}
+
+/* ===== 大字即時公告 ===== */
+.big-announce{
+  text-align:center;
+  font-family:'Archivo Black','PingFang TC','Noto Sans TC',sans-serif;
+  font-size:clamp(18px,5vw,26px);
+  color:var(--gold);
+  min-height:36px;
+  margin:6px 0 4px;
+  text-shadow:0 0 18px rgba(242,183,5,.35);
+  opacity:0;
+  transform:translateY(4px);
+  transition:opacity .25s ease, transform .25s ease;
+}
+.big-announce.show{opacity:1;transform:translateY(0);}
+
+.spectator-tag{
+  display:inline-block;
+  font-size:12px;
+  color:var(--ink-dim);
+  border:1px solid var(--line);
+  border-radius:999px;
+  padding:3px 12px;
+  margin-top:8px;
+}
+
+/* ===== 共用導覽列 ===== */
+/* 帳號名稱、改名、登出這些帳號相關的操作只放在這裡,頁面內容區不再重複一份 */
+.site-header{
+  display:flex;
+  align-items:center;
+  gap:16px;
+  flex-wrap:wrap;
+  padding:12px 20px;
+  border-bottom:1px solid var(--line);
+  background:rgba(20,18,28,.82);
+  backdrop-filter:blur(8px);
+  position:sticky;
+  top:0;
+  z-index:60;
+}
+.site-header-brand{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  margin-right:auto; /* 品牌固定靠左,導覽連結/帳號區/漢堡鈕整組靠右 */
+  font-family:'Archivo Black';
+  color:var(--gold);
+  font-size:15px;
+  letter-spacing:.02em;
+  white-space:nowrap;
+}
+.site-header-brand .ico{width:18px;height:18px;}
+.site-header-nav{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+  font-size:13px;
+}
+.site-header-nav a.nav-link{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  color:var(--ink-dim);
+  padding:7px 10px;
+  border-radius:9px;
+  white-space:nowrap;
+  transition:color .12s ease, background .12s ease;
+}
+.site-header-nav a.nav-link:hover{color:var(--ink);background:var(--panel2);}
+.site-header-nav a.nav-link.active{color:var(--gold);background:rgba(242,183,5,.1);}
+
+/* 手機版的三明治選單按鈕:桌機隱藏,窄螢幕才出現。
+   用 .icon-btn.nav-toggle(兩個 class)墊高 specificity,
+   確保蓋過後面 .icon-btn{display:inline-flex} 那條規則,不受規則先後順序影響。 */
+.icon-btn.nav-toggle{display:none;}
+
+/* 導覽列右側的帳號區 */
+.header-account{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+  padding-left:8px;
+  margin-left:2px;
+  border-left:1px solid var(--line);
+}
+.header-user{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  max-width:180px;
+  padding:6px 10px;
+  border:1px solid var(--line);
+  border-radius:999px;
+  background:var(--panel2);
+}
+.header-user .ico{width:14px;height:14px;color:var(--gold);flex-shrink:0;}
+.header-name{
+  color:var(--gold);
+  font-weight:700;
+  font-size:13px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.icon-btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  width:32px;height:32px;
+  flex-shrink:0;
+  border:1px solid var(--line);
+  border-radius:9px;
+  background:transparent;
+  color:var(--ink-dim);
+  cursor:pointer;
+  transition:color .12s ease, border-color .12s ease, background .12s ease;
+}
+.icon-btn:hover{color:var(--ink);border-color:var(--gold-d);background:var(--panel2);}
+.icon-btn.danger:hover{color:var(--red);border-color:var(--red);background:rgba(229,72,77,.1);}
+.icon-btn .ico{width:15px;height:15px;}
+@media (max-width:640px){
+  .site-header{padding:10px 14px;gap:10px;}
+  /* 第一列只留品牌/帳號/漢堡鈕,3 個導覽連結收進可展開的抽屜,避免全部擠在同一列硬換行 */
+  .icon-btn.nav-toggle{display:inline-flex;}
+  .site-header-nav{
+    display:none;
+    flex-basis:100%;
+    flex-direction:column;
+    align-items:stretch;
+    gap:4px;
+    margin-top:4px;
+    padding-top:10px;
+    border-top:1px solid var(--line);
+  }
+  .site-header-nav.open{display:flex;}
+  .site-header-nav a.nav-link{width:100%;padding:10px 12px;}
+  .header-account{border-left:none;padding-left:0;margin-left:0;}
+  .header-user{max-width:120px;}
+}
+
+/* ===== 名次徽章 ===== */
+.rank-badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:11px;
+  font-weight:700;
+  color:var(--ink-dim);
+  min-width:20px;
+}
+.rank-badge .ico{width:18px;height:18px;}
+.rank-badge.rank-1{color:var(--gold);}
+.rank-badge.rank-2{color:#C9C9D4;}
+.rank-badge.rank-3{color:#C98B4B;}
+
+/* ===== 直播中的對戰列會亮框 ===== */
+.bracket-row.live{
+  background:rgba(229,72,77,.1);
+  border:1px solid var(--red);
+  border-radius:8px;
+  padding:8px 10px;
+  animation:live-pulse 1.6s ease-in-out infinite;
+}
+@keyframes live-pulse{
+  0%,100%{box-shadow:0 0 0 rgba(229,72,77,.3);}
+  50%{box-shadow:0 0 14px rgba(229,72,77,.35);}
+}
+.status-banner{
+  text-align:center;
+  border-radius:12px;
+  padding:14px;
+  margin-bottom:16px;
+  font-size:15px;
+  font-weight:700;
+}
+.status-banner.live{background:rgba(229,72,77,.12);border:1px solid var(--red);color:#ffb3b5;}
+.status-banner.queue{background:rgba(242,183,5,.1);border:1px solid var(--gold-d);color:var(--gold);}
+.status-banner.idle{background:var(--panel2);border:1px solid var(--line);color:var(--ink-dim);}
+
+.live-panel{
+  border:1px solid var(--red);
+  border-radius:var(--radius);
+  padding:16px;
+  margin-bottom:16px;
+  background:rgba(229,72,77,.05);
+}
+.live-panel .live-tag{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  font-size:12px;
+  color:var(--red);
+  font-weight:700;
+  margin-bottom:10px;
+}
+.live-panel .live-tag .dot{
+  width:8px;height:8px;border-radius:50%;background:var(--red);
+  animation:live-pulse-dot 1s ease-in-out infinite;
+}
+@keyframes live-pulse-dot{0%,100%{opacity:1;}50%{opacity:.3;}}
+.mini-duel{display:flex;align-items:center;justify-content:center;gap:14px;font-size:14px;margin-bottom:8px;}
+.mini-duel .mhp{font-family:'Space Mono',monospace;color:var(--gold);font-weight:700;}
+
+/* ===== 骰子對戰2.0:生死局/徽章/職業大招/下注/表情彈幕 ===== */
+.sudden-death{
+  text-align:center;background:rgba(229,72,77,.15);border:1px solid var(--red);
+  color:#ffb3b5;border-radius:10px;padding:8px;font-size:13px;font-weight:700;
+  margin-bottom:14px;animation:sd-pulse 1s infinite;
+}
+@keyframes sd-pulse{0%,100%{opacity:1;}50%{opacity:.6;}}
+.mini-badge{font-size:10px;background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:2px 8px;color:var(--ink-dim);}
+.mini-badge.combo{color:var(--gold);border-color:var(--gold-d);}
+.mini-badge.rage{color:var(--red);border-color:var(--red);}
+.choice-btn.picked, .btn.active-choice{background:var(--gold);color:#1B1706;border-color:var(--gold);}
+.bet-btn{flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center;cursor:pointer;}
+.bet-btn .pct{font-family:'Space Mono',monospace;font-size:18px;color:var(--gold);font-weight:700;}
+.bet-btn .bar{height:5px;background:var(--line);border-radius:999px;margin-top:5px;overflow:hidden;}
+.bet-btn .bar > div{height:100%;background:var(--gold);}
+.floaty{position:absolute;font-size:22px;bottom:0;animation:float-up 2.5s ease-in forwards;pointer-events:none;color:var(--gold);}
+.floaty .ico{width:24px;height:24px;}
+@keyframes float-up{0%{transform:translateY(0);opacity:1;}100%{transform:translateY(-50px);opacity:0;}}
+
+/* ===================================================================
+   圖示:全站統一 lucide(assets/ui.js 的 ui.icon)
+   =================================================================== */
+.ico{
+  display:inline-block;
+  width:1em;
+  height:1em;
+  flex-shrink:0;
+  vertical-align:-0.14em;
+  stroke-width:2;
+}
+svg.ico{overflow:visible;}
+/* 還沒被 lucide 換成 <svg> 之前先佔位,避免文字左右跳動 */
+i.ico{opacity:0;}
+/* 讀取中的圈圈會自己轉(lucide 會幫 svg 加上 .lucide-<icon-name> 類別) */
+.lucide-loader-circle{animation:ui-spin 1s linear infinite;}
+@keyframes ui-spin{to{transform:rotate(360deg);}}
+.ico.live-dot{color:var(--red);animation:live-pulse-dot 1s ease-in-out infinite;}
+.row-note a{display:inline-flex;align-items:center;gap:6px;}
+
+/* ===================================================================
+   後台參加者列:名字 / 獎勵輸入框 / 操作按鈕
+   用固定欄寬的 grid,不管名字長短,所有輸入框的左右邊界都對齊在同一條線上
+   =================================================================== */
+.admin-row{
+  display:grid;
+  grid-template-columns:minmax(140px,200px) minmax(0,1fr) auto;
+  align-items:center;
+  gap:14px;
+  /* 每一列(含得獎名次的高亮列)用完全相同的框線與內距,輸入框才會切齊在同一條線上 */
+  padding:12px 14px;
+  border:1px solid transparent;
+  border-bottom-color:var(--line);
+}
+.admin-row:last-child{border-bottom-color:transparent;}
+.admin-row-name{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+  flex-wrap:wrap;
+}
+.admin-row-name .pname{
+  font-weight:700;
+  font-size:14px;
+  overflow-wrap:anywhere;
+}
+.admin-row-name .pstate{
+  font-size:11px;
+  color:var(--ink-dim);
+  white-space:nowrap;
+}
+.admin-row-actions{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.admin-row.top3{
+  background:rgba(242,183,5,.07);
+  border-color:var(--gold-d);
+  border-radius:10px;
+  margin:8px 0;
+}
+.admin-row.top3 .pname{font-size:16px;}
+.admin-row.top3 .pstate{color:var(--gold);}
+@media (max-width:720px){
+  .admin-row{grid-template-columns:1fr;gap:10px;}
+  .admin-row-actions{justify-content:flex-end;}
+}
+
+/* 後台表單:勾選規則的清單,每一項之間要有呼吸空間 */
+.check-list{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  margin-top:4px;
+}
+.check-item{
+  display:grid;
+  grid-template-columns:auto auto 1fr;
+  align-items:start;
+  column-gap:10px;
+  cursor:pointer;
+  font-size:13px;
+  color:var(--ink);
+  line-height:1.5;
+  padding:8px 10px;
+  margin-bottom:0; /* 蓋掉全域 label{margin-bottom:6px},間距一律靠 .check-list 的 gap 控制 */
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:var(--panel2);
+  transition:border-color .12s ease;
+}
+.check-item:hover{border-color:var(--gold-d);}
+.check-item > *{min-width:0;}
+.check-item input[type="checkbox"]{width:auto;flex-shrink:0;margin:0;margin-top:3px;}
+.check-item .ico{width:16px;height:16px;color:var(--gold);margin-top:2px;flex-shrink:0;}
+/* 巢狀規則(例如「動態戰場」依附在「戰場修飾骰」下面)用左邊的金色線標示從屬關係,
+   卡片本身的左右邊界跟其他列保持一致,不要整張卡片內縮變窄 */
+.check-item.nested{padding-left:20px;border-left:3px solid var(--gold-d);}
+.field + .field{margin-top:14px;}
+.field-group{
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:16px;
+  margin-bottom:16px;
+}
+.field-group > label:first-child{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:13px;
+  color:var(--gold);
+  margin-bottom:12px;
+}
+.auto-reward-row{
+  display:flex;
+  gap:10px;
+  align-items:flex-end;
+  flex-wrap:wrap;
+  margin-bottom:12px;
+}
+.auto-reward-row > div{flex:1 1 160px;min-width:0;}
+
+/* ===================================================================
+   對話框(取代原生 alert / confirm / prompt)
+   =================================================================== */
+body.dialog-open{overflow:hidden;}
+.dialog-overlay{
+  position:fixed;
+  inset:0;
+  z-index:400;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:20px;
+  background:rgba(10,9,15,.72);
+  backdrop-filter:blur(3px);
+  opacity:0;
+  transition:opacity .16s ease;
+}
+.dialog-overlay.show{opacity:1;}
+.dialog-card{
+  width:100%;
+  max-width:420px;
+  max-height:82vh;
+  overflow-y:auto;
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:22px;
+  box-shadow:0 24px 60px rgba(0,0,0,.5);
+  transform:translateY(8px) scale(.98);
+  transition:transform .16s ease;
+}
+.dialog-overlay.show .dialog-card{transform:translateY(0) scale(1);}
+.dialog-head{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-bottom:12px;
+}
+.dialog-icon{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:34px;height:34px;
+  flex-shrink:0;
+  border-radius:10px;
+  background:var(--panel2);
+  border:1px solid var(--line);
+}
+.dialog-icon .ico{width:18px;height:18px;}
+.dialog-icon.tone-danger{color:var(--red);border-color:var(--red);background:rgba(229,72,77,.12);}
+.dialog-icon.tone-question{color:var(--gold);border-color:var(--gold-d);background:rgba(242,183,5,.1);}
+.dialog-icon.tone-success{color:var(--green);border-color:var(--green);background:rgba(61,190,108,.12);}
+.dialog-icon.tone-info{color:var(--gold);}
+.dialog-title{
+  font-size:16px;
+  margin:0;
+  line-height:1.4;
+}
+.dialog-body{
+  font-size:14px;
+  color:var(--ink-dim);
+  line-height:1.75;
+  margin-bottom:16px;
+  overflow-wrap:anywhere;
+}
+.dialog-field{margin-bottom:16px;}
+.dialog-field label{margin-bottom:8px;}
+.dialog-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:10px;
+  flex-wrap:wrap;
+}
+.dialog-actions .btn{min-width:92px;}
+.dialog-card.shake{animation:dialog-shake .3s ease;}
+@keyframes dialog-shake{
+  0%,100%{transform:translateX(0);}
+  25%{transform:translateX(-6px);}
+  75%{transform:translateX(6px);}
+}
+
+/* ===================================================================
+   其他細節間距
+   =================================================================== */
+.marquee .eyebrow{display:inline-flex;align-items:center;gap:8px;}
+.marquee .eyebrow .ico{width:13px;height:13px;}
+.status-banner{display:flex;align-items:center;justify-content:center;gap:8px;}
+.status-msg{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;}
+.live-panel .live-tag{flex-wrap:wrap;line-height:1.6;}
+.reward-badge .ico{width:14px;height:14px;}
+.mini-badge{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;}
+.mini-badge .ico{width:12px;height:12px;}
+.choice-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;}
+.choice-btn .ico{width:26px;height:26px;}
+.empty{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;}
+.footer-nav a{display:inline-flex;align-items:center;gap:6px;}
+.rule-fab{gap:6px;}
+.section-title{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:13px;
+  color:var(--ink-dim);
+  margin:18px 0 6px;
+  font-family:inherit;
+  font-weight:700;
+}
+.section-title.gold{color:var(--gold);}
+.fighter .cicon{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:5px;
+  font-size:13px;
+  color:var(--ink-dim);
+  min-height:20px;
+}
+.fighter .cicon .ico{width:15px;height:15px;}
+.big-announce{display:flex;align-items:center;justify-content:center;gap:8px;}
+.big-announce .ico{width:1em;height:1em;}
+.reaction-bar .btn{padding:8px 12px;}
+.reaction-bar .ico{width:18px;height:18px;}
+
+/* lucide 沒載入成功時,不要留下一格一格的空白佔位 */
+html.no-lucide i.ico{display:none;}
+
+/* ===================================================================
+   RWD:手機不跑版
+   規則:任何 flex / grid 的子項都要能被壓縮(min-width:0),
+        長字串一律 overflow-wrap:anywhere,不要把容器撐爆。
+   =================================================================== */
+.wrap,.card,.event-card,.bracket-row,.match-row,.admin-row,.dialog-card{min-width:0;}
+.event-card .meta,.bracket-row > *,.match-row > *,.admin-row > *{min-width:0;}
+.card,.empty,.log-panel,.dialog-body,.bracket-row,.match-row{overflow-wrap:anywhere;}
+h1,h2,h3,.marquee p,.marquee h1{overflow-wrap:anywhere;}
+.log-panel{overflow-x:hidden;}
+input,select,textarea{max-width:100%;min-width:0;}
+
+@media (max-width:720px){
+  .wrap{padding:20px 14px 72px;}
+  .marquee{padding:26px 4px 22px;}
+  .card{padding:16px;}
+  .event-card{gap:12px;}
+  .event-card .action-row{width:100%;}
+  .event-card .action-row .btn{flex:1 1 auto;}
+  .field-group{padding:14px;}
+  .auto-reward-row{gap:8px;}
+  .auto-reward-row > div{flex:1 1 100%;}
+  .duel-stage{gap:8px;}
+  .hp-dial{width:88px;height:88px;}
+  .hp-dial svg{width:88px;height:88px;}
+  .hp-dial .num{font-size:18px;}
+  .vs-badge{font-size:16px;}
+  .vs-row{gap:8px;}
+  .dialog-card{padding:18px;}
+  .dialog-actions .btn{flex:1 1 auto;min-width:0;}
+  /* 手機上規則說明縮成圓形圖示鈕,不要蓋住底下的主要操作按鈕 */
+  .rule-fab{bottom:14px;right:14px;width:46px;height:46px;padding:0;}
+  .rule-fab .fab-label{display:none;}
+  .rule-fab .ico{width:19px;height:19px;}
+  .bt-col{min-width:150px;padding-right:18px;}
+  .view-toggle-btn{padding:6px 10px;}
+  .folder-tab{padding:9px 12px;font-size:12px;}
+}
+
+@media (max-width:420px){
+  .wrap{padding:16px 12px 64px;}
+  .btn{padding:10px 14px;}
+  .btn.small{padding:7px 11px;font-size:12px;}
+  .tag{font-size:10px;padding:3px 8px;}
+  .hp-dial{width:74px;height:74px;}
+  .hp-dial svg{width:74px;height:74px;}
+  .fighter .name{font-size:12px;}
+  .vs-row{grid-template-columns:1fr auto 1fr;gap:6px;}
+  .vs-row > .vs{font-size:10px;letter-spacing:.08em;}
+  .site-header-brand{font-size:14px;}
+}
+
+/* ===== 公告(首頁精選公告 hero + 後台公告管理都共用) ===== */
+.announce-hero{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  overflow:hidden;
+  margin-bottom:16px;
+}
+.announce-hero-img{
+  height:120px;
+  background:var(--panel2);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  position:relative;
+}
+.announce-hero-img img{width:100%;height:100%;object-fit:cover;}
+.announce-hero-img .ico{width:40px;height:40px;color:var(--gold);opacity:.5;}
+.announce-badge{
+  position:absolute;
+  top:12px;left:12px;
+  font-size:11px;
+  font-weight:700;
+  color:#1B1706;
+  background:var(--gold);
+  border-radius:999px;
+  padding:3px 10px;
+}
+.announce-hero-body{padding:18px 20px;}
+.announce-hero-sub{font-family:'Space Mono',monospace;font-size:12px;color:var(--ink-dim);margin-bottom:6px;}
+.announce-hero-body h3{font-size:18px;margin-bottom:0;}
+.announce-hero-toggle{
+  margin-top:8px;display:inline-flex;align-items:center;gap:6px;
+  font-size:12px;color:var(--ink-dim);background:none;border:none;cursor:pointer;padding:0;
+}
+.announce-hero-toggle:hover{color:var(--gold);}
+.announce-hero-detail{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line);}
+.announce-hero-detail p{font-size:14px;color:var(--ink-dim);line-height:1.6;margin:0 0 14px;}
+
+.announce-archive-row{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:12px 4px;
+  border-bottom:1px solid var(--line);
+}
+.announce-archive-row:last-child{border-bottom:none;}
+.announce-archive-row .ico{width:18px;height:18px;color:var(--gold);flex-shrink:0;}
+.announce-archive-row .aar-title{flex:1;min-width:0;font-weight:700;font-size:14px;}
+.announce-archive-row .aar-date{font-size:12px;color:var(--ink-dim);flex-shrink:0;}
+
+/* 後台公告管理:圖片上傳按鈕(隱藏原生 input,用 .btn.ghost 外觀的 label 觸發) */
+.announce-image-upload{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.announce-image-upload input[type="file"]{display:none;}
+.announce-image-preview{
+  width:72px;height:72px;border-radius:8px;
+  background:var(--panel2);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;
+}
+.announce-image-preview img{width:100%;height:100%;object-fit:cover;}
+.announce-image-preview .ico{width:22px;height:22px;color:var(--ink-dim);}
+
+.announce-admin-row{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  margin-bottom:10px;
+}
+.announce-admin-row .aar-thumb{
+  width:52px;height:52px;border-radius:8px;flex-shrink:0;
+  background:var(--panel2);display:flex;align-items:center;justify-content:center;overflow:hidden;
+}
+.announce-admin-row .aar-thumb img{width:100%;height:100%;object-fit:cover;}
+.announce-admin-row .aar-thumb .ico{width:20px;height:20px;color:var(--ink-dim);}
+.announce-admin-row .aar-main{flex:1;min-width:0;}
+.announce-admin-row .aar-main b{font-size:14px;}
+.announce-admin-row .aar-meta{font-size:12px;color:var(--ink-dim);margin-top:2px;}
+
+/* ========= 夜市拍賣專用補充樣式（沿用既有 tokens，不新增衝突色） ========= */
+:root{
+  --epic:#8B7FD1;      /* 史詩：延伸自背景本來就有的紫色系 */
+}
+
+/* 拍賣進行中面板：沿用既有卡片骨架，但改金色系（拍賣＝興奮而非危險） */
+.auction-live{
+  border:1px solid var(--gold-d);
+  border-radius:var(--radius);
+  padding:18px;
+  margin-bottom:16px;
+  background:rgba(242,183,5,.06);
+}
+.auction-live .live-tag{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:12px;color:var(--gold);font-weight:700;margin-bottom:12px;
+}
+.auction-live .live-tag .dot{
+  width:8px;height:8px;border-radius:50%;background:var(--gold);
+  animation:live-pulse-dot 1s ease-in-out infinite;
+}
+@keyframes live-pulse-dot{
+  0%,100%{opacity:1;}
+  50%{opacity:.3;}
+}
+
+.lot-stage{
+  display:grid;
+  grid-template-columns:1fr auto;
+  gap:18px;
+  align-items:center;
+}
+@media (max-width:520px){
+  .lot-stage{grid-template-columns:1fr;justify-items:center;text-align:center;}
+}
+.lot-info{min-width:0;}
+.lot-info h3{font-size:20px;margin-bottom:6px;overflow-wrap:anywhere;}
+.lot-info .price-row{display:flex;align-items:baseline;gap:8px;margin:10px 0 4px;flex-wrap:wrap;}
+.lot-info .bidder{font-size:13px;color:var(--ink-dim);overflow-wrap:anywhere;}
+.lot-info .bidder b{color:var(--ink);}
+
+/* 大數字（財神幣餘額／目前最高價）：沿用贊助名單「募資總額」的數字樣式，
+   不是 Space Mono 等寬數字，是 Archivo Black + 金色光暈 */
+.cur{
+  display:inline-flex;align-items:center;gap:6px;
+  font-family:'Archivo Black','Noto Sans TC',sans-serif;
+  font-size:46px;font-weight:900;color:var(--gold);
+  text-shadow:0 0 18px rgba(242,183,5,.3);
+  line-height:1;
+}
+.unit{font-size:13px;color:var(--ink-dim);}
+
+/* 打工按鈕跟財神幣數字同一行，按鈕靠右對齊在那塊留白處 */
+.balance-row{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
+}
+.labor-action{text-align:right;}
+@media (max-width:520px){
+  .balance-row{justify-content:center;text-align:center;}
+  .labor-action{text-align:center;}
+}
+
+/* 幸運攤位:下注金額輸入框 + 大/小按鈕同一排,窄螢幕自動換行置中 */
+.lucky-row{
+  display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;
+}
+.lucky-input-wrap{display:flex;flex-direction:column;gap:6px;}
+.lucky-input-wrap label{font-size:12px;color:var(--ink-dim);}
+.lucky-input-wrap input{
+  width:120px;padding:9px 10px;border-radius:8px;
+  border:1px solid var(--line);background:var(--panel2);color:var(--ink);
+  font-family:'Space Mono',monospace;font-size:15px;
+}
+.lucky-btns{display:flex;gap:8px;flex-wrap:wrap;}
+@media (max-width:520px){
+  .lucky-row{justify-content:center;text-align:center;}
+  .lucky-input-wrap{align-items:center;}
+}
+
+.countdown-dial{position:relative;width:96px;height:96px;flex-shrink:0;}
+.countdown-dial svg{position:absolute;top:0;left:0;transform:rotate(-90deg);}
+.countdown-dial .num{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-family:'Space Mono',monospace;font-size:26px;font-weight:700;color:var(--gold);
+}
+.countdown-dial .lbl{
+  position:absolute;bottom:-20px;left:0;right:0;text-align:center;
+  font-size:11px;color:var(--ink-dim);
+}
+
+.bid-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px;}
+.bid-row .btn.ghost{color:var(--gold);border-color:var(--gold-d);}
+
+/* 商品預告橫向卡片：手機上靠原生橫向捲動即可，不做額外拖曳把手 */
+.upnext-scroll{
+  display:grid;
+  grid-template-columns:repeat(4, 1fr);
+  gap:10px;
+  margin-top:2px;
+}
+@media (max-width:640px){
+  .upnext-scroll{
+    display:flex;overflow-x:auto;padding-bottom:4px;
+    scrollbar-width:none;
+    -ms-overflow-style:none;
+  }
+  .upnext-scroll::-webkit-scrollbar{display:none;width:0;height:0;}
+  .upnext-card{flex:0 0 132px;}
+}
+.upnext-card{
+  min-width:0;
+  background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+  padding:12px 10px;text-align:center;
+}
+.upnext-card .ico-wrap{
+  width:40px;height:40px;margin:0 auto 8px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(242,183,5,.08);
+}
+.upnext-card .name{font-size:12px;line-height:1.35;height:32px;overflow:hidden;overflow-wrap:anywhere;}
+.upnext-card .tier-tag{margin-top:8px;}
+
+/* 賺財神幣管道卡片 */
+.income-grid{
+  display:grid;grid-template-columns:repeat(2,1fr);gap:10px;
+}
+@media (min-width:640px){.income-grid{grid-template-columns:repeat(4,1fr);}}
+.income-card{
+  background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+  padding:14px 12px;text-align:center;
+}
+.income-card .ico-big{width:26px;height:26px;color:var(--gold);margin-bottom:8px;}
+.income-card .title{font-size:13px;font-weight:700;margin-bottom:4px;}
+.income-card .desc{font-size:11.5px;color:var(--ink-dim);line-height:1.5;}
+.income-card .status{margin-top:10px;font-size:11px;}
+
+/* 夜市任務卡片(問答/猜謎):沿用拍賣進行中面板骨架,改用藍綠色系跟拍賣的金色區隔開 */
+.auction-task{
+  border:1px solid #3D8FA6;
+  border-radius:var(--radius);
+  padding:18px;
+  margin-bottom:16px;
+  background:rgba(61,143,166,.08);
+}
+.auction-task .live-tag.task-tag{
+  display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;
+  font-size:12px;color:#5FC2DE;font-weight:700;margin-bottom:10px;
+}
+.auction-task .live-tag.task-tag .dot{
+  width:8px;height:8px;border-radius:50%;background:#5FC2DE;
+  animation:live-pulse-dot 1s ease-in-out infinite;
+}
+.auction-task .task-question{
+  display:flex;align-items:flex-start;gap:8px;
+  font-size:17px;margin:0 0 12px;overflow-wrap:anywhere;
+}
+.task-options{display:flex;flex-wrap:wrap;gap:8px;}
+.task-options .task-opt{color:#5FC2DE;border-color:#3D8FA6;}
+.task-options .task-opt:disabled{opacity:.5;}
+.task-result{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:14px;font-weight:700;padding:8px 12px;border-radius:8px;
+}
+.task-result.correct{color:var(--green);background:rgba(61,190,108,.12);}
+.task-result.wrong{color:var(--red);background:rgba(229,72,77,.12);}
+
+/* 商品清單分級標籤 */
+.tier-tag{
+  display:inline-flex;align-items:center;gap:4px;
+  font-size:10.5px;letter-spacing:.04em;padding:3px 9px;border-radius:999px;
+  border:1px solid var(--line);white-space:nowrap;
+}
+.tier-tag.common{color:var(--ink-dim);border-color:var(--line);}
+.tier-tag.rare{color:var(--green);border-color:var(--green);}
+.tier-tag.epic{color:var(--epic);border-color:var(--epic);}
+.tier-tag.legendary{color:var(--gold);border-color:var(--gold-d);}
+.tier-tag.special{color:var(--red);border-color:var(--red);}
+.tier-tag.mystery{color:#3D8FA6;border-color:#3D8FA6;}
+.tier-tag.bundle{color:#7FA9D1;border-color:#7FA9D1;}
+
+.item-row{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:12px 4px;border-bottom:1px solid var(--line);
+}
+.item-row:last-child{border-bottom:none;}
+.item-row .name{font-size:14px;min-width:0;overflow-wrap:anywhere;}
+.item-row .pts{
+  font-size:14px;font-weight:700;color:var(--gold-d);
+  text-align:right;flex-shrink:0;white-space:nowrap;
+}
+
+/* 排行榜 */
+.lb-row{
+  display:flex;align-items:center;gap:12px;padding:11px 4px;
+  border-bottom:1px solid var(--line);
+}
+.lb-row:last-child{border-bottom:none;}
+.lb-row .lb-name{flex:1;font-size:14px;min-width:0;overflow-wrap:anywhere;}
+.lb-row .lb-score{font-size:16px;font-weight:700;color:var(--gold);flex-shrink:0;}
+.lb-row.me{background:rgba(242,183,5,.08);border-radius:10px;padding:11px 10px;}
+
+.section-note{font-size:12px;color:var(--ink-dim);margin-top:10px;text-align:center;}
+
+/* 我的背包 */
+.folder-tab .bag-count{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:16px;height:16px;padding:0 4px;margin-left:2px;
+  font-size:10px;font-weight:700;border-radius:999px;
+  background:var(--line);color:var(--ink-dim);
+}
+.folder-tab.active .bag-count{background:rgba(242,183,5,.18);color:var(--gold);}
+.bag-item-row{
+  display:flex;align-items:center;gap:12px;
+  padding:12px 4px;border-bottom:1px solid var(--line);
+}
+.bag-item-row:last-child{border-bottom:none;}
+.bag-item-row .bag-name{flex:1;min-width:0;}
+.bag-item-row .bag-name .n{font-size:14px;display:block;overflow-wrap:anywhere;}
+.bag-item-row .bag-name .sub{font-size:11.5px;color:var(--ink-dim);margin-top:2px;}
+.bag-item-row .bag-paid{
+  font-size:14px;font-weight:700;color:var(--gold-d);white-space:nowrap;
+}
+.bag-empty{text-align:center;color:var(--ink-dim);padding:24px 10px;font-size:13px;}
+.bag-item-row .bag-refund-btn{padding:6px 10px;font-size:12px;}
+
+/* 拍賣進行中面板:如果這件是特殊券,邊框改成紅色系跟一般商品區隔 */
+.auction-live.special{border-color:var(--red);}
+.auction-live.special .live-tag{color:var(--red);}
+.auction-live.special .live-tag .dot{background:var(--red);}
+.auction-live.mystery{border-color:#3D8FA6;}
+.auction-live.mystery .live-tag{color:#5FC2DE;}
+.auction-live.mystery .live-tag .dot{background:#5FC2DE;}
+
+/* 插隊優先權時間窗橫幅 */
+.priority-banner{
+  display:flex;align-items:center;gap:6px;
+  font-size:12.5px;font-weight:700;color:var(--ink-dim);
+  background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+  padding:8px 10px;margin:8px 0;
+}
+.priority-banner.mine{color:var(--gold);border-color:var(--gold-d);background:rgba(242,183,5,.1);}
+
+/* 我的特殊券卡片 */
+.ticket-row{
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;
+  padding:12px 4px;border-bottom:1px solid var(--line);
+}
+.ticket-row:last-child{border-bottom:none;}
+.ticket-name{display:flex;align-items:center;gap:6px;font-size:14px;}
+.ticket-name .ico{color:var(--red);}
+.ticket-count{font-size:12px;color:var(--ink-dim);font-weight:400;}
+.ticket-action{font-size:12.5px;}
+.ticket-action .btn{padding:7px 12px;font-size:12.5px;}
+
+/* 後台：拍賣參加者列(名字 / 財神幣 / 獎勵輸入框 對齊同一套 .admin-row grid) */
+.admin-row .coin-tag{color:var(--gold);border-color:var(--gold-d);flex-shrink:0;}
