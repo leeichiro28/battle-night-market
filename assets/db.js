@@ -1180,8 +1180,12 @@ const db = (function () {
   }
 
   // 目前積分 = 得標商品分數總和 + 剩餘財神幣 * 折算比例(不管活動是否已結束都能算,用來做即時排行榜)
-  async function computeAuctionStandings(eventId) {
-    const [parts, lots] = await Promise.all([listAuctionParticipants(eventId), listAuctionLots(eventId)]);
+  // 第二參數可選傳入已經抓過的 lots(呼叫端如果同一輪已經抓過商品清單,就不用在這裡重抓一次,省一次 API/流量)。
+  async function computeAuctionStandings(eventId, opts = {}) {
+    const [parts, lots] = await Promise.all([
+      listAuctionParticipants(eventId),
+      opts.lots ? Promise.resolve(opts.lots) : listAuctionLots(eventId),
+    ]);
     const wonByPlayer = {};
     lots
       .filter((l) => l.status === "done" && l.current_bidder_id)
@@ -1417,6 +1421,29 @@ const db = (function () {
       .channel(`${table}-${filter || "all"}-${Math.random()}`)
       .on("postgres_changes", { event: "*", schema: "public", table, filter }, cb)
       .subscribe();
+    return () => client.removeChannel(channel);
+  }
+
+  // 用 Supabase Realtime Presence 在同一個頻道(例如同一場拍賣)裡的所有分頁之間選出一個「隊長」——
+  // 只有隊長那一台需要負責跑背景排程(每秒推進拍賣),其他分頁純被動接收資料變化,省下大量重複流量。
+  // 選法很單純:每個分頁進頻道時帶一個亂數 key,所有目前在線的 key 排序後,最小的那個當隊長。
+  // 隊長分頁關掉/斷線後,presence 會自動把它移除,剩下的人裡最小的 key 自動變成新隊長,不用額外處理「隊長離線」。
+  // 就算選舉過程中短暫「兩個人同時以為自己是隊長」也沒關係——實際推進排程的函式本來就是用資料庫的
+  // status 條件鎖擋重複執行,多跑幾次是安全的,leader 選舉只是省流量的優化,不是正確性的必要條件。
+  function electLeader(channelName, onChange) {
+    const myKey = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    const channel = client.channel(channelName, { config: { presence: { key: myKey } } });
+    function notify() {
+      const keys = Object.keys(channel.presenceState()).sort();
+      onChange(!keys.length || keys[0] === myKey);
+    }
+    channel
+      .on("presence", { event: "sync" }, notify)
+      .subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          await channel.track({ at: Date.now() });
+        }
+      });
     return () => client.removeChannel(channel);
   }
 
@@ -1723,6 +1750,7 @@ const db = (function () {
     tryCreateGrandFinal,
     advanceAfterMatch,
     onTableChange,
+    electLeader,
     joinAuctionEvent,
     getMyAuctionParticipant,
     listAuctionParticipants,

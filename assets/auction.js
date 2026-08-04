@@ -19,7 +19,10 @@ let taskCountdownInterval = null;
 let unsubLots = null;
 let unsubParticipants = null;
 let unsubTasks = null;
+let unsubLeader = null;
 let ticking = false;
+let isTickLeader = false; // 是不是目前這場拍賣裡負責推進排程的那台(其他分頁保持 false,純被動接收更新)
+let refreshTimer = null; // 把短時間內連續多個 Realtime 變化事件合併成一次 refreshAll,不用每個事件都各自重抓一次
 let laborFlashUntil = 0;
 let luckyFlashUntil = 0;
 let luckyFlashNote = "";
@@ -77,7 +80,10 @@ async function loadMyParticipant() {
 }
 
 async function refreshAll() {
-  const [lotList, standingList, taskList] = await Promise.all([db.listAuctionLots(eventId), db.computeAuctionStandings(eventId), db.listAuctionTasks(eventId)]);
+  // standings 內部本來也要抓一次商品清單才能算分數,這裡先抓好 lots 直接傳進去,
+  // 避免同一輪重複抓兩次 auction_lots(這是拍賣頁流量的大宗)。
+  const [lotList, taskList] = await Promise.all([db.listAuctionLots(eventId), db.listAuctionTasks(eventId)]);
+  const standingList = await db.computeAuctionStandings(eventId, { lots: lotList });
   lots = lotList;
   standings = standingList;
   tasks = taskList;
@@ -93,9 +99,21 @@ async function refreshAll() {
   render();
 }
 
-// ---------- 背景排程推進(每個開著這頁的人都會幫忙推進) ----------
+// 把短時間內連續發生的多個資料變化(例如同一秒裡商品開拍又結標)合併成一次 refreshAll,
+// 避免每個 Realtime 事件都各自重抓一次完整清單。
+function scheduleRefresh() {
+  if (refreshTimer) return;
+  refreshTimer = setTimeout(() => {
+    refreshTimer = null;
+    refreshAll();
+  }, 400);
+}
+
+// ---------- 背景排程推進(只有被選為「隊長」的那台分頁負責推進,其他分頁純被動接收 Realtime 更新) ----------
+// 排程本身寫進資料庫的變化(商品開拍/結標、任務開放/結算)會透過下面的 onTableChange 訂閱
+// 自動通知包含隊長在內的所有分頁去 refreshAll,所以這裡不用每秒都強制重抓一次資料。
 async function tick() {
-  if (ticking || !ev || !ev.locked || ev.status === "closed") return;
+  if (!isTickLeader || ticking || !ev || !ev.locked || ev.status === "closed") return;
   ticking = true;
   try {
     await db.activateDueAuctionLots(eventId);
@@ -103,7 +121,6 @@ async function tick() {
     await db.activateDueAuctionTasks(eventId);
     await db.settleExpiredAuctionTasks(eventId);
     await maybeAutoCloseAuction();
-    await refreshAll();
   } catch (e) {
     console.error(e);
   } finally {
@@ -1127,18 +1144,25 @@ function bindRuleModal() {
 
   await refreshAll();
   tickInterval = setInterval(tick, 1000);
-  unsubLots = db.onTableChange("auction_lots", `event_id=eq.${eventId}`, () => refreshAll());
-  unsubParticipants = db.onTableChange("auction_participants", `event_id=eq.${eventId}`, () => refreshAll());
-  unsubTasks = db.onTableChange("auction_tasks", `event_id=eq.${eventId}`, () => refreshAll());
+  // 同一場拍賣的所有分頁一起選隊長,只有隊長會真的去跑 tick() 推進排程;
+  // 隊長分頁關掉的話,presence 會自動讓其他分頁裡的一台變成新隊長,排程不會因此停住。
+  unsubLeader = db.electLeader(`auction-tick-${eventId}`, (leader) => {
+    isTickLeader = leader;
+  });
+  unsubLots = db.onTableChange("auction_lots", `event_id=eq.${eventId}`, () => scheduleRefresh());
+  unsubParticipants = db.onTableChange("auction_participants", `event_id=eq.${eventId}`, () => scheduleRefresh());
+  unsubTasks = db.onTableChange("auction_tasks", `event_id=eq.${eventId}`, () => scheduleRefresh());
 })();
 
 window.addEventListener("beforeunload", () => {
   if (tickInterval) clearInterval(tickInterval);
+  if (refreshTimer) clearTimeout(refreshTimer);
   stopCountdown();
   stopTaskCountdown();
   if (unsubLots) unsubLots();
   if (unsubParticipants) unsubParticipants();
   if (unsubTasks) unsubTasks();
+  if (unsubLeader) unsubLeader();
 });
 
 document.addEventListener("visibilitychange", () => {
