@@ -12,6 +12,21 @@
       body.hidden = !open;
     });
   });
+
+  // 支援網址帶 #auction / #dice / #rps5 這種錨點,直接展開對應的遊戲分組並捲過去,
+  // 方便公告文案的「查看規則」按鈕可以直接連到特定遊戲,不用使用者自己找、自己點開。
+  function openGroupFromHash() {
+    const key = location.hash.replace("#", "").trim();
+    if (!key) return;
+    const group = document.querySelector(`.game-group[data-group="${key}"]`);
+    const body = group && group.querySelector(".game-body");
+    if (!group || !body) return;
+    group.classList.add("open");
+    body.hidden = false;
+    setTimeout(() => group.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }
+  openGroupFromHash();
+  window.addEventListener("hashchange", openGroupFromHash);
 })();
 
 // 商品清單分頁(跟夜市拍賣頁面同一套分級圖示與資料,來源：assets/auction-catalog.js)
