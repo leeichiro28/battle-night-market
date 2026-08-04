@@ -933,8 +933,8 @@ function renderTierList(tier) {
 function bindTierTabs() {
   document.querySelectorAll("#tier-tabs .folder-tab").forEach((tab) => {
     tab.onclick = () => {
-      document.querySelectorAll("#tier-tabs .folder-tab").forEach((t) => t.classList.toggle("active", t === tab));
       renderTierList(tab.dataset.tier);
+      document.querySelectorAll("#tier-tabs .folder-tab").forEach((t) => t.classList.toggle("active", t === tab));
     };
   });
   renderTierList("common");

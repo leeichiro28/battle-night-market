@@ -316,7 +316,7 @@
       <button type="button" class="game-toggle">
         <i data-lucide="gavel" class="ico"></i>
         <span class="game-toggle-label">夜市拍賣</span>
-        <span class="game-toggle-count">5 個小節</span>
+        <span class="game-toggle-count">6 個小節</span>
         <i data-lucide="chevron-down" class="ico chev"></i>
       </button>
       <div class="game-body" hidden>
@@ -340,43 +340,43 @@
               <thead><tr><th>分級</th><th>底價</th><th>分數</th><th>說明</th></tr></thead>
               <tbody>
                 <tr>
-                  <td><span class="tier-tag common" style="border:none;padding:0;">普通</span></td>
+                  <td><span class="tier-tag common" style="border:none;padding:0;"><i data-lucide="package" class="ico"></i>普通</span></td>
                   <td>50~150</td>
                   <td>最低</td>
                   <td>—</td>
                 </tr>
                 <tr>
-                  <td><span class="tier-tag rare" style="border:none;padding:0;">稀有</span></td>
+                  <td><span class="tier-tag rare" style="border:none;padding:0;"><i data-lucide="gem" class="ico"></i>稀有</span></td>
                   <td>300~500</td>
                   <td>中等</td>
                   <td>—</td>
                 </tr>
                 <tr>
-                  <td><span class="tier-tag epic" style="border:none;padding:0;">史詩</span></td>
+                  <td><span class="tier-tag epic" style="border:none;padding:0;"><i data-lucide="flame" class="ico"></i>史詩</span></td>
                   <td>600~900</td>
                   <td>較高</td>
                   <td>—</td>
                 </tr>
                 <tr>
-                  <td><span class="tier-tag legendary" style="border:none;padding:0;">傳說</span></td>
+                  <td><span class="tier-tag legendary" style="border:none;padding:0;"><i data-lucide="crown" class="ico"></i>傳說</span></td>
                   <td>1000 以上</td>
                   <td><b style="color:var(--gold);">最高</b></td>
                   <td>整場限量供應</td>
                 </tr>
                 <tr>
-                  <td><span class="tier-tag bundle" style="border:none;padding:0;">組合包</span></td>
+                  <td><span class="tier-tag bundle" style="border:none;padding:0;"><i data-lucide="layers" class="ico"></i>組合包</span></td>
                   <td>200~260</td>
                   <td>比同價位單品略高</td>
                   <td>一次多件小東西綁在一起賣,適合想快速湊分的人</td>
                 </tr>
                 <tr>
-                  <td><span class="tier-tag mystery" style="border:none;padding:0;">福袋箱</span></td>
+                  <td><span class="tier-tag mystery" style="border:none;padding:0;"><i data-lucide="package-open" class="ico"></i>福袋箱</span></td>
                   <td>350~400</td>
                   <td>開箱才知道</td>
                   <td>得標後現場開箱,機率見下表</td>
                 </tr>
                 <tr>
-                  <td><span class="tier-tag special" style="border:none;padding:0;">特殊</span></td>
+                  <td><span class="tier-tag special" style="border:none;padding:0;"><i data-lucide="ticket" class="ico"></i>特殊</span></td>
                   <td>300~450</td>
                   <td>不計分</td>
                   <td>給一個能影響拍賣本身的功能,整場限量供應各一張(詳見下面「特殊券效果」)</td>
@@ -397,6 +397,22 @@
               </tbody>
             </table>
           </div>
+        </div>
+
+        <div class="game-section">
+          <h4><i data-lucide="list-tree" class="ico"></i> 商品清單</h4>
+          <p style="color:var(--ink-dim);line-height:1.9;margin-bottom:12px;">這場活動實際會拍賣到的商品(福袋箱開出的獎項機率見上表,不列在這裡):</p>
+          <div class="folder-tabs" id="rules-tier-tabs">
+            <div class="folder-tab active" data-tier="common"><span class="tier-tag common" style="border:none;padding:0;"><i data-lucide="package" class="ico"></i>普通</span></div>
+            <div class="folder-tab" data-tier="rare"><span class="tier-tag rare" style="border:none;padding:0;"><i data-lucide="gem" class="ico"></i>稀有</span></div>
+            <div class="folder-tab" data-tier="epic"><span class="tier-tag epic" style="border:none;padding:0;"><i data-lucide="flame" class="ico"></i>史詩</span></div>
+            <div class="folder-tab" data-tier="legendary"><span class="tier-tag legendary" style="border:none;padding:0;"><i data-lucide="crown" class="ico"></i>傳說</span></div>
+            <div class="folder-tab" data-tier="bundle"><span class="tier-tag bundle" style="border:none;padding:0;"><i data-lucide="layers" class="ico"></i>組合包</span></div>
+            <div class="folder-tab" data-tier="mystery"><span class="tier-tag mystery" style="border:none;padding:0;"><i data-lucide="package-open" class="ico"></i>福袋箱</span></div>
+            <div class="folder-tab" data-tier="special"><span class="tier-tag special" style="border:none;padding:0;"><i data-lucide="ticket" class="ico"></i>特殊</span></div>
+          </div>
+          <div class="card folder-tab-card" style="margin-top:0;" id="rules-tier-list"></div>
+          <div class="section-note" id="rules-tier-note"></div>
         </div>
 
         <div class="game-section">
@@ -478,6 +494,7 @@
   <script src="assets/db.js"></script>
   <script src="assets/ui.js"></script>
   <script src="assets/header.js"></script>
+  <script src="assets/auction-catalog.js"></script>
   <script src="assets/rules.js"></script>
 </body>
 </html>
