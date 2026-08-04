@@ -335,14 +335,56 @@
 
         <div class="game-section">
           <h4><i data-lucide="layers" class="ico"></i> 商品分級</h4>
-          <p style="color:var(--ink-dim);line-height:1.9;">
-          <span class="tier-tag common" style="border:none;padding:0;">普通</span> 底價 50~150,分數最低。
-          <span class="tier-tag rare" style="border:none;padding:0;">稀有</span> 底價 300~500。
-          <span class="tier-tag epic" style="border:none;padding:0;">史詩</span> 底價 600~900。
-          <span class="tier-tag legendary" style="border:none;padding:0;">傳說</span> 底價 1000 以上,整場限量供應,分數最高。<br/><br/>
-          <span class="tier-tag bundle" style="border:none;padding:0;">組合包</span> 一次多件小東西綁在一起賣,分數比同價位單品略高一點,適合想快速湊分的人。<br/><br/>
-          <span class="tier-tag mystery" style="border:none;padding:0;">福袋箱</span> 底價固定,得標後現場開箱才知道多少分,機率如下:
-          </p>
+          <div class="rule-table-wrap">
+            <table class="rule-table">
+              <thead><tr><th>分級</th><th>底價</th><th>分數</th><th>說明</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><span class="tier-tag common" style="border:none;padding:0;">普通</span></td>
+                  <td>50~150</td>
+                  <td>最低</td>
+                  <td>—</td>
+                </tr>
+                <tr>
+                  <td><span class="tier-tag rare" style="border:none;padding:0;">稀有</span></td>
+                  <td>300~500</td>
+                  <td>中等</td>
+                  <td>—</td>
+                </tr>
+                <tr>
+                  <td><span class="tier-tag epic" style="border:none;padding:0;">史詩</span></td>
+                  <td>600~900</td>
+                  <td>較高</td>
+                  <td>—</td>
+                </tr>
+                <tr>
+                  <td><span class="tier-tag legendary" style="border:none;padding:0;">傳說</span></td>
+                  <td>1000 以上</td>
+                  <td><b style="color:var(--gold);">最高</b></td>
+                  <td>整場限量供應</td>
+                </tr>
+                <tr>
+                  <td><span class="tier-tag bundle" style="border:none;padding:0;">組合包</span></td>
+                  <td>200~260</td>
+                  <td>比同價位單品略高</td>
+                  <td>一次多件小東西綁在一起賣,適合想快速湊分的人</td>
+                </tr>
+                <tr>
+                  <td><span class="tier-tag mystery" style="border:none;padding:0;">福袋箱</span></td>
+                  <td>350~400</td>
+                  <td>開箱才知道</td>
+                  <td>得標後現場開箱,機率見下表</td>
+                </tr>
+                <tr>
+                  <td><span class="tier-tag special" style="border:none;padding:0;">特殊</span></td>
+                  <td>300~450</td>
+                  <td>不計分</td>
+                  <td>給一個能影響拍賣本身的功能,整場限量供應各一張(詳見下面「特殊券效果」)</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p style="color:var(--ink-dim);line-height:1.9;margin-top:14px;">福袋箱開箱機率:</p>
           <div class="rule-table-wrap">
             <table class="rule-table">
               <thead><tr><th>開箱結果</th><th>機率</th><th>分數</th></tr></thead>
@@ -355,9 +397,6 @@
               </tbody>
             </table>
           </div>
-          <p style="color:var(--ink-dim);line-height:1.9;margin-top:10px;">
-          <span class="tier-tag special" style="border:none;padding:0;">特殊</span> 不計分,而是給一個能影響拍賣本身的功能,整場限量供應各一張(詳見下面「特殊券效果」)。
-          </p>
         </div>
 
         <div class="game-section">

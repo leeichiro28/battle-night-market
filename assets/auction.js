@@ -802,10 +802,25 @@ function renderUpnext() {
   }
 }
 
+function renderBackpack() {
+  const card = document.getElementById("backpack-card");
+  card.style.display = myParticipant && currentPlayer ? "block" : "none";
+}
+
+function bindBackpackTabs() {
+  document.querySelectorAll("#backpack-tabs .backpack-tab").forEach((tab) => {
+    tab.onclick = () => {
+      document.querySelectorAll("#backpack-tabs .backpack-tab").forEach((t) => t.classList.toggle("active", t === tab));
+      document.getElementById("backpack-items-panel").style.display = tab.dataset.panel === "items" ? "block" : "none";
+      document.getElementById("backpack-tickets-panel").style.display = tab.dataset.panel === "tickets" ? "block" : "none";
+    };
+  });
+}
+
 function renderBag() {
-  const card = document.getElementById("bag-card");
+  const itemsCountEl = document.getElementById("backpack-items-count");
   if (!myParticipant || !currentPlayer) {
-    card.style.display = "none";
+    if (itemsCountEl) itemsCountEl.textContent = "0";
     return;
   }
   const won = lots.filter(
@@ -814,8 +829,7 @@ function renderBag() {
       (l.current_bidder_id === currentPlayer.id ||
         (l.partner_status === "accepted" && (l.partner_a_id === currentPlayer.id || l.partner_b_id === currentPlayer.id)))
   );
-  card.style.display = "block";
-  document.getElementById("bag-count-badge").textContent = won.length;
+  itemsCountEl.textContent = won.length;
   const box = document.getElementById("bag-list");
   if (!won.length) {
     box.innerHTML = `<div class="bag-empty">還沒有標到任何商品</div>`;
@@ -836,9 +850,10 @@ function renderBag() {
     `;
       }
       const isMysteryReveal = l.item_tier === "mystery" && l.box_reveal_name;
-      const priceLabel = isMysteryReveal
-        ? `${ui.icon("gift")}開出:${ui.esc(l.box_reveal_name)}(${l.points} 分${l.box_doubled ? "・翻倍!" : ""})`
-        : `得標 ${l.current_price}`;
+      const subHtml = isMysteryReveal
+        ? `<span class="sub">開箱結果:${ui.esc(l.box_reveal_name)}${l.box_doubled ? "・翻倍!" : ""}</span>`
+        : "";
+      const priceLabel = `得標 ${l.current_price}`;
       let tailHtml;
       if (l.refunded) {
         tailHtml = `<span class="bag-paid">${ui.icon("undo-2")}已退貨</span>`;
@@ -852,7 +867,7 @@ function renderBag() {
       return `
     <div class="bag-item-row">
       ${ui.tierTag(l.item_tier)}
-      <span class="bag-name"><span class="n">${ui.esc(l.item_name)}</span></span>
+      <span class="bag-name"><span class="n">${ui.esc(l.item_name)}</span>${subHtml}</span>
       ${tailHtml}
     </div>
   `;
@@ -926,22 +941,22 @@ function bindTierTabs() {
 }
 
 function renderTickets() {
-  const card = document.getElementById("ticket-card");
+  const ticketsCountEl = document.getElementById("backpack-tickets-count");
   if (!myParticipant) {
-    card.style.display = "none";
+    if (ticketsCountEl) ticketsCountEl.textContent = "0";
     return;
   }
   const effects = myParticipant.effects || {};
   const keys = Object.keys(AUCTION_TICKET_META).filter(
     (k) => (effects[k] || 0) > 0 || (k === "intel" && effects.intelActive) || (k === "boxDouble" && effects.boxDoubleActive)
   );
+  ticketsCountEl.textContent = keys.length;
+  const box = document.getElementById("ticket-list");
   if (!keys.length) {
-    card.style.display = "none";
+    box.innerHTML = `<div class="bag-empty">目前沒有持有的特殊道具</div>`;
     return;
   }
-  card.style.display = "block";
   const running = ev.locked && ev.status !== "closed";
-  const box = document.getElementById("ticket-list");
   box.innerHTML = keys
     .map((key) => {
       const meta = AUCTION_TICKET_META[key];
@@ -960,15 +975,19 @@ function renderTickets() {
           ? `<span class="section-note" style="margin:0;">${ui.icon("circle-check")}已啟用,下次開福袋箱自動翻倍</span>`
           : `<button class="btn ghost ticket-use-btn" data-key="boxDouble" ${running ? "" : "disabled"}>${ui.icon("package-open")}使用</button>`;
       } else if (key === "refund") {
-        actionHtml = `<span class="section-note" style="margin:0;">在下面「我的背包」對想退的商品按退貨(x${count})</span>`;
+        actionHtml = `<span class="section-note" style="margin:0;">切換到「得標商品」分頁,對想退的商品按退貨(x${count})</span>`;
       } else if (key === "freeCommon") {
         actionHtml = `<span class="section-note" style="margin:0;">拍賣「普通」級商品時,拍賣卡片上會出現兌換按鈕(x${count})</span>`;
       } else {
         actionHtml = `<span class="section-note" style="margin:0;">x${count}</span>`;
       }
+      const desc = (AUCTION_SPECIAL_ITEMS.find((sp) => sp.key === key) || {}).effectDesc || "";
       return `
       <div class="ticket-row">
-        <div class="ticket-name">${ui.icon(meta.icon)}<b>${ui.esc(meta.name)}</b>${key !== "priority" ? ` <span class="ticket-count">x${count}</span>` : ""}</div>
+        <div class="ticket-info">
+          <div class="ticket-name">${ui.icon(meta.icon)}<b>${ui.esc(meta.name)}</b>${key !== "priority" ? ` <span class="ticket-count">x${count}</span>` : ""}</div>
+          ${desc ? `<div class="ticket-desc">${ui.esc(desc)}</div>` : ""}
+        </div>
         <div class="ticket-action">${actionHtml}</div>
       </div>
     `;
@@ -1013,6 +1032,7 @@ function render() {
   renderLotSection();
   renderTaskSection();
   renderUpnext();
+  renderBackpack();
   renderBag();
   renderTickets();
   renderLeaderboard();
@@ -1094,6 +1114,7 @@ function bindRuleModal() {
   }
 
   bindTierTabs();
+  bindBackpackTabs();
   bindRuleModal();
 
   try {

@@ -75,15 +75,14 @@
     </div>
 
     <!-- 我的背包 -->
-    <div class="card" id="bag-card" style="display:none;">
-      <h3><i data-lucide="backpack" class="ico" style="color:var(--gold);"></i> 我的背包<span class="bag-count" id="bag-count-badge">0</span></h3>
-      <div id="bag-list"></div>
-    </div>
-
-    <!-- 我的特殊券 -->
-    <div class="card" id="ticket-card" style="display:none;">
-      <h3><i data-lucide="ticket" class="ico" style="color:var(--gold);"></i> 我的特殊券</h3>
-      <div id="ticket-list"></div>
+    <div class="card" id="backpack-card" style="display:none;">
+      <h3><i data-lucide="backpack" class="ico" style="color:var(--gold);"></i> 我的背包</h3>
+      <div class="backpack-tabs" id="backpack-tabs">
+        <div class="backpack-tab active" data-panel="items"><i data-lucide="package" class="ico"></i>得標商品<span class="backpack-tab-count" id="backpack-items-count">0</span></div>
+        <div class="backpack-tab" data-panel="tickets"><i data-lucide="ticket" class="ico"></i>特殊道具<span class="backpack-tab-count" id="backpack-tickets-count">0</span></div>
+      </div>
+      <div class="backpack-panel" id="backpack-items-panel"><div id="bag-list"></div></div>
+      <div class="backpack-panel" id="backpack-tickets-panel" style="display:none;"><div id="ticket-list"></div></div>
     </div>
 
     <!-- 賺財神幣管道 -->
@@ -117,13 +116,13 @@
     <div class="card">
       <h3><i data-lucide="list-tree" class="ico" style="color:var(--gold);"></i> 商品清單</h3>
       <div class="folder-tabs" id="tier-tabs">
-        <div class="folder-tab active" data-tier="common"><span class="tier-tag common" style="border:none;padding:0;">普通</span></div>
-        <div class="folder-tab" data-tier="rare"><span class="tier-tag rare" style="border:none;padding:0;">稀有</span></div>
-        <div class="folder-tab" data-tier="epic"><span class="tier-tag epic" style="border:none;padding:0;">史詩</span></div>
-        <div class="folder-tab" data-tier="legendary"><span class="tier-tag legendary" style="border:none;padding:0;">傳說</span></div>
-        <div class="folder-tab" data-tier="bundle"><span class="tier-tag bundle" style="border:none;padding:0;">組合包</span></div>
-        <div class="folder-tab" data-tier="mystery"><span class="tier-tag mystery" style="border:none;padding:0;">福袋箱</span></div>
-        <div class="folder-tab" data-tier="special"><span class="tier-tag special" style="border:none;padding:0;">特殊</span></div>
+        <div class="folder-tab active" data-tier="common"><span class="tier-tag common" style="border:none;padding:0;"><i data-lucide="package" class="ico"></i>普通</span></div>
+        <div class="folder-tab" data-tier="rare"><span class="tier-tag rare" style="border:none;padding:0;"><i data-lucide="gem" class="ico"></i>稀有</span></div>
+        <div class="folder-tab" data-tier="epic"><span class="tier-tag epic" style="border:none;padding:0;"><i data-lucide="flame" class="ico"></i>史詩</span></div>
+        <div class="folder-tab" data-tier="legendary"><span class="tier-tag legendary" style="border:none;padding:0;"><i data-lucide="crown" class="ico"></i>傳說</span></div>
+        <div class="folder-tab" data-tier="bundle"><span class="tier-tag bundle" style="border:none;padding:0;"><i data-lucide="layers" class="ico"></i>組合包</span></div>
+        <div class="folder-tab" data-tier="mystery"><span class="tier-tag mystery" style="border:none;padding:0;"><i data-lucide="package-open" class="ico"></i>福袋箱</span></div>
+        <div class="folder-tab" data-tier="special"><span class="tier-tag special" style="border:none;padding:0;"><i data-lucide="ticket" class="ico"></i>特殊</span></div>
       </div>
       <div class="card folder-tab-card" style="margin-top:0;" id="tier-list"></div>
       <div class="section-note" id="tier-note"></div>
