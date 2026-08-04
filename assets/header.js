@@ -1,5 +1,5 @@
 // 共用導覽列。頁面裡放一個 <div id="site-header"></div> 就會自動渲染。
-// 帳號相關的操作(顯示暱稱、改名、登出、Discord 登入)全部集中在這裡,頁面內容區不要再放一份。
+// 帳號相關的操作(顯示暱稱、改名、登出、Discord 登入)全部集中在這裡，頁面內容區不要再放一份。
 (function () {
   const NAV_LINKS = [
     { href: "index.html", icon: "house", label: "活動首頁" },
@@ -18,7 +18,7 @@
   }
 
   // 判斷這個帳號有沒有「好好取過名字」:
-  // 空白、系統預設的「Discord玩家」,或是從沒改過、仍等於 Discord 帳號名稱,都算還沒取名。
+  // 空白、系統預設的「Discord玩家」，或是從沒改過、仍等於 Discord 帳號名稱，都算還沒取名。
   function needsNickname(player, session) {
     if (!player || !session) return false;
     const name = (player.name || "").trim();
@@ -48,15 +48,15 @@
     return trimmed;
   }
 
-  // Discord 登入後如果偵測到還沒取好名字,直接把改名視窗端到使用者面前。
-  // 同一個帳號在這台裝置上只主動問一次,問過就不再打擾(之後仍可從導覽列的鉛筆按鈕改)。
+  // Discord 登入後如果偵測到還沒取好名字，直接把改名視窗端到使用者面前。
+  // 同一個帳號在這台裝置上只主動問一次，問過就不再打擾(之後仍可從導覽列的鉛筆按鈕改)。
   async function maybeAutoRename(player, session) {
     if (!needsNickname(player, session)) return false;
     if (localStorage.getItem(RENAME_PROMPTED_KEY) === player.id) return false;
     localStorage.setItem(RENAME_PROMPTED_KEY, player.id);
     const changed = await askRename(player, {
       title: "幫自己取個名字吧",
-      message: "你目前用的是 Discord 預設名稱。取一個好記的暱稱,對戰畫面跟賽程表上就會顯示它(最多 16 字)。",
+      message: "你目前用的是 Discord 預設名稱。取一個好記的暱稱，對戰畫面跟賽程表上就會顯示它(最多 16 字)。",
       clearValue: false,
       cancelText: "先用現在的名字",
     });
@@ -98,7 +98,7 @@
       if (changed) refreshAccount();
     };
     document.getElementById("header-logout-btn").onclick = async () => {
-      const ok = await ui.confirm("登出後就不能報名活動,要重新用 Discord 登入才行。", {
+      const ok = await ui.confirm("登出後就不能報名活動，要重新用 Discord 登入才行。", {
         title: "確定要登出嗎?",
         confirmText: "登出",
         tone: "danger",
@@ -111,7 +111,7 @@
     if (await maybeAutoRename(player, session)) refreshAccount();
   }
 
-  // 手機版把 3 個連結收進漢堡選單抽屜,帳號區(暱稱/改名/登出)固定留在第一列不會被收起來
+  // 手機版把 3 個連結收進漢堡選單抽屜，帳號區(暱稱/改名/登出)固定留在第一列不會被收起來
   function setNavOpen(nav, toggle, open) {
     nav.classList.toggle("open", open);
     toggle.setAttribute("aria-expanded", open ? "true" : "false");

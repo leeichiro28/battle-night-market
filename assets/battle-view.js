@@ -1,15 +1,15 @@
 // 共用的「戰鬥畫面唯讀渲染 + 觀眾互動」元件。
-// dice.html / rps5.html(整頁對戰)跟 lobby.html(等候室內嵌直播)共用同一份,
+// dice.html / rps5.html(整頁對戰)跟 lobby.html(等候室內嵌直播)共用同一份，
 // 不要各自維護一套重複的渲染邏輯。用法:
 //   const battleView = BattleView.mount(stageRoot, watchRoot, { gameType, matchId });
 //   battleView.update(match, ev, mySlot);
-//   battleView.announce("你擲出了 5 點!", { icon: "dices" });
+//   battleView.announce("你擲出了 5 點！"， { icon: "dices" });
 //   battleView.destroy();
-// stageRoot 放 HP圓環/戰報/戰場修飾等畫面,watchRoot 放下注/表情觀眾互動區;
-// watchRoot 沒給就自動掛在 stageRoot 最後面(整塊一起呈現,等候室內嵌直播用這個)。
+// stageRoot 放 HP圓環/戰報/戰場修飾等畫面，watchRoot 放下注/表情觀眾互動區;
+// watchRoot 沒給就自動掛在 stageRoot 最後面(整塊一起呈現，等候室內嵌直播用這個)。
 // opts.watch === false 時完全不建立觀眾互動區(五手勢目前沒有下注/表情功能)。
-// opts.showStatus === false 時不顯示內建的一行狀態文字,交給呼叫端自己的狀態列處理
-// (dice.html / rps5.html 本身有更完整的狀態文字跟操作按鈕,不要顯示兩份)。
+// opts.showStatus === false 時不顯示內建的一行狀態文字，交給呼叫端自己的狀態列處理
+// (dice.html / rps5.html 本身有更完整的狀態文字跟操作按鈕，不要顯示兩份)。
 window.BattleView = (function () {
   const CIRC = 289;
   const MAX_HP = { dice: 30, rps5: 30 };
@@ -31,7 +31,7 @@ window.BattleView = (function () {
     fast_timer: { icon: "wind", text: "疾風戰場(思考時間縮短)" },
     shadow: { icon: "moon", text: "暗影戰場(爆擊傷害加倍・防禦骰-1)" },
   };
-  // 觀眾表情彈幕:一律用 lucide 圖示,不用 emoji
+  // 觀眾表情彈幕:一律用 lucide 圖示，不用 emoji
   const REACTIONS = { cheer: "party-popper", fire: "flame", love: "heart", laugh: "laugh" };
 
   function ringUpdate(el, hp, maxHp) {
@@ -60,7 +60,7 @@ window.BattleView = (function () {
   function stageHtml() {
     return `
       <span class="tag" data-el="field-mod-tag" style="display:none;margin-bottom:10px;"></span>
-      <div class="sudden-death" data-el="sudden-death-banner" style="display:none;">${ui.icon("skull")}生死局啟動!雙方傷害固定雙倍</div>
+      <div class="sudden-death" data-el="sudden-death-banner" style="display:none;">${ui.icon("skull")}生死局啟動！雙方傷害固定雙倍</div>
       <div class="duel-stage">
         ${fighterHtml(1)}
         <div class="vs-badge">VS<br/><span data-el="round-num" style="font-size:12px;color:var(--ink-dim);">R1</span></div>
@@ -75,7 +75,7 @@ window.BattleView = (function () {
   function watchHtml() {
     return `
       <div class="card" data-el="watch-panel" style="display:none;">
-        <div style="text-align:center;font-size:12px;color:var(--ink-dim);margin-bottom:12px;">觀眾互動(純娛樂,不影響勝負)</div>
+        <div style="text-align:center;font-size:12px;color:var(--ink-dim);margin-bottom:12px;">觀眾互動(純娛樂，不影響勝負)</div>
         <div data-el="bet-row" style="display:none;"></div>
         <div class="reaction-bar action-row" data-el="emoji-bar" style="justify-content:center;margin-top:12px;"></div>
         <div data-el="floaties" style="position:relative;height:50px;"></div>
@@ -139,31 +139,31 @@ window.BattleView = (function () {
       announceTimer = setTimeout(() => el.classList.remove("show"), oo.holdMs || 2200);
     }
 
-    // 回傳 { text, icon },交給 announce 去顯示
+    // 回傳 { text， icon }，交給 announce 去顯示
     function buildHeadline(evt, mySlot, match) {
       if (!evt) return null;
       const [p1Name, p2Name] = names(match);
-      if (evt.type === "tie") return { icon: "scale", text: "平手,雙方不掉血" };
-      if (evt.type === "timeout_both") return { icon: "hourglass", text: "雙方都逾時,平手" };
-      if (evt.type === "match_point") return { icon: "flame", text: "賽末點!下一局就能分出勝負" };
+      if (evt.type === "tie") return { icon: "scale", text: "平手，雙方不掉血" };
+      if (evt.type === "timeout_both") return { icon: "hourglass", text: "雙方都逾時，平手" };
+      if (evt.type === "match_point") return { icon: "flame", text: "賽末點！下一局就能分出勝負" };
       if (evt.type === "series_game_over") {
         const gWinner = evt.winnerSlot === 1 ? p1Name : p2Name;
-        return { icon: "trophy", text: `${gWinner} 拿下第${evt.gameNum}局!比分 ${evt.games1}:${evt.games2}` };
+        return { icon: "trophy", text: `${gWinner} 拿下第${evt.gameNum}局！比分 ${evt.games1}:${evt.games2}` };
       }
       if (evt.type === "bo_point") {
         const gWinner = evt.winnerSlot === 1 ? p1Name : p2Name;
-        return { icon: "flag", text: `${gWinner} 拿下一分!比分 ${evt.games1}:${evt.games2}` };
+        return { icon: "flag", text: `${gWinner} 拿下一分！比分 ${evt.games1}:${evt.games2}` };
       }
       const winnerName = evt.winnerSlot === 1 ? p1Name : p2Name;
       const loserName = evt.winnerSlot === 1 ? p2Name : p1Name;
       if (evt.shieldBlocked) {
-        if (mySlot === evt.loserSlot) return { icon: "shield-check", text: "你擋下了攻擊,毫髮無傷!" };
-        if (mySlot === evt.winnerSlot) return { icon: "shield", text: `${loserName} 擋下了你的攻擊!` };
-        return { icon: "shield", text: `${loserName} 擋下攻擊!` };
+        if (mySlot === evt.loserSlot) return { icon: "shield-check", text: "你擋下了攻擊，毫髮無傷！" };
+        if (mySlot === evt.winnerSlot) return { icon: "shield", text: `${loserName} 擋下了你的攻擊！` };
+        return { icon: "shield", text: `${loserName} 擋下攻擊！` };
       }
-      if (mySlot === evt.loserSlot) return { icon: "heart-pulse", text: `你扣了 ${evt.dmg} 點血!` };
-      if (mySlot === evt.winnerSlot) return { icon: "flame", text: `你獲勝了這回合!${loserName} 扣 ${evt.dmg} 血` };
-      return { icon: "swords", text: `${winnerName} 獲勝!${loserName} 扣 ${evt.dmg} 血` };
+      if (mySlot === evt.loserSlot) return { icon: "heart-pulse", text: `你扣了 ${evt.dmg} 點血！` };
+      if (mySlot === evt.winnerSlot) return { icon: "flame", text: `你獲勝了這回合！${loserName} 扣 ${evt.dmg} 血` };
+      return { icon: "swords", text: `${winnerName} 獲勝！${loserName} 扣 ${evt.dmg} 血` };
     }
 
     function renderBadges(slot, state, rules) {
@@ -225,7 +225,7 @@ window.BattleView = (function () {
       const c2 = CLASS_INFO[state.class2];
       const p1Icon = $("p1-class-icon");
       const p2Icon = $("p2-class-icon");
-      // 沒有職業系統(例如五手勢對戰)時整個隱藏,不要留一格空白佔位
+      // 沒有職業系統(例如五手勢對戰)時整個隱藏，不要留一格空白佔位
       if (p1Icon) {
         p1Icon.style.display = c1 ? "flex" : "none";
         p1Icon.innerHTML = c1 ? ui.icon(c1.icon) + c1.name : "";
@@ -266,8 +266,8 @@ window.BattleView = (function () {
             const winnerName = state.hp1 <= 0 ? p2Name : p1Name;
             statusEl.innerHTML =
               state.forfeitReason === "both_afk"
-                ? ui.icon("alert-triangle") + `雙方都太久沒有進場,系統自動判定 ${ui.esc(winnerName)} 晉級`
-                : ui.icon("trophy") + `${ui.esc(winnerName)} 獲勝了這場對戰!`;
+                ? ui.icon("alert-triangle") + `雙方都太久沒有進場，系統自動判定 ${ui.esc(winnerName)} 晉級`
+                : ui.icon("trophy") + `${ui.esc(winnerName)} 獲勝了這場對戰！`;
           } else {
             statusEl.innerHTML = ui.icon("eye") + "觀戰模式・對戰進行中";
           }
@@ -317,7 +317,7 @@ window.BattleView = (function () {
       const winnerSlot = over ? (state.hp1 <= 0 ? 2 : 1) : null;
       const [p1Name, p2Name] = names(match);
       const crown = (slot) => (over && winnerSlot === slot ? " " + ui.icon("crown") : "");
-      // 沒有人下注時不要顯示百分比跟進度條(避免看起來像已經選了一邊),只留人數
+      // 沒有人下注時不要顯示百分比跟進度條(避免看起來像已經選了一邊)，只留人數
       const pctBlock = (pct, n) =>
         hasBets
           ? `<div class="pct">${pct}%</div><div class="bar"><div style="width:${pct}%;"></div></div><div style="font-size:10px;color:var(--ink-dim);margin-top:5px;">${n}人下注</div>`
@@ -338,7 +338,7 @@ window.BattleView = (function () {
       if (!hasBets) {
         const hint = document.createElement("div");
         hint.style.cssText = "width:100%;text-align:center;font-size:11px;color:var(--ink-dim);margin-top:8px;";
-        hint.textContent = "還沒有人下注,先來投一票";
+        hint.textContent = "還沒有人下注，先來投一票";
         box.appendChild(hint);
       }
       if (!over && !myBet) {
@@ -359,7 +359,7 @@ window.BattleView = (function () {
           "width:100%;display:flex;align-items:center;justify-content:center;gap:6px;font-size:12px;color:" +
           (guessedRight ? "var(--green)" : "var(--ink-dim)") +
           ";margin-top:8px;";
-        hint.innerHTML = guessedRight ? ui.icon("party-popper") + "你猜對了!" : ui.icon("smile") + "猜錯了,下次加油";
+        hint.innerHTML = guessedRight ? ui.icon("party-popper") + "你猜對了！" : ui.icon("smile") + "猜錯了，下次加油";
         box.appendChild(hint);
       }
     }
@@ -367,8 +367,8 @@ window.BattleView = (function () {
     async function ensureLocalForBet() {
       const local = db.getLocalPlayer();
       if (local.id) return local;
-      // 身分一律走 Discord 登入(導覽列也有同一顆按鈕),這裡不再另外要使用者手打暱稱
-      const go = await ui.confirm("下注前要先用 Discord 登入,登入後就能參加投票。", {
+      // 身分一律走 Discord 登入(導覽列也有同一顆按鈕)，這裡不再另外要使用者手打暱稱
+      const go = await ui.confirm("下注前要先用 Discord 登入，登入後就能參加投票。", {
         title: "還沒登入",
         icon: "log-in",
         confirmText: "用 Discord 登入",
@@ -377,7 +377,7 @@ window.BattleView = (function () {
       return null;
     }
 
-    // 表情彈幕:key 是 REACTIONS 的鍵值,舊版本傳來的 emoji 字串也照樣顯示
+    // 表情彈幕:key 是 REACTIONS 的鍵值，舊版本傳來的 emoji 字串也照樣顯示
     function spawnFloaty(key) {
       const box = $("floaties");
       if (!box) return;

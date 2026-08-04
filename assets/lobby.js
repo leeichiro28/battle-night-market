@@ -5,14 +5,14 @@ let pollTimer = null;
 let unsub1 = null;
 let unsub2 = null;
 let currentEv = null;
-let classByPlayerId = {}; // 每次 renderBracket 重新整理,matchRowHtml/bracketCardInnerHtml 讀這份來畫職業小標籤
+let classByPlayerId = {}; // 每次 renderBracket 重新整理，matchRowHtml/bracketCardInnerHtml 讀這份來畫職業小標籤
 
 const GAME_PAGE = { dice: "dice.html", rps5: "rps5.html" };
 const BRACKET_ORDER = { winners: 0, losers: 1, final: 2 };
 
 let pulseActive = false;
 function pulse() {
-  if (pulseActive) return; // 已經在跑了,不要每次輪詢都重新歸零重跑,避免畫面一直跳動
+  if (pulseActive) return; // 已經在跑了，不要每次輪詢都重新歸零重跑，避免畫面一直跳動
   pulseActive = true;
   const bar = document.getElementById("pulse-bar");
   let w = 0;
@@ -46,7 +46,7 @@ function roundLabel(round, totalRounds, losersBracketOn) {
   return { icon: "swords", text: `第 ${round} 輪` };
 }
 
-// 一列對戰:左選手 / vs / 右選手。vs 用 grid 固定在正中央,不會被名字長度推歪。
+// 一列對戰:左選手 / vs / 右選手。vs 用 grid 固定在正中央，不會被名字長度推歪。
 function matchRowHtml(m, ev, fallbackDoneText) {
   const n1 = m.p1?.name || (m.status === "pending" ? "待定" : fallbackDoneText || "?");
   const n2 = m.p2?.name || (m.status === "pending" ? "待定" : fallbackDoneText || "?");
@@ -64,7 +64,7 @@ function matchRowHtml(m, ev, fallbackDoneText) {
         <span class="vs">vs</span>
         <span class="side right ${cls(w2)}">${c2}${ui.esc(n2)}</span>
       </div>
-      ${isLive ? `<div class="row-note live">${ui.icon("radio")}直播中,往上看即時戰況</div>` : ""}
+      ${isLive ? `<div class="row-note live">${ui.icon("radio")}直播中，往上看即時戰況</div>` : ""}
     </div>`;
 }
 
@@ -72,7 +72,7 @@ function sectionTitle(iconName, text, gold) {
   return `<div class="section-title${gold ? " gold" : ""}">${ui.icon(iconName)}${text}</div>`;
 }
 
-// 已出局名單,列表 / 賽制圖兩種檢視都會用到
+// 已出局名單，列表 / 賽制圖兩種檢視都會用到
 function eliminatedListHtml(parts) {
   const eliminated = parts.filter((p) => p.status === "eliminated").sort((a, b) => (a.final_rank || 99) - (b.final_rank || 99));
   if (!eliminated.length) return "";
@@ -121,7 +121,7 @@ function renderBracketListView(ev, parts, matches) {
         .forEach((m) => (html += matchRowHtml(m, ev)));
     }
 
-    // 總冠軍賽從一開始就顯示佔位,不會等敗部打完才突然冒出來
+    // 總冠軍賽從一開始就顯示佔位，不會等敗部打完才突然冒出來
     html += sectionTitle("trophy", "總冠軍賽", true);
     if (finalMatch) {
       html += matchRowHtml(finalMatch, ev);
@@ -138,7 +138,7 @@ function renderBracketListView(ev, parts, matches) {
   return html;
 }
 
-// 樹狀對戰卡:同一張卡上下兩位選手,贏家打勾、輸家灰底刪除線
+// 樹狀對戰卡:同一張卡上下兩位選手，贏家打勾、輸家灰底刪除線
 function bracketCardInnerHtml(m, ev) {
   const n1 = m.p1?.name || (m.status === "pending" ? "待定" : "輪空");
   const n2 = m.p2?.name || (m.status === "pending" ? "待定" : "輪空");
@@ -155,9 +155,9 @@ function bracketCardInnerHtml(m, ev) {
     ${isLive ? `<div class="bt-live-tag">${ui.icon("radio")}直播中</div>` : ""}`;
 }
 
-// 敗部復活賽是即時候位配對(誰先打完誰先上,贏的人也是直接回候位池等下一場),
-// 不是預先排好的樹狀賽程,沒有「輪次」也沒有固定的晉級關係,所以不能比照勝部畫分支樹。
-// 這裡改用時間軸梯子:照對戰發生的先後順序,一場接一場往下排,單純把清單畫得更有賽制圖的感覺,
+// 敗部復活賽是即時候位配對(誰先打完誰先上，贏的人也是直接回候位池等下一場)，
+// 不是預先排好的樹狀賽程，沒有「輪次」也沒有固定的晉級關係，所以不能比照勝部畫分支樹。
+// 這裡改用時間軸梯子:照對戰發生的先後順序，一場接一場往下排，單純把清單畫得更有賽制圖的感覺，
 // 不去假裝場次之間有晉級線(那條線畫出來會是假的)。
 function losersLadderHtml(lbMatches, ev) {
   if (!lbMatches.length) {
@@ -180,9 +180,9 @@ function losersLadderHtml(lbMatches, ev) {
   </div>`;
 }
 
-// 賽制圖:只有勝部賽程是固定成形的二元樹(每輪 slot i 由上一輪 slot 2i / 2i+1 晉級而來),
-// 才能用「欄位 = 輪次、SVG 連線」畫出真正的賽制圖。敗部復活賽是動態配對(誰先打完誰先上),
-// 沒有固定賽程樹,改用時間軸梯子呈現(見 losersLadderHtml)。
+// 賽制圖:只有勝部賽程是固定成形的二元樹(每輪 slot i 由上一輪 slot 2i / 2i+1 晉級而來)，
+// 才能用「欄位 = 輪次、SVG 連線」畫出真正的賽制圖。敗部復活賽是動態配對(誰先打完誰先上)，
+// 沒有固定賽程樹，改用時間軸梯子呈現(見 losersLadderHtml)。
 function renderBracketTreeView(ev, parts, matches) {
   const wbMatches = matches.filter((m) => m.bracket === "winners");
   const finalMatch = matches.find((m) => m.bracket === "final");
@@ -212,7 +212,7 @@ function renderBracketTreeView(ev, parts, matches) {
 
   let extraRound = totalRounds + 1;
   if (ev.losers_bracket) {
-    // 總冠軍賽欄位從一開始就顯示(待定佔位),不會等敗部打完才突然冒出來,
+    // 總冠軍賽欄位從一開始就顯示(待定佔位)，不會等敗部打完才突然冒出來，
     // 才不會讓大家誤以為「勝部決賽」打完整場活動就結束了。
     const wbChamp = parts.find((p) => p.status === "wb_champion");
     const lbChamp = parts.find((p) => p.status === "lb_champion");
@@ -252,8 +252,8 @@ function renderBracketTreeView(ev, parts, matches) {
   return html;
 }
 
-// 賽制圖連線:量測每張對戰卡實際渲染的位置,畫出「本場 -> 下一輪對應場次」的 L 形連線。
-// 用實際量測而不是純 CSS 算位置,是因為名字長度不同會讓卡片高度不一,純 CSS 沒辦法算準連線落點。
+// 賽制圖連線:量測每張對戰卡實際渲染的位置，畫出「本場 -> 下一輪對應場次」的 L 形連線。
+// 用實際量測而不是純 CSS 算位置，是因為名字長度不同會讓卡片高度不一，純 CSS 沒辦法算準連線落點。
 function drawBracketConnectors() {
   const tree = document.getElementById("bt-tree");
   if (!tree) return;
@@ -336,7 +336,7 @@ async function renderBracket(ev) {
   if (!ev.locked) {
     const showClass = classesEnabled(ev);
     box.innerHTML =
-      `<div class="empty">${ui.icon("users")}報名中,已有 ${parts.length} 人參加,等主辦人鎖定名單開賽</div>` +
+      `<div class="empty">${ui.icon("users")}報名中，已有 ${parts.length} 人參加，等主辦人鎖定名單開賽</div>` +
       parts
         .map(
           (p) =>
@@ -354,9 +354,9 @@ async function renderBracket(ev) {
 }
 
 // ---------- 內嵌直播面板:不用另外開分頁就能看到目前這場對戰的即時比分 ----------
-// 以前這裡是塞一個 <iframe src="dice.html?..."> 把整頁對戰畫面嵌進來,會多出第二層導覽列/標題/規則按鈕,
-// 看起來像網站自己嵌自己。現在改成跟 dice.html / rps5.html 共用同一份 assets/battle-view.js,
-// 直接在等候室頁面裡渲染同一個 DOM,下注/表情互動也是同一份邏輯,不是唯讀截圖。
+// 以前這裡是塞一個 <iframe src="dice.html?..."> 把整頁對戰畫面嵌進來，會多出第二層導覽列/標題/規則按鈕，
+// 看起來像網站自己嵌自己。現在改成跟 dice.html / rps5.html 共用同一份 assets/battle-view.js，
+// 直接在等候室頁面裡渲染同一個 DOM，下注/表情互動也是同一份邏輯，不是唯讀截圖。
 let currentLiveMatchId = null;
 let liveBattleView = null;
 let liveBetsUnsub = null;
@@ -387,7 +387,7 @@ function renderLivePanel(ev, m) {
   liveEvRef = ev;
 
   if (currentLiveMatchId === m.id) {
-    liveBattleView.update(m, ev, null); // 同一場對戰,只更新畫面內容,不要重建 DOM(會閃爍)
+    liveBattleView.update(m, ev, null); // 同一場對戰，只更新畫面內容，不要重建 DOM(會閃爍)
     return;
   }
 
@@ -397,7 +397,7 @@ function renderLivePanel(ev, m) {
     <div class="live-panel">
       <div class="live-tag"><span class="dot"></span>直播中・${ui.gameLabel(
         ev.game_type
-      )}・不用開新分頁,直接在這裡看完整對戰</div>
+      )}・不用開新分頁，直接在這裡看完整對戰</div>
       <div id="live-battle-stage"></div>
     </div>
   `;
@@ -434,23 +434,23 @@ async function renderStatusBanner(ev, activeMatch) {
     return;
   }
   if (!activeMatch) {
-    box.innerHTML = `<div class="status-banner idle">${ui.icon("hourglass")}目前沒有對戰進行中,系統排程中...</div>`;
+    box.innerHTML = `<div class="status-banner idle">${ui.icon("hourglass")}目前沒有對戰進行中，系統排程中...</div>`;
     return;
   }
   const n1 = ui.esc(activeMatch.p1?.name || "?");
   const n2 = ui.esc(activeMatch.p2?.name || "?");
   const amPlaying = myParticipant && myParticipant.match_id === activeMatch.id && myParticipant.status === "matched";
-  const text = amPlaying ? `輪到你了!正在對戰:${n1} vs ${n2}` : `正在進行中:${n1} vs ${n2}`;
+  const text = amPlaying ? `輪到你了！正在對戰:${n1} vs ${n2}` : `正在進行中:${n1} vs ${n2}`;
   box.innerHTML = `<div class="status-banner live">${ui.icon("radio", { cls: "live-dot" })}${text}</div>`;
 }
 
 const STATUS_TEXT = {
-  waiting: { icon: "loader-circle", text: "等待配對中,找到對手會自動帶你進場" },
-  pending: { icon: "hourglass", text: "已排進賽程,前面的對戰結束後會自動帶你進場..." },
-  matched: { icon: "swords", text: "配對成功!進入對戰..." },
-  wb_champion: { icon: "trophy", text: "你打進了總冠軍賽!等待敗部冠軍產生..." },
-  lb_champion: { icon: "trophy", text: "你從敗部殺出重圍!等待總冠軍賽開打..." },
-  champion: { icon: "crown", text: "恭喜你是本場活動冠軍!" },
+  waiting: { icon: "loader-circle", text: "等待配對中，找到對手會自動帶你進場" },
+  pending: { icon: "hourglass", text: "已排進賽程，前面的對戰結束後會自動帶你進場..." },
+  matched: { icon: "swords", text: "配對成功！進入對戰..." },
+  wb_champion: { icon: "trophy", text: "你打進了總冠軍賽！等待敗部冠軍產生..." },
+  lb_champion: { icon: "trophy", text: "你從敗部殺出重圍！等待總冠軍賽開打..." },
+  champion: { icon: "crown", text: "恭喜你是本場活動冠軍！" },
 };
 
 function statusHtml(key, fallbackText) {
@@ -467,7 +467,7 @@ async function checkMyStatus(ev, matches) {
   const quitBtn = document.getElementById("quit-btn");
   const classBtn = document.getElementById("class-btn");
 
-  const spectatorHtml = ui.icon("eye") + "觀戰模式,你目前沒有報名這場活動";
+  const spectatorHtml = ui.icon("eye") + "觀戰模式，你目前沒有報名這場活動";
 
   if (!local.id) {
     statusEl.innerHTML = spectatorHtml;
@@ -487,7 +487,7 @@ async function checkMyStatus(ev, matches) {
   }
 
   if (!ev.locked) {
-    statusEl.innerHTML = ui.icon("circle-check") + "已報名,等主辦人鎖定名單開賽";
+    statusEl.innerHTML = ui.icon("circle-check") + "已報名，等主辦人鎖定名單開賽";
     quitBtn.style.display = "inline-flex";
     classBtn.style.display = classesEnabled(ev) ? "inline-flex" : "none";
     pulse();
@@ -515,7 +515,7 @@ async function checkMyStatus(ev, matches) {
       ? `${rankBadge(myParticipant.final_rank)}你已出局。獲得獎勵 ${ui.icon("gift")} <b style="color:var(--gold)">${ui.esc(
           myParticipant.reward
         )}</b>`
-      : `${rankBadge(myParticipant.final_rank)}你已出局,感謝參加!獎勵確認後會顯示在這裡`;
+      : `${rankBadge(myParticipant.final_rank)}你已出局，感謝參加！獎勵確認後會顯示在這裡`;
     return;
   }
 
@@ -525,27 +525,27 @@ async function checkMyStatus(ev, matches) {
     quitBtn.style.display = "none";
     classBtn.style.display = "none";
     statusEl.innerHTML = myParticipant.reward
-      ? `${ui.icon("crown")}恭喜奪冠!獎勵 ${ui.icon("gift")} <b style="color:var(--gold)">${ui.esc(myParticipant.reward)}</b>`
+      ? `${ui.icon("crown")}恭喜奪冠！獎勵 ${ui.icon("gift")} <b style="color:var(--gold)">${ui.esc(myParticipant.reward)}</b>`
       : statusHtml("champion");
     return;
   }
 
   if (myParticipant.status === "pending" && matches) {
     const pos = computeQueuePosition(matches, myParticipant.match_id);
-    statusEl.innerHTML = pos ? ui.icon("target") + `排隊中,你是第 ${pos} 位等待上場` : statusHtml("pending");
+    statusEl.innerHTML = pos ? ui.icon("target") + `排隊中，你是第 ${pos} 位等待上場` : statusHtml("pending");
   } else {
     statusEl.innerHTML = statusHtml(myParticipant.status);
   }
-  // 只在這裡設定一次,不要先在函式開頭藏起來又在這裡顯示,兩次設定中間如果剛好碰到 await 讓瀏覽器畫面重繪,
+  // 只在這裡設定一次，不要先在函式開頭藏起來又在這裡顯示，兩次設定中間如果剛好碰到 await 讓瀏覽器畫面重繪，
   // 就會真的看到按鈕閃一下消失又出現。整個函式改成每個分支各自只設定一次最終結果。
-  // waiting/pending 都還沒進到自己的對戰(還沒 finalizeDiceState 算防禦骰次數),這時候換職業都還來得及。
+  // waiting/pending 都還沒進到自己的對戰(還沒 finalizeDiceState 算防禦骰次數)，這時候換職業都還來得及。
   const stillBeforeOwnMatch = ["waiting", "pending"].includes(myParticipant.status);
   quitBtn.style.display = stillBeforeOwnMatch ? "inline-flex" : "none";
   classBtn.style.display = stillBeforeOwnMatch && classesEnabled(ev) ? "inline-flex" : "none";
   pulse();
 }
 
-// 報名後想換職業:跟首頁 pickClass() 同一份 ui.CLASS_NAME/CLASS_ICON/CLASS_DESC,只是這裡開賽前隨時可以再叫出來
+// 報名後想換職業:跟首頁 pickClass() 同一份 ui.CLASS_NAME/CLASS_ICON/CLASS_DESC，只是這裡開賽前隨時可以再叫出來
 function pickClassLobby() {
   const box = document.getElementById("class-options");
   box.innerHTML = "";
@@ -596,7 +596,7 @@ document.getElementById("quit-btn").innerHTML = ui.icon("door-open") + "退出�
 document.getElementById("quit-btn").onclick = async () => {
   const local = db.getLocalPlayer();
   if (!local.id) return;
-  const ok = await ui.confirm("退出後如果想再參加,要重新報名一次。", {
+  const ok = await ui.confirm("退出後如果想再參加，要重新報名一次。", {
     title: "確定要退出這場比賽嗎?",
     confirmText: "退出比賽",
     tone: "danger",
@@ -616,7 +616,7 @@ document.getElementById("quit-btn").onclick = async () => {
 let pollBusy = false;
 
 async function poll(ev) {
-  if (pollBusy) return; // 避免計時器/即時訂閱/切分頁同時觸發,互相干擾造成畫面閃爍或漏掉導向
+  if (pollBusy) return; // 避免計時器/即時訂閱/切分頁同時觸發，互相干擾造成畫面閃爍或漏掉導向
   pollBusy = true;
   try {
     if (ev.locked && ev.status !== "closed") {
@@ -639,31 +639,31 @@ async function poll(ev) {
 }
 
 const RULE_EXPLAIN = {
-  item_die: ["道具骰", "每逢第 3 回合,雙方各自隨機獲得一個道具:爆擊(+2傷害,法師+3)、回血(+2HP,法師+3)、必中(平手你贏)、封印(對方少受1傷)。"],
-  field_mod: ["戰場修飾骰", "開局隨機決定場地效果,6選1:熾熱(全場傷害+1)、堅盾(防禦骰+1次)、嗜血(擊中回血1)、混沌(平手傷害變2點)、疾風(思考時間縮短到15秒)、暗影(道具骰爆擊加成翻倍但防禦骰-1),整場固定,除非同時開動態戰場。"],
-  dynamic_field: ["動態戰場", "戰場特性每回合都重新隨機一次,而不是整場固定一種(需同時開啟戰場修飾骰)。"],
-  free_bet: ["自由加注", "不限血量都能加倍賭注,整場最多使用 2 次(跟背水一戰是不同資源,各自獨立計算)。"],
-  rage: ["怒氣值", "連續輸 2 局,下次獲勝額外多 +2 傷害。"],
-  stance: ["出招姿態", "每回合可選猛攻(獲勝多+1傷害,鬥士+2,HP低於40%再更高;落敗多扣1血)或穩紮穩打(獲勝落敗傷害都減半)。"],
-  combo: ["連擊值", "連續獲勝累積連擊層數(每贏1局+1層,刺客+2層),每滿3層永久+1傷害,斷連只歸零層數,永久加成不受影響。"],
-  dice_gamble: ["雙骰豪賭", "出招前可選擇改擲2顆骰子取總和(2~12點),一般職業整場限2次,賭徒不限次數。"],
-  sudden_death: ["生死局", "雙方 HP 都低於 20% 時自動啟動,該回合傷害固定雙倍。"],
-  classes: ["職業系統", "報名時需選一個職業:鬥士、守衛、賭徒、刺客、法師、幸運兒,各有被動與大招,克制循環額外+1傷害。"],
-  betting: ["觀眾下注", "觀戰的人可以投票猜誰會贏,純娛樂不影響勝負。"],
+  item_die: ["道具骰", "每逢第 3 回合，雙方各自隨機獲得一個道具:爆擊(+2傷害，法師+3)、回血(+2HP，法師+3)、必中(平手你贏)、封印(對方少受1傷)。"],
+  field_mod: ["戰場修飾骰", "開局隨機決定場地效果，6選1:熾熱(全場傷害+1)、堅盾(防禦骰+1次)、嗜血(擊中回血1)、混沌(平手傷害變2點)、疾風(思考時間縮短到15秒)、暗影(道具骰爆擊加成翻倍但防禦骰-1)，整場固定，除非同時開動態戰場。"],
+  dynamic_field: ["動態戰場", "戰場特性每回合都重新隨機一次，而不是整場固定一種(需同時開啟戰場修飾骰)。"],
+  free_bet: ["自由加注", "不限血量都能加倍賭注，整場最多使用 2 次(跟背水一戰是不同資源，各自獨立計算)。"],
+  rage: ["怒氣值", "連續輸 2 局，下次獲勝額外多 +2 傷害。"],
+  stance: ["出招姿態", "每回合可選猛攻(獲勝多+1傷害，鬥士+2，HP低於40%再更高;落敗多扣1血)或穩紮穩打(獲勝落敗傷害都減半)。"],
+  combo: ["連擊值", "連續獲勝累積連擊層數(每贏1局+1層，刺客+2層)，每滿3層永久+1傷害，斷連只歸零層數，永久加成不受影響。"],
+  dice_gamble: ["雙骰豪賭", "出招前可選擇改擲2顆骰子取總和(2~12點)，一般職業整場限2次，賭徒不限次數。"],
+  sudden_death: ["生死局", "雙方 HP 都低於 20% 時自動啟動，該回合傷害固定雙倍。"],
+  classes: ["職業系統", "報名時需選一個職業:鬥士、守衛、賭徒、刺客、法師、幸運兒，各有被動與大招，克制循環額外+1傷害。"],
+  betting: ["觀眾下注", "觀戰的人可以投票猜誰會贏，純娛樂不影響勝負。"],
   reactions: ["表情彈幕", "對戰中或觀戰時都能發送表情圖示。"],
 };
 
 function renderRules(ev) {
   const box = document.getElementById("rule-content");
   let html = `<h4>賽制</h4>`;
-  html += `<p>依報名人數自動排出勝部賽程,一路淘汰晉級。</p>`;
+  html += `<p>依報名人數自動排出勝部賽程，一路淘汰晉級。</p>`;
   html += ev.losers_bracket
-    ? `<p>本場活動有開啟敗部復活賽:勝部輸一場會先掉進敗部繼續打,敗部再輸一場才真的淘汰。最後勝部冠軍會和敗部冠軍打一場總冠軍賽,單場定生死。</p>`
+    ? `<p>本場活動有開啟敗部復活賽:勝部輸一場會先掉進敗部繼續打，敗部再輸一場才真的淘汰。最後勝部冠軍會和敗部冠軍打一場總冠軍賽，單場定生死。</p>`
     : `<p>本場活動是單敗淘汰制:輸一場就直接出局。</p>`;
 
   html += `<h4>玩法</h4>`;
   if (ev.game_type === "dice") {
-    html += `<p>雙方各 30 點 HP,輪流擲骰(1~6),點數高扣對方「點差」血;平手雙方各扣1血。每人2次防禦骰(一次只能擋一局,若那局你會輸則傷害完全免疫);HP≤40%(12血以下)可開背水一戰,該局傷害雙倍,不限次數。每回合有時間限制(通常30秒,戰場「疾風」時15秒),超時系統自動幫你出普通招式。</p>`;
+    html += `<p>雙方各 30 點 HP，輪流擲骰(1~6)，點數高扣對方「點差」血;平手雙方各扣1血。每人2次防禦骰(一次只能擋一局，若那局你會輸則傷害完全免疫);HP≤40%(12血以下)可開背水一戰，該局傷害雙倍，不限次數。每回合有時間限制(通常30秒，戰場「疾風」時15秒)，超時系統自動幫你出普通招式。</p>`;
     const rules = ev.rules || {};
     Object.keys(rules)
       .filter((k) => rules[k])
@@ -675,7 +675,7 @@ function renderRules(ev) {
         }
       });
   } else {
-    html += `<p>雙方各 10 點 HP,3秒內選手勢(石頭/布/剪刀/蜥蜴/史波克),超時判負。每人1張究極手勢卡,出牌保證獲勝該局(除非雙方同局都用則平手)。HP≤3時,獲勝的那一擊傷害雙倍。</p>`;
+    html += `<p>雙方各 10 點 HP，3秒內選手勢(石頭/布/剪刀/蜥蜴/史波克)，超時判負。每人1張究極手勢卡，出牌保證獲勝該局(除非雙方同局都用則平手)。HP≤3時，獲勝的那一擊傷害雙倍。</p>`;
   }
   box.innerHTML = html;
 }
@@ -698,7 +698,7 @@ function bindRuleModal(ev) {
   }
   const ev = await loadEvent();
   if (!ev) {
-    await ui.alert("這場活動已經不存在了(可能已被主辦人刪除),帶你回首頁。", {
+    await ui.alert("這場活動已經不存在了(可能已被主辦人刪除)，帶你回首頁。", {
       title: "找不到這場活動",
       tone: "danger",
     });
@@ -714,7 +714,7 @@ function bindRuleModal(ev) {
   unsub1 = db.onTableChange("event_participants", `event_id=eq.${eventId}`, () => poll(ev));
   unsub2 = db.onTableChange("matches", `event_id=eq.${eventId}`, () => poll(ev));
 
-  // 分頁從背景切回前景時,馬上刷新一次,避免手機瀏覽器把背景分頁的計時器/連線凍結導致畫面卡在舊狀態
+  // 分頁從背景切回前景時，馬上刷新一次，避免手機瀏覽器把背景分頁的計時器/連線凍結導致畫面卡在舊狀態
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") poll(ev);
   });

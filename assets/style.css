@@ -101,8 +101,12 @@ a{color:var(--gold);text-decoration:none;}
 .card + .card{margin-top:16px;}
 .card > h3{margin-bottom:14px;}
 
-/* 資料夾分頁籤:貼在卡片正上方,選中的分頁跟卡片背景連成一片 */
-.folder-tabs{display:flex;gap:4px;padding:0 2px;}
+/* 資料夾分頁籤:貼在卡片正上方，選中的分頁跟卡片背景連成一片。
+   分頁籤數量多(例如拍賣商品清單有 7 個分級)時，手機窄螢幕排不下，
+   改成橫向捲動而不是換行或被截斷——.folder-tab 保留 white-space:nowrap，
+   容器換成 overflow-x:auto，並把捲軸藏起來(視覺上就是滑一下看更多分頁)。 */
+.folder-tabs{display:flex;gap:4px;padding:0 2px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+.folder-tabs::-webkit-scrollbar{display:none;}
 .folder-tab{
   display:inline-flex;align-items:center;gap:6px;
   padding:10px 16px;
@@ -114,6 +118,7 @@ a{color:var(--gold);text-decoration:none;}
   border-radius:10px 10px 0 0;
   cursor:pointer;
   white-space:nowrap;
+  flex-shrink:0;
   transform:translateY(1px);
 }
 .folder-tab .ico{width:14px;height:14px;}
@@ -125,7 +130,7 @@ a{color:var(--gold);text-decoration:none;}
 }
 .folder-tab-card{border-top-left-radius:0;}
 
-/* 規則頁的「遊戲分組」收合區塊,互動方式跟首頁「活動已結束」的收合按鈕一致 */
+/* 規則頁的「遊戲分組」收合區塊，互動方式跟首頁「活動已結束」的收合按鈕一致 */
 .game-group{margin-bottom:16px;}
 .game-toggle{
   width:100%;
@@ -196,7 +201,7 @@ a{color:var(--gold);text-decoration:none;}
 .tag.closed{color:var(--red);border-color:var(--red);}
 .tag.running{color:var(--gold);border-color:var(--gold-d);}
 
-/* 職業小標籤:賽程列表/賽制圖裡玩家名字旁邊用,每個職業一個顏色方便一眼認出 */
+/* 職業小標籤:賽程列表/賽制圖裡玩家名字旁邊用，每個職業一個顏色方便一眼認出 */
 .class-tag{font-size:10px;padding:3px 8px;}
 .class-tag-fighter{color:#E5484D;border-color:#E5484D;}
 .class-tag-guardian{color:#3DBE6C;border-color:#3DBE6C;}
@@ -213,7 +218,7 @@ a{color:var(--gold);text-decoration:none;}
   background:rgba(242,183,5,.08);
 }
 
-/* 一排標籤:靠 gap 保持間距,不要靠 margin 硬擠在一起 */
+/* 一排標籤:靠 gap 保持間距，不要靠 margin 硬擠在一起 */
 .tag-row{
   display:flex;
   flex-wrap:wrap;
@@ -245,7 +250,7 @@ a{color:var(--gold);text-decoration:none;}
   cursor:pointer;
   transition:transform .12s ease, box-shadow .12s ease;
   box-shadow:0 0 0 rgba(242,183,5,0);
-  /* 按鈕裡的中文一律不換行,也不允許被 flex 容器壓扁成一個字一行 */
+  /* 按鈕裡的中文一律不換行，也不允許被 flex 容器壓扁成一個字一行 */
   white-space:nowrap;
   flex-shrink:0;
 }
@@ -259,10 +264,10 @@ a{color:var(--gold);text-decoration:none;}
 }
 .btn.ghost:hover{border-color:var(--gold-d);box-shadow:none;}
 .btn.danger{background:var(--red);color:#2A0B0C;}
-/* 外框式的危險操作(刪除/踢出),取代到處寫 inline style */
+/* 外框式的危險操作(刪除/踢出)，取代到處寫 inline style */
 .btn.outline-danger{color:var(--red);border-color:var(--red);}
 .btn.outline-danger:hover{border-color:var(--red);background:rgba(229,72,77,.12);}
-/* 整行寬的按鈕文字比較長,允許正常換行(不是被擠壓成一字一行) */
+/* 整行寬的按鈕文字比較長，允許正常換行(不是被擠壓成一字一行) */
 .btn.block{width:100%;white-space:normal;}
 .btn.small{padding:8px 14px;font-size:13px;}
 .btn .ico{width:15px;height:15px;}
@@ -365,7 +370,7 @@ label{
 }
 .choice-btn:hover{border-color:var(--gold-d);transform:translateY(-2px);}
 .choice-btn.picked{border-color:var(--gold);box-shadow:0 0 0 2px rgba(242,183,5,.25) inset;}
-/* 五手勢對戰:每個手勢圖示各給一個鮮明色,深色底下才看得清楚,選中時強制蓋成深色配金底 */
+/* 五手勢對戰:每個手勢圖示各給一個鮮明色，深色底下才看得清楚，選中時強制蓋成深色配金底 */
 .choice-btn.g-rock .ico{color:#F2A65A;}
 .choice-btn.g-paper .ico{color:#5AC8F2;}
 .choice-btn.g-scissors .ico{color:#F25A9E;}
@@ -408,7 +413,7 @@ label{
 }
 #mutation-hint .ico{width:13px;height:13px;color:var(--gold-d);flex-shrink:0;}
 
-/* 雙手出招按鈕,跟究極手勢按鈕共用 .btn.active-choice 的啟動樣式 */
+/* 雙手出招按鈕，跟究極手勢按鈕共用 .btn.active-choice 的啟動樣式 */
 #dual-btn{display:flex;align-items:center;justify-content:center;gap:6px;}
 
 /* 讀心值:雙方出招傾向統計面板 */
@@ -431,12 +436,12 @@ label{
 .stat-row.top .stat-bar div{background:var(--gold);}
 .stat-row .pct{width:34px;text-align:right;font-family:'Space Mono',monospace;flex-shrink:0;}
 
-/* 道具符/氣勢系統徽章顏色,共用既有的 .mini-badge 樣式 */
+/* 道具符/氣勢系統徽章顏色，共用既有的 .mini-badge 樣式 */
 .mini-badge.item{color:var(--gold);border-color:var(--gold-d);}
 .mini-badge.momentum-up{color:var(--green);border-color:var(--green);}
 .mini-badge.momentum-down{color:var(--red);border-color:var(--red);}
 
-/* 隱藏第六手勢:炸彈,額外高亮提醒這是限時出現的選項 */
+/* 隱藏第六手勢:炸彈，額外高亮提醒這是限時出現的選項 */
 .choice-btn.bomb{border-color:var(--red);position:relative;animation:bomb-pulse 1.6s ease-in-out infinite;}
 .choice-btn.bomb .ico,.choice-btn.bomb .lbl{color:var(--red);}
 .choice-btn.bomb.picked .ico,.choice-btn.bomb.picked .lbl{color:#1B1706;}
@@ -485,8 +490,8 @@ label{
 .bracket-row .win{color:var(--green);font-weight:700;}
 .bracket-row .lose{color:var(--ink-dim);text-decoration:line-through;}
 
-/* 後台贊助名單:每位贊助者一列,跟其他管理列表同一種間距節奏。
-   一位贊助者可能贊助過好幾次,列上顯示的是加總後的獎勵,展開才看得到每一次的原始紀錄。 */
+/* 後台贊助名單:每位贊助者一列，跟其他管理列表同一種間距節奏。
+   一位贊助者可能贊助過好幾次，列上顯示的是加總後的獎勵，展開才看得到每一次的原始紀錄。 */
 .sponsor-admin-row{
   display:flex;flex-direction:column;
   gap:8px;padding:12px 0;border-bottom:1px solid var(--line);
@@ -530,7 +535,7 @@ label{
 .sar-name-view{display:flex;align-items:center;gap:6px;}
 .sar-name-edit input{max-width:220px;}
 
-/* 加總結果的唯讀顯示框(單份名單總額 / 全部活動累積總額),取代原本手動輸入的欄位 */
+/* 加總結果的唯讀顯示框(單份名單總額 / 全部活動累積總額)，取代原本手動輸入的欄位 */
 .reward-total-box{
   display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
   background:rgba(242,183,5,.08);border:1px solid var(--gold-d);border-radius:10px;
@@ -539,9 +544,9 @@ label{
 .reward-total-box .tag-row{margin-top:0;justify-content:flex-end;}
 .reward-total-box .raised-total-row{margin-left:auto;font-size:17px;}
 
-/* 募資總額橫向顯示:一行排完所有獎勵項目(名稱 + 數量),數量由多到少排序。
+/* 募資總額橫向顯示:一行排完所有獎勵項目(名稱 + 數量)，數量由多到少排序。
    用在贊助頁大總額、後台「這份名單贊助總額」、後台「全部活動累積贊助總額」。
-   字級由外層容器決定(各頁面自己再設定 font-size),這裡只管排版跟顏色。 */
+   字級由外層容器決定(各頁面自己再設定 font-size)，這裡只管排版跟顏色。 */
 .raised-total-row{
   display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 18px;
 }
@@ -561,7 +566,7 @@ label{
 }
 .raised-total-empty{color:var(--ink-dim);font-size:13px;}
 
-/* 前台贊助卡片:名字下方一行一種獎勵,累加後的總數量 */
+/* 前台贊助卡片:名字下方一行一種獎勵，累加後的總數量 */
 .sponsor-reward-list{margin-top:8px;display:flex;flex-direction:column;gap:4px;}
 .sponsor-reward-line{
   display:flex;justify-content:space-between;gap:10px;font-size:14px;color:var(--ink);
@@ -577,8 +582,8 @@ label{
 .sponsor-record-entry .sr-line{display:flex;justify-content:space-between;gap:10px;font-size:13px;color:var(--ink-dim);}
 .sponsor-record-entry .sr-line .r-qty{color:var(--ink);font-weight:700;white-space:nowrap;}
 
-/* ===== 對戰列:左選手 / vs / 右選手,vs 永遠在正中央 =====
-   用 grid 的 1fr auto 1fr,兩側再各自靠邊,不管名字多長 vs 都不會被推歪。 */
+/* ===== 對戰列:左選手 / vs / 右選手，vs 永遠在正中央 =====
+   用 grid 的 1fr auto 1fr，兩側再各自靠邊，不管名字多長 vs 都不會被推歪。 */
 .match-row{
   display:flex;
   flex-direction:column;
@@ -627,7 +632,7 @@ label{
 }
 .match-row.bye .side{color:var(--ink-dim);}
 
-/* ===== 卡片標題列:標題 + 右側切換按鈕(資料夾分頁籤風格,貼在卡片正上方) ===== */
+/* ===== 卡片標題列:標題 + 右側切換按鈕(資料夾分頁籤風格，貼在卡片正上方) ===== */
 .card-head{
   display:flex;
   align-items:center;
@@ -670,10 +675,10 @@ label{
   color:var(--gold);
   transform:translateY(0);
 }
-/* 分頁籤在卡片右側時,把卡片右上角的圓角拿掉,讓選中的分頁跟卡片邊框接成一片 */
+/* 分頁籤在卡片右側時，把卡片右上角的圓角拿掉，讓選中的分頁跟卡片邊框接成一片 */
 .folder-tab-card-right{border-top-right-radius:0;}
 
-/* ===== 賽制圖(樹狀對戰圖):橫向捲動,每輪一欄,SVG 線連接晉級關係 ===== */
+/* ===== 賽制圖(樹狀對戰圖):橫向捲動，每輪一欄，SVG 線連接晉級關係 ===== */
 .bracket-tree-wrap{
   overflow-x:auto;
   overflow-y:hidden;
@@ -744,7 +749,7 @@ label{
 .bt-lines{position:absolute;top:0;left:0;pointer-events:none;overflow:visible;}
 .bt-line{fill:none;stroke:var(--line);stroke-width:2;}
 
-/* ===== 敗部時間軸梯子:即時候位配對沒有固定賽程樹,用先後順序的梯子呈現 ===== */
+/* ===== 敗部時間軸梯子:即時候位配對沒有固定賽程樹，用先後順序的梯子呈現 ===== */
 .bt-ladder{margin-top:6px;}
 .bt-ladder-item{display:flex;gap:12px;}
 .bt-ladder-dot-col{position:relative;width:14px;flex-shrink:0;display:flex;justify-content:center;}
@@ -873,7 +878,7 @@ label{
 }
 
 /* ===== 共用導覽列 ===== */
-/* 帳號名稱、改名、登出這些帳號相關的操作只放在這裡,頁面內容區不再重複一份 */
+/* 帳號名稱、改名、登出這些帳號相關的操作只放在這裡，頁面內容區不再重複一份 */
 .site-header{
   display:flex;
   align-items:center;
@@ -891,7 +896,7 @@ label{
   display:inline-flex;
   align-items:center;
   gap:8px;
-  margin-right:auto; /* 品牌固定靠左,導覽連結/帳號區/漢堡鈕整組靠右 */
+  margin-right:auto; /* 品牌固定靠左，導覽連結/帳號區/漢堡鈕整組靠右 */
   font-family:'Archivo Black';
   color:var(--gold);
   font-size:15px;
@@ -919,9 +924,9 @@ label{
 .site-header-nav a.nav-link:hover{color:var(--ink);background:var(--panel2);}
 .site-header-nav a.nav-link.active{color:var(--gold);background:rgba(242,183,5,.1);}
 
-/* 手機版的三明治選單按鈕:桌機隱藏,窄螢幕才出現。
-   用 .icon-btn.nav-toggle(兩個 class)墊高 specificity,
-   確保蓋過後面 .icon-btn{display:inline-flex} 那條規則,不受規則先後順序影響。 */
+/* 手機版的三明治選單按鈕:桌機隱藏，窄螢幕才出現。
+   用 .icon-btn.nav-toggle(兩個 class)墊高 specificity，
+   確保蓋過後面 .icon-btn{display:inline-flex} 那條規則，不受規則先後順序影響。 */
 .icon-btn.nav-toggle{display:none;}
 
 /* 導覽列右側的帳號區 */
@@ -972,7 +977,7 @@ label{
 .icon-btn .ico{width:15px;height:15px;}
 @media (max-width:640px){
   .site-header{padding:10px 14px;gap:10px;}
-  /* 第一列只留品牌/帳號/漢堡鈕,3 個導覽連結收進可展開的抽屜,避免全部擠在同一列硬換行 */
+  /* 第一列只留品牌/帳號/漢堡鈕，3 個導覽連結收進可展開的抽屜，避免全部擠在同一列硬換行 */
   .icon-btn.nav-toggle{display:inline-flex;}
   .site-header-nav{
     display:none;
@@ -1084,7 +1089,7 @@ label{
   stroke-width:2;
 }
 svg.ico{overflow:visible;}
-/* 還沒被 lucide 換成 <svg> 之前先佔位,避免文字左右跳動 */
+/* 還沒被 lucide 換成 <svg> 之前先佔位，避免文字左右跳動 */
 i.ico{opacity:0;}
 /* 讀取中的圈圈會自己轉(lucide 會幫 svg 加上 .lucide-<icon-name> 類別) */
 .lucide-loader-circle{animation:ui-spin 1s linear infinite;}
@@ -1094,14 +1099,14 @@ i.ico{opacity:0;}
 
 /* ===================================================================
    後台參加者列:名字 / 獎勵輸入框 / 操作按鈕
-   用固定欄寬的 grid,不管名字長短,所有輸入框的左右邊界都對齊在同一條線上
+   用固定欄寬的 grid，不管名字長短，所有輸入框的左右邊界都對齊在同一條線上
    =================================================================== */
 .admin-row{
   display:grid;
   grid-template-columns:minmax(140px,200px) minmax(0,1fr) auto;
   align-items:center;
   gap:14px;
-  /* 每一列(含得獎名次的高亮列)用完全相同的框線與內距,輸入框才會切齊在同一條線上 */
+  /* 每一列(含得獎名次的高亮列)用完全相同的框線與內距，輸入框才會切齊在同一條線上 */
   padding:12px 14px;
   border:1px solid transparent;
   border-bottom-color:var(--line);
@@ -1142,7 +1147,7 @@ i.ico{opacity:0;}
   .admin-row-actions{justify-content:flex-end;}
 }
 
-/* 後台表單:勾選規則的清單,每一項之間要有呼吸空間 */
+/* 後台表單:勾選規則的清單，每一項之間要有呼吸空間 */
 .check-list{
   display:flex;
   flex-direction:column;
@@ -1159,7 +1164,7 @@ i.ico{opacity:0;}
   color:var(--ink);
   line-height:1.5;
   padding:8px 10px;
-  margin-bottom:0; /* 蓋掉全域 label{margin-bottom:6px},間距一律靠 .check-list 的 gap 控制 */
+  margin-bottom:0; /* 蓋掉全域 label{margin-bottom:6px}，間距一律靠 .check-list 的 gap 控制 */
   border:1px solid var(--line);
   border-radius:10px;
   background:var(--panel2);
@@ -1169,8 +1174,8 @@ i.ico{opacity:0;}
 .check-item > *{min-width:0;}
 .check-item input[type="checkbox"]{width:auto;flex-shrink:0;margin:0;margin-top:3px;}
 .check-item .ico{width:16px;height:16px;color:var(--gold);margin-top:2px;flex-shrink:0;}
-/* 巢狀規則(例如「動態戰場」依附在「戰場修飾骰」下面)用左邊的金色線標示從屬關係,
-   卡片本身的左右邊界跟其他列保持一致,不要整張卡片內縮變窄 */
+/* 巢狀規則(例如「動態戰場」依附在「戰場修飾骰」下面)用左邊的金色線標示從屬關係，
+   卡片本身的左右邊界跟其他列保持一致，不要整張卡片內縮變窄 */
 .check-item.nested{padding-left:20px;border-left:3px solid var(--gold-d);}
 .field + .field{margin-top:14px;}
 .field-group{
@@ -1319,13 +1324,13 @@ body.dialog-open{overflow:hidden;}
 .reaction-bar .btn{padding:8px 12px;}
 .reaction-bar .ico{width:18px;height:18px;}
 
-/* lucide 沒載入成功時,不要留下一格一格的空白佔位 */
+/* lucide 沒載入成功時，不要留下一格一格的空白佔位 */
 html.no-lucide i.ico{display:none;}
 
 /* ===================================================================
    RWD:手機不跑版
-   規則:任何 flex / grid 的子項都要能被壓縮(min-width:0),
-        長字串一律 overflow-wrap:anywhere,不要把容器撐爆。
+   規則:任何 flex / grid 的子項都要能被壓縮(min-width:0)，
+        長字串一律 overflow-wrap:anywhere，不要把容器撐爆。
    =================================================================== */
 .wrap,.card,.event-card,.bracket-row,.match-row,.admin-row,.dialog-card{min-width:0;}
 .event-card .meta,.bracket-row > *,.match-row > *,.admin-row > *{min-width:0;}
@@ -1352,7 +1357,7 @@ input,select,textarea{max-width:100%;min-width:0;}
   .vs-row{gap:8px;}
   .dialog-card{padding:18px;}
   .dialog-actions .btn{flex:1 1 auto;min-width:0;}
-  /* 手機上規則說明縮成圓形圖示鈕,不要蓋住底下的主要操作按鈕 */
+  /* 手機上規則說明縮成圓形圖示鈕，不要蓋住底下的主要操作按鈕 */
   .rule-fab{bottom:14px;right:14px;width:46px;height:46px;padding:0;}
   .rule-fab .fab-label{display:none;}
   .rule-fab .ico{width:19px;height:19px;}
@@ -1425,7 +1430,7 @@ input,select,textarea{max-width:100%;min-width:0;}
 .announce-archive-row .aar-title{flex:1;min-width:0;font-weight:700;font-size:14px;}
 .announce-archive-row .aar-date{font-size:12px;color:var(--ink-dim);flex-shrink:0;}
 
-/* 後台公告管理:圖片上傳按鈕(隱藏原生 input,用 .btn.ghost 外觀的 label 觸發) */
+/* 後台公告管理:圖片上傳按鈕(隱藏原生 input，用 .btn.ghost 外觀的 label 觸發) */
 .announce-image-upload{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
 .announce-image-upload input[type="file"]{display:none;}
 .announce-image-preview{
@@ -1517,7 +1522,7 @@ input,select,textarea{max-width:100%;min-width:0;}
   .labor-action{text-align:center;}
 }
 
-/* 幸運攤位:下注金額輸入框 + 大/小按鈕同一排,窄螢幕自動換行置中 */
+/* 幸運攤位:下注金額輸入框 + 大/小按鈕同一排，窄螢幕自動換行置中 */
 .lucky-row{
   display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;
 }
@@ -1591,7 +1596,7 @@ input,select,textarea{max-width:100%;min-width:0;}
 .income-card .desc{font-size:11.5px;color:var(--ink-dim);line-height:1.5;}
 .income-card .status{margin-top:10px;font-size:11px;}
 
-/* 夜市任務卡片(問答/猜謎):沿用拍賣進行中面板骨架,改用藍綠色系跟拍賣的金色區隔開 */
+/* 夜市任務卡片(問答/猜謎):沿用拍賣進行中面板骨架，改用藍綠色系跟拍賣的金色區隔開 */
 .auction-task{
   border:1px solid #3D8FA6;
   border-radius:var(--radius);
@@ -1713,7 +1718,7 @@ input,select,textarea{max-width:100%;min-width:0;}
 .bag-empty{text-align:center;color:var(--ink-dim);padding:24px 10px;font-size:13px;}
 .bag-item-row .bag-refund-btn{padding:6px 10px;font-size:12px;}
 
-/* 拍賣進行中面板:如果這件是特殊券,邊框改成紅色系跟一般商品區隔 */
+/* 拍賣進行中面板:如果這件是特殊券，邊框改成紅色系跟一般商品區隔 */
 .auction-live.special{border-color:var(--red);}
 .auction-live.special .live-tag{color:var(--red);}
 .auction-live.special .live-tag .dot{background:var(--red);}

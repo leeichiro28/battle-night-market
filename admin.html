@@ -39,13 +39,13 @@
         </select>
       </div>
       <div class="field">
-        <label for="new-deadline">報名截止時間(選填,不填就一直開放到主辦人鎖定名單為止)</label>
+        <label for="new-deadline">報名截止時間(選填，不填就一直開放到主辦人鎖定名單為止)</label>
         <input type="datetime-local" id="new-deadline" />
       </div>
       <div class="field" id="losers-field">
         <label class="check-item" style="margin-bottom:0;">
           <input type="checkbox" id="new-losers" />
-          <span>開啟敗部復活賽(輸一場先掉敗部,敗部再輸才淘汰。報名不足6人時系統會自動關閉,單敗淘汰就好)</span>
+          <span>開啟敗部復活賽(輸一場先掉敗部，敗部再輸才淘汰。報名不足6人時系統會自動關閉，單敗淘汰就好)</span>
         </label>
       </div>
 
@@ -62,7 +62,7 @@
       <div class="field-group" id="auction-settings-box" style="display:none;">
         <label>夜市拍賣・活動設定</label>
         <div class="field">
-          <label for="auction-budget" style="font-size:12px;">每人起始財神幣(公平起跑,人人一樣)</label>
+          <label for="auction-budget" style="font-size:12px;">每人起始財神幣(公平起跑，人人一樣)</label>
           <input type="number" id="auction-budget" min="1" value="1000" />
         </div>
         <div class="field">
@@ -73,11 +73,11 @@
           <label for="auction-items-per-wave" style="font-size:12px;">每波商品件數</label>
           <input type="number" id="auction-items-per-wave" min="1" max="3" value="1" />
         </div>
-        <p style="font-size:12px;color:var(--ink-dim);margin:0;">商品清單(普通/稀有/史詩/傳說)是固定的,出場順序由系統自動排程(先普通、中段穿插稀有/史詩、尾聲壓軸傳說)。建立活動後,回下方列表按「開始拍賣」就會依這裡的設定自動產生整場排程。</p>
+        <p style="font-size:12px;color:var(--ink-dim);margin:0;">商品清單(普通/稀有/史詩/傳說)是固定的，出場順序由系統自動排程(先普通、中段穿插稀有/史詩、尾聲壓軸傳說)。建立活動後，回下方列表按「開始拍賣」就會依這裡的設定自動產生整場排程。</p>
       </div>
 
       <div class="field-group">
-        <label>獎勵設定(選填,設定後名次一確定就自動套用,現場也可以再手動修改)</label>
+        <label>獎勵設定(選填，設定後名次一確定就自動套用，現場也可以再手動修改)</label>
         <div class="field">
           <label for="new-ranks" style="font-size:12px;">要發獎勵到第幾名(最多5名)</label>
           <input type="number" id="new-ranks" min="1" max="5" value="3" />
@@ -142,12 +142,12 @@
         <input id="announce-title" placeholder="例如:中元夜市盃・鬼牌對決" />
       </div>
       <div class="field">
-        <label for="announce-subtitle">小標(圖片上方那行字,選填)</label>
+        <label for="announce-subtitle">小標(圖片上方那行字，選填)</label>
         <input id="announce-subtitle" placeholder="例如:報名開放中 · 8/03 開賽" />
       </div>
       <div class="field">
         <label for="announce-body">內文(選填)</label>
-        <textarea id="announce-body" rows="3" placeholder="活動 / 更新內容說明,可以換行"></textarea>
+        <textarea id="announce-body" rows="3" placeholder="活動 / 更新內容說明，可以換行"></textarea>
       </div>
       <div class="field" style="display:flex;gap:12px;">
         <div style="flex:1;">
@@ -160,7 +160,7 @@
         </div>
       </div>
       <div class="field">
-        <label>封面圖(選填,沒上傳就用類型預設圖示)</label>
+        <label>封面圖(選填，沒上傳就用類型預設圖示)</label>
         <div class="announce-image-upload">
           <div class="announce-image-preview" id="announce-image-preview"><i data-lucide="image" class="ico"></i></div>
           <label class="btn ghost small" for="announce-image-input" style="cursor:pointer;"><i data-lucide="upload" class="ico"></i>上傳圖片</label>

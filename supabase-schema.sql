@@ -1,7 +1,7 @@
 -- ============================================
 -- 擂台夜市 v2 資料庫結構
 -- 若是全新 Supabase 專案:直接整段執行即可
--- 若是從 v1 升級:整段執行也沒關係,全部用 if not exists / add column if not exists,不會動到既有資料
+-- 若是從 v1 升級:整段執行也沒關係，全部用 if not exists / add column if not exists，不會動到既有資料
 -- ============================================
 
 create extension if not exists pgcrypto;
@@ -75,12 +75,12 @@ alter table matches add column if not exists activated_at timestamptz;
 alter table matches add column if not exists p1_entered_at timestamptz;
 alter table matches add column if not exists p2_entered_at timestamptz;
 
--- 對戰下注(觀眾用,純娛樂不影響勝負)。放在 matches 表之後,因為外鍵要參照 matches。
+-- 對戰下注(觀眾用，純娛樂不影響勝負)。放在 matches 表之後，因為外鍵要參照 matches。
 create table if not exists match_bets (
   id uuid primary key default gen_random_uuid(),
   match_id uuid references matches(id) on delete cascade,
   player_id uuid references players(id) on delete cascade,
-  bet_on int not null, -- 1 或 2,對應player1/player2
+  bet_on int not null, -- 1 或 2，對應player1/player2
   created_at timestamptz default now(),
   unique(match_id, player_id)
 );
@@ -88,7 +88,7 @@ alter table match_bets enable row level security;
 drop policy if exists "anon all bets" on match_bets;
 create policy "anon all bets" on match_bets for all using (true) with check (true);
 
--- 場次一變成「可開打」狀態,自動記錄開打時間、重置雙方入場記錄。
+-- 場次一變成「可開打」狀態，自動記錄開打時間、重置雙方入場記錄。
 -- 前端用這個時間點來判斷「超過1分鐘沒入場」要不要自動判定棄權。
 create or replace function set_match_activated_at()
 returns trigger
@@ -111,7 +111,7 @@ create trigger trg_set_match_activated_at
 before insert or update on matches
 for each row execute function set_match_activated_at();
 
--- 敗部動態配對函式:從敗部等待名單抓兩位玩家開新對戰(勝部賽程是預先產生的樹,不用這個)
+-- 敗部動態配對函式:從敗部等待名單抓兩位玩家開新對戰(勝部賽程是預先產生的樹，不用這個)
 create or replace function match_players(p_event_id uuid, p_game_type text, p_bracket text default 'losers')
 returns uuid
 language plpgsql
@@ -186,10 +186,10 @@ end;
 $$;
 
 -- 一場一場來:整個活動同一時間只讓一場對戰進行中。
--- 以前這段邏輯整個放在前端(db.js 的 activateNextMatch):先 SELECT 有沒有 active 場次,沒有的話才 UPDATE 下一場,
--- 這兩步中間沒有原子性保證,兩個玩家幾乎同時打完各自的對戰時,兩邊都會查到「沒有 active」然後各自啟動一場,
--- 造成同時開兩場的 bug。改成這個 RPC,靠 pg_advisory_xact_lock 讓同一場活動同時只有一個呼叫能真的往下跑,
--- 後面的呼叫會卡住等前面那個呼叫的交易 commit,再重新檢查一次「有沒有 active 場次」,徹底避免競態。
+-- 以前這段邏輯整個放在前端(db.js 的 activateNextMatch):先 SELECT 有沒有 active 場次，沒有的話才 UPDATE 下一場，
+-- 這兩步中間沒有原子性保證，兩個玩家幾乎同時打完各自的對戰時，兩邊都會查到「沒有 active」然後各自啟動一場，
+-- 造成同時開兩場的 bug。改成這個 RPC，靠 pg_advisory_xact_lock 讓同一場活動同時只有一個呼叫能真的往下跑，
+-- 後面的呼叫會卡住等前面那個呼叫的交易 commit，再重新檢查一次「有沒有 active 場次」，徹底避免競態。
 create or replace function activate_next_match(p_event_id uuid)
 returns uuid
 language plpgsql
@@ -209,7 +209,7 @@ begin
   perform pg_advisory_xact_lock(hashtext(p_event_id::text));
 
   if exists (select 1 from matches where event_id = p_event_id and status = 'active') then
-    return null; -- 已經有一場在打,先不排下一場
+    return null; -- 已經有一場在打，先不排下一場
   end if;
 
   select * into ev from events where id = p_event_id;
@@ -233,7 +233,7 @@ begin
   limit 1;
 
   if next_match.id is not null then
-    -- 對戰真正要開打前才重新計算防禦骰次數/戰場特性,跟原本前端 finalizeDiceState 的時機、算法一致
+    -- 對戰真正要開打前才重新計算防禦骰次數/戰場特性，跟原本前端 finalizeDiceState 的時機、算法一致
     if ev.game_type = 'dice' then
       select class into class1 from event_participants where event_id = p_event_id and player_id = next_match.player1_id;
       select class into class2 from event_participants where event_id = p_event_id and player_id = next_match.player2_id;
@@ -260,7 +260,7 @@ begin
     return next_match.id;
   end if;
 
-  -- 沒有排隊中的對戰,看看敗部候位區有沒有兩人可以配對開新的一場
+  -- 沒有排隊中的對戰，看看敗部候位區有沒有兩人可以配對開新的一場
   if ev.losers_bracket and ev.status <> 'closed' then
     new_lb_match_id := match_players(p_event_id, ev.game_type, 'losers');
     if new_lb_match_id is not null then
@@ -274,7 +274,7 @@ begin
 end;
 $$;
 
--- 出招提交函式:原子化寫入,避免雙方同時送出時互相覆蓋
+-- 出招提交函式:原子化寫入，避免雙方同時送出時互相覆蓋
 create or replace function submit_move(p_match_id uuid, p_slot int, p_payload jsonb)
 returns void
 language plpgsql
@@ -286,7 +286,7 @@ begin
 end;
 $$;
 
--- 總冠軍賽產生函式:勝部冠軍 + 敗部冠軍都出爐後,原子化建立唯一一場總決賽
+-- 總冠軍賽產生函式:勝部冠軍 + 敗部冠軍都出爐後，原子化建立唯一一場總決賽
 create or replace function create_grand_final(p_event_id uuid)
 returns uuid
 language plpgsql
@@ -355,16 +355,16 @@ begin
 end;
 $$;
 
--- 贊助名單:主辦人可以自己開好幾份獨立的名單(跟活動 events 完全無關,自己取名字管理)
+-- 贊助名單:主辦人可以自己開好幾份獨立的名單(跟活動 events 完全無關，自己取名字管理)
 create table if not exists sponsor_lists (
   id uuid primary key default gen_random_uuid(),
-  name text not null, -- 名單名稱,例如「擂台夜市 第 12 屆」,自己取
-  raised text, -- 這份名單的贊助總額,自己填文字,例如「NT$ 18,600」
-  visible boolean not null default true, -- 是否顯示於前台;關閉後前台完全不顯示這份名單,但後台資料與統計仍保留
+  name text not null, -- 名單名稱，例如「擂台夜市 第 12 屆」，自己取
+  raised text, -- 這份名單的贊助總額，自己填文字，例如「NT$ 18，600」
+  visible boolean not null default true, -- 是否顯示於前台;關閉後前台完全不顯示這份名單，但後台資料與統計仍保留
   created_at timestamptz default now()
 );
 
--- 升級既有資料庫用:幫 sponsor_lists 補上 visible 欄位,舊資料預設為顯示,不影響既有前台畫面。
+-- 升級既有資料庫用:幫 sponsor_lists 補上 visible 欄位，舊資料預設為顯示，不影響既有前台畫面。
 do $$
 begin
   if not exists (
@@ -375,17 +375,17 @@ begin
   end if;
 end $$;
 
--- 贊助者,每筆歸屬到某一份 sponsor_lists
+-- 贊助者，每筆歸屬到某一份 sponsor_lists
 create table if not exists sponsors (
   id uuid primary key default gen_random_uuid(),
   name text not null,
-  items text not null, -- 贊助了什麼,可以多行文字列好幾樣
+  items text not null, -- 贊助了什麼，可以多行文字列好幾樣
   sort_order int not null default 0,
   created_at timestamptz default now()
 );
 
--- 升級既有資料庫用:幫 sponsors 補上 sponsor_list_id 欄位,
--- 如果表裡已經有舊資料(改版前不分名單的贊助紀錄),先開一份「既有贊助名單」把舊資料收進去。
+-- 升級既有資料庫用:幫 sponsors 補上 sponsor_list_id 欄位，
+-- 如果表裡已經有舊資料(改版前不分名單的贊助紀錄)，先開一份「既有贊助名單」把舊資料收進去。
 do $$
 declare
   default_list_id uuid;
@@ -405,8 +405,8 @@ begin
   end if;
 end $$;
 
--- 升級既有資料庫用:sponsors.items 原本是必填的自由文字欄位,
--- 改版後贊助內容改成「獎勵名稱 + 數量」存進 sponsor_rewards,items 不再需要必填。
+-- 升級既有資料庫用:sponsors.items 原本是必填的自由文字欄位，
+-- 改版後贊助內容改成「獎勵名稱 + 數量」存進 sponsor_rewards，items 不再需要必填。
 do $$
 begin
   if exists (
@@ -418,20 +418,20 @@ begin
 end $$;
 
 -- 贊助獎勵項目:每筆歸屬到某一位贊助者(sponsors)。
--- 同一次「新增贊助」如果填了好幾種獎勵(例如嗶幣+鑽石+黑玫瑰),會共用同一個 entry_id,
--- 方便後台把同一次贊助的項目分在同一組顯示;同一位贊助者不同次贊助各自是獨立的 entry_id,
--- 紀錄永遠保留,前台顯示時再依「獎勵名稱」加總成累積總額。
+-- 同一次「新增贊助」如果填了好幾種獎勵(例如嗶幣+鑽石+黑玫瑰)，會共用同一個 entry_id，
+-- 方便後台把同一次贊助的項目分在同一組顯示;同一位贊助者不同次贊助各自是獨立的 entry_id，
+-- 紀錄永遠保留，前台顯示時再依「獎勵名稱」加總成累積總額。
 create table if not exists sponsor_rewards (
   id uuid primary key default gen_random_uuid(),
   sponsor_id uuid not null references sponsors(id) on delete cascade,
   entry_id uuid not null default gen_random_uuid(),
-  reward_name text not null, -- 獎勵名稱,例如「嗶幣」「鑽石」「黑玫瑰」
+  reward_name text not null, -- 獎勵名稱，例如「嗶幣」「鑽石」「黑玫瑰」
   qty numeric not null default 0, -- 數量
   created_at timestamptz default now()
 );
 
--- 舊資料轉移:把改版前 sponsors.items 裡的自由文字,轉成一筆「獎勵名稱=原本的文字、數量=1」的紀錄,
--- 避免升級後舊贊助紀錄憑空消失(只跑一次,已經轉過的贊助者不會重複轉)。
+-- 舊資料轉移:把改版前 sponsors.items 裡的自由文字，轉成一筆「獎勵名稱=原本的文字、數量=1」的紀錄，
+-- 避免升級後舊贊助紀錄憑空消失(只跑一次，已經轉過的贊助者不會重複轉)。
 do $$
 begin
   if exists (select 1 from information_schema.columns where table_name = 'sponsors' and column_name = 'items') then
@@ -450,21 +450,21 @@ create table if not exists site_settings (
   value text
 );
 
--- 公告:首頁用來顯示「新活動 / 版本更新 / 一般公告」的精選卡片,後台可以新增/編輯/刪除、上傳一張封面圖。
--- 首頁固定抓「最新一則」當精選公告(hero),其餘依建立時間收進「更多公告」收合區(跟贊助名單、活動列表同一套邏輯:最新一則+歷史收合)。
+-- 公告:首頁用來顯示「新活動 / 版本更新 / 一般公告」的精選卡片，後台可以新增/編輯/刪除、上傳一張封面圖。
+-- 首頁固定抓「最新一則」當精選公告(hero)，其餘依建立時間收進「更多公告」收合區(跟贊助名單、活動列表同一套邏輯:最新一則+歷史收合)。
 create table if not exists announcements (
   id uuid primary key default gen_random_uuid(),
-  type text not null default 'general', -- 'event'新活動 / 'update'版本更新 / 'general'一般公告,對應首頁徽章顏色跟圖示
+  type text not null default 'general', -- 'event'新活動 / 'update'版本更新 / 'general'一般公告，對應首頁徽章顏色跟圖示
   title text not null,
-  subtitle text, -- 圖片上面那行小字,例如「報名開放中 · 8/03 開賽」「v2.0」,選填
+  subtitle text, -- 圖片上面那行小字，例如「報名開放中 · 8/03 開賽」「v2.0」，選填
   body text, -- 內文說明
-  image_url text, -- 封面圖網址,選填(沒有的話首頁用該類型的預設圖示墊底)
-  cta_text text, -- 按鈕文字,例如「立即報名」「查看玩法說明」,選填
-  cta_link text, -- 按鈕連結,可以是站內錨點(例如 #events-list)或外部網址,選填
+  image_url text, -- 封面圖網址，選填(沒有的話首頁用該類型的預設圖示墊底)
+  cta_text text, -- 按鈕文字，例如「立即報名」「查看玩法說明」，選填
+  cta_link text, -- 按鈕連結，可以是站內錨點(例如 #events-list)或外部網址，選填
   created_at timestamptz default now()
 );
 
--- 公告封面圖存放的 Storage bucket,設成公開讀取(圖片網址不含機密資訊)
+-- 公告封面圖存放的 Storage bucket，設成公開讀取(圖片網址不含機密資訊)
 insert into storage.buckets (id, name, public)
 values ('announcement-images', 'announcement-images', true)
 on conflict (id) do nothing;
@@ -477,7 +477,7 @@ drop policy if exists "anon write announcement images" on storage.objects;
 create policy "anon write announcement images" on storage.objects
   for all using (bucket_id = 'announcement-images') with check (bucket_id = 'announcement-images');
 
--- 開放權限(小型私人活動,信任參加者,不做帳號驗證)
+-- 開放權限(小型私人活動，信任參加者，不做帳號驗證)
 alter table players enable row level security;
 alter table events enable row level security;
 alter table event_participants enable row level security;
@@ -516,11 +516,11 @@ drop policy if exists "anon all announcements" on announcements;
 create policy "anon all announcements" on announcements for all using (true) with check (true);
 
 -- ============================================
--- 夜市拍賣(auction):跟骰子/五手勢完全獨立的活動類型,不走賽程/晉級,
--- 所以不共用 matches 表,獨立開三張表:
+-- 夜市拍賣(auction):跟骰子/五手勢完全獨立的活動類型，不走賽程/晉級，
+-- 所以不共用 matches 表，獨立開三張表:
 --   auction_participants — 每位玩家的財神幣/分數/打工冷卻
 --   auction_lots         — 每一件排定要拍賣的商品(含底價、目前最高價、狀態、時間)
---   auction_bids         — 出價紀錄(目前只用來留歷史,排行/得標都是看 auction_lots/auction_participants)
+--   auction_bids         — 出價紀錄(目前只用來留歷史，排行/得標都是看 auction_lots/auction_participants)
 -- ============================================
 
 -- 開放 events.game_type 多一個 'auction' 選項
@@ -539,7 +539,7 @@ create table if not exists auction_participants (
   unique(event_id, player_id)
 );
 alter table auction_participants add column if not exists lucky_ready_at timestamptz not null default now(); -- 幸運攤位下注的冷卻到期時間
-alter table auction_participants add column if not exists effects jsonb not null default '{}'; -- 特殊券效果庫存,例如 {"intel":1,"priority":0,"refund":2,"boxDouble":1,"freeCommon":0,"intelActive":true}
+alter table auction_participants add column if not exists effects jsonb not null default '{}'; -- 特殊券效果庫存，例如 {"intel":1，"priority":0，"refund":2，"boxDouble":1，"freeCommon":0，"intelActive":true}
 
 create table if not exists auction_lots (
   id uuid primary key default gen_random_uuid(),
@@ -547,18 +547,18 @@ create table if not exists auction_lots (
   wave_number int not null default 1,
   item_name text not null,
   item_tier text not null, -- common | rare | epic | legendary | special | mystery | bundle
-  points int not null default 0,          -- 得標可以拿到的分數(特殊券固定是 0,不計分)
+  points int not null default 0,          -- 得標可以拿到的分數(特殊券固定是 0，不計分)
   base_price int not null default 0,      -- 起標價
   min_increment int not null default 10,  -- 最小加價單位
   current_price int not null default 0,   -- 目前最高價(還沒開拍時等於 base_price)
   current_bidder_id uuid references players(id),
   status text not null default 'scheduled', -- scheduled(排隊等開拍) | live(拍賣中) | done(已結標)
   scheduled_at timestamptz not null,      -- 預計開拍時間
-  ends_at timestamptz,                    -- 目前這波倒數的截標時間(進入 live 才會有值,加價可能延後)
+  ends_at timestamptz,                    -- 目前這波倒數的截標時間(進入 live 才會有值，加價可能延後)
   settled boolean not null default false, -- 是否已經把得標結果算進得標者的分數(避免重複結算)
   created_at timestamptz default now()
 );
-alter table auction_lots add column if not exists special_key text;              -- 特殊券效果代號(intel/priority/refund/boxDouble/freeCommon),一般商品是 null
+alter table auction_lots add column if not exists special_key text;              -- 特殊券效果代號(intel/priority/refund/boxDouble/freeCommon)，一般商品是 null
 alter table auction_lots add column if not exists refunded boolean not null default false; -- 是否已經用退款保證券退貨過
 alter table auction_lots add column if not exists priority_holder_id uuid references players(id); -- 插隊優先權預約在這一波的人
 alter table auction_lots add column if not exists priority_until timestamptz;    -- 插隊優先權的專屬出價時間到什麼時候
@@ -568,10 +568,10 @@ alter table auction_lots add column if not exists box_doubled boolean not null d
 alter table auction_lots add column if not exists partner_a_id uuid references players(id); -- 合夥競標:發起邀請的人
 alter table auction_lots add column if not exists partner_b_id uuid references players(id); -- 合夥競標:被邀請的人
 alter table auction_lots add column if not exists partner_status text;          -- 合夥競標狀態:null(沒有合夥) | pending(等對方回應) | accepted(合夥中) | declined(對方婉拒)
-alter table auction_lots add column if not exists is_surprise boolean not null default false; -- 隱藏驚喜商品:true 的話「商品預告」不會顯示這件,開拍才會知道
-alter table auction_participants add column if not exists bonus_points numeric not null default 0; -- 合夥競標分到的分數 + 猜價小遊戲贏得的分數,加總進排行榜分數
+alter table auction_lots add column if not exists is_surprise boolean not null default false; -- 隱藏驚喜商品:true 的話「商品預告」不會顯示這件，開拍才會知道
+alter table auction_participants add column if not exists bonus_points numeric not null default 0; -- 合夥競標分到的分數 + 猜價小遊戲贏得的分數，加總進排行榜分數
 
--- 猜價小遊戲:每件商品開拍中,大家可以先猜「這件最後會標到多少錢」,不用出價也能參與,
+-- 猜價小遊戲:每件商品開拍中，大家可以先猜「這件最後會標到多少錢」，不用出價也能參與，
 -- 結標時猜中或最接近的人加一點 bonus_points。一人一件商品只能猜一次。
 create table if not exists auction_price_guesses (
   id uuid primary key default gen_random_uuid(),
@@ -608,8 +608,8 @@ drop policy if exists "anon all auction_bids" on auction_bids;
 create policy "anon all auction_bids" on auction_bids for all using (true) with check (true);
 
 -- ============================================
--- 夜市任務(auction_tasks):開始拍賣時系統會順便排一批問答/猜謎題,
--- 平均分散在整場時間內自動開放作答,答對現領財神幣,不用主辦人手動操作。
+-- 夜市任務(auction_tasks):開始拍賣時系統會順便排一批問答/猜謎題，
+-- 平均分散在整場時間內自動開放作答，答對現領財神幣，不用主辦人手動操作。
 --   auction_tasks         — 每一題排定要開放的任務(題目、選項、正解、獎金、狀態、時間)
 --   auction_task_answers  — 每位玩家對每一題的作答紀錄(靠 unique 限制一人一題只能答一次)
 -- ============================================
@@ -618,9 +618,9 @@ create table if not exists auction_tasks (
   id uuid primary key default gen_random_uuid(),
   event_id uuid references events(id) on delete cascade,
   question text not null,
-  options jsonb not null,                 -- ["選項A","選項B","選項C","選項D"]
+  options jsonb not null,                 -- ["選項A"，"選項B"，"選項C"，"選項D"]
   correct_index int not null,             -- options 裡正確答案的索引(從 0 開始)
-  task_type text not null default 'quiz', -- quiz(問答) | riddle(猜謎) | egg(彩蛋題),目前邏輯相同、只是顯示用圖示/文案不同
+  task_type text not null default 'quiz', -- quiz(問答) | riddle(猜謎) | egg(彩蛋題)，目前邏輯相同、只是顯示用圖示/文案不同
   reward int not null default 0,          -- 答對可以拿到的財神幣
   status text not null default 'scheduled', -- scheduled(排隊等開放) | live(開放作答中) | done(已結束)
   scheduled_at timestamptz not null,      -- 預計開放時間
@@ -647,10 +647,10 @@ drop policy if exists "anon all auction_task_answers" on auction_task_answers;
 create policy "anon all auction_task_answers" on auction_task_answers for all using (true) with check (true);
 
 -- ============================================
--- 執行完以上內容後,記得手動開啟 Realtime:
+-- 執行完以上內容後，記得手動開啟 Realtime:
 -- 左側選單 Database → Replication →
 -- 把 events / event_participants / matches / match_bets 四張表的開關打開
--- (舊專案升級上來,前三張應該已經開過,這次新增的 match_bets 記得也要開)
+-- (舊專案升級上來，前三張應該已經開過，這次新增的 match_bets 記得也要開)
 -- 夜市拍賣新增的表也要打開:auction_participants / auction_lots / auction_bids /
 -- auction_tasks / auction_task_answers / auction_price_guesses
 -- 或是直接在 SQL Editor 執行下面這幾行也可以:

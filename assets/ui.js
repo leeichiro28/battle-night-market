@@ -1,7 +1,7 @@
 // 共用 UI 層。所有頁面都要在 db.js 之後、頁面腳本之前載入這個檔案。
 //
 // 這裡負責三件事:
-//   1. 圖示:全站統一使用 lucide,不使用 emoji。用 ui.icon("dices") 產生標記。
+//   1. 圖示:全站統一使用 lucide，不使用 emoji。用 ui.icon("dices") 產生標記。
 //   2. 對話框:取代瀏覽器原生 alert / confirm / prompt。
 //   3. 共用標籤:遊戲類型、活動狀態、進階規則、報名截止時間等有圖示的 tag。
 const ui = (function () {
@@ -13,7 +13,7 @@ const ui = (function () {
 
   // ---------- lucide 圖示 ----------
   // 用法:container.innerHTML = ui.icon("trophy") + "冠軍"
-  // 產生的 <i data-lucide> 會由下面的 MutationObserver 自動換成 <svg>,
+  // 產生的 <i data-lucide> 會由下面的 MutationObserver 自動換成 <svg>，
   // 所以動態塞進畫面的內容不用自己再呼叫 lucide.createIcons()。
   function icon(name, opts) {
     const o = opts || {};
@@ -30,8 +30,8 @@ const ui = (function () {
 
   // ---------- 募資總額(獎勵名稱 + 數量)橫向顯示 ----------
   // 用在贊助頁的大總額、後台的「這份名單贊助總額」跟「全部活動累積贊助總額」。
-  // totals: [{ name, qty }, ...],一律依數量由多到少排序後再輸出,
-  // 不然同一批獎勵每次重新整理排列順序都不一樣,數量小的擠在最顯眼的位置很醜。
+  // totals: [{ name， qty }， ...]，一律依數量由多到少排序後再輸出，
+  // 不然同一批獎勵每次重新整理排列順序都不一樣，數量小的擠在最顯眼的位置很醜。
   function rewardTotalsHtml(totals, opts) {
     const o = opts || {};
     if (!totals || !totals.length) {
@@ -57,12 +57,12 @@ const ui = (function () {
     refreshing = true;
     try {
       window.lucide.createIcons();
-      // lucide 換出來的 <svg> 仍留著 data-lucide,下次掃描會被重複替換一次,這裡直接拔掉
+      // lucide 換出來的 <svg> 仍留著 data-lucide，下次掃描會被重複替換一次，這裡直接拔掉
       document.querySelectorAll("svg[data-lucide]").forEach((el) => el.removeAttribute("data-lucide"));
     } catch (e) {
-      /* lucide 沒載到就維持原樣,不要讓整頁壞掉 */
+      /* lucide 沒載到就維持原樣，不要讓整頁壞掉 */
     }
-    // createIcons 把 <i> 換成 <svg> 本身也會觸發 observer,這裡直接把這批紀錄丟掉避免無限迴圈
+    // createIcons 把 <i> 換成 <svg> 本身也會觸發 observer，這裡直接把這批紀錄丟掉避免無限迴圈
     if (iconObserver) iconObserver.takeRecords();
     refreshing = false;
   }
@@ -91,7 +91,7 @@ const ui = (function () {
     startIconWatcher();
   }
   window.addEventListener("load", () => {
-    // lucide 沒載入成功(離線/CDN 掛掉)就把佔位的 <i> 藏起來,版面不要留一格空白
+    // lucide 沒載入成功(離線/CDN 掛掉)就把佔位的 <i> 藏起來，版面不要留一格空白
     if (!window.lucide) document.documentElement.classList.add("no-lucide");
     queueIconRefresh();
   });
@@ -130,12 +130,12 @@ const ui = (function () {
   const CLASS_ICON = { fighter: "swords", guardian: "shield", gambler: "dice-5", assassin: "sword", mage: "sparkles", luckster: "clover" };
   const CLASS_NAME = { fighter: "鬥士", guardian: "守衛", gambler: "賭徒", assassin: "刺客", mage: "法師", luckster: "幸運兒" };
   const CLASS_DESC = {
-    fighter: "猛攻姿態加成更高(HP低於40%再更高),大招:血怒(怒氣值全滿)",
-    guardian: "防禦骰+1次,所有受傷固定-1,擋下2次攻擊後下次命中+3傷害,大招:金鐘罩(完全免疫一次)",
-    gambler: "雙骰豪賭不限次數+1傷害,但每次有35%機率凸槌自傷2點,大招:孤注一擲(必定爆擊)",
-    assassin: "連擊值疊加x2,大招:背刺(無視對方防禦骰,對方穩紮穩打時再x3傷害)",
-    mage: "道具骰效果加強,大招:法術反射(不管有沒有被防禦骰擋下,都把對方原本要打出的傷害 100% 反彈給對方)",
-    luckster: "平手直接判定自己獲勝,大招:命運骰(讓雙方這局重新擲骰)",
+    fighter: "猛攻姿態加成更高(HP低於40%再更高)，大招:血怒(怒氣值全滿)",
+    guardian: "防禦骰+1次，所有受傷固定-1，擋下2次攻擊後下次命中+3傷害，大招:金鐘罩(完全免疫一次)",
+    gambler: "雙骰豪賭不限次數+1傷害，但每次有35%機率凸槌自傷2點，大招:孤注一擲(必定爆擊)",
+    assassin: "連擊值疊加x2，大招:背刺(無視對方防禦骰，對方穩紮穩打時再x3傷害)",
+    mage: "道具骰效果加強，大招:法術反射(不管有沒有被防禦骰擋下，都把對方原本要打出的傷害 100% 反彈給對方)",
+    luckster: "平手直接判定自己獲勝，大招:命運骰(讓雙方這局重新擲骰)",
   };
 
   function gameLabel(type) {
@@ -161,12 +161,12 @@ const ui = (function () {
   function losersTag() {
     return tag("medal", "敗部復活賽");
   }
-  // 賽程列表/賽制圖裡玩家名字旁邊的職業小標籤,沒選職業就不顯示
+  // 賽程列表/賽制圖裡玩家名字旁邊的職業小標籤，沒選職業就不顯示
   function classTag(key) {
     if (!key || !CLASS_NAME[key]) return "";
     return tag(CLASS_ICON[key], CLASS_NAME[key], "class-tag class-tag-" + key);
   }
-  // 夜市拍賣商品分級小標籤(普通/稀有/史詩/傳說),樣式定義在 style.css 的 .tier-tag
+  // 夜市拍賣商品分級小標籤(普通/稀有/史詩/傳說)，樣式定義在 style.css 的 .tier-tag
   function tierTag(tier) {
     if (!tier || !TIER_NAME[tier]) return "";
     return `<span class="tier-tag ${tier}">${icon(TIER_ICON[tier])}<span>${TIER_NAME[tier]}</span></span>`;
@@ -190,7 +190,7 @@ const ui = (function () {
     return tag("alarm-clock", `${prefix || "截止"} ${text}`, passed ? "closed" : "");
   }
 
-  // 名次徽章:第 1 名皇冠、2~3 名獎牌,其他就純數字
+  // 名次徽章:第 1 名皇冠、2~3 名獎牌，其他就純數字
   function rankBadge(rank) {
     if (!rank) return "";
     if (rank === 1) return `<span class="rank-badge rank-1">${icon("crown")}</span>`;
@@ -327,7 +327,7 @@ const ui = (function () {
     }).then((r) => r === true);
   }
 
-  // ui.prompt("輸入暱稱", { value, placeholder }) -> Promise<string|null>
+  // ui.prompt("輸入暱稱"， { value， placeholder }) -> Promise<string|null>
   function promptDialog(message, opts) {
     const o = opts || {};
     return openDialog({

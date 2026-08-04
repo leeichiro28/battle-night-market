@@ -81,7 +81,7 @@ function startTimer(state) {
       if (!submittedThisRound) {
         submittedThisRound = true;
         const roll = d6();
-        battleView.announce(`思考時間到,系統幫你擲出了 ${roll} 點!`, { icon: "hourglass" });
+        battleView.announce(`思考時間到，系統幫你擲出了 ${roll} 點！`, { icon: "hourglass" });
         await db.submitMove(matchId, mySlot, { roll, defend: false, allin: false, freebet: false, gamble: false, stance: null, ult: false });
         resetSelections();
       }
@@ -107,7 +107,7 @@ function render(state) {
 
   if (roundChanged && mySlot && !submittedThisRound) {
     setTimeout(() => {
-      if (!submittedThisRound) battleView.announce("輪到你了!", { icon: "swords" });
+      if (!submittedThisRound) battleView.announce("輪到你了！", { icon: "swords" });
     }, 2000);
   }
 
@@ -126,15 +126,15 @@ function render(state) {
     document.getElementById("guard-tag").style.display = "none";
     const winnerName = state.hp1 <= 0 ? p2Name : p1Name;
     if (state.forfeitReason === "both_afk") {
-      announce("雙方掛機,已自動棄權", { icon: "alert-triangle", holdMs: 4200 });
-      statusEl.innerHTML = ui.icon("alert-triangle") + `雙方都太久沒有進場,系統自動判定 ${ui.esc(winnerName)} 晉級`;
+      announce("雙方掛機，已自動棄權", { icon: "alert-triangle", holdMs: 4200 });
+      statusEl.innerHTML = ui.icon("alert-triangle") + `雙方都太久沒有進場，系統自動判定 ${ui.esc(winnerName)} 晉級`;
     } else if (!mySlot) {
-      statusEl.innerHTML = ui.icon("trophy") + `${ui.esc(winnerName)} 獲勝了這場對戰!`;
+      statusEl.innerHTML = ui.icon("trophy") + `${ui.esc(winnerName)} 獲勝了這場對戰！`;
     } else {
       const iWon = (mySlot === 1 && state.hp2 <= 0) || (mySlot === 2 && state.hp1 <= 0);
       statusEl.innerHTML = iWon
-        ? ui.icon("trophy") + "你贏了這場對戰!回等候室看看下一步"
-        : ui.icon("skull") + "你被擊敗了,感謝參戰!";
+        ? ui.icon("trophy") + "你贏了這場對戰！回等候室看看下一步"
+        : ui.icon("skull") + "你被擊敗了，感謝參戰！";
     }
     document.getElementById("back-link").style.display = "block";
     document.getElementById("back-link").innerHTML = `<a href="lobby.html?event=${eventId}">${ui.icon(
@@ -206,7 +206,7 @@ function render(state) {
     freebetBtn.style.display = "inline-flex";
     freebetBtn.innerHTML =
       ui.icon("coins") +
-      (left <= 0 ? "自由加注已用完" : selectedFreebet ? `自由加注:已啟動(剩${left}次)` : `自由加注(傷害x2,剩${left}次)`);
+      (left <= 0 ? "自由加注已用完" : selectedFreebet ? `自由加注:已啟動(剩${left}次)` : `自由加注(傷害x2，剩${left}次)`);
     freebetBtn.classList.toggle("active-choice", selectedFreebet && left > 0);
     freebetBtn.disabled = left <= 0 || submittedThisRound;
   } else {
@@ -247,7 +247,7 @@ function render(state) {
   const rageTag = document.getElementById("rage-tag");
   if (rules.rage && myRageReady) {
     rageTag.style.display = "inline-flex";
-    rageTag.innerHTML = ui.icon("flame") + "怒氣已滿,下次獲勝額外+2傷害";
+    rageTag.innerHTML = ui.icon("flame") + "怒氣已滿，下次獲勝額外+2傷害";
   } else {
     rageTag.style.display = "none";
   }
@@ -256,19 +256,19 @@ function render(state) {
   const myGuardStack = mySlot === 1 ? state.guardstack1 : state.guardstack2;
   if (rules.classes && myClass === "guardian" && myGuardStack > 0) {
     guardTag.style.display = "inline-flex";
-    guardTag.innerHTML = ui.icon("shield-check") + `蓄力 ${myGuardStack}/2,滿了下次命中+3傷害`;
+    guardTag.innerHTML = ui.icon("shield-check") + `蓄力 ${myGuardStack}/2，滿了下次命中+3傷害`;
   } else {
     guardTag.style.display = "none";
   }
 
   if (submittedThisRound) {
-    statusEl.innerHTML = ui.icon("hourglass") + "已擲出,等待對方出手...";
+    statusEl.innerHTML = ui.icon("hourglass") + "已擲出，等待對方出手...";
     rollBtn.style.display = "flex";
     rollBtn.disabled = true;
     document.getElementById("timer-fill").style.width = "0%";
   } else {
     const secs = Math.round(rollTimeFor(state) / 1000);
-    statusEl.innerHTML = ui.icon("timer") + `輪到你了,選好策略後擲骰(${secs}秒內動作)`;
+    statusEl.innerHTML = ui.icon("timer") + `輪到你了，選好策略後擲骰(${secs}秒內動作)`;
     rollBtn.style.display = "flex";
     rollBtn.disabled = false;
     startTimer(state);
@@ -315,17 +315,17 @@ async function resolveRoundIfReady(state) {
     if (rules.classes && m1.ult && class1 === "fighter" && !classult1) {
       rageready1 = true;
       classult1 = true;
-      entry += `${p1Name}使出大招「血怒」!`;
+      entry += `${p1Name}使出大招「血怒」！`;
     }
     if (rules.classes && m2.ult && class2 === "fighter" && !classult2) {
       rageready2 = true;
       classult2 = true;
-      entry += `${p2Name}使出大招「血怒」!`;
+      entry += `${p2Name}使出大招「血怒」！`;
     }
     if (rules.classes && m1.ult && class1 !== "fighter" && !classult1) classult1 = true;
     if (rules.classes && m2.ult && class2 !== "fighter" && !classult2) classult2 = true;
 
-    // 幸運兒大招:命運骰,雙方這一局重新擲骰(在判定勝負之前生效)
+    // 幸運兒大招:命運骰，雙方這一局重新擲骰(在判定勝負之前生效)
     let roll1 = m1.roll;
     let roll2 = m2.roll;
     const luckReroll =
@@ -335,9 +335,9 @@ async function resolveRoundIfReady(state) {
       roll1 = 1 + Math.floor(Math.random() * 6);
       roll2 = 1 + Math.floor(Math.random() * 6);
       const caster = m1.ult && class1 === "luckster" ? p1Name : p2Name;
-      entry += `${caster}使出大招「命運骰」,雙方重新擲骰!`;
+      entry += `${caster}使出大招「命運骰」，雙方重新擲骰！`;
     }
-    entry += `${p1Name} 擲出 ${roll1} 點,${p2Name} 擲出 ${roll2} 點。`;
+    entry += `${p1Name} 擲出 ${roll1} 點，${p2Name} 擲出 ${roll2} 點。`;
 
     let item1 = null;
     let item2 = null;
@@ -345,7 +345,7 @@ async function resolveRoundIfReady(state) {
       const items = ["crit", "heal", "truehit", "seal"];
       item1 = items[Math.floor(Math.random() * 4)];
       item2 = items[Math.floor(Math.random() * 4)];
-      entry += `道具骰觸發!${p1Name}獲得${ITEM_LABEL[item1]},${p2Name}獲得${ITEM_LABEL[item2]}。`;
+      entry += `道具骰觸發！${p1Name}獲得${ITEM_LABEL[item1]},${p2Name}獲得${ITEM_LABEL[item2]}。`;
       const heal1 = class1 === "mage" ? 3 : 2;
       const heal2 = class2 === "mage" ? 3 : 2;
       if (item1 === "heal") hp1 = Math.min(MAX_HP, hp1 + heal1);
@@ -372,7 +372,7 @@ async function resolveRoundIfReady(state) {
       hp2 -= tieDmg;
       combo1 = 0;
       combo2 = 0;
-      entry += `點數相同,雙方戰成平手,各扣 ${tieDmg} 點血。`;
+      entry += `點數相同，雙方戰成平手，各扣 ${tieDmg} 點血。`;
       lastEvent = { type: "tie" };
     } else {
       const winnerSlot = loserSlot === 1 ? 2 : 1;
@@ -401,7 +401,7 @@ async function resolveRoundIfReady(state) {
       const winnerRageReady = winnerSlot === 1 ? rageready1 : rageready2;
       if (rules.rage && winnerRageReady) {
         dmg += 2;
-        entry += `${winnerName}的怒氣值爆發,追加 2 點傷害!`;
+        entry += `${winnerName}的怒氣值爆發，追加 2 點傷害！`;
         if (winnerSlot === 1) {
           rageready1 = false;
           rage1 = 0;
@@ -419,12 +419,12 @@ async function resolveRoundIfReady(state) {
         entry += `${winnerName}的職業克制${loserName}!`;
       }
 
-      // 守衛:每擋下2次攻擊,下一次自己命中額外+3傷害(消耗蓄力)
+      // 守衛:每擋下2次攻擊，下一次自己命中額外+3傷害(消耗蓄力)
       if (rules.classes && winnerClass === "guardian") {
         const winnerStack = winnerSlot === 1 ? guardstack1 : guardstack2;
         if (winnerStack >= 2) {
           dmg += 3;
-          entry += `${winnerName}蓄力反擊,追加 3 點傷害!`;
+          entry += `${winnerName}蓄力反擊，追加 3 點傷害！`;
           if (winnerSlot === 1) guardstack1 = 0;
           else guardstack2 = 0;
         }
@@ -446,14 +446,14 @@ async function resolveRoundIfReady(state) {
 
       if (rules.classes && winnerUltThis && winnerClass === "assassin" && loserStance === "defense") {
         dmg *= 3;
-        entry += `${winnerName}使出大招「背刺」,傷害x3!`;
+        entry += `${winnerName}使出大招「背刺」，傷害x3！`;
       }
       if (rules.classes && winnerUltThis && winnerClass === "gambler") {
         dmg += 2;
-        entry += `${winnerName}使出大招「孤注一擲」,必定爆擊!`;
+        entry += `${winnerName}使出大招「孤注一擲」，必定爆擊！`;
       }
 
-      // 守衛被動:所有受到的傷害固定-1(最低0),但完全被擋下的0傷害不受影響
+      // 守衛被動:所有受到的傷害固定-1(最低0)，但完全被擋下的0傷害不受影響
       const loserClassForReduction = loserSlot === 1 ? class1 : class2;
       if (rules.classes && loserClassForReduction === "guardian" && dmg > 0) {
         dmg = Math.max(0, dmg - 1);
@@ -462,18 +462,18 @@ async function resolveRoundIfReady(state) {
       const suddenDeath = rules.sudden_death && state.hp1 <= SUDDEN_DEATH_HP && state.hp2 <= SUDDEN_DEATH_HP;
       if (suddenDeath) dmg *= 2;
 
-      // 法師大招用:記下防禦骰/金鐘罩擋下來「之前」的原始傷害,反射永遠照這個算,
-      // 不管這局實際上有沒有被防禦骰擋下(以前只有在傷害真的打進來才會反彈,導致同時按防禦+大招時反射直接失效)。
+      // 法師大招用:記下防禦骰/金鐘罩擋下來「之前」的原始傷害，反射永遠照這個算，
+      // 不管這局實際上有沒有被防禦骰擋下(以前只有在傷害真的打進來才會反彈，導致同時按防禦+大招時反射直接失效)。
       const dmgBeforeBlock = dmg;
 
       let guardianUltBlocked = false;
       if (rules.classes && loserUltThis && loserClass === "guardian") {
         guardianUltBlocked = true;
         dmg = 0;
-        entry += `${loserName}使出大招「金鐘罩」,完全免疫傷害!`;
+        entry += `${loserName}使出大招「金鐘罩」，完全免疫傷害！`;
       }
 
-      // 刺客大招:背刺無視對方的防禦骰(守衛的金鐘罩大招除外,上面已經處理過)
+      // 刺客大招:背刺無視對方的防禦骰(守衛的金鐘罩大招除外，上面已經處理過)
       const assassinIgnoreShield = rules.classes && winnerUltThis && winnerClass === "assassin";
 
       const loserDefend = loserSlot === 1 ? m1.defend : m2.defend;
@@ -485,21 +485,21 @@ async function resolveRoundIfReady(state) {
       } else if (loserDefend && loserShield > 0 && !assassinIgnoreShield) {
         if (loserSlot === 1) shield1--;
         else shield2--;
-        // 守衛被動:成功擋下攻擊累積蓄力,滿2層時下次命中額外+3傷害
+        // 守衛被動:成功擋下攻擊累積蓄力，滿2層時下次命中額外+3傷害
         if (rules.classes && loserClass === "guardian") {
           if (loserSlot === 1) guardstack1 = Math.min(2, guardstack1 + 1);
           else guardstack2 = Math.min(2, guardstack2 + 1);
         }
-        entry += `${loserName}觸發防禦骰,完全擋下了本應承受的 ${dmg} 點傷害!`;
+        entry += `${loserName}觸發防禦骰，完全擋下了本應承受的 ${dmg} 點傷害！`;
         lastEvent = { type: "hit", winnerSlot, loserSlot, dmg, shieldBlocked: true };
       } else {
         if (loserDefend && loserShield > 0 && assassinIgnoreShield) {
-          entry += `${loserName}的防禦骰被「背刺」無視了!`;
+          entry += `${loserName}的防禦骰被「背刺」無視了！`;
         }
         if (loserSlot === 1) hp1 -= dmg;
         else hp2 -= dmg;
         const hpAfter = loserSlot === 1 ? hp1 : hp2;
-        entry += `${winnerName}技高一籌,${loserName}扣了 ${dmg} 點血${allinActive ? "(加注雙倍!)" : ""}${suddenDeath ? "生死局雙倍!" : ""}(${hpBefore}→${Math.max(hpAfter, 0)})。`;
+        entry += `${winnerName}技高一籌，${loserName}扣了 ${dmg} 點血${allinActive ? "(加注雙倍！)" : ""}${suddenDeath ? "生死局雙倍！" : ""}(${hpBefore}→${Math.max(hpAfter, 0)})。`;
         lastEvent = { type: "hit", winnerSlot, loserSlot, dmg, shieldBlocked: false };
         if (state.field_mod === "lifesteal" && dmg > 0) {
           if (winnerSlot === 1) hp1 = Math.min(MAX_HP, hp1 + 1);
@@ -508,14 +508,14 @@ async function resolveRoundIfReady(state) {
         }
       }
 
-      // 法師大招:法術反射,不看這局傷害有沒有被防禦骰/金鐘罩擋下,一律照對方原本要打出的傷害 100% 反彈回去,
-      // 這樣防禦骰(擋自己)跟反射(彈對方)可以同時生效,大招才不會因為剛好防到就直接白開。
+      // 法師大招:法術反射，不看這局傷害有沒有被防禦骰/金鐘罩擋下，一律照對方原本要打出的傷害 100% 反彈回去，
+      // 這樣防禦骰(擋自己)跟反射(彈對方)可以同時生效，大招才不會因為剛好防到就直接白開。
       if (rules.classes && loserUltThis && loserClass === "mage" && dmgBeforeBlock > 0) {
         const reflectDmg = dmgBeforeBlock;
         if (reflectDmg > 0) {
           if (winnerSlot === 1) hp1 = Math.max(0, hp1 - reflectDmg);
           else hp2 = Math.max(0, hp2 - reflectDmg);
-          entry += `${loserName}使出大招「法術反射」,反彈 ${reflectDmg} 點傷害給${winnerName}!`;
+          entry += `${loserName}使出大招「法術反射」，反彈 ${reflectDmg} 點傷害給${winnerName}!`;
         }
       }
 
@@ -527,7 +527,7 @@ async function resolveRoundIfReady(state) {
           combo2 = 0;
           if (Math.floor(combo1 / 3) > Math.floor(prev / 3)) {
             combobonus1 += 1;
-            entry += `${winnerName}連擊升級!永久+1傷害。`;
+            entry += `${winnerName}連擊升級！永久+1傷害。`;
           }
         } else {
           const prev = combo2;
@@ -535,7 +535,7 @@ async function resolveRoundIfReady(state) {
           combo1 = 0;
           if (Math.floor(combo2 / 3) > Math.floor(prev / 3)) {
             combobonus2 += 1;
-            entry += `${winnerName}連擊升級!永久+1傷害。`;
+            entry += `${winnerName}連擊升級！永久+1傷害。`;
           }
         }
       }
@@ -546,14 +546,14 @@ async function resolveRoundIfReady(state) {
           rage2 = 0;
           if (rage1 >= 2) {
             rageready1 = true;
-            entry += `${p1Name}連輸2場,怒氣值滿了!`;
+            entry += `${p1Name}連輸2場，怒氣值滿了！`;
           }
         } else {
           rage2++;
           rage1 = 0;
           if (rage2 >= 2) {
             rageready2 = true;
-            entry += `${p2Name}連輸2場,怒氣值滿了!`;
+            entry += `${p2Name}連輸2場，怒氣值滿了！`;
           }
         }
       }
@@ -564,14 +564,14 @@ async function resolveRoundIfReady(state) {
     if (m1.gamble) gamble1++;
     if (m2.gamble) gamble2++;
 
-    // 賭徒被動風險:雙骰豪賭不限次數,但每次都有 35% 機率「凸槌」自傷2點(原本 25%/1點回饋太低,玩家覺得賭徒幾乎沒下檔風險)
+    // 賭徒被動風險:雙骰豪賭不限次數，但每次都有 35% 機率「凸槌」自傷2點(原本 25%/1點回饋太低，玩家覺得賭徒幾乎沒下檔風險)
     if (rules.classes && rules.dice_gamble && m1.gamble && class1 === "gambler" && Math.random() < 0.35) {
       hp1 = Math.max(0, hp1 - 2);
-      entry += `${p1Name}雙骰豪賭凸槌,自傷 2 點!`;
+      entry += `${p1Name}雙骰豪賭凸槌，自傷 2 點！`;
     }
     if (rules.classes && rules.dice_gamble && m2.gamble && class2 === "gambler" && Math.random() < 0.35) {
       hp2 = Math.max(0, hp2 - 2);
-      entry += `${p2Name}雙骰豪賭凸槌,自傷 2 點!`;
+      entry += `${p2Name}雙骰豪賭凸槌，自傷 2 點！`;
     }
 
     log.push(entry);
@@ -648,8 +648,8 @@ async function maybeAutoAdvance(state) {
       const hint = document.getElementById("game-status");
       if (hint) {
         hint.innerHTML = mySlot
-          ? ui.icon("trophy") + "你贏了!正在前往下一場..."
-          : ui.icon("eye") + "這場結束了,正在前往下一場...";
+          ? ui.icon("trophy") + "你贏了！正在前往下一場..."
+          : ui.icon("eye") + "這場結束了，正在前往下一場...";
       }
       setTimeout(() => {
         location.href = `dice.html?match=${winnerPart.match_id}&event=${eventId}`;
@@ -677,7 +677,7 @@ async function checkEntryTimeout() {
     autopilotAnnounced = true;
     const oppName = oppSlot === 1 ? match.p1?.name : match.p2?.name;
     db
-      .appendMatchLog(matchId, `${oppName || "對手"} 超過1分鐘沒有進入對戰畫面,系統開始自動幫他出招(不會用防禦骰/加注/大招等技能),他隨時進場都能接手。`)
+      .appendMatchLog(matchId, `${oppName || "對手"} 超過1分鐘沒有進入對戰畫面，系統開始自動幫他出招(不會用防禦骰/加注/大招等技能)，他隨時進場都能接手。`)
       .catch(() => {});
   }
 }
@@ -700,7 +700,7 @@ async function refresh() {
   if (!m) {
     if (!goneAway) {
       goneAway = true;
-      await ui.alert("這場對戰已經不存在了(活動可能已被刪除),帶你回首頁。", {
+      await ui.alert("這場對戰已經不存在了(活動可能已被刪除)，帶你回首頁。", {
         title: "找不到這場對戰",
         tone: "danger",
       });
@@ -714,7 +714,7 @@ async function refresh() {
     if (!ev) {
       if (!goneAway) {
         goneAway = true;
-        await ui.alert("這場活動已經不存在了(可能已被主辦人刪除),帶你回首頁。", {
+        await ui.alert("這場活動已經不存在了(可能已被主辦人刪除)，帶你回首頁。", {
           title: "找不到這場活動",
           tone: "danger",
         });
@@ -741,37 +741,37 @@ function bindControls() {
   document.getElementById("roll-btn").innerHTML = ui.icon("dices") + "擲骰";
   document.getElementById("shield-toggle").onclick = () => {
     selectedShield = !selectedShield;
-    if (selectedShield) battleView.announce("你準備使用防禦骰!", { icon: "shield" });
+    if (selectedShield) battleView.announce("你準備使用防禦骰！", { icon: "shield" });
     refresh();
   };
   document.getElementById("allin-toggle").onclick = () => {
     selectedAllin = !selectedAllin;
-    if (selectedAllin) battleView.announce("你決定背水一戰!", { icon: "flame" });
+    if (selectedAllin) battleView.announce("你決定背水一戰！", { icon: "flame" });
     refresh();
   };
   document.getElementById("freebet-toggle").onclick = () => {
     selectedFreebet = !selectedFreebet;
-    if (selectedFreebet) battleView.announce("你使出了自由加注!", { icon: "coins" });
+    if (selectedFreebet) battleView.announce("你使出了自由加注！", { icon: "coins" });
     refresh();
   };
   document.getElementById("gamble-toggle").onclick = () => {
     selectedGamble = !selectedGamble;
-    if (selectedGamble) battleView.announce("你決定雙骰豪賭!", { icon: "dice-5" });
+    if (selectedGamble) battleView.announce("你決定雙骰豪賭！", { icon: "dice-5" });
     refresh();
   };
   document.getElementById("ult-toggle").onclick = () => {
     selectedUlt = !selectedUlt;
-    if (selectedUlt) battleView.announce("大招蓄力中!", { icon: "zap" });
+    if (selectedUlt) battleView.announce("大招蓄力中！", { icon: "zap" });
     refresh();
   };
   document.getElementById("stance-attack").onclick = () => {
     selectedStance = selectedStance === "attack" ? null : "attack";
-    if (selectedStance === "attack") battleView.announce("你選擇了猛攻姿態!", { icon: "sword" });
+    if (selectedStance === "attack") battleView.announce("你選擇了猛攻姿態！", { icon: "sword" });
     refresh();
   };
   document.getElementById("stance-defense").onclick = () => {
     selectedStance = selectedStance === "defense" ? null : "defense";
-    if (selectedStance === "defense") battleView.announce("你選擇了穩紮穩打!", { icon: "shield" });
+    if (selectedStance === "defense") battleView.announce("你選擇了穩紮穩打！", { icon: "shield" });
     refresh();
   };
   document.getElementById("roll-btn").onclick = async () => {
@@ -786,7 +786,7 @@ function bindControls() {
     }
     document.getElementById("roll-btn").disabled = true;
     clearInterval(timerInterval);
-    battleView.announce(`你擲出了 ${roll} 點!`, { icon: "dices" });
+    battleView.announce(`你擲出了 ${roll} 點！`, { icon: "dices" });
     await db.submitMove(matchId, mySlot, {
       roll,
       defend: selectedShield,
@@ -801,29 +801,29 @@ function bindControls() {
 }
 
 const RULE_EXPLAIN = {
-  item_die: "每逢第 3 回合,雙方會各自隨機獲得一個道具效果:爆擊(該局傷害+2,法師是+3)、回血(+2HP,法師是+3)、必中(平手時你直接獲勝)、封印(讓對方那局少受 1 點傷害)。",
-  field_mod: "開局隨機決定這場對戰的場地效果,6 選 1:熾熱(全場傷害+1)、堅盾(防禦骰+1次)、嗜血(擊中回血1)、混沌(平手傷害變2點)、疾風(思考時間縮短到15秒)、暗影(道具骰爆擊加成翻倍但防禦骰次數-1)。",
-  dynamic_field: "戰場特性每回合都重新隨機一次,而不是整場固定一種。",
-  free_bet: "不限血量都能加倍賭注(該局傷害x2),整場最多使用 2 次;跟「背水一戰」是不同的資源,各自獨立計算。",
-  rage: "連續輸 2 局會讓你下一次獲勝時額外多 +2 傷害,是低血量時的逆轉機會。",
-  stance: "每回合出招前可選「猛攻」(獲勝多+1傷害,鬥士是+2,HP低於40%時再更高;落敗多扣1血)或「穩紮穩打」(獲勝落敗的傷害都減半)。刺客的大招「背刺」專門針對對方選穩紮穩打設計,猜對了傷害更高。",
-  combo: "連續獲勝會累積連擊層數(每贏一局+1層,刺客是+2層),每滿 3 層算升級,永久 +1 傷害;斷連(平手或落敗)會讓層數歸零,但已拿到的永久加成不受影響。",
-  dice_gamble: "出招前可以選擇改擲 2 顆骰子取總和(2~12點),波動更大,一般職業整場限 2 次,賭徒職業不限次數。",
-  sudden_death: "當雙方 HP 都低於 20%(30血時是6血以下)時自動啟動,該回合傷害固定雙倍。",
+  item_die: "每逢第 3 回合，雙方會各自隨機獲得一個道具效果:爆擊(該局傷害+2，法師是+3)、回血(+2HP，法師是+3)、必中(平手時你直接獲勝)、封印(讓對方那局少受 1 點傷害)。",
+  field_mod: "開局隨機決定這場對戰的場地效果，6 選 1:熾熱(全場傷害+1)、堅盾(防禦骰+1次)、嗜血(擊中回血1)、混沌(平手傷害變2點)、疾風(思考時間縮短到15秒)、暗影(道具骰爆擊加成翻倍但防禦骰次數-1)。",
+  dynamic_field: "戰場特性每回合都重新隨機一次，而不是整場固定一種。",
+  free_bet: "不限血量都能加倍賭注(該局傷害x2)，整場最多使用 2 次;跟「背水一戰」是不同的資源，各自獨立計算。",
+  rage: "連續輸 2 局會讓你下一次獲勝時額外多 +2 傷害，是低血量時的逆轉機會。",
+  stance: "每回合出招前可選「猛攻」(獲勝多+1傷害，鬥士是+2，HP低於40%時再更高;落敗多扣1血)或「穩紮穩打」(獲勝落敗的傷害都減半)。刺客的大招「背刺」專門針對對方選穩紮穩打設計，猜對了傷害更高。",
+  combo: "連續獲勝會累積連擊層數(每贏一局+1層，刺客是+2層)，每滿 3 層算升級，永久 +1 傷害;斷連(平手或落敗)會讓層數歸零，但已拿到的永久加成不受影響。",
+  dice_gamble: "出招前可以選擇改擲 2 顆骰子取總和(2~12點)，波動更大，一般職業整場限 2 次，賭徒職業不限次數。",
+  sudden_death: "當雙方 HP 都低於 20%(30血時是6血以下)時自動啟動，該回合傷害固定雙倍。",
   classes:
-    "報名時必須選擇一個職業:鬥士、守衛、賭徒、刺客、法師、幸運兒,各自有被動加成跟一次性大招。職業克制循環:鬥士克賭徒、賭徒克刺客、刺客克守衛、守衛克法師、法師克幸運兒、幸運兒克鬥士,克制對象時額外+1傷害。",
-  betting: "觀戰的人可以投票猜誰會贏,純娛樂不影響勝負。",
+    "報名時必須選擇一個職業:鬥士、守衛、賭徒、刺客、法師、幸運兒，各自有被動加成跟一次性大招。職業克制循環:鬥士克賭徒、賭徒克刺客、刺客克守衛、守衛克法師、法師克幸運兒、幸運兒克鬥士，克制對象時額外+1傷害。",
+  betting: "觀戰的人可以投票猜誰會贏，純娛樂不影響勝負。",
   reactions: "觀戰或對戰中都可以發送表情圖示互動。",
 };
 
 function renderRules() {
   const box = document.getElementById("rule-content");
   let html = `
-    <p>雙方各有 30 點 HP,輪流擲一顆骰子(1~6點)。</p>
-    <p>點數高的一方讓對方扣「點數差」的血;點數相同則平手,雙方各扣 1 血。</p>
-    <p>每人基礎有 2 次防禦骰:出招前先啟動,若那一局你會輸,傷害完全免疫,一次只能擋一局。</p>
-    <p>HP ≤40%(30血時是12血以下)時可開啟「背水一戰」,該局傷害雙倍賭一把,不限次數。</p>
-    <p>血量先歸零者落敗。每回合有時間限制(通常30秒,戰場特性「疾風」時縮短到15秒),超時系統會自動幫你出一個普通招式(不會用防禦骰、加注等技能)。</p>
+    <p>雙方各有 30 點 HP，輪流擲一顆骰子(1~6點)。</p>
+    <p>點數高的一方讓對方扣「點數差」的血;點數相同則平手，雙方各扣 1 血。</p>
+    <p>每人基礎有 2 次防禦骰:出招前先啟動，若那一局你會輸，傷害完全免疫，一次只能擋一局。</p>
+    <p>HP ≤40%(30血時是12血以下)時可開啟「背水一戰」，該局傷害雙倍賭一把，不限次數。</p>
+    <p>血量先歸零者落敗。每回合有時間限制(通常30秒，戰場特性「疾風」時縮短到15秒)，超時系統會自動幫你出一個普通招式(不會用防禦骰、加注等技能)。</p>
   `;
   const rules = (ev && ev.rules) || {};
   const active = Object.keys(rules).filter((k) => rules[k]);
@@ -860,7 +860,7 @@ function bindRuleModal() {
   battleView = BattleView.mount(document.getElementById("battle-stage"), document.getElementById("battle-watch"), {
     gameType: "dice",
     matchId,
-    showStatus: false, // 這頁自己的 #game-status 已經處理狀態文字,不要顯示兩份
+    showStatus: false, // 這頁自己的 #game-status 已經處理狀態文字，不要顯示兩份
   });
   bindControls();
   bindRuleModal();

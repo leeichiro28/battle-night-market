@@ -1,13 +1,13 @@
-let currentPlayer = null; // 已用 Discord 登入的話是 {id, name},沒登入是 null
+let currentPlayer = null; // 已用 Discord 登入的話是 {id， name}，沒登入是 null
 let pendingLoginResolvers = [];
 
 function updateAuthUI() {
-  // 帳號名稱/登出都放在導覽列(header.js),這裡只負責「還沒登入時的登入提示卡」
+  // 帳號名稱/登出都放在導覽列(header.js)，這裡只負責「還沒登入時的登入提示卡」
   if (currentPlayer) document.getElementById("who-card").style.display = "none";
 }
 
 // 需要登入才能繼續的地方(參加、查看自己的戰況)呼叫這個:
-// 已登入就馬上回傳玩家資料;沒登入就跳出 Discord 登入卡片,等使用者登入完成後才繼續往下走
+// 已登入就馬上回傳玩家資料;沒登入就跳出 Discord 登入卡片，等使用者登入完成後才繼續往下走
 function ensureLogin() {
   if (currentPlayer) return Promise.resolve(currentPlayer);
   document.getElementById("who-card").style.display = "block";
@@ -25,7 +25,7 @@ document.getElementById("discord-login-btn").onclick = async () => {
   btn.innerHTML = ui.icon("loader-circle") + "跳轉到 Discord 授權中...";
   try {
     await db.signInWithDiscord();
-    // 這裡會整頁導去 Discord 授權頁,不用再做其他事
+    // 這裡會整頁導去 Discord 授權頁，不用再做其他事
   } catch (e) {
     await ui.alert("Discord 登入失敗:" + (e.message || "未知錯誤"), { title: "登入失敗", tone: "danger" });
     btn.disabled = false;
@@ -34,7 +34,7 @@ document.getElementById("discord-login-btn").onclick = async () => {
 };
 document.getElementById("discord-login-btn").innerHTML = LOGIN_BTN_HTML;
 
-// 職業圖示/名稱/說明統一放在 assets/ui.js 的 CLASS_ICON / CLASS_NAME / CLASS_DESC,這裡不要自己再寫一份
+// 職業圖示/名稱/說明統一放在 assets/ui.js 的 CLASS_ICON / CLASS_NAME / CLASS_DESC，這裡不要自己再寫一份
 function pickClass() {
   const box = document.getElementById("class-options");
   box.innerHTML = "";
@@ -64,7 +64,7 @@ function eventRow(ev) {
   const div = document.createElement("div");
   div.className = "card event-card";
   const deadlinePassed = ev.registration_deadline && new Date() > new Date(ev.registration_deadline);
-  // 夜市拍賣完全獨立、沒有賽程/晉級,不走 lobby.html,直接進 auction.html
+  // 夜市拍賣完全獨立、沒有賽程/晉級，不走 lobby.html，直接進 auction.html
   const isAuction = ev.game_type === "auction";
   const playPage = isAuction ? "auction.html" : "lobby.html";
   div.innerHTML = `
@@ -88,7 +88,7 @@ function eventRow(ev) {
       location.href = `${playPage}?event=${ev.id}`;
     };
   } else if (ev.locked) {
-    btn.innerHTML = isAuction ? ui.icon("gavel") + "拍賣進行中" : ui.icon("swords") + "已開賽,查看戰況";
+    btn.innerHTML = isAuction ? ui.icon("gavel") + "拍賣進行中" : ui.icon("swords") + "已開賽，查看戰況";
     btn.onclick = async () => {
       await ensureLogin();
       location.href = `${playPage}?event=${ev.id}`;
@@ -118,8 +118,8 @@ function eventRow(ev) {
   const actions = document.createElement("div");
   actions.className = "action-row";
 
-  // 觀戰按鈕:不管活動是報名中/進行中/已結束都能點,不用等開賽,也不用先登入
-  // 可以先開著這個頁面掛著,場次一開打賽程列表就會自動出現觀戰連結
+  // 觀戰按鈕:不管活動是報名中/進行中/已結束都能點，不用等開賽，也不用先登入
+  // 可以先開著這個頁面掛著，場次一開打賽程列表就會自動出現觀戰連結
   if (ev.status !== "closed") {
     const watchBtn = document.createElement("button");
     watchBtn.className = "btn ghost";
@@ -135,8 +135,8 @@ function eventRow(ev) {
 
 let archiveOpen = false;
 
-// 首頁只留報名中/進行中的活動,已結束的收進下面可展開的「活動已結束」區,避免舊活動一直往下堆
-// 公告卡類型對應的圖示跟徽章文字,首頁精選公告(hero)跟後台管理共用同一份對照表(admin.js 也有一份)
+// 首頁只留報名中/進行中的活動，已結束的收進下面可展開的「活動已結束」區，避免舊活動一直往下堆
+// 公告卡類型對應的圖示跟徽章文字，首頁精選公告(hero)跟後台管理共用同一份對照表(admin.js 也有一份)
 const ANNOUNCE_TYPE_INFO = {
   event: { icon: "swords", label: "新活動" },
   update: { icon: "sparkles", label: "版本更新" },
@@ -222,7 +222,7 @@ async function renderEvents() {
   const archived = events.filter((ev) => ev.status === "closed");
 
   if (!live.length) {
-    list.innerHTML = `<div class="empty">${ui.icon("calendar-clock")}目前沒有報名中或進行中的活動,等主辦人開賽吧</div>`;
+    list.innerHTML = `<div class="empty">${ui.icon("calendar-clock")}目前沒有報名中或進行中的活動，等主辦人開賽吧</div>`;
   } else {
     live.forEach((ev) => list.appendChild(eventRow(ev)));
   }
@@ -258,7 +258,7 @@ async function handleAuthSession(session) {
     currentPlayer = null;
   }
   updateAuthUI();
-  // 如果剛好有人按了「參加」在等登入完成,登入好了就自動放行繼續原本的動作
+  // 如果剛好有人按了「參加」在等登入完成，登入好了就自動放行繼續原本的動作
   if (currentPlayer && pendingLoginResolvers.length) {
     const resolvers = pendingLoginResolvers;
     pendingLoginResolvers = [];

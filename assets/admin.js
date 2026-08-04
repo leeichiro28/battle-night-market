@@ -1,32 +1,32 @@
 const GAME_PAGE = { dice: "dice.html", rps5: "rps5.html", auction: "auction.html" };
 
-// 後台勾選用的進階規則說明(圖示與名稱共用 ui.RULE,這裡只補上說明文字)
+// 後台勾選用的進階規則說明(圖示與名稱共用 ui.RULE，這裡只補上說明文字)
 const RULE_ROWS = [
   { key: "item_die", desc: "每3回合隨機爆擊/回血/必中/封印" },
-  { key: "field_mod", desc: "開局隨機決定當場特殊規則,6選1" },
-  { key: "dynamic_field", desc: "每回合都重新隨機,需先勾上面的戰場修飾骰", nested: true },
-  { key: "free_bet", desc: "不限低血,整場限2次" },
-  { key: "rage", desc: "連輸2場,下次獲勝+2傷害" },
+  { key: "field_mod", desc: "開局隨機決定當場特殊規則，6選1" },
+  { key: "dynamic_field", desc: "每回合都重新隨機，需先勾上面的戰場修飾骰", nested: true },
+  { key: "free_bet", desc: "不限低血，整場限2次" },
+  { key: "rage", desc: "連輸2場，下次獲勝+2傷害" },
   { key: "stance", desc: "每回合選猛攻/穩紮穩打" },
-  { key: "combo", desc: "連勝疊加,滿3層永久+1傷害" },
-  { key: "dice_gamble", desc: "隨時可拼2顆骰子,一般職業限2次" },
+  { key: "combo", desc: "連勝疊加，滿3層永久+1傷害" },
+  { key: "dice_gamble", desc: "隨時可拼2顆骰子，一般職業限2次" },
   { key: "sudden_death", desc: "雙方低血量時傷害固定雙倍" },
   { key: "classes", desc: "玩家報名時可選鬥士/守衛/賭徒/刺客/法師/幸運兒" },
-  { key: "betting", desc: "純娛樂,猜誰會贏" },
+  { key: "betting", desc: "純娛樂，猜誰會贏" },
   { key: "reactions", desc: "觀戰/對戰中都能發表情互動" },
 ];
 
 const RPS5_RULE_ROWS = [
-  { key: "bomb", desc: "第3回合起,約15%機率額外開放隱藏手勢:炸彈" },
-  { key: "field_mod", desc: "開局隨機決定當局特殊規則,3選1" },
+  { key: "bomb", desc: "第3回合起，約15%機率額外開放隱藏手勢:炸彈" },
+  { key: "field_mod", desc: "開局隨機決定當局特殊規則，3選1" },
   { key: "item_die", desc: "每3回合各自隨機拿到護盾符/增幅符/偵測符" },
-  { key: "stance", desc: "出招前先宣告偏攻擊/偏防禦,純情報心理戰" },
-  { key: "combo", desc: "連續3局同招獲勝,額外+2傷害" },
-  { key: "mindread", desc: "剋中對方最常出的招並獲勝,額外+1傷害" },
+  { key: "stance", desc: "出招前先宣告偏攻擊/偏防禦，純情報心理戰" },
+  { key: "combo", desc: "連續3局同招獲勝，額外+2傷害" },
+  { key: "mindread", desc: "剋中對方最常出的招並獲勝，額外+1傷害" },
   { key: "momentum", desc: "連勝2局+1傷害;連敗2局逆轉時傷害翻倍" },
-  { key: "mutation", desc: "連續3回合出同招,下回合系統強制鎖住" },
-  { key: "bo_mode", desc: "拋開HP累加,每回合定輸贏,先3分獲勝整場" },
-  { key: "dual_hand", desc: "落後方整場限用1次,同時出兩招取其一", nested: true },
+  { key: "mutation", desc: "連續3回合出同招，下回合系統強制鎖住" },
+  { key: "bo_mode", desc: "拋開HP累加，每回合定輸贏，先3分獲勝整場" },
+  { key: "dual_hand", desc: "落後方整場限用1次，同時出兩招取其一", nested: true },
 ];
 
 function renderRuleCheckboxes() {
@@ -62,7 +62,7 @@ document.getElementById("new-type").onchange = (e) => {
   document.getElementById("dice-rules-box").style.display = type === "dice" ? "block" : "none";
   document.getElementById("rps5-rules-box").style.display = type === "rps5" ? "block" : "none";
   document.getElementById("auction-settings-box").style.display = type === "auction" ? "block" : "none";
-  // 夜市拍賣不是賽程對戰,沒有敗部復活賽這個概念
+  // 夜市拍賣不是賽程對戰，沒有敗部復活賽這個概念
   document.getElementById("losers-field").style.display = type === "auction" ? "none" : "block";
 };
 
@@ -84,7 +84,7 @@ function renderManualRewardInputs() {
   }
 }
 
-// 自動分配可以有多項獎勵(例如:金幣 + 藥水),每項各自依名次分配
+// 自動分配可以有多項獎勵(例如:金幣 + 藥水)，每項各自依名次分配
 let autoRewardRowSeq = 0;
 
 function addAutoRewardRow(label = "", total = "") {
@@ -99,7 +99,7 @@ function addAutoRewardRow(label = "", total = "") {
       <input class="auto-reward-label" placeholder="例如:金幣" value="${ui.esc(label)}" />
     </div>
     <div>
-      <label style="font-size:12px;">總數量(依名次分配,第1名分最多)</label>
+      <label style="font-size:12px;">總數量(依名次分配，第1名分最多)</label>
       <input type="number" class="auto-reward-total" placeholder="例如:100" value="${ui.esc(total)}" />
     </div>
     <button type="button" class="btn ghost small outline-danger remove-auto-reward-btn">${ui.icon("trash-2")}刪除</button>
@@ -107,7 +107,7 @@ function addAutoRewardRow(label = "", total = "") {
   row.querySelector(".remove-auto-reward-btn").onclick = () => {
     const rows = document.querySelectorAll("#auto-reward-list > .auto-reward-row");
     if (rows.length <= 1) {
-      // 至少留一行,直接清空內容就好
+      // 至少留一行，直接清空內容就好
       row.querySelector(".auto-reward-label").value = "";
       row.querySelector(".auto-reward-total").value = "";
       return;
@@ -149,7 +149,7 @@ document.getElementById("new-ranks").onchange = renderManualRewardInputs;
 renderManualRewardInputs();
 setRewardMode("manual");
 
-// 依名次分配權重:名次越前面分越多(權重 N, N-1 ... 1)
+// 依名次分配權重:名次越前面分越多(權重 N， N-1 ... 1)
 function distributeRewards(total, ranks) {
   const weights = [];
   for (let i = ranks; i >= 1; i--) weights.push(i);
@@ -165,7 +165,7 @@ function buildRewardPlan() {
   if (rewardMode === "auto") {
     const entries = collectAutoRewardEntries();
     if (!entries.length) return {};
-    // 每一項獎勵各自依名次分配,再把同一名次的多項獎勵合併成一行文字
+    // 每一項獎勵各自依名次分配，再把同一名次的多項獎勵合併成一行文字
     const perEntryAmounts = entries.map((e) => distributeRewards(e.total, ranks));
     const items = [];
     for (let i = 0; i < ranks; i++) {
@@ -186,8 +186,8 @@ function buildRewardPlan() {
 }
 
 // ---------- 參加者列表 ----------
-// 一列固定三欄:名字 / 獎勵輸入框 / 操作按鈕。欄寬由 CSS grid 固定,
-// 名字長短不會影響輸入框的起訖位置,整批列的輸入框永遠對齊。
+// 一列固定三欄:名字 / 獎勵輸入框 / 操作按鈕。欄寬由 CSS grid 固定，
+// 名字長短不會影響輸入框的起訖位置，整批列的輸入框永遠對齊。
 function participantRow(row, ev, onKicked) {
   const div = document.createElement("div");
   div.className = "admin-row";
@@ -211,7 +211,7 @@ function participantRow(row, ev, onKicked) {
   name.innerHTML = `${ui.rankBadge(rank)}<span class="pname">${ui.esc(row.players.name)}</span><span class="pstate">${ui.esc(stateText)}</span>`;
 
   const input = document.createElement("input");
-  input.placeholder = "輸入獎勵,例如:傳說之劍 x1";
+  input.placeholder = "輸入獎勵，例如:傳說之劍 x1";
   input.value = row.reward || "";
   input.style.fontSize = "13px";
 
@@ -233,7 +233,7 @@ function participantRow(row, ev, onKicked) {
   };
   actions.appendChild(saveBtn);
 
-  // 賽程還沒鎖定前,才能踢出參加者(鎖定後名單已產生賽程,不能再改)
+  // 賽程還沒鎖定前，才能踢出參加者(鎖定後名單已產生賽程，不能再改)
   if (!ev.locked) {
     const kickBtn = document.createElement("button");
     kickBtn.className = "btn ghost small outline-danger";
@@ -401,7 +401,7 @@ function auctionParticipantRow(row, onSaved) {
   name.innerHTML = `${ui.rankBadge(rank)}<span class="pname">${ui.esc(row.players.name)}</span><span class="pstate">${ui.tag("coins", row.coins + " 財神幣", "coin-tag")}</span>`;
 
   const input = document.createElement("input");
-  input.placeholder = "輸入獎勵,例如:夜市之王的金色炸雞桶";
+  input.placeholder = "輸入獎勵，例如:夜市之王的金色炸雞桶";
   input.value = row.reward || "";
   input.style.fontSize = "13px";
 
@@ -435,7 +435,7 @@ async function renderAuctionAdminPanel(container, ev) {
   try {
     [lots, standings] = await Promise.all([db.listAuctionLots(ev.id), db.computeAuctionStandings(ev.id)]);
   } catch (e) {
-    container.innerHTML = `<div class="empty">${ui.icon("triangle-alert")}拍賣資料讀取失敗,請確認 supabase-schema.sql 是否已執行最新版</div>`;
+    container.innerHTML = `<div class="empty">${ui.icon("triangle-alert")}拍賣資料讀取失敗，請確認 supabase-schema.sql 是否已執行最新版</div>`;
     return;
   }
 
@@ -475,7 +475,7 @@ function eventAdminCard(ev) {
       ? `<button class="btn small" data-action="start-auction">${ui.icon("gavel")}開始拍賣</button>`
       : ""
     : !ev.locked && !isClosed
-    ? `<button class="btn small" data-action="lock">${ui.icon("lock")}鎖定名單,產生賽程</button>`
+    ? `<button class="btn small" data-action="lock">${ui.icon("lock")}鎖定名單，產生賽程</button>`
     : "";
 
   card.innerHTML = `
@@ -531,7 +531,7 @@ function eventAdminCard(ev) {
       try {
         const result = await db.lockAndGenerateBracket(ev.id);
         if (result && result.losersBracketDowngraded) {
-          await ui.alert("報名人數不足 6 人,敗部復活賽效果不大,系統已自動關閉,改成單敗淘汰賽制。", {
+          await ui.alert("報名人數不足 6 人，敗部復活賽效果不大，系統已自動關閉，改成單敗淘汰賽制。", {
             title: "已自動調整賽制",
             tone: "info",
           });
@@ -540,7 +540,7 @@ function eventAdminCard(ev) {
       } catch (e) {
         await ui.alert(e.message || "產生賽程失敗", { title: "產生賽程失敗", tone: "danger" });
         lockBtn.disabled = false;
-        lockBtn.innerHTML = ui.icon("lock") + "鎖定名單,產生賽程";
+        lockBtn.innerHTML = ui.icon("lock") + "鎖定名單，產生賽程";
       }
     };
   }
@@ -548,7 +548,7 @@ function eventAdminCard(ev) {
   if (startAuctionBtn) {
     startAuctionBtn.onclick = async () => {
       const ok = await ui.confirm(
-        "確定要開始拍賣嗎?開始後就不能再讓新玩家用完整預算加入,系統會立刻依設定自動排好整場商品排程並開拍第一波。",
+        "確定要開始拍賣嗎?開始後就不能再讓新玩家用完整預算加入，系統會立刻依設定自動排好整場商品排程並開拍第一波。",
         { title: "開始拍賣", confirmText: "開始拍賣" }
       );
       if (!ok) return;
@@ -569,7 +569,7 @@ function eventAdminCard(ev) {
   }
   card.querySelector('[data-action="delete"]').onclick = async () => {
     const ok = await ui.confirm(
-      `確定要刪除「${ev.name}」嗎?這個動作無法復原,所有報名與${isAuction ? "拍賣" : "對戰"}紀錄都會一起刪除。`,
+      `確定要刪除「${ev.name}」嗎?這個動作無法復原，所有報名與${isAuction ? "拍賣" : "對戰"}紀錄都會一起刪除。`,
       { title: "刪除活動", confirmText: "永久刪除", tone: "danger" }
     );
     if (!ok) return;
@@ -588,7 +588,7 @@ function eventAdminCard(ev) {
 
 let archiveOpen = false;
 
-// 後台列表跟首頁一樣,已結束的活動收進下面可展開的「活動已結束」區,避免舊活動一直往下堆
+// 後台列表跟首頁一樣，已結束的活動收進下面可展開的「活動已結束」區，避免舊活動一直往下堆
 async function loadAll() {
   const list = document.getElementById("events-admin-list");
   list.innerHTML = "";
@@ -597,7 +597,7 @@ async function loadAll() {
   const archived = events.filter((ev) => ev.status === "closed");
 
   if (!events.length) {
-    list.innerHTML = `<div class="empty">${ui.icon("calendar-clock")}還沒有活動,先在上面建立一個吧</div>`;
+    list.innerHTML = `<div class="empty">${ui.icon("calendar-clock")}還沒有活動，先在上面建立一個吧</div>`;
   } else if (!live.length) {
     list.innerHTML = `<div class="empty">${ui.icon("calendar-clock")}目前沒有報名中或進行中的活動</div>`;
   } else {
@@ -697,8 +697,8 @@ document.getElementById("create-btn").onclick = async () => {
 
   loadAll();
 
-  // 背景巡邏:每 5 秒檢查一次所有進行中的活動,叫號排下一場、偵測卡住太久沒人進場的對戰。
-  // 這樣只要有人開著後台頁面,就算沒人開著對戰畫面本身,賽程也不會卡死。
+  // 背景巡邏:每 5 秒檢查一次所有進行中的活動，叫號排下一場、偵測卡住太久沒人進場的對戰。
+  // 這樣只要有人開著後台頁面，就算沒人開著對戰畫面本身，賽程也不會卡死。
   setInterval(async () => {
     try {
       const events = await db.listEvents();
@@ -715,18 +715,18 @@ document.getElementById("create-btn").onclick = async () => {
 })();
 
 // ---------- 贊助名單管理 ----------
-// 主辦人可以自己開好幾份獨立的「贊助名單」,跟活動 events 完全無關。
-// 新建立的名單預設隱藏(草稿),不會搶走前台正在顯示的「最新贊助名單」。
+// 主辦人可以自己開好幾份獨立的「贊助名單」，跟活動 events 完全無關。
+// 新建立的名單預設隱藏(草稿)，不會搶走前台正在顯示的「最新贊助名單」。
 // db.listSponsorLists() 依建立時間新到舊排序;後台把名單分三區:
 //   1) 有顯示於前台的名單裡最新一份 → 「最新贊助名單」直接顯示、可編輯
-//   2) 隱藏中的名單(草稿,或先收起來的舊名單)→ 獨立一區直接展開列出,不用額外點開
+//   2) 隱藏中的名單(草稿，或先收起來的舊名單)→ 獨立一區直接展開列出，不用額外點開
 //   3) 有顯示於前台、但不是最新的那些 → 收進「歷史贊助名單」收合區
-// 樣式跟開新活動分頁的「活動已結束」收合一致,展開後每份名單各自是一張可收合卡片
+// 樣式跟開新活動分頁的「活動已結束」收合一致，展開後每份名單各自是一張可收合卡片
 // (跟規則頁「依遊戲分組」同款)。
 //
-// 贊助內容改成「獎勵名稱 + 數量」(例如朋友 Discord 遊戲道具:嗶幣/鑽石/黑玫瑰),
+// 贊助內容改成「獎勵名稱 + 數量」(例如朋友 Discord 遊戲道具:嗶幣/鑽石/黑玫瑰)，
 // 同一位贊助者(同一份名單內、名字不分大小寫比對)再次贊助時會自動沿用同一個人、
-// 把數量加總顯示,不會在列表多一筆重複的人名;每一次原始紀錄都保留在資料庫,
+// 把數量加總顯示，不會在列表多一筆重複的人名;每一次原始紀錄都保留在資料庫，
 // 後台可以展開查看、個別刪除某一次紀錄。
 async function loadSponsorSettings() {
   const contact = await db.getSiteSetting("discord_contact");
@@ -757,7 +757,7 @@ document.getElementById("add-sponsor-list-btn").onclick = async () => {
   try {
     await db.addSponsorList(name.trim());
     await renderSponsorLists();
-    await ui.alert("新名單已建立在下面「草稿贊助名單」區,目前前台還不會顯示;等準備好要公開時,再點名單裡的「顯示於前台」。", {
+    await ui.alert("新名單已建立在下面「草稿贊助名單」區，目前前台還不會顯示;等準備好要公開時，再點名單裡的「顯示於前台」。", {
       title: "已建立(草稿)",
       tone: "success",
     });
@@ -772,7 +772,7 @@ function formatDate(iso) {
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-// 新增贊助表單裡的一行「獎勵名稱 + 數量」,跟開新活動分頁的自動分配獎勵輸入列同款。
+// 新增贊助表單裡的一行「獎勵名稱 + 數量」，跟開新活動分頁的自動分配獎勵輸入列同款。
 function addRewardInputRow(container) {
   const row = document.createElement("div");
   row.className = "auto-reward-row";
@@ -810,8 +810,8 @@ function collectRewardRows(container) {
   return rewards;
 }
 
-// 一位贊助者一列:上排是名字(可編輯) + 加總後的獎勵標籤 + 次數,展開才看得到每一次原始紀錄,
-// 每一次紀錄裡的每一項獎勵(名稱/數量)都能各自編輯,改完重新整份名單就會自動重算所有加總跟前台顯示。
+// 一位贊助者一列:上排是名字(可編輯) + 加總後的獎勵標籤 + 次數，展開才看得到每一次原始紀錄，
+// 每一次紀錄裡的每一項獎勵(名稱/數量)都能各自編輯，改完重新整份名單就會自動重算所有加總跟前台顯示。
 function sponsorRowEl(s, onChanged) {
   const row = document.createElement("div");
   row.className = "sponsor-admin-row";
@@ -844,8 +844,8 @@ function sponsorRowEl(s, onChanged) {
     <div class="sar-entries" data-role="entries" style="display:none;"></div>
   `;
 
-  // 編輯贊助者名稱:改名後同一位贊助者底下所有次的紀錄都還是同一筆,
-  // 前台累積金額、統計都是即時從資料庫算出來的,重新整份名單就會用新名字顯示。
+  // 編輯贊助者名稱:改名後同一位贊助者底下所有次的紀錄都還是同一筆，
+  // 前台累積金額、統計都是即時從資料庫算出來的，重新整份名單就會用新名字顯示。
   const nameView = row.querySelector(".sar-name-view");
   const nameEdit = row.querySelector(".sar-name-edit");
   const nameInput = row.querySelector(".sar-name-input");
@@ -882,7 +882,7 @@ function sponsorRowEl(s, onChanged) {
     }
   };
 
-  // 一筆贊助紀錄(entry)底下的每一項獎勵各自可以編輯名稱/數量,或整筆刪除這一次紀錄。
+  // 一筆贊助紀錄(entry)底下的每一項獎勵各自可以編輯名稱/數量，或整筆刪除這一次紀錄。
   function entryItemEl(item, entry) {
     const wrap = document.createElement("div");
     wrap.className = "sar-entry-item";
@@ -917,7 +917,7 @@ function sponsorRowEl(s, onChanged) {
       const name = nameInput.value.trim();
       const qty = Number(qtyInput.value);
       if (!name || !Number.isFinite(qty) || qty <= 0) {
-        await ui.alert("請填寫獎勵名稱,數量要是大於 0 的數字", { title: "缺少資料", tone: "danger" });
+        await ui.alert("請填寫獎勵名稱，數量要是大於 0 的數字", { title: "缺少資料", tone: "danger" });
         return;
       }
       const btn = wrap.querySelector('[data-action="save-item"]');
@@ -983,7 +983,7 @@ function sponsorRowEl(s, onChanged) {
   return row;
 }
 
-// 產生一份贊助名單的完整編輯區塊(名稱/新增贊助/贊助者清單),
+// 產生一份贊助名單的完整編輯區塊(名稱/新增贊助/贊助者清單)，
 // isLatest 只影響標題列要不要加「最新贊助名單」標籤。
 function sponsorListCard(sl, isLatest) {
   const card = document.createElement("div");
@@ -1016,7 +1016,7 @@ function sponsorListCard(sl, isLatest) {
     </div>
 
     <div class="reward-total-box">
-      <span>${ui.icon("calculator")}這份名單贊助總額(自動加總,不用手動填)</span>
+      <span>${ui.icon("calculator")}這份名單贊助總額(自動加總，不用手動填)</span>
       ${ui.rewardTotalsHtml(listTotals, { align: "right", emptyText: "尚無紀錄" })}
     </div>
 
@@ -1025,7 +1025,7 @@ function sponsorListCard(sl, isLatest) {
       <div class="field">
         <input class="sp-name-input" placeholder="贊助者名稱" />
         <div style="font-size:12px;color:var(--ink-dim);margin-top:4px;">
-          ${ui.icon("info")}同一位贊助者再次贊助時,名字打一樣就會自動累加,不會多一筆重複的人名。
+          ${ui.icon("info")}同一位贊助者再次贊助時，名字打一樣就會自動累加，不會多一筆重複的人名。
         </div>
       </div>
       <div class="reward-rows"></div>
@@ -1088,7 +1088,7 @@ function sponsorListCard(sl, isLatest) {
     const name = nameInput.value.trim();
     const rewards = collectRewardRows(rewardRowsBox);
     if (!name || !rewards.length) {
-      await ui.alert("請填寫贊助者名稱,並至少填一項獎勵名稱跟數量", { title: "缺少資料", tone: "danger" });
+      await ui.alert("請填寫贊助者名稱，並至少填一項獎勵名稱跟數量", { title: "缺少資料", tone: "danger" });
       return;
     }
     const btn = card.querySelector('[data-action="add-sponsor"]');
@@ -1106,7 +1106,7 @@ function sponsorListCard(sl, isLatest) {
   return card;
 }
 
-// 歷史名單用跟「遊戲規則」分組收合一樣的 .game-group,標題列先看到名稱/總額/筆數,展開才是編輯區
+// 歷史名單用跟「遊戲規則」分組收合一樣的 .game-group，標題列先看到名稱/總額/筆數，展開才是編輯區
 const sponsorHistoryOpenIds = new Set();
 let sponsorHistoryOpen = false;
 
@@ -1157,9 +1157,9 @@ async function renderSponsorLists() {
     return;
   }
 
-  // 「最新贊助名單」跟前台邏輯一致,只從「有顯示於前台」的名單裡挑最新一份;
-  // 隱藏中的名單(不管是新開的草稿、還是舊活動先收起來的)另外獨立一區顯示,
-  // 不會因為建立時間比較新就搶走前台正在顯示的「最新贊助名單/本次活動」位置,
+  // 「最新贊助名單」跟前台邏輯一致，只從「有顯示於前台」的名單裡挑最新一份;
+  // 隱藏中的名單(不管是新開的草稿、還是舊活動先收起來的)另外獨立一區顯示，
+  // 不會因為建立時間比較新就搶走前台正在顯示的「最新贊助名單/本次活動」位置，
   // 也不會被誤收進「歷史贊助名單」收合區裡要多點一次才看得到。
   const visibleLists = lists.filter((sl) => sl.visible !== false);
   const draftLists = lists.filter((sl) => sl.visible === false);
@@ -1182,7 +1182,7 @@ async function renderSponsorLists() {
   const latestBox = document.getElementById("sponsor-latest");
   latestBox.innerHTML = "";
   if (!latest) {
-    latestBox.innerHTML = `<div class="empty">${ui.icon("gem")}目前沒有顯示於前台的贊助名單,點上面「新增贊助名單」開始建立,或到下面把某份草稿切成顯示</div>`;
+    latestBox.innerHTML = `<div class="empty">${ui.icon("gem")}目前沒有顯示於前台的贊助名單，點上面「新增贊助名單」開始建立，或到下面把某份草稿切成顯示</div>`;
   } else {
     latestBox.appendChild(sponsorListCard(latest, true));
   }
@@ -1194,7 +1194,7 @@ async function renderSponsorLists() {
     draftBox.style.display = "none";
   } else {
     draftBox.style.display = "block";
-    draftTitle.textContent = `草稿贊助名單,前台隱藏中(${draftLists.length})`;
+    draftTitle.textContent = `草稿贊助名單，前台隱藏中(${draftLists.length})`;
     draftList.innerHTML = "";
     draftLists.forEach((sl) => draftList.appendChild(sponsorListCard(sl, false)));
   }
@@ -1230,7 +1230,7 @@ const ANNOUNCE_TYPE_INFO_ADMIN = {
 };
 
 let editingAnnouncementId = null;
-let pendingAnnouncementImage = null; // { file, url } 選好但還沒上傳/送出的圖片
+let pendingAnnouncementImage = null; // { file， url } 選好但還沒上傳/送出的圖片
 
 function resetAnnounceForm() {
   editingAnnouncementId = null;
@@ -1321,11 +1321,11 @@ async function renderAnnounceAdminList() {
     list = await db.listAnnouncements();
   } catch (e) {
     console.error(e);
-    box.innerHTML = `<div class="empty">${ui.icon("triangle-alert")}公告讀取失敗,請確認 supabase-schema.sql 是否已執行最新版</div>`;
+    box.innerHTML = `<div class="empty">${ui.icon("triangle-alert")}公告讀取失敗，請確認 supabase-schema.sql 是否已執行最新版</div>`;
     return;
   }
   if (!list.length) {
-    box.innerHTML = `<div class="empty">${ui.icon("megaphone")}還沒有公告,上面新增一則吧</div>`;
+    box.innerHTML = `<div class="empty">${ui.icon("megaphone")}還沒有公告，上面新增一則吧</div>`;
     return;
   }
   list.forEach((a, idx) => {

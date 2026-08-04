@@ -1,5 +1,5 @@
 // 夜市拍賣・即時拍賣畫面。
-// 跟骰子/五手勢完全獨立,不走 lobby.html/matches,直接對 auction_participants / auction_lots 讀寫。
+// 跟骰子/五手勢完全獨立，不走 lobby.html/matches，直接對 auction_participants / auction_lots 讀寫。
 const qs = new URLSearchParams(location.search);
 const eventId = qs.get("event");
 
@@ -10,7 +10,7 @@ let standings = [];
 let tasks = [];
 let myTaskAnswers = []; // 我在這場活動已經回答過的任務
 let myPriceGuesses = []; // 我在這場活動已經猜過價的商品
-let currentPlayer = null; // Discord 登入後的玩家 {id, name},沒登入是 null
+let currentPlayer = null; // Discord 登入後的玩家 {id， name}，沒登入是 null
 let pendingLoginResolvers = [];
 
 let tickInterval = null;
@@ -21,15 +21,15 @@ let unsubParticipants = null;
 let unsubTasks = null;
 let unsubLeader = null;
 let ticking = false;
-let isTickLeader = false; // 是不是目前這場拍賣裡負責推進排程的那台(其他分頁保持 false,純被動接收更新)
-let refreshTimer = null; // 把短時間內連續多個 Realtime 變化事件合併成一次 refreshAll,不用每個事件都各自重抓一次
+let isTickLeader = false; // 是不是目前這場拍賣裡負責推進排程的那台(其他分頁保持 false，純被動接收更新)
+let refreshTimer = null; // 把短時間內連續多個 Realtime 變化事件合併成一次 refreshAll，不用每個事件都各自重抓一次
 let laborFlashUntil = 0;
 let luckyFlashUntil = 0;
 let luckyFlashNote = "";
 
 if (!eventId) location.href = "index.html";
 
-// ---------- 登入(跟首頁同一套,只是縮小版:只在需要互動時才要求登入) ----------
+// ---------- 登入(跟首頁同一套，只是縮小版:只在需要互動時才要求登入) ----------
 function ensureLogin() {
   if (currentPlayer) return Promise.resolve(currentPlayer);
   document.getElementById("who-card").style.display = "block";
@@ -80,7 +80,7 @@ async function loadMyParticipant() {
 }
 
 async function refreshAll() {
-  // standings 內部本來也要抓一次商品清單才能算分數,這裡先抓好 lots 直接傳進去,
+  // standings 內部本來也要抓一次商品清單才能算分數，這裡先抓好 lots 直接傳進去，
   // 避免同一輪重複抓兩次 auction_lots(這是拍賣頁流量的大宗)。
   const [lotList, taskList] = await Promise.all([db.listAuctionLots(eventId), db.listAuctionTasks(eventId)]);
   const standingList = await db.computeAuctionStandings(eventId, { lots: lotList });
@@ -99,7 +99,7 @@ async function refreshAll() {
   render();
 }
 
-// 把短時間內連續發生的多個資料變化(例如同一秒裡商品開拍又結標)合併成一次 refreshAll,
+// 把短時間內連續發生的多個資料變化(例如同一秒裡商品開拍又結標)合併成一次 refreshAll，
 // 避免每個 Realtime 事件都各自重抓一次完整清單。
 function scheduleRefresh() {
   if (refreshTimer) return;
@@ -109,9 +109,9 @@ function scheduleRefresh() {
   }, 400);
 }
 
-// ---------- 背景排程推進(只有被選為「隊長」的那台分頁負責推進,其他分頁純被動接收 Realtime 更新) ----------
+// ---------- 背景排程推進(只有被選為「隊長」的那台分頁負責推進，其他分頁純被動接收 Realtime 更新) ----------
 // 排程本身寫進資料庫的變化(商品開拍/結標、任務開放/結算)會透過下面的 onTableChange 訂閱
-// 自動通知包含隊長在內的所有分頁去 refreshAll,所以這裡不用每秒都強制重抓一次資料。
+// 自動通知包含隊長在內的所有分頁去 refreshAll，所以這裡不用每秒都強制重抓一次資料。
 async function tick() {
   if (!isTickLeader || ticking || !ev || !ev.locked || ev.status === "closed") return;
   ticking = true;
@@ -128,8 +128,8 @@ async function tick() {
   }
 }
 
-// 商品全部拍賣完畢後(沒有排隊中也沒有拍賣中的商品了),留一段緩衝時間讓大家繼續打工/任務/下注花錢,
-// 緩衝時間一到,系統自動結算活動(等同主辦人按下「結束活動」),不用主辦人手動收尾。
+// 商品全部拍賣完畢後(沒有排隊中也沒有拍賣中的商品了)，留一段緩衝時間讓大家繼續打工/任務/下注花錢，
+// 緩衝時間一到，系統自動結算活動(等同主辦人按下「結束活動」)，不用主辦人手動收尾。
 // 緩衝的起算點是「最後一件商品實際截標的時間」(取全場所有商品 ends_at 的最大值)。
 async function maybeAutoCloseAuction() {
   if (!lots.length) return;
@@ -166,7 +166,7 @@ document.getElementById("labor-btn").onclick = async () => {
     const result = await db.workForAuctionCoins(eventId, player.id);
     myParticipant = result.participant;
     laborFlashUntil = Date.now() + 1600;
-    document.getElementById("labor-note").innerHTML = `${ui.icon("sparkles")}打工成功,拿到 ${result.gain} 財神幣!`;
+    document.getElementById("labor-note").innerHTML = `${ui.icon("sparkles")}打工成功，拿到 ${result.gain} 財神幣！`;
     await refreshAll();
   } catch (e) {
     await ui.alert(e.message || "打工失敗", { title: "打工失敗", tone: "danger" });
@@ -195,8 +195,8 @@ async function placeLuckyBet(guess) {
     luckyFlashUntil = Date.now() + 2200;
     const dieLabel = `${ui.icon("dices")}骰出 ${result.die} 點(${result.outcome === "big" ? "大" : "小"})`;
     luckyFlashNote = result.win
-      ? `${dieLabel} · ${ui.icon("circle-check")}猜對了!淨賺 ${result.delta} 財神幣`
-      : `${dieLabel} · ${ui.icon("circle-x")}猜錯了,拿回一半,淨虧 ${Math.abs(result.delta)} 財神幣`;
+      ? `${dieLabel} · ${ui.icon("circle-check")}猜對了！淨賺 ${result.delta} 財神幣`
+      : `${dieLabel} · ${ui.icon("circle-x")}猜錯了，拿回一半，淨虧 ${Math.abs(result.delta)} 財神幣`;
     await refreshAll();
   } catch (e) {
     await ui.alert(e.message || "下注失敗", { title: "下注失敗", tone: "danger" });
@@ -220,7 +220,7 @@ async function bid(lot, amount) {
 
 async function customBid(lot) {
   const player = await ensureLogin();
-  const value = await ui.prompt(`目前最高價 ${lot.current_price} 財神幣,最小加價單位 ${lot.min_increment}。輸入這次要「加多少」:`, {
+  const value = await ui.prompt(`目前最高價 ${lot.current_price} 財神幣，最小加價單位 ${lot.min_increment}。輸入這次要「加多少」:`, {
     title: "自訂加價",
     placeholder: String(lot.min_increment),
     value: String(lot.min_increment),
@@ -320,7 +320,7 @@ async function usePriority() {
   const player = await ensureLogin();
   try {
     await db.useAuctionPriorityTicket(eventId, player.id);
-    await ui.alert("已經幫你預約下一波的插隊優先權,那一波開拍時你會有專屬優先出價時間。", { title: "預約成功", tone: "success" });
+    await ui.alert("已經幫你預約下一波的插隊優先權，那一波開拍時你會有專屬優先出價時間。", { title: "預約成功", tone: "success" });
     await refreshAll();
   } catch (e) {
     await ui.alert(e.message || "使用失敗", { title: "使用失敗", tone: "danger" });
@@ -330,7 +330,7 @@ async function usePriority() {
 
 async function useRefund(lotId) {
   const player = await ensureLogin();
-  const ok = await ui.confirm("確定要退回這件商品嗎?退回後這件商品的分數會被拿掉,但可以拿回一半財神幣。", {
+  const ok = await ui.confirm("確定要退回這件商品嗎?退回後這件商品的分數會被拿掉，但可以拿回一半財神幣。", {
     title: "退款保證券",
     confirmText: "確定退回",
   });
@@ -389,7 +389,7 @@ function renderBalance() {
   laborBtn.innerHTML = ui.icon("hand-coins") + "打工賺財神幣";
   const note = document.getElementById("labor-note");
   if (Date.now() < laborFlashUntil) {
-    // 剛打工成功的提示訊息還在顯示,先不要被下一次自動刷新蓋掉
+    // 剛打工成功的提示訊息還在顯示，先不要被下一次自動刷新蓋掉
   } else if (ev.status === "closed") {
     note.textContent = "活動已結束";
   } else if (!ev.locked) {
@@ -452,7 +452,7 @@ function renderJoinGate() {
   }
   if (ev.locked) {
     joinCard.style.display = "block";
-    document.getElementById("join-note").textContent = "拍賣已經開始,報名已截止(全自動排程開拍中,不能中途加入拿完整預算)。";
+    document.getElementById("join-note").textContent = "拍賣已經開始，報名已截止(全自動排程開拍中，不能中途加入拿完整預算)。";
     document.getElementById("join-btn").style.display = "none";
     return;
   }
@@ -461,7 +461,7 @@ function renderJoinGate() {
   document.getElementById("join-btn").style.display = deadlinePassed ? "none" : "inline-flex";
   document.getElementById("join-note").textContent = deadlinePassed
     ? "報名已截止。"
-    : `報名時會發一筆固定 ${(ev.rules && ev.rules.startingBudget) || AUCTION_DEFAULT_BUDGET} 財神幣,大家起跑點完全一樣。`;
+    : `報名時會發一筆固定 ${(ev.rules && ev.rules.startingBudget) || AUCTION_DEFAULT_BUDGET} 財神幣，大家起跑點完全一樣。`;
 }
 
 function ringOffset(remainingSec, totalSec) {
@@ -506,7 +506,7 @@ function partnerSectionHtml(lot) {
   if (status === "pending" && lot.partner_b_id === myId) {
     return `
       <div class="partner-box">
-        <div>${ui.icon("users")}<b>${ui.esc(nameOf(lot.partner_a_id))}</b> 邀你合夥搶這一波,標到後價錢跟分數各分一半</div>
+        <div>${ui.icon("users")}<b>${ui.esc(nameOf(lot.partner_a_id))}</b> 邀你合夥搶這一波，標到後價錢跟分數各分一半</div>
         <div class="partner-actions">
           <button class="btn" id="partner-accept-btn">${ui.icon("circle-check")}接受</button>
           <button class="btn ghost" id="partner-decline-btn">${ui.icon("circle-x")}婉拒</button>
@@ -548,11 +548,11 @@ function partnerSectionHtml(lot) {
 function guessSectionHtml(lot, myGuess) {
   if (!currentPlayer || !myParticipant) return "";
   if (myGuess) {
-    return `<div class="guess-box">${ui.icon("target")}你猜這件會標到 <b>${myGuess.guess}</b> 財神幣,結標後看誰最接近就加分</div>`;
+    return `<div class="guess-box">${ui.icon("target")}你猜這件會標到 <b>${myGuess.guess}</b> 財神幣，結標後看誰最接近就加分</div>`;
   }
   return `
     <div class="guess-box">
-      <div>${ui.icon("target")}猜猜這件最後會標到多少錢?猜中或最接近可以加分,不用出價也能參加</div>
+      <div>${ui.icon("target")}猜猜這件最後會標到多少錢?猜中或最接近可以加分，不用出價也能參加</div>
       <div class="guess-actions">
         <input type="number" id="guess-input" placeholder="輸入金額" />
         <button class="btn ghost" id="guess-submit-btn">${ui.icon("send")}送出猜測</button>
@@ -579,16 +579,16 @@ function lotStageHtml(lot, isFinalLot, myGuess) {
   if (priorityActive) {
     const secLeft = Math.max(0, Math.ceil((new Date(lot.priority_until).getTime() - Date.now()) / 1000));
     priorityBannerHtml = iAmPriorityHolder
-      ? `<div class="priority-banner mine">${ui.icon("fast-forward")}你的插隊優先權時間!還有 ${secLeft} 秒只有你能出價</div>`
-      : `<div class="priority-banner">${ui.icon("fast-forward")}這波有人插隊優先,還有 ${secLeft} 秒後其他人才能搶標</div>`;
+      ? `<div class="priority-banner mine">${ui.icon("fast-forward")}你的插隊優先權時間！還有 ${secLeft} 秒只有你能出價</div>`
+      : `<div class="priority-banner">${ui.icon("fast-forward")}這波有人插隊優先，還有 ${secLeft} 秒後其他人才能搶標</div>`;
   }
 
   let flourishBannerHtml = "";
   if (lot.is_surprise) {
-    flourishBannerHtml += `<div class="flourish-banner surprise">${ui.icon("gift")}隱藏驚喜商品!商品預告沒有預告到這件</div>`;
+    flourishBannerHtml += `<div class="flourish-banner surprise">${ui.icon("gift")}隱藏驚喜商品！商品預告沒有預告到這件</div>`;
   }
   if (isFinalLot) {
-    flourishBannerHtml += `<div class="flourish-banner sprint">${ui.icon("flag")}最後衝刺!這是本場最後一波,剩餘財神幣快點花掉,沒花完只值一半分數</div>`;
+    flourishBannerHtml += `<div class="flourish-banner sprint">${ui.icon("flag")}最後衝刺！這是本場最後一波，剩餘財神幣快點花掉，沒花完只值一半分數</div>`;
   }
 
   let extraActionHtml = "";
@@ -599,10 +599,10 @@ function lotStageHtml(lot, isFinalLot, myGuess) {
   }
 
   const priceUnitHtml = isSpecial
-    ? `<span class="unit">財神幣(目前最高價,得標後可以使用一次「${ui.esc((specialInfo && specialInfo.name) || "特殊效果")}」)</span>`
+    ? `<span class="unit">財神幣(目前最高價，得標後可以使用一次「${ui.esc((specialInfo && specialInfo.name) || "特殊效果")}」)</span>`
     : isMystery
-    ? `<span class="unit">財神幣(目前最高價,得標後現場開箱才知道多少分——可能超值也可能是雷)</span>`
-    : `<span class="unit">財神幣(目前最高價,得標可拿 ${lot.points} 分)</span>`;
+    ? `<span class="unit">財神幣(目前最高價，得標後現場開箱才知道多少分——可能超值也可能是雷)</span>`
+    : `<span class="unit">財神幣(目前最高價，得標可拿 ${lot.points} 分)</span>`;
 
   const effectDescHtml = isSpecial && specialInfo ? `<div class="section-note" style="margin:6px 0 0;">${ui.esc(specialInfo.effectDesc)}</div>` : "";
 
@@ -658,12 +658,12 @@ function renderLotSection() {
   const box = document.getElementById("lot-section");
   if (!ev.locked) {
     stopCountdown();
-    box.innerHTML = `<div class="card empty">${ui.icon("hourglass")}拍賣還沒開始,等主辦人按下「開始拍賣」後,系統會自動依排程開拍</div>`;
+    box.innerHTML = `<div class="card empty">${ui.icon("hourglass")}拍賣還沒開始，等主辦人按下「開始拍賣」後，系統會自動依排程開拍</div>`;
     return;
   }
   if (ev.status === "closed") {
     stopCountdown();
-    box.innerHTML = `<div class="card empty">${ui.icon("flag")}這場拍賣已經結束了,結果請看下面的即時排行榜</div>`;
+    box.innerHTML = `<div class="card empty">${ui.icon("flag")}這場拍賣已經結束了，結果請看下面的即時排行榜</div>`;
     return;
   }
   const liveLot = lots.find((l) => l.status === "live");
@@ -707,7 +707,7 @@ function renderLotSection() {
   if (scheduled.length) {
     const next = scheduled[0];
     const secLeft = Math.max(0, Math.ceil((new Date(next.scheduled_at).getTime() - Date.now()) / 1000));
-    box.innerHTML = `<div class="card empty">${ui.icon("hourglass")}下一波即將開始(${secLeft > 0 ? `約 ${secLeft} 秒後` : "馬上就好"}),先去下面「商品預告」看看有什麼</div>`;
+    box.innerHTML = `<div class="card empty">${ui.icon("hourglass")}下一波即將開始(${secLeft > 0 ? `約 ${secLeft} 秒後` : "馬上就好"})，先去下面「商品預告」看看有什麼</div>`;
     return;
   }
   if (lots.length) {
@@ -717,9 +717,9 @@ function renderLotSection() {
       secLeft === null
         ? "等主辦人結算活動吧"
         : secLeft > 0
-        ? `還可以繼續打工/夜市任務/幸運攤位 <b style="color:var(--gold);">${secLeft}</b> 秒,時間到系統會自動結算活動`
-        : "正在自動結算活動,稍等一下...";
-    box.innerHTML = `<div class="card empty">${ui.icon("party-popper")}本場商品已經全部拍賣完畢!${closeNote}</div>`;
+        ? `還可以繼續打工/夜市任務/幸運攤位 <b style="color:var(--gold);">${secLeft}</b> 秒，時間到系統會自動結算活動`
+        : "正在自動結算活動，稍等一下...";
+    box.innerHTML = `<div class="card empty">${ui.icon("party-popper")}本場商品已經全部拍賣完畢！${closeNote}</div>`;
   } else {
     box.innerHTML = `<div class="card empty">${ui.icon("hourglass")}拍賣即將開始</div>`;
   }
@@ -736,11 +736,11 @@ function taskStageHtml(task, myAnswer) {
   const secLeft = Math.max(0, Math.ceil((new Date(task.ends_at).getTime() - Date.now()) / 1000));
   let bodyHtml;
   if (!currentPlayer || !myParticipant) {
-    bodyHtml = `<div class="section-note" style="margin:10px 0 0;">${ui.icon("info")}先報名才能作答,但作答不用出財神幣</div>`;
+    bodyHtml = `<div class="section-note" style="margin:10px 0 0;">${ui.icon("info")}先報名才能作答，但作答不用出財神幣</div>`;
   } else if (myAnswer) {
     bodyHtml = myAnswer.correct
-      ? `<div class="task-result correct">${ui.icon("circle-check")}答對了!拿到 ${task.reward} 財神幣</div>`
-      : `<div class="task-result wrong">${ui.icon("circle-x")}答錯了,這題只能猜一次,下一題再拚</div>`;
+      ? `<div class="task-result correct">${ui.icon("circle-check")}答對了！拿到 ${task.reward} 財神幣</div>`
+      : `<div class="task-result wrong">${ui.icon("circle-x")}答錯了，這題只能猜一次，下一題再拚</div>`;
   } else {
     bodyHtml = `<div class="task-options" id="task-options">
       ${task.options.map((opt, idx) => `<button class="btn ghost task-opt" data-idx="${idx}">${ui.esc(opt)}</button>`).join("")}
@@ -811,9 +811,9 @@ function renderUpnext() {
   document.getElementById("upnext-scroll").innerHTML = scheduled.slice(0, limit).map(upnextCardHtml).join("");
   const note = document.getElementById("upnext-note");
   if (hasIntel) {
-    note.innerHTML = `${ui.icon("eye")}已使用搶先情報券,看到全場剩餘的完整清單`;
+    note.innerHTML = `${ui.icon("eye")}已使用搶先情報券，看到全場剩餘的完整清單`;
   } else if (scheduled.length > limit) {
-    note.textContent = `目前只顯示最近 ${limit} 件,使用搶先情報券可以看到全場剩餘的完整清單`;
+    note.textContent = `目前只顯示最近 ${limit} 件，使用搶先情報券可以看到全場剩餘的完整清單`;
   } else {
     note.textContent = "";
   }
@@ -857,7 +857,7 @@ function renderBag() {
     .map((l) => {
       const isPrimary = l.current_bidder_id === currentPlayer.id;
       if (!isPrimary) {
-        // 我是這一波的合夥夥伴(不是主要出價者),價錢跟分數已經各分一半算進我自己的排行分數裡,這裡不能退貨。
+        // 我是這一波的合夥夥伴(不是主要出價者)，價錢跟分數已經各分一半算進我自己的排行分數裡，這裡不能退貨。
         return `
       <div class="bag-item-row">
         ${ui.tierTag(l.item_tier)}
@@ -868,7 +868,7 @@ function renderBag() {
       }
       const isMysteryReveal = l.item_tier === "mystery" && l.box_reveal_name;
       const subHtml = isMysteryReveal
-        ? `<span class="sub">開箱結果:${ui.esc(l.box_reveal_name)}${l.box_doubled ? "・翻倍!" : ""}</span>`
+        ? `<span class="sub">開箱結果:${ui.esc(l.box_reveal_name)}${l.box_doubled ? "・翻倍！" : ""}</span>`
         : "";
       const priceLabel = `得標 ${l.current_price}`;
       let tailHtml;
@@ -906,7 +906,7 @@ function renderTierList(tier) {
     <div class="special-item-desc">${ui.esc(sp.effectDesc)}</div>
   `
     ).join("");
-    document.getElementById("tier-note").textContent = "不計分,得標後可以使用一次對應的特殊效果,整場各限量一張";
+    document.getElementById("tier-note").textContent = "不計分，得標後可以使用一次對應的特殊效果，整場各限量一張";
     return;
   }
   if (tier === "mystery") {
@@ -918,7 +918,7 @@ function renderTierList(tier) {
     </div>
   `
     ).join("");
-    document.getElementById("tier-note").textContent = "得標後現場開箱,大約 10% 機率是雷(5分),也有機會開出傳說大獎(150分)";
+    document.getElementById("tier-note").textContent = "得標後現場開箱，大約 10% 機率是雷(5分)，也有機會開出傳說大獎(150分)";
     return;
   }
   if (tier === "bundle") {
@@ -930,7 +930,7 @@ function renderTierList(tier) {
     </div>
   `
     ).join("");
-    document.getElementById("tier-note").textContent = "一次多件小東西綁在一起賣,適合想快速湊分的人";
+    document.getElementById("tier-note").textContent = "一次多件小東西綁在一起賣，適合想快速湊分的人";
     return;
   }
   const data = AUCTION_CATALOG[tier];
@@ -989,12 +989,12 @@ function renderTickets() {
         )}預約下一波(x${count})</button>`;
       } else if (key === "boxDouble") {
         actionHtml = effects.boxDoubleActive
-          ? `<span class="section-note" style="margin:0;">${ui.icon("circle-check")}已啟用,下次開福袋箱自動翻倍</span>`
+          ? `<span class="section-note" style="margin:0;">${ui.icon("circle-check")}已啟用，下次開福袋箱自動翻倍</span>`
           : `<button class="btn ghost ticket-use-btn" data-key="boxDouble" ${running ? "" : "disabled"}>${ui.icon("package-open")}使用</button>`;
       } else if (key === "refund") {
-        actionHtml = `<span class="section-note" style="margin:0;">切換到「得標商品」分頁,對想退的商品按退貨(x${count})</span>`;
+        actionHtml = `<span class="section-note" style="margin:0;">切換到「得標商品」分頁，對想退的商品按退貨(x${count})</span>`;
       } else if (key === "freeCommon") {
-        actionHtml = `<span class="section-note" style="margin:0;">拍賣「普通」級商品時,拍賣卡片上會出現兌換按鈕(x${count})</span>`;
+        actionHtml = `<span class="section-note" style="margin:0;">拍賣「普通」級商品時，拍賣卡片上會出現兌換按鈕(x${count})</span>`;
       } else {
         actionHtml = `<span class="section-note" style="margin:0;">x${count}</span>`;
       }
@@ -1062,30 +1062,30 @@ function renderRules() {
   const budget = rules.startingBudget || AUCTION_DEFAULT_BUDGET;
   const waveInterval = rules.waveIntervalSec || AUCTION_DEFAULT_WAVE_INTERVAL_SEC;
   let html = `
-    <p>報名時每人固定發放 <b style="color:var(--gold);">${budget}</b> 財神幣預算,不用打怪、不用對戰賺,大家起跑點完全一樣。</p>
-    <p>主辦人按下「開始拍賣」後,系統會自動依排程開拍,大約每 ${waveInterval} 秒開新的一波,不用主辦人在旁邊一直操作,主辦人也可以下去跟大家一起搶標。</p>
-    <p>拍賣採英式競標(價高者得):商品從底價起跳,大家即時喊價加碼,出價至少要比目前最高價高一個「最小加價單位」。倒數最後 ${AUCTION_ANTI_SNIPE_WINDOW_SEC} 秒內如果有人加價,倒數會重新計時到剩 ${AUCTION_ANTI_SNIPE_EXTEND_SEC} 秒,防止蹲點偷襲、最後一秒撿便宜。</p>
-    <p>活動結束依「商品得分 + 剩餘財神幣折算分數」加總排行,剩餘財神幣 1 枚可以折算 ${AUCTION_COIN_TO_SCORE} 分,前五名套用活動設定的獎勵機制。</p>
-    <p>商品全部拍賣完畢後,還會留 ${AUCTION_FINAL_CLOSE_DELAY_SEC / 60} 分鐘緩衝時間讓大家繼續打工、答任務、去幸運攤位下注,時間到系統會自動結算活動(主辦人也可以隨時提前手動結束)。</p>
+    <p>報名時每人固定發放 <b style="color:var(--gold);">${budget}</b> 財神幣預算，不用打怪、不用對戰賺，大家起跑點完全一樣。</p>
+    <p>主辦人按下「開始拍賣」後，系統會自動依排程開拍，大約每 ${waveInterval} 秒開新的一波，不用主辦人在旁邊一直操作，主辦人也可以下去跟大家一起搶標。</p>
+    <p>拍賣採英式競標(價高者得):商品從底價起跳，大家即時喊價加碼，出價至少要比目前最高價高一個「最小加價單位」。倒數最後 ${AUCTION_ANTI_SNIPE_WINDOW_SEC} 秒內如果有人加價，倒數會重新計時到剩 ${AUCTION_ANTI_SNIPE_EXTEND_SEC} 秒，防止蹲點偷襲、最後一秒撿便宜。</p>
+    <p>活動結束依「商品得分 + 剩餘財神幣折算分數」加總排行，剩餘財神幣 1 枚可以折算 ${AUCTION_COIN_TO_SCORE} 分，前五名套用活動設定的獎勵機制。</p>
+    <p>商品全部拍賣完畢後，還會留 ${AUCTION_FINAL_CLOSE_DELAY_SEC / 60} 分鐘緩衝時間讓大家繼續打工、答任務、去幸運攤位下注，時間到系統會自動結算活動(主辦人也可以隨時提前手動結束)。</p>
   `;
 
   html += `<h4>${ui.icon("layers")} 商品分類</h4>`;
-  html += `<p>${ui.tierTag("common")} 底價 50~150,分數最低。${ui.tierTag("rare")} 底價 300~500。${ui.tierTag("epic")} 底價 600~900。${ui.tierTag(
+  html += `<p>${ui.tierTag("common")} 底價 50~150，分數最低。${ui.tierTag("rare")} 底價 300~500。${ui.tierTag("epic")} 底價 600~900。${ui.tierTag(
     "legendary"
-  )} 底價 1000 以上,整場限量供應,分數最高。</p>`;
-  html += `<p>${ui.tierTag("bundle")} 一次多件小東西綁在一起賣,分數比同價位單品略高一點,適合想快速湊分的人。</p>`;
+  )} 底價 1000 以上，整場限量供應，分數最高。</p>`;
+  html += `<p>${ui.tierTag("bundle")} 一次多件小東西綁在一起賣，分數比同價位單品略高一點，適合想快速湊分的人。</p>`;
   html += `<p>${ui.tierTag(
     "mystery"
-  )} 神秘箱,底價固定,得標後現場開箱才知道多少分——大約 ${AUCTION_BOX_OUTCOMES.find((o) => o.tier === "bust").weight}% 機率是雷(只有 ${
+  )} 神秘箱，底價固定，得標後現場開箱才知道多少分——大約 ${AUCTION_BOX_OUTCOMES.find((o) => o.tier === "bust").weight}% 機率是雷(只有 ${
     AUCTION_BOX_OUTCOMES.find((o) => o.tier === "bust").points
-  } 分),也有機會開出傳說大獎(${AUCTION_BOX_OUTCOMES.find((o) => o.tier === "legendary").points} 分)。</p>`;
-  html += `<p>${ui.tierTag("special")} 不計分,而是給一個能影響拍賣本身的功能,整場限量供應各一張。</p>`;
+  } 分)，也有機會開出傳說大獎(${AUCTION_BOX_OUTCOMES.find((o) => o.tier === "legendary").points} 分)。</p>`;
+  html += `<p>${ui.tierTag("special")} 不計分，而是給一個能影響拍賣本身的功能，整場限量供應各一張。</p>`;
 
   html += `<h4>${ui.icon("coins")} 途中賺財神幣</h4>`;
-  html += `<p><b style="color:var(--ink);">${ui.icon("hand-coins")} 打工賺財神幣</b><br/>每 ${AUCTION_WORK_COOLDOWN_SEC} 秒可以按一次,隨機拿到 ${AUCTION_WORK_MIN}~${AUCTION_WORK_MAX} 財神幣。</p>`;
-  html += `<p><b style="color:var(--ink);">${ui.icon("puzzle")} 夜市任務</b><br/>拍賣過程中偶爾跳出問答／猜謎,答對現領財神幣,一題一人只能答一次。</p>`;
-  html += `<p><b style="color:var(--ink);">${ui.icon("dice-5")} 幸運攤位</b><br/>花財神幣(${AUCTION_LUCKY_MIN_BET}~${AUCTION_LUCKY_MAX_BET})骰骰子猜大小,猜對雙倍拿回,猜錯拿回一半,每 ${AUCTION_LUCKY_COOLDOWN_SEC} 秒能下注一次。</p>`;
-  html += `<p><b style="color:var(--ink);">${ui.icon("undo-2")} 參與退補</b><br/>某件商品你出過價、但最後沒標到,結標後會自動退還一小筆財神幣當參與獎勵。</p>`;
+  html += `<p><b style="color:var(--ink);">${ui.icon("hand-coins")} 打工賺財神幣</b><br/>每 ${AUCTION_WORK_COOLDOWN_SEC} 秒可以按一次，隨機拿到 ${AUCTION_WORK_MIN}~${AUCTION_WORK_MAX} 財神幣。</p>`;
+  html += `<p><b style="color:var(--ink);">${ui.icon("puzzle")} 夜市任務</b><br/>拍賣過程中偶爾跳出問答／猜謎，答對現領財神幣，一題一人只能答一次。</p>`;
+  html += `<p><b style="color:var(--ink);">${ui.icon("dice-5")} 幸運攤位</b><br/>花財神幣(${AUCTION_LUCKY_MIN_BET}~${AUCTION_LUCKY_MAX_BET})骰骰子猜大小，猜對雙倍拿回，猜錯拿回一半，每 ${AUCTION_LUCKY_COOLDOWN_SEC} 秒能下注一次。</p>`;
+  html += `<p><b style="color:var(--ink);">${ui.icon("undo-2")} 參與退補</b><br/>某件商品你出過價、但最後沒標到，結標後會自動退還一小筆財神幣當參與獎勵。</p>`;
 
   html += `<h4>${ui.icon("ticket")} 特殊券效果</h4>`;
   AUCTION_SPECIAL_ITEMS.forEach((sp) => {
@@ -1093,10 +1093,10 @@ function renderRules() {
   });
 
   html += `<h4>${ui.icon("sparkles")} 更多玩法</h4>`;
-  html += `<p><b style="color:var(--ink);">${ui.icon("users")} 合夥競標</b><br/>拍賣進行中可以邀請另一位參加者合夥搶這一波,對方接受後,標到的話價錢跟分數兩人各分一半,適合朋友結伴來玩。</p>`;
-  html += `<p><b style="color:var(--ink);">${ui.icon("target")} 猜價小遊戲</b><br/>每件商品拍賣中,大家都可以先猜「這件最後會標到多少錢」(一件只能猜一次,不用出價也能參加),結標後猜中加 ${AUCTION_GUESS_BONUS_EXACT} 分、最接近的人加 ${AUCTION_GUESS_BONUS_CLOSE} 分(平手全部一起拿)。</p>`;
-  html += `<p><b style="color:var(--ink);">${ui.icon("gift")} 隱藏驚喜商品</b><br/>整場會有 1~2 件商品不會出現在「商品預告」清單裡(連搶先情報券都看不到),要等它自己開拍才知道,製造一點意外驚喜。</p>`;
-  html += `<p><b style="color:var(--ink);">${ui.icon("flag")} 最後衝刺輪</b><br/>本場最後一波拍賣會特別標示出來,提醒大家把剩餘財神幣花光光——畢竟折算成分數只有一半效益。</p>`;
+  html += `<p><b style="color:var(--ink);">${ui.icon("users")} 合夥競標</b><br/>拍賣進行中可以邀請另一位參加者合夥搶這一波，對方接受後，標到的話價錢跟分數兩人各分一半，適合朋友結伴來玩。</p>`;
+  html += `<p><b style="color:var(--ink);">${ui.icon("target")} 猜價小遊戲</b><br/>每件商品拍賣中，大家都可以先猜「這件最後會標到多少錢」(一件只能猜一次，不用出價也能參加)，結標後猜中加 ${AUCTION_GUESS_BONUS_EXACT} 分、最接近的人加 ${AUCTION_GUESS_BONUS_CLOSE} 分(平手全部一起拿)。</p>`;
+  html += `<p><b style="color:var(--ink);">${ui.icon("gift")} 隱藏驚喜商品</b><br/>整場會有 1~2 件商品不會出現在「商品預告」清單裡(連搶先情報券都看不到)，要等它自己開拍才知道，製造一點意外驚喜。</p>`;
+  html += `<p><b style="color:var(--ink);">${ui.icon("flag")} 最後衝刺輪</b><br/>本場最後一波拍賣會特別標示出來，提醒大家把剩餘財神幣花光光——畢竟折算成分數只有一半效益。</p>`;
 
   box.innerHTML = html;
 }
@@ -1120,12 +1120,12 @@ function bindRuleModal() {
     ev = null;
   }
   if (!ev) {
-    await ui.alert("這場活動已經不存在了(可能已被主辦人刪除),帶你回首頁。", { title: "找不到這場活動", tone: "danger" });
+    await ui.alert("這場活動已經不存在了(可能已被主辦人刪除)，帶你回首頁。", { title: "找不到這場活動", tone: "danger" });
     location.href = "index.html";
     return;
   }
   if (ev.game_type !== "auction") {
-    // 網址帶錯活動類型(例如手動改連結),骰子/五手勢一律走 lobby.html
+    // 網址帶錯活動類型(例如手動改連結)，骰子/五手勢一律走 lobby.html
     location.href = ev.locked ? `lobby.html?event=${eventId}` : "index.html";
     return;
   }
@@ -1144,8 +1144,8 @@ function bindRuleModal() {
 
   await refreshAll();
   tickInterval = setInterval(tick, 1000);
-  // 同一場拍賣的所有分頁一起選隊長,只有隊長會真的去跑 tick() 推進排程;
-  // 隊長分頁關掉的話,presence 會自動讓其他分頁裡的一台變成新隊長,排程不會因此停住。
+  // 同一場拍賣的所有分頁一起選隊長，只有隊長會真的去跑 tick() 推進排程;
+  // 隊長分頁關掉的話，presence 會自動讓其他分頁裡的一台變成新隊長，排程不會因此停住。
   unsubLeader = db.electLeader(`auction-tick-${eventId}`, (leader) => {
     isTickLeader = leader;
   });

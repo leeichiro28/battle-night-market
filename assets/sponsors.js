@@ -1,6 +1,6 @@
 // 贊助名單頁面。db.listSponsorLists() 依建立時間新到舊排序:
-// 第一筆當「最新贊助名單」直接顯示,其餘收進「歷史贊助名單」收合區,每份各自可展開查看。
-// 每位贊助者可能贊助過好幾次,卡片上顯示的是依「獎勵名稱」加總後的數量,
+// 第一筆當「最新贊助名單」直接顯示，其餘收進「歷史贊助名單」收合區，每份各自可展開查看。
+// 每位贊助者可能贊助過好幾次，卡片上顯示的是依「獎勵名稱」加總後的數量，
 // 點「查看贊助紀錄」才會展開看每一次原始紀錄(不會因為合併顯示就看不到舊紀錄)。
 
 function formatDate(iso) {
@@ -59,7 +59,7 @@ function sponsorCardsHtml(sponsors) {
 
 let raisedView = "current"; // "current":最新這份名單的加總 / "total":全部活動累積加總
 let historyOpen = false;
-const historyOpenIds = new Set(); // 記住哪些歷史名單被展開過,收合外層時不要重置
+const historyOpenIds = new Set(); // 記住哪些歷史名單被展開過，收合外層時不要重置
 
 function renderRaised(latestSponsors, allSponsors) {
   const label = document.getElementById("raised-label");

@@ -1,4 +1,4 @@
-// 遊戲公告頁面。跟首頁同一種卡片,每則預設收合,點「查看更多內容」才展開內文跟 CTA 按鈕。
+// 遊戲公告頁面。跟首頁同一種卡片，每則預設收合，點「查看更多內容」才展開內文跟 CTA 按鈕。
 const ANNOUNCE_TYPE_INFO = {
   event: { icon: "swords", label: "新活動" },
   update: { icon: "sparkles", label: "版本更新" },
