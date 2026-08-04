@@ -304,33 +304,6 @@ const db = (function () {
     return gameType === "dice" ? diceInitState() : rps5InitState();
   }
 
-  const FIELD_MODS = ["crit", "shield_plus", "lifesteal", "chaos_tie", "fast_timer", "shadow"];
-
-  // 對戰真正要開打前(狀態轉為 active 那一刻),依實際上場的兩位玩家職業重新計算
-  // 防禦骰次數、戰場特性等資料。放到這一刻才算,才能正確反映勝部賽程樹裡「事先不知道是誰」的後面幾輪對戰。
-  async function finalizeDiceState(eventId, gameType, rules, state, player1Id, player2Id) {
-    if (gameType !== "dice") return state;
-    const { data: rows } = await client
-      .from("event_participants")
-      .select("player_id, class")
-      .eq("event_id", eventId)
-      .in("player_id", [player1Id, player2Id]);
-    const class1 = rows?.find((r) => r.player_id === player1Id)?.class || null;
-    const class2 = rows?.find((r) => r.player_id === player2Id)?.class || null;
-    let fieldMod = null;
-    if (rules && rules.field_mod) {
-      fieldMod = FIELD_MODS[Math.floor(Math.random() * FIELD_MODS.length)];
-    }
-    const shield1 = Math.max(
-      0,
-      2 + (class1 === "guardian" ? 1 : 0) + (fieldMod === "shield_plus" ? 1 : 0) - (fieldMod === "shadow" ? 1 : 0)
-    );
-    const shield2 = Math.max(
-      0,
-      2 + (class2 === "guardian" ? 1 : 0) + (fieldMod === "shield_plus" ? 1 : 0) - (fieldMod === "shadow" ? 1 : 0)
-    );
-    return { ...state, class1, class2, shield1, shield2, field_mod: fieldMod };
-  }
 
   async function lockAndGenerateBracket(eventId) {
     const ev = await getEvent(eventId);
@@ -455,75 +428,13 @@ const db = (function () {
   }
 
   // 一場一場來:整個活動同一時間只讓一場對戰進行中。
-  // 每次有對戰結束(或有新玩家掉入敗部候位區)就呼叫這個函式,
-  // 它會找出目前沒有對戰進行中,才從排隊名單挑下一場開打。
-  const BRACKET_ORDER = { winners: 0, losers: 1, final: 2 };
-
+  // 每次有對戰結束(或有新玩家掉入敗部候位區)就呼叫這個函式。
+  // 實際的「查有沒有 active 場次→挑下一場→啟動」全部改放到 Postgres 的 activate_next_match RPC 裡原子執行
+  // (見 supabase-schema.sql),不要在這裡用 select 再 update 兩步做,兩步中間沒有原子性保證,
+  // 兩個玩家幾乎同時打完各自的對戰時會兩邊都查到「沒有 active」然後各自啟動一場,導致同時開兩場對戰的 bug。
   async function activateNextMatch(eventId) {
-    const { data: actives, error: activeErr } = await client
-      .from("matches")
-      .select("id")
-      .eq("event_id", eventId)
-      .eq("status", "active")
-      .limit(1);
-    if (activeErr) throw activeErr;
-    if (actives && actives.length) return; // 已經有一場在打,先不排下一場
-
-    const ev = await getEvent(eventId);
-
-    const { data: pending, error: pendErr } = await client
-      .from("matches")
-      .select("*")
-      .eq("event_id", eventId)
-      .eq("status", "pending")
-      .not("player1_id", "is", null)
-      .not("player2_id", "is", null);
-    if (pendErr) throw pendErr;
-
-    if (pending && pending.length) {
-      const preferBracket = ev.last_match_bracket === "winners" ? "losers" : ev.last_match_bracket === "losers" ? "winners" : null;
-      pending.sort((a, b) => {
-        if (preferBracket) {
-          const pa = a.bracket === preferBracket ? 0 : 1;
-          const pb = b.bracket === preferBracket ? 0 : 1;
-          if (pa !== pb) return pa - pb;
-        }
-        const br = (BRACKET_ORDER[a.bracket] ?? 9) - (BRACKET_ORDER[b.bracket] ?? 9);
-        if (br) return br;
-        const rr = (a.round || 0) - (b.round || 0);
-        if (rr) return rr;
-        const sr = (a.slot ?? 999) - (b.slot ?? 999);
-        if (sr) return sr;
-        return new Date(a.created_at) - new Date(b.created_at);
-      });
-      const next = pending[0];
-      const finalState = await finalizeDiceState(eventId, ev.game_type, ev.rules, next.state, next.player1_id, next.player2_id);
-      await client.from("matches").update({ status: "active", state: finalState }).eq("id", next.id);
-      await client
-        .from("event_participants")
-        .update({ status: "matched", match_id: next.id })
-        .eq("event_id", eventId)
-        .in("player_id", [next.player1_id, next.player2_id]);
-      return;
-    }
-
-    // 沒有排隊中的對戰,看看敗部候位區有沒有兩人可以配對開新的一場
-    if (ev.losers_bracket && ev.status !== "closed") {
-      let newMatchId = null;
-      try {
-        newMatchId = await tryMatch(eventId, ev.game_type, "losers");
-      } catch (e) {
-        // 候位人數不足時 RPC 會回傳 null,忽略即可
-      }
-      if (newMatchId) {
-        // 已經確認過此刻沒有其他場次在進行,直接啟動這場敗部對戰
-        await client.from("matches").update({ status: "active" }).eq("id", newMatchId).eq("status", "pending");
-        await client
-          .from("event_participants")
-          .update({ status: "matched" })
-          .eq("match_id", newMatchId);
-      }
-    }
+    const { error } = await client.rpc("activate_next_match", { p_event_id: eventId });
+    if (error) throw error;
   }
 
   // ---------- 對戰 ----------
@@ -837,6 +748,536 @@ const db = (function () {
     };
   }
 
+  // ---------- 夜市拍賣 ----------
+  // 報名(等於「開局全自動」企劃裡的公平起跑):第一次報名時依活動設定的起始預算發財神幣,
+  // 之後重複呼叫(例如重整頁面)不會重發,直接回傳原本那筆資料。
+  async function joinAuctionEvent(eventId, playerId) {
+    const existing = await getMyAuctionParticipant(eventId, playerId);
+    if (existing) return existing;
+    const ev = await getEvent(eventId);
+    const startingBudget = (ev.rules && ev.rules.startingBudget) || AUCTION_DEFAULT_BUDGET;
+    const { data, error } = await client
+      .from("auction_participants")
+      .upsert(
+        { event_id: eventId, player_id: playerId, coins: startingBudget, work_ready_at: new Date().toISOString() },
+        { onConflict: "event_id,player_id", ignoreDuplicates: false }
+      )
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  async function getMyAuctionParticipant(eventId, playerId) {
+    const { data, error } = await client
+      .from("auction_participants")
+      .select("*")
+      .eq("event_id", eventId)
+      .eq("player_id", playerId)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
+  async function listAuctionParticipants(eventId) {
+    const { data, error } = await client
+      .from("auction_participants")
+      .select("*, players(name)")
+      .eq("event_id", eventId)
+      .order("created_at", { ascending: true });
+    if (error) throw error;
+    return data;
+  }
+
+  async function listAuctionLots(eventId) {
+    const { data, error } = await client
+      .from("auction_lots")
+      .select("*, bidder:current_bidder_id(name)")
+      .eq("event_id", eventId)
+      .order("wave_number", { ascending: true })
+      .order("created_at", { ascending: true });
+    if (error) throw error;
+    return data;
+  }
+
+  // 主辦人按下「開始拍賣」:把已報名的人鎖住(不能再中途加入拿預算),
+  // 依商品排程算好每一波的開拍時間,整場一次寫進 auction_lots。
+  async function startAuction(eventId, opts) {
+    const waveIntervalSec = opts.waveIntervalSec || AUCTION_DEFAULT_WAVE_INTERVAL_SEC;
+    const waves = opts.waves; // buildAuctionWaves() 產生的結果,呼叫端(admin.js)已經算好
+    const now = Date.now();
+    const rows = [];
+    waves.forEach((wave, waveIdx) => {
+      const scheduledAt = new Date(now + waveIdx * waveIntervalSec * 1000).toISOString();
+      wave.forEach((item) => {
+        rows.push({
+          event_id: eventId,
+          wave_number: waveIdx + 1,
+          item_name: item.itemName,
+          item_tier: item.itemTier,
+          points: item.points,
+          base_price: item.basePrice,
+          min_increment: item.minIncrement,
+          current_price: item.basePrice,
+          status: "scheduled",
+          scheduled_at: scheduledAt,
+          special_key: item.specialKey || null,
+        });
+      });
+    });
+    if (rows.length) {
+      const { error: insertErr } = await client.from("auction_lots").insert(rows);
+      if (insertErr) throw insertErr;
+    }
+    // 順便排一批夜市任務(問答/猜謎),平均分散在整場預估時長內,自動開放作答。
+    const totalDurationSec = Math.max(waves.length, 1) * waveIntervalSec;
+    const tasks = buildAuctionTaskSchedule(totalDurationSec);
+    if (tasks.length) {
+      const taskRows = tasks.map((t) => ({
+        event_id: eventId,
+        question: t.q,
+        options: t.options,
+        correct_index: t.correct,
+        task_type: t.type,
+        reward: t.reward,
+        status: "scheduled",
+        scheduled_at: new Date(now + t.offsetSec * 1000).toISOString(),
+      }));
+      const { error: taskErr } = await client.from("auction_tasks").insert(taskRows);
+      if (taskErr) throw taskErr;
+    }
+    const { error } = await client
+      .from("events")
+      .update({ locked: true, status: "running" })
+      .eq("id", eventId);
+    if (error) throw error;
+  }
+
+  // 每個看拍賣畫面的人,瀏覽器背景每秒都會呼叫這兩個函式來推進排程,
+  // 用 status 當條件鎖(.eq status)確保就算好幾個人同時呼叫,同一件商品也只會被推進一次。
+  async function activateDueAuctionLots(eventId) {
+    const nowIso = new Date().toISOString();
+    const { data: due, error } = await client
+      .from("auction_lots")
+      .select("id, base_price, priority_holder_id")
+      .eq("event_id", eventId)
+      .eq("status", "scheduled")
+      .lte("scheduled_at", nowIso);
+    if (error) throw error;
+    if (!due || !due.length) return;
+    const now = Date.now();
+    const endsAt = new Date(now + AUCTION_LOT_DURATION_SEC * 1000).toISOString();
+    for (const lot of due) {
+      const updates = { status: "live", current_price: lot.base_price, ends_at: endsAt };
+      // 如果這一波有人用插隊優先權預約過,開拍時順便算出他的專屬優先出價時間窗
+      if (lot.priority_holder_id) updates.priority_until = new Date(now + AUCTION_PRIORITY_WINDOW_SEC * 1000).toISOString();
+      await client.from("auction_lots").update(updates).eq("id", lot.id).eq("status", "scheduled");
+    }
+  }
+
+  // 共用結標邏輯:扣得標者的錢(招待券免費兌換時 finalPrice 是 0)、幫其他出過價但沒標到的人辦參與退補、
+  // 如果是特殊券商品就把效果加進得標者的 auction_participants.effects、如果是福袋箱就現場開箱算分數,
+  // 最後標記 settled。呼叫端(settleExpiredAuctionLots / useAuctionFreeCommonTicket)都已經先用 status 條件鎖搶到這件商品的處理權。
+  async function finalizeAuctionLot(lot, winnerId, finalPrice) {
+    let lotUpdates = null;
+    if (winnerId) {
+      const part = await getMyAuctionParticipant(lot.event_id, winnerId);
+      if (part) {
+        const updates = { coins: Math.max(0, part.coins - finalPrice) };
+        const effects = part.effects || {};
+        let nextEffects = null;
+        if (lot.special_key) {
+          nextEffects = { ...effects, [lot.special_key]: (effects[lot.special_key] || 0) + 1 };
+        }
+        if (lot.item_tier === "mystery") {
+          const outcome = auctionRollMysteryBoxOutcome();
+          let points = outcome.points;
+          let doubled = false;
+          if (effects.boxDoubleActive) {
+            points *= 2;
+            doubled = true;
+            nextEffects = { ...(nextEffects || effects), boxDoubleActive: false };
+          }
+          lotUpdates = { points, box_reveal_name: outcome.name, box_reveal_tier: outcome.tier, box_doubled: doubled };
+        }
+        if (nextEffects) updates.effects = nextEffects;
+        await client.from("auction_participants").update(updates).eq("id", part.id);
+      }
+    }
+    if (lotUpdates) {
+      await client.from("auction_lots").update(lotUpdates).eq("id", lot.id);
+    }
+    // 參與退補:這件商品有出過價、但最後沒標到的人,結標後每人退一小筆財神幣當參與獎勵,
+    // 鼓勵大家踴躍出手而不是全場觀望。金額 = 這件商品的最小加價單位 * 倍率,越稀有的商品退越多。
+    const { data: bidRows, error: bidErr } = await client.from("auction_bids").select("player_id").eq("lot_id", lot.id);
+    if (bidErr) throw bidErr;
+    const refund = lot.min_increment * AUCTION_PARTICIPATION_REFUND_MULT;
+    const losingBidderIds = Array.from(new Set((bidRows || []).map((b) => b.player_id))).filter((pid) => pid !== winnerId);
+    for (const pid of losingBidderIds) {
+      const losingPart = await getMyAuctionParticipant(lot.event_id, pid);
+      if (losingPart) {
+        await client.from("auction_participants").update({ coins: losingPart.coins + refund }).eq("id", losingPart.id);
+      }
+    }
+    await client.from("auction_lots").update({ settled: true }).eq("id", lot.id);
+  }
+
+  async function settleExpiredAuctionLots(eventId) {
+    const nowIso = new Date().toISOString();
+    const { data: due, error } = await client
+      .from("auction_lots")
+      .select("*")
+      .eq("event_id", eventId)
+      .eq("status", "live")
+      .lte("ends_at", nowIso);
+    if (error) throw error;
+    if (!due || !due.length) return;
+    for (const lot of due) {
+      // 用 status='live' 當鎖,先搶到才處理結算,沒搶到的人就跳過(已經有人處理過了)
+      const { data: claimed, error: claimErr } = await client
+        .from("auction_lots")
+        .update({ status: "done" })
+        .eq("id", lot.id)
+        .eq("status", "live")
+        .select();
+      if (claimErr) throw claimErr;
+      if (!claimed || !claimed.length) continue;
+      await finalizeAuctionLot(lot, lot.current_bidder_id, lot.current_price);
+    }
+  }
+
+  // 出價:用「目前最高價沒變」當樂觀鎖條件,避免兩個人同時搶標時其中一口價憑空消失。
+  // 出價前會檢查:這位玩家手上財神幣扣掉他「目前正領先中的其他商品」的金額後,夠不夠付這一口價。
+  // 如果這一波有人用插隊優先權預約過,專屬時間窗內只有那個人能出價,其他人要等時間到。
+  async function placeAuctionBid(lot, playerId, amount) {
+    if (lot.priority_holder_id && lot.priority_holder_id !== playerId && lot.priority_until && new Date(lot.priority_until).getTime() > Date.now()) {
+      throw new Error("現在是別人的插隊優先權時間,請稍後再搶標");
+    }
+    const newPrice = lot.current_price + amount;
+    const part = await getMyAuctionParticipant(lot.event_id, playerId);
+    if (!part) throw new Error("還沒報名這場拍賣");
+    const { data: myLiveLeads, error: leadErr } = await client
+      .from("auction_lots")
+      .select("id, current_price")
+      .eq("event_id", lot.event_id)
+      .eq("status", "live")
+      .eq("current_bidder_id", playerId);
+    if (leadErr) throw leadErr;
+    const committed = (myLiveLeads || []).filter((l) => l.id !== lot.id).reduce((s, l) => s + l.current_price, 0);
+    if (part.coins - committed < newPrice) {
+      throw new Error("財神幣不夠喊這個價(要扣掉你目前其他領先中的商品)");
+    }
+    const now = new Date();
+    let endsAt = lot.ends_at;
+    const remainingMs = new Date(lot.ends_at).getTime() - now.getTime();
+    if (remainingMs <= AUCTION_ANTI_SNIPE_WINDOW_SEC * 1000) {
+      endsAt = new Date(now.getTime() + AUCTION_ANTI_SNIPE_EXTEND_SEC * 1000).toISOString();
+    }
+    const { data: updated, error } = await client
+      .from("auction_lots")
+      .update({ current_price: newPrice, current_bidder_id: playerId, ends_at: endsAt })
+      .eq("id", lot.id)
+      .eq("status", "live")
+      .eq("current_price", lot.current_price)
+      .select();
+    if (error) throw error;
+    if (!updated || !updated.length) throw new Error("手慢了,價格剛剛被別人改變了,請重新出價");
+    await client.from("auction_bids").insert({ lot_id: lot.id, event_id: lot.event_id, player_id: playerId, amount: newPrice });
+    return updated[0];
+  }
+
+  // 打工賺財神幣:用 work_ready_at<=now 當樂觀鎖,同一秒連點兩次也只會成功一次。
+  async function workForAuctionCoins(eventId, playerId) {
+    const part = await getMyAuctionParticipant(eventId, playerId);
+    if (!part) throw new Error("還沒報名這場拍賣");
+    const nowIso = new Date().toISOString();
+    if (new Date(part.work_ready_at).getTime() > Date.now()) {
+      throw new Error("還在冷卻中");
+    }
+    const gain = AUCTION_WORK_MIN + Math.floor(Math.random() * (AUCTION_WORK_MAX - AUCTION_WORK_MIN + 1));
+    const nextReady = new Date(Date.now() + AUCTION_WORK_COOLDOWN_SEC * 1000).toISOString();
+    const { data: updated, error } = await client
+      .from("auction_participants")
+      .update({ coins: part.coins + gain, work_ready_at: nextReady })
+      .eq("id", part.id)
+      .eq("work_ready_at", part.work_ready_at)
+      .select();
+    if (error) throw error;
+    if (!updated || !updated.length) throw new Error("手慢了,請再按一次");
+    return { gain, participant: updated[0] };
+  }
+
+  // ---------- 夜市任務(問答／猜謎) ----------
+  async function listAuctionTasks(eventId) {
+    const { data, error } = await client
+      .from("auction_tasks")
+      .select("*")
+      .eq("event_id", eventId)
+      .order("scheduled_at", { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+
+  // 每個看拍賣畫面的人,瀏覽器背景每秒都會呼叫這兩個函式來推進任務,
+  // 跟商品排程一樣用 status 當條件鎖,避免好幾個人同時呼叫時同一題被推進兩次。
+  async function activateDueAuctionTasks(eventId) {
+    const nowIso = new Date().toISOString();
+    const { data: due, error } = await client
+      .from("auction_tasks")
+      .select("id")
+      .eq("event_id", eventId)
+      .eq("status", "scheduled")
+      .lte("scheduled_at", nowIso);
+    if (error) throw error;
+    if (!due || !due.length) return;
+    const endsAt = new Date(Date.now() + AUCTION_TASK_DURATION_SEC * 1000).toISOString();
+    for (const t of due) {
+      await client.from("auction_tasks").update({ status: "live", ends_at: endsAt }).eq("id", t.id).eq("status", "scheduled");
+    }
+  }
+
+  async function settleExpiredAuctionTasks(eventId) {
+    const nowIso = new Date().toISOString();
+    const { error } = await client
+      .from("auction_tasks")
+      .update({ status: "done" })
+      .eq("event_id", eventId)
+      .eq("status", "live")
+      .lte("ends_at", nowIso);
+    if (error) throw error;
+  }
+
+  // 玩家作答:靠 auction_task_answers 的 unique(task_id, player_id) 限制擋重複作答,
+  // 答對才會發財神幣,答錯不倒扣、但這題也不能再猜第二次。
+  async function answerAuctionTask(taskId, eventId, playerId, choiceIndex) {
+    const { data: task, error: taskErr } = await client.from("auction_tasks").select("*").eq("id", taskId).single();
+    if (taskErr) throw taskErr;
+    if (task.status !== "live" || (task.ends_at && new Date(task.ends_at).getTime() < Date.now())) {
+      throw new Error("這題已經結束了,晚了一步");
+    }
+    const correct = choiceIndex === task.correct_index;
+    const { error: insErr } = await client
+      .from("auction_task_answers")
+      .insert({ task_id: taskId, event_id: eventId, player_id: playerId, correct });
+    if (insErr) {
+      if (insErr.code === "23505") throw new Error("這題你已經回答過了");
+      throw insErr;
+    }
+    let gain = 0;
+    let participant = null;
+    if (correct) {
+      const part = await getMyAuctionParticipant(eventId, playerId);
+      if (part) {
+        gain = task.reward;
+        const { data: updated, error: updErr } = await client
+          .from("auction_participants")
+          .update({ coins: part.coins + gain })
+          .eq("id", part.id)
+          .select();
+        if (updErr) throw updErr;
+        participant = updated && updated[0];
+      }
+    }
+    return { correct, gain, participant };
+  }
+
+  // 一次撈出這位玩家在這場活動裡「已經回答過的任務」,前端拿來判斷每題要顯示選項還是顯示結果。
+  async function listMyAuctionTaskAnswers(eventId, playerId) {
+    const { data, error } = await client
+      .from("auction_task_answers")
+      .select("*")
+      .eq("event_id", eventId)
+      .eq("player_id", playerId);
+    if (error) throw error;
+    return data || [];
+  }
+
+  // ---------- 幸運攤位(快速小賭注) ----------
+  // 下注:先驗證金額跟冷卻,骰子結果用 resolveAuctionLuckyBet()(auction-catalog.js)純計算算出,
+  // 寫回財神幣時用「coins 沒變 + 冷卻沒變」當樂觀鎖,避免跟打工/出價/任務同時發生時互相蓋掉。
+  async function placeAuctionLuckyBet(eventId, playerId, betAmount, guess) {
+    if (guess !== "big" && guess !== "small") throw new Error("請選大或小");
+    const amount = Math.floor(betAmount);
+    if (!amount || amount < AUCTION_LUCKY_MIN_BET) throw new Error(`下注至少要 ${AUCTION_LUCKY_MIN_BET} 財神幣`);
+    if (amount > AUCTION_LUCKY_MAX_BET) throw new Error(`單次下注最多 ${AUCTION_LUCKY_MAX_BET} 財神幣`);
+    const part = await getMyAuctionParticipant(eventId, playerId);
+    if (!part) throw new Error("還沒報名這場拍賣");
+    if (new Date(part.lucky_ready_at).getTime() > Date.now()) throw new Error("還在冷卻中");
+    if (part.coins < amount) throw new Error("財神幣不夠下注這個金額");
+    const { die, outcome, win, delta } = resolveAuctionLuckyBet(amount, guess);
+    const nextReady = new Date(Date.now() + AUCTION_LUCKY_COOLDOWN_SEC * 1000).toISOString();
+    const { data: updated, error } = await client
+      .from("auction_participants")
+      .update({ coins: Math.max(0, part.coins + delta), lucky_ready_at: nextReady })
+      .eq("id", part.id)
+      .eq("coins", part.coins)
+      .eq("lucky_ready_at", part.lucky_ready_at)
+      .select();
+    if (error) throw error;
+    if (!updated || !updated.length) throw new Error("手慢了,財神幣剛剛被別的動作改變了,請重新下注");
+    return { die, outcome, win, delta, betAmount: amount, participant: updated[0] };
+  }
+
+  // 目前積分 = 得標商品分數總和 + 剩餘財神幣 * 折算比例(不管活動是否已結束都能算,用來做即時排行榜)
+  async function computeAuctionStandings(eventId) {
+    const [parts, lots] = await Promise.all([listAuctionParticipants(eventId), listAuctionLots(eventId)]);
+    const wonByPlayer = {};
+    lots
+      .filter((l) => l.status === "done" && l.current_bidder_id)
+      .forEach((l) => {
+        wonByPlayer[l.current_bidder_id] = wonByPlayer[l.current_bidder_id] || [];
+        wonByPlayer[l.current_bidder_id].push(l);
+      });
+    const rows = parts.map((p) => {
+      const won = wonByPlayer[p.player_id] || [];
+      const itemScore = won.filter((l) => !l.refunded).reduce((s, l) => s + l.points, 0);
+      const coinScore = Math.round(p.coins * AUCTION_COIN_TO_SCORE * 10) / 10;
+      return { participant: p, wonLots: won, itemScore, coinScore, score: itemScore + coinScore };
+    });
+    rows.sort((a, b) => b.score - a.score);
+    return rows;
+  }
+
+  // ---------- 特殊券效果 ----------
+  // 搶先情報券:一用永久生效(對這位玩家而言),商品預告從此能看到全場剩餘清單,不用每波重複使用。
+  async function useAuctionIntelTicket(eventId, playerId) {
+    const part = await getMyAuctionParticipant(eventId, playerId);
+    if (!part) throw new Error("還沒報名這場拍賣");
+    const effects = part.effects || {};
+    if (!effects.intel || effects.intel < 1) throw new Error("你沒有搶先情報券");
+    const nextEffects = { ...effects, intel: effects.intel - 1, intelActive: true };
+    const { data: updated, error } = await client.from("auction_participants").update({ effects: nextEffects }).eq("id", part.id).select();
+    if (error) throw error;
+    return updated[0];
+  }
+
+  // 插隊優先權:預約「目前排隊中最早的下一波商品」,那一波開拍時這位玩家會拿到專屬優先出價時間窗
+  // (實際時間窗是 activateDueAuctionLots 開拍那一刻才算出來,這裡只先把 priority_holder_id 卡在商品上)。
+  async function useAuctionPriorityTicket(eventId, playerId) {
+    const part = await getMyAuctionParticipant(eventId, playerId);
+    if (!part) throw new Error("還沒報名這場拍賣");
+    const effects = part.effects || {};
+    if (!effects.priority || effects.priority < 1) throw new Error("你沒有插隊優先權");
+    const { data: nextLot, error: nextErr } = await client
+      .from("auction_lots")
+      .select("*")
+      .eq("event_id", eventId)
+      .eq("status", "scheduled")
+      .is("priority_holder_id", null)
+      .order("scheduled_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (nextErr) throw nextErr;
+    if (!nextLot) throw new Error("目前沒有可以插隊的下一波商品了");
+    const { data: claimed, error: claimErr } = await client
+      .from("auction_lots")
+      .update({ priority_holder_id: playerId })
+      .eq("id", nextLot.id)
+      .eq("status", "scheduled")
+      .is("priority_holder_id", null)
+      .select();
+    if (claimErr) throw claimErr;
+    if (!claimed || !claimed.length) throw new Error("手慢了,插隊名額剛剛被別人搶走,請再試一次");
+    const nextEffects = { ...effects, priority: effects.priority - 1 };
+    const { error: partErr } = await client.from("auction_participants").update({ effects: nextEffects }).eq("id", part.id);
+    if (partErr) throw partErr;
+    return claimed[0];
+  }
+
+  // 退款保證券:針對玩家自己「已得標、還沒退過」的某一件商品,無條件退回,拿回一半財神幣。
+  async function useAuctionRefundTicket(lotId, eventId, playerId) {
+    const part = await getMyAuctionParticipant(eventId, playerId);
+    if (!part) throw new Error("還沒報名這場拍賣");
+    const effects = part.effects || {};
+    if (!effects.refund || effects.refund < 1) throw new Error("你沒有退款保證券");
+    const { data: lot, error: lotErr } = await client.from("auction_lots").select("*").eq("id", lotId).single();
+    if (lotErr) throw lotErr;
+    if (lot.status !== "done" || lot.current_bidder_id !== playerId) throw new Error("這不是你標到的商品");
+    if (lot.refunded) throw new Error("這件商品已經退過了");
+    const { data: claimed, error: claimErr } = await client
+      .from("auction_lots")
+      .update({ refunded: true })
+      .eq("id", lotId)
+      .eq("refunded", false)
+      .select();
+    if (claimErr) throw claimErr;
+    if (!claimed || !claimed.length) throw new Error("手慢了,請重新整理再試一次");
+    const refundCoins = Math.floor(lot.current_price / 2);
+    const nextEffects = { ...effects, refund: effects.refund - 1 };
+    const { data: updatedPart, error: partErr } = await client
+      .from("auction_participants")
+      .update({ coins: part.coins + refundCoins, effects: nextEffects })
+      .eq("id", part.id)
+      .select();
+    if (partErr) throw partErr;
+    return { refundCoins, participant: updatedPart[0] };
+  }
+
+  // 福袋箱翻倍券:設一個「下次開箱翻倍」的持續生效旗標,實際翻倍在 finalizeAuctionLot 開箱那一刻套用並消耗掉。
+  async function useAuctionBoxDoubleTicket(eventId, playerId) {
+    const part = await getMyAuctionParticipant(eventId, playerId);
+    if (!part) throw new Error("還沒報名這場拍賣");
+    const effects = part.effects || {};
+    if (!effects.boxDouble || effects.boxDouble < 1) throw new Error("你沒有福袋箱翻倍券");
+    if (effects.boxDoubleActive) throw new Error("已經啟用中了,等下一次開箱生效");
+    const nextEffects = { ...effects, boxDouble: effects.boxDouble - 1, boxDoubleActive: true };
+    const { data: updated, error } = await client.from("auction_participants").update({ effects: nextEffects }).eq("id", part.id).select();
+    if (error) throw error;
+    return updated[0];
+  }
+
+  // 老闆招待券:直接把一件「拍賣中的普通級商品」免費送給這位玩家,結標流程走跟一般結標同一套
+  // finalizeAuctionLot(參與退補等邏輯都一致),只是 finalPrice 固定是 0。
+  async function useAuctionFreeCommonTicket(lotId, eventId, playerId) {
+    const part = await getMyAuctionParticipant(eventId, playerId);
+    if (!part) throw new Error("還沒報名這場拍賣");
+    const effects = part.effects || {};
+    if (!effects.freeCommon || effects.freeCommon < 1) throw new Error("你沒有老闆招待券");
+    const { data: lot, error: lotErr } = await client.from("auction_lots").select("*").eq("id", lotId).single();
+    if (lotErr) throw lotErr;
+    if (lot.status !== "live") throw new Error("這件商品現在不是拍賣中");
+    if (lot.item_tier !== "common") throw new Error("招待券只能兌換「普通」級商品");
+    const { data: claimed, error: claimErr } = await client
+      .from("auction_lots")
+      .update({ status: "done", current_bidder_id: playerId, current_price: 0 })
+      .eq("id", lotId)
+      .eq("status", "live")
+      .select();
+    if (claimErr) throw claimErr;
+    if (!claimed || !claimed.length) throw new Error("手慢了,這件商品剛結標了");
+    const nextEffects = { ...effects, freeCommon: effects.freeCommon - 1 };
+    const { error: partErr } = await client.from("auction_participants").update({ effects: nextEffects }).eq("id", part.id);
+    if (partErr) throw partErr;
+    await finalizeAuctionLot(claimed[0], playerId, 0);
+    return claimed[0];
+  }
+
+  // 主辦人結束活動:結算名次,套用現有的獎勵設定(reward_plan)自動填獎勵。
+  async function closeAuctionEvent(eventId) {
+    const ev = await getEvent(eventId);
+    const standings = await computeAuctionStandings(eventId);
+    for (let i = 0; i < standings.length; i++) {
+      const rank = i + 1;
+      const row = standings[i];
+      await client
+        .from("auction_participants")
+        .update({ final_rank: rank, reward: row.participant.reward || rewardForRank(ev, rank) })
+        .eq("id", row.participant.id);
+    }
+    await setEventStatus(eventId, "closed");
+    return standings;
+  }
+
+  // 主辦人手動覆蓋某位拍賣參加者的獎勵文字(結束活動時 closeAuctionEvent 已經自動套用一次,
+  // 這個函式讓主辦人事後還能個別修改)
+  async function setAuctionReward(participantId, reward) {
+    const { error } = await client
+      .from("auction_participants")
+      .update({ reward })
+      .eq("id", participantId);
+    if (error) throw error;
+  }
+
   function onTableChange(table, filter, cb) {
     const channel = client
       .channel(`${table}-${filter || "all"}-${Math.random()}`)
@@ -1148,5 +1589,28 @@ const db = (function () {
     tryCreateGrandFinal,
     advanceAfterMatch,
     onTableChange,
+    joinAuctionEvent,
+    getMyAuctionParticipant,
+    listAuctionParticipants,
+    listAuctionLots,
+    startAuction,
+    activateDueAuctionLots,
+    settleExpiredAuctionLots,
+    placeAuctionBid,
+    workForAuctionCoins,
+    listAuctionTasks,
+    activateDueAuctionTasks,
+    settleExpiredAuctionTasks,
+    answerAuctionTask,
+    listMyAuctionTaskAnswers,
+    placeAuctionLuckyBet,
+    useAuctionIntelTicket,
+    useAuctionPriorityTicket,
+    useAuctionRefundTicket,
+    useAuctionBoxDoubleTicket,
+    useAuctionFreeCommonTicket,
+    computeAuctionStandings,
+    closeAuctionEvent,
+    setAuctionReward,
   };
 })();

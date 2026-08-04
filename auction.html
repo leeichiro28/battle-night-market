@@ -71,12 +71,19 @@
     <div class="card" id="upnext-card" style="display:none;">
       <h3><i data-lucide="list" class="ico" style="color:var(--gold);"></i> 商品預告(接下來幾波)</h3>
       <div class="upnext-scroll" id="upnext-scroll"></div>
+      <div class="section-note" id="upnext-note" style="margin-top:8px;"></div>
     </div>
 
     <!-- 我的背包 -->
     <div class="card" id="bag-card" style="display:none;">
       <h3><i data-lucide="backpack" class="ico" style="color:var(--gold);"></i> 我的背包<span class="bag-count" id="bag-count-badge">0</span></h3>
       <div id="bag-list"></div>
+    </div>
+
+    <!-- 我的特殊券 -->
+    <div class="card" id="ticket-card" style="display:none;">
+      <h3><i data-lucide="ticket" class="ico" style="color:var(--gold);"></i> 我的特殊券</h3>
+      <div id="ticket-list"></div>
     </div>
 
     <!-- 賺財神幣管道 -->
@@ -114,6 +121,9 @@
         <div class="folder-tab" data-tier="rare"><span class="tier-tag rare" style="border:none;padding:0;">稀有</span></div>
         <div class="folder-tab" data-tier="epic"><span class="tier-tag epic" style="border:none;padding:0;">史詩</span></div>
         <div class="folder-tab" data-tier="legendary"><span class="tier-tag legendary" style="border:none;padding:0;">傳說</span></div>
+        <div class="folder-tab" data-tier="bundle"><span class="tier-tag bundle" style="border:none;padding:0;">組合包</span></div>
+        <div class="folder-tab" data-tier="mystery"><span class="tier-tag mystery" style="border:none;padding:0;">福袋箱</span></div>
+        <div class="folder-tab" data-tier="special"><span class="tier-tag special" style="border:none;padding:0;">特殊</span></div>
       </div>
       <div class="card folder-tab-card" style="margin-top:0;" id="tier-list"></div>
       <div class="section-note" id="tier-note"></div>
@@ -127,6 +137,15 @@
     </div>
 
     <div class="footer-nav" id="back-link"><a href="index.html"><i data-lucide="arrow-left" class="ico"></i>回活動列表</a></div>
+  </div>
+
+  <button class="btn ghost rule-fab" id="rule-fab-btn"><i data-lucide="book-open" class="ico"></i><span class="fab-label">規則說明</span></button>
+  <div class="modal-overlay" id="rule-modal">
+    <div class="modal-card">
+      <h3>夜市拍賣規則</h3>
+      <div id="rule-content"></div>
+      <button class="btn ghost block" id="rule-close-btn" style="margin-top:14px;">關閉</button>
+    </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>

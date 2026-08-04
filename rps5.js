@@ -16,11 +16,11 @@ const GESTURE_ORDER = ["rock", "paper", "scissors", "lizard", "spock"];
 
 // 專屬戰報敘述:每種對決組合都有獨立描述文字,取代死板的「X勝過Y」
 const FLAVOR = {
-  rock: { scissors: "🪨 巨石狠狠壓扁了剪刀的刀刃!", lizard: "🪨 石塊精準砸中了蜥蜴的頭!" },
-  paper: { rock: "📄 一張紙悄悄把石頭整個包住!", spock: "📄 報紙蓋住了史波克的臉,判定失格!" },
-  scissors: { paper: "✂️ 剪刀俐落地剪碎了那張紙!", lizard: "✂️ 剪刀喀嚓一聲剪斷了蜥蜴的頭!" },
-  lizard: { spock: "🦎 蜥蜴一口毒倒了史波克!", paper: "🦎 蜥蜴悄悄咬爛了那張紙!" },
-  spock: { scissors: "🖖 史波克伸手捏碎了剪刀!", rock: "🖖 史波克用雷射把石頭蒸發了!" },
+  rock: { scissors: "巨石狠狠壓扁了剪刀的刀刃!", lizard: "石塊精準砸中了蜥蜴的頭!" },
+  paper: { rock: "一張紙悄悄把石頭整個包住!", spock: "報紙蓋住了史波克的臉,判定失格!" },
+  scissors: { paper: "剪刀俐落地剪碎了那張紙!", lizard: "剪刀喀嚓一聲剪斷了蜥蜴的頭!" },
+  lizard: { spock: "蜥蜴一口毒倒了史波克!", paper: "蜥蜴悄悄咬爛了那張紙!" },
+  spock: { scissors: "史波克伸手捏碎了剪刀!", rock: "史波克用雷射把石頭蒸發了!" },
 };
 
 const FIELD_MODS_RPS = ["rock_boost", "ult_twice", "fast_timer"];
@@ -96,9 +96,9 @@ function judgeGesturePair(a, b) {
 
 // 炸彈相關對決的敘述文字(一般手勢對決不會走到這裡,直接用 FLAVOR 對照表拼字串就好)
 function flavorFor(pair, winnerName) {
-  if (pair.bombDefused) return "🖖 史波克冷靜拆彈,邏輯完勝,平手不掉血。";
+  if (pair.bombDefused) return "史波克冷靜拆彈,邏輯完勝,平手不掉血。";
   if (pair.bombFizzled) return `${GESTURE_NAME[pair.winGesture]}悶熄了炸彈的引信,炸彈失效,${winnerName}獲勝。`;
-  if (pair.bombExploded) return `💥 轟隆一聲,${winnerName}的炸彈炸爛了${GESTURE_NAME[pair.loserGesture]},${winnerName}獲勝。`;
+  if (pair.bombExploded) return `轟隆一聲,${winnerName}的炸彈炸爛了${GESTURE_NAME[pair.loserGesture]},${winnerName}獲勝。`;
   return "";
 }
 
@@ -555,7 +555,7 @@ async function resolveRoundIfReady(state) {
       const loserPreCounts = loserSlot === 1 ? gestureCount1 : gestureCount2;
       const topGesture = mostFrequentGesture(loserPreCounts);
       if (topGesture && loserGesture === topGesture) {
-        entry += ` ${winnerSlot === 1 ? p1Name : p2Name}剋中了對方最常出的${GESTURE_NAME[topGesture]},🧠 讀心成功!`;
+        entry += ` ${winnerSlot === 1 ? p1Name : p2Name}剋中了對方最常出的${GESTURE_NAME[topGesture]},讀心成功!`;
         mindreadBonus = 1;
       }
     }
@@ -571,8 +571,8 @@ async function resolveRoundIfReady(state) {
         rpsitem1 = ITEM_TYPES[Math.floor(Math.random() * ITEM_TYPES.length)];
         if (rpsitem1 === "detect") {
           entry += lastGesture2
-            ? ` 🔍 ${p1Name}的偵測符發動,看到${p2Name}上一手是${GESTURE_NAME[lastGesture2]}。`
-            : ` 🔍 ${p1Name}拿到偵測符,但對方還沒出過手,先留著。`;
+            ? ` ${p1Name}的偵測符發動,看到${p2Name}上一手是${GESTURE_NAME[lastGesture2]}。`
+            : ` ${p1Name}拿到偵測符,但對方還沒出過手,先留著。`;
           if (lastGesture2) rpsitem1 = null;
         } else {
           entry += ` ${p1Name}獲得${ITEM_LABEL[rpsitem1].text}。`;
@@ -582,8 +582,8 @@ async function resolveRoundIfReady(state) {
         rpsitem2 = ITEM_TYPES[Math.floor(Math.random() * ITEM_TYPES.length)];
         if (rpsitem2 === "detect") {
           entry += lastGesture1
-            ? ` 🔍 ${p2Name}的偵測符發動,看到${p1Name}上一手是${GESTURE_NAME[lastGesture1]}。`
-            : ` 🔍 ${p2Name}拿到偵測符,但對方還沒出過手,先留著。`;
+            ? ` ${p2Name}的偵測符發動,看到${p1Name}上一手是${GESTURE_NAME[lastGesture1]}。`
+            : ` ${p2Name}拿到偵測符,但對方還沒出過手,先留著。`;
           if (lastGesture1) rpsitem2 = null;
         } else {
           entry += ` ${p2Name}獲得${ITEM_LABEL[rpsitem2].text}。`;
@@ -633,7 +633,7 @@ async function resolveRoundIfReady(state) {
         }
         if (continuedStreak >= COMBO_STREAK_TRIGGER) {
           dmg += 2;
-          entry += ` 🔥 連段技發動!連續${continuedStreak}局用${GESTURE_NAME[winGesture]}獲勝,額外 +2 傷害。`;
+          entry += ` 連段技發動!連續${continuedStreak}局用${GESTURE_NAME[winGesture]}獲勝,額外 +2 傷害。`;
         }
       }
 
@@ -646,14 +646,14 @@ async function resolveRoundIfReady(state) {
       const winnerItem = winnerSlot === 1 ? rpsitem1 : rpsitem2;
       if (rules.item_die && winnerItem === "amp") {
         dmg += 2;
-        entry += ` ⚡ ${winnerName}的增幅符發動,追加 2 點傷害!`;
+        entry += ` ${winnerName}的增幅符發動,追加 2 點傷害!`;
         if (winnerSlot === 1) rpsitem1 = null;
         else rpsitem2 = null;
       }
       if (rules.item_die && loserItem === "shield") {
         shieldBlocked = true;
         dmg = 0;
-        entry += ` 🛡️ ${loserName}的護盾符擋下了這次攻擊,毫髮無傷!`;
+        entry += ` ${loserName}的護盾符擋下了這次攻擊,毫髮無傷!`;
         if (loserSlot === 1) rpsitem1 = null;
         else rpsitem2 = null;
       }
@@ -686,7 +686,7 @@ async function resolveRoundIfReady(state) {
       entry += `${winnerName}拿下這一分!比分 ${games1}:${games2}。`;
       lastEvent = { type: "bo_point", winnerSlot, games1, games2 };
       if (games1 === 2 && games2 === 2) {
-        entry += " 🔥 賽末點!";
+        entry += " 賽末點!";
       }
     }
     log.push(entry);
@@ -760,7 +760,7 @@ async function resolveRoundIfReady(state) {
       games2 = games2 + (gameWinnerSlot === 2 ? 1 : 0);
       const gameNum = state.game || 1;
       const gameWinnerName = gameWinnerSlot === 1 ? p1Name : p2Name;
-      log.push(`🏆 第${gameNum}局結束,${gameWinnerName}拿下這局!系列賽比分 ${games1}:${games2}。`);
+      log.push(`第${gameNum}局結束,${gameWinnerName}拿下這局!系列賽比分 ${games1}:${games2}。`);
 
       const seriesOver = games1 >= 3 || games2 >= 3;
       const seriesEvent = { type: "series_game_over", winnerSlot: gameWinnerSlot, gameNum, games1, games2 };
@@ -774,7 +774,7 @@ async function resolveRoundIfReady(state) {
         const loserId = finalWinnerSlot === 1 ? match.player2_id : match.player1_id;
         await db.advanceAfterMatch(match, winnerId, loserId);
       } else {
-        if (games1 === 2 && games2 === 2) log.push("🔥 賽末點!下一局就會分出整場對戰的勝負。");
+        if (games1 === 2 && games2 === 2) log.push("賽末點!下一局就會分出整場對戰的勝負。");
         // 系列賽還沒結束,血量全部回滿,開下一局(道具/連段/氣勢/雙手符額度也跟著這一局重新開始,
         // 但手勢突變、讀心值統計、逾時代打這些是看整場對戰習慣,所以不用重置)
         const newState = {
@@ -1013,30 +1013,42 @@ function bindControls() {
   };
 }
 
+// 跟 dice.js 共用同一套「基礎規則 + 本場額外開啟的機制」呈現方式,說明文字盡量跟 rules.html 的用詞一致
+const RULE_EXPLAIN = {
+  bomb: "第 3 回合起,每回合約有 15% 機率額外開放隱藏手勢「炸彈」。炸彈 勝 石頭、剪刀;炸彈 敗 布、蜥蜴;炸彈 對 史波克 是特殊平局,雙方不掉血。",
+  field_mod: "開局隨機決定這一局固定生效的特殊效果,3 選 1:磐石戰場(靠石頭獲勝時傷害+1)、手速戰場(究極手勢這局可用2次)、疾風戰場(思考時間縮短到20秒)。",
+  item_die: "每 3 回合雙方各自隨機拿到一個道具,持有到觸發時機才消耗:護盾符(下次落敗免傷)、增幅符(下次獲勝+2傷害)、偵測符(立刻看到對方上一手出了什麼)。開啟「BO制」時,護盾符/增幅符不會發放(靠傷害運作,BO制沒有傷害概念)。",
+  stance: "出招前可以先公開宣告這局「偏攻擊」或「偏防禦」,純粹是情報,不會直接影響傷害,對方看得到但不知道真假;宣告會跟手勢一起在戰報揭曉,唬多了容易被〈讀心值〉或對方肉眼抓到規律。",
+  combo: "系統會記錄你最近用哪個手勢獲勝。連續 3 局都用同一手勢獲勝,額外 +2 傷害,並跳出「連段技發動!」;之後繼續用同一招連勝下去,每一局都會持續拿到加成。要不要賭一把繼續出同一招,風險自負。",
+  mindread: "系統偷偷統計對方整場出招的習慣分布,如果你選中「剋制對方最常出的那招」並獲勝,額外 +1 傷害,並跳出「讀心成功!」。開啟這項規則時,對戰畫面也會顯示對方的即時出招傾向統計,觀眾也看得到同一份統計。",
+  momentum: "連勝 2 局起,下一擊額外 +1 傷害,氣勢會一直維持到輸掉一局為止;連續落敗 2 局後,如果靠獲勝逆轉,那一擊的傷害會直接翻倍(背水一戰)。",
+  mutation: "連續 3 回合都出同一個手勢,下一回合系統會把那個手勢從選項裡鎖住,逼你換一招,防止靠「無腦一直出同一招」硬撐。",
+  bo_mode: "整場對戰拋開 HP 累加機制,改成每回合直接分出這一分的勝負,率先取得 3 分的一方贏得整場;打到 2:2 時觸發「賽末點!」提示。以下基礎規則裡跟 HP / BO5 相關的敘述,本場一律不適用。",
+  dual_hand: "落後的一方整場限用 1 次「雙手符」,可以同時出兩個手勢,只要其中一個贏過對方的招就算贏。觸發資格:HP 制下自己 HP ≤15 才能使用;BO制下自己的局分落後對方才能使用。限用 1 次,是殘局翻盤手段,不會變成必勝招。",
+};
+
 function renderRules() {
   const box = document.getElementById("rule-content");
   const rules = (event && event.rules) || {};
-  let extra = "";
-  if (rules.bomb) extra += `<p><i data-lucide="bomb" class="ico"></i> <b>隱藏第六手勢:炸彈</b> —— 第3回合起約15%機率額外開放,剋制石頭、剪刀;怕布、蜥蜴;對上史波克是平手不掉血。</p>`;
-  if (rules.field_mod) extra += `<p><i data-lucide="tornado" class="ico"></i> <b>場地規則</b> —— 開局隨機決定一項固定效果:石頭傷害加成 / 究極手勢可用2次 / 思考時間縮短到20秒。</p>`;
-  if (rules.item_die) extra += `<p><i data-lucide="gift" class="ico"></i> <b>道具符</b> —— 每3回合雙方各自隨機拿到一個道具:護盾符(下次受擊免傷)、增幅符(下次獲勝+2傷害)、偵測符(看到對方上一手出了什麼)。</p>`;
-  if (rules.stance) extra += `<p><i data-lucide="venetian-mask" class="ico"></i> <b>假動作</b> —— 出招前可以先宣告這局「偏攻擊」或「偏防禦」,純情報不直接影響傷害,唬人或誠實都可以,小心被對方看出規律。</p>`;
-  if (rules.combo) extra += `<p><i data-lucide="zap" class="ico"></i> <b>連段技</b> —— 連續3局用同一手勢獲勝,額外+2傷害;要不要賭一把繼續出同一招,風險自負。</p>`;
-  if (rules.mindread) extra += `<p><i data-lucide="brain" class="ico"></i> <b>讀心值</b> —— 系統偷偷統計對方整場出招習慣,選中對方最常出的那招並獲勝,額外+1傷害,觀眾也看得到同一份統計。</p>`;
-  if (rules.momentum) extra += `<p><i data-lucide="trending-up" class="ico"></i> <b>氣勢系統</b> —— 連勝2局起,下一擊額外+1傷害;連敗2局後靠獲勝逆轉,那一擊傷害直接翻倍。</p>`;
-  if (rules.mutation) extra += `<p><i data-lucide="shuffle" class="ico"></i> <b>手勢突變</b> —— 連續3回合出同一手勢,下一回合系統會把那個手勢鎖住,逼你換一招。</p>`;
-  if (rules.bo_mode) extra += `<p><i data-lucide="list-ordered" class="ico"></i> <b>BO制</b> —— 這場比賽拋開HP累加,每回合直接分出這一分的勝負,先拿到3分的一方獲勝整場,比分打到2:2時會有「賽末點」提示。</p>`;
-  if (rules.dual_hand) extra += `<p><i data-lucide="split" class="ico"></i> <b>雙手出招</b> —— 落後的一方整場可以用1次「雙手符」,同時出兩個手勢,其中一個贏過對方的招就算贏。</p>`;
-
-  box.innerHTML = `
+  let html = `
     <p>採 BO5 賽制:雙方各有 30 點 HP,先讓對方 HP 歸零的人拿下這一局;率先拿下 3 局的人贏得整場對戰(最多打到第 5 局)。每進入新一局,雙方 HP 會全部回滿。</p>
-    <p>每回合 30 秒內選一個手勢:石頭 / 布 / 剪刀 / 蜥蜴 / 史波克。超時未選視為該回合落敗。</p>
-    <p>石頭勝剪刀、蜥蜴;布勝石頭、史波克;剪刀勝布、蜥蜴;蜥蜴勝史波克、布;史波克勝剪刀、石頭。</p>
+    <p>每回合 30 秒內選一個手勢:石頭 / 布 / 剪刀 / 蜥蜴 / 史波克。超時未選視為該回合落敗,雙方都超時則平手不掉血。</p>
+    <p>石頭勝剪刀、蜥蜴;布勝石頭、史波克;剪刀勝布、蜥蜴;蜥蜴勝史波克、布;史波克勝剪刀、石頭。出了相同的手勢就是平手。</p>
     <p>每人每一局都有 1 張「究極手勢」卡:出牌保證獲勝該回合,除非對方同一回合也出究極手勢,此時雙方抵銷、判定平手。</p>
     <p>當你的 HP ≤9 時,獲勝的那一擊傷害會翻倍,適合絕地反擊。系列賽打到 2:2 時會有「賽末點」提示。</p>
-    ${rules.bo_mode ? `<p><i data-lucide="list-ordered" class="ico"></i> 這場活動採用「BO制」進階規則:以上 HP/BO5 相關敘述本場不適用,詳見下方 BO制 說明。</p>` : ""}
-    ${extra || `<p style="color:var(--ink-dim);">本場沒有開啟其他進階規則。</p>`}
+    <p>每一場對決,系統都會依照實際出的手勢組合寫出對應的戰報敘述,不是死板的「X勝過Y」。</p>
   `;
+  const active = Object.keys(rules).filter((k) => rules[k] && RULE_EXPLAIN[k]);
+  if (active.length) {
+    html += `<h4>本場活動額外開啟的機制</h4>`;
+    active.forEach((k) => {
+      const meta = ui.RULE[k];
+      if (meta) {
+        html += `<p><b style="color:var(--ink);">${ui.icon(meta.icon)} ${meta.label}</b><br/>${RULE_EXPLAIN[k]}</p>`;
+      }
+    });
+  }
+  box.innerHTML = html;
 }
 
 function bindRuleModal() {

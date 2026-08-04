@@ -1,4 +1,4 @@
-const GAME_PAGE = { dice: "dice.html", rps5: "rps5.html" };
+const GAME_PAGE = { dice: "dice.html", rps5: "rps5.html", auction: "auction.html" };
 
 // 後台勾選用的進階規則說明(圖示與名稱共用 ui.RULE,這裡只補上說明文字)
 const RULE_ROWS = [
@@ -58,8 +58,12 @@ function renderRps5RuleCheckboxes() {
 renderRps5RuleCheckboxes();
 
 document.getElementById("new-type").onchange = (e) => {
-  document.getElementById("dice-rules-box").style.display = e.target.value === "dice" ? "block" : "none";
-  document.getElementById("rps5-rules-box").style.display = e.target.value === "rps5" ? "block" : "none";
+  const type = e.target.value;
+  document.getElementById("dice-rules-box").style.display = type === "dice" ? "block" : "none";
+  document.getElementById("rps5-rules-box").style.display = type === "rps5" ? "block" : "none";
+  document.getElementById("auction-settings-box").style.display = type === "auction" ? "block" : "none";
+  // 夜市拍賣不是賽程對戰,沒有敗部復活賽這個概念
+  document.getElementById("losers-field").style.display = type === "auction" ? "none" : "block";
 };
 
 // ---------- 獎勵設定區 ----------
@@ -279,7 +283,7 @@ async function renderParticipants(container, ev) {
 }
 
 // ---------- 賽程總覽(含觀戰連結、卡住時可強制判定) ----------
-function matchRowEl(m, ev, onResolved) {
+function matchRowEl(m, ev, onResolved, classByPlayerId) {
   const row = document.createElement("div");
   row.className = "match-row";
   const isLive = m.status === "active";
@@ -287,13 +291,15 @@ function matchRowEl(m, ev, onResolved) {
 
   const n1 = m.p1?.name || (m.status === "done" ? "輪空" : "待定");
   const n2 = m.p2?.name || (m.status === "done" ? "輪空" : "待定");
+  const c1 = classByPlayerId && m.p1?.name ? ui.classTag(classByPlayerId[m.player1_id]) : "";
+  const c2 = classByPlayerId && m.p2?.name ? ui.classTag(classByPlayerId[m.player2_id]) : "";
 
   const top = document.createElement("div");
   top.className = "vs-row";
   top.innerHTML = `
-    <span class="side left">${isLive ? ui.icon("radio", { cls: "live-dot" }) : ""}${ui.esc(n1)}</span>
+    <span class="side left">${isLive ? ui.icon("radio", { cls: "live-dot" }) : ""}${ui.esc(n1)}${c1}</span>
     <span class="vs">vs</span>
-    <span class="side right">${ui.esc(n2)}</span>
+    <span class="side right">${c2}${ui.esc(n2)}</span>
   `;
   row.appendChild(top);
 
@@ -344,6 +350,13 @@ async function renderBracketSummary(container, ev) {
   const matches = await db.listMatches(ev.id);
   if (!matches.length) return;
 
+  const showClass = ev.game_type === "dice" && !!(ev.rules && ev.rules.classes);
+  let classByPlayerId = {};
+  if (showClass) {
+    const parts = await db.listParticipants(ev.id);
+    parts.forEach((p) => (classByPlayerId[p.player_id] = p.class));
+  }
+
   const onResolved = () => renderBracketSummary(container, ev);
   const wb = matches.filter((m) => m.bracket === "winners");
   const lb = matches.filter((m) => m.bracket === "losers");
@@ -364,22 +377,106 @@ async function renderBracketSummary(container, ev) {
     const isFinal = r === totalRounds;
     const label = isFinal ? "決賽" : r === totalRounds - 1 ? "準決賽" : `第${r}輪`;
     addHeader(isFinal ? "trophy" : "swords", label, r >= totalRounds - 1);
-    rows.forEach((m) => container.appendChild(matchRowEl(m, ev, onResolved)));
+    rows.forEach((m) => container.appendChild(matchRowEl(m, ev, onResolved, classByPlayerId)));
   }
   if (lb.length) {
     addHeader("medal", "敗部復活賽");
-    lb.forEach((m) => container.appendChild(matchRowEl(m, ev, onResolved)));
+    lb.forEach((m) => container.appendChild(matchRowEl(m, ev, onResolved, classByPlayerId)));
   }
   if (final) {
     addHeader("trophy", "總冠軍賽", true);
-    container.appendChild(matchRowEl(final, ev, onResolved));
+    container.appendChild(matchRowEl(final, ev, onResolved, classByPlayerId));
   }
+}
+
+// ---------- 夜市拍賣・後台面板 ----------
+function auctionParticipantRow(row, onSaved) {
+  const div = document.createElement("div");
+  div.className = "admin-row";
+  const rank = row.final_rank;
+  if (rank && rank <= 3) div.classList.add("top3");
+
+  const name = document.createElement("div");
+  name.className = "admin-row-name";
+  name.innerHTML = `${ui.rankBadge(rank)}<span class="pname">${ui.esc(row.players.name)}</span><span class="pstate">${ui.tag("coins", row.coins + " 財神幣", "coin-tag")}</span>`;
+
+  const input = document.createElement("input");
+  input.placeholder = "輸入獎勵,例如:夜市之王的金色炸雞桶";
+  input.value = row.reward || "";
+  input.style.fontSize = "13px";
+
+  const actions = document.createElement("div");
+  actions.className = "admin-row-actions";
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "btn small";
+  saveBtn.innerHTML = ui.icon("gift") + "儲存";
+  saveBtn.onclick = async () => {
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = ui.icon("loader-circle") + "儲存中";
+    await db.setAuctionReward(row.id, input.value.trim());
+    saveBtn.innerHTML = ui.icon("circle-check") + "已儲存";
+    setTimeout(() => {
+      saveBtn.innerHTML = ui.icon("gift") + "儲存";
+      saveBtn.disabled = false;
+    }, 1200);
+  };
+  actions.appendChild(saveBtn);
+
+  div.appendChild(name);
+  div.appendChild(input);
+  div.appendChild(actions);
+  return div;
+}
+
+async function renderAuctionAdminPanel(container, ev) {
+  container.innerHTML = "";
+  let lots = [];
+  let standings = [];
+  try {
+    [lots, standings] = await Promise.all([db.listAuctionLots(ev.id), db.computeAuctionStandings(ev.id)]);
+  } catch (e) {
+    container.innerHTML = `<div class="empty">${ui.icon("triangle-alert")}拍賣資料讀取失敗,請確認 supabase-schema.sql 是否已執行最新版</div>`;
+    return;
+  }
+
+  if (lots.length) {
+    const done = lots.filter((l) => l.status === "done").length;
+    const liveLot = lots.find((l) => l.status === "live");
+    const summary = document.createElement("div");
+    summary.className = "section-note";
+    summary.style.marginBottom = "14px";
+    summary.innerHTML = liveLot
+      ? `${ui.icon("gavel")}目前拍賣中:${ui.esc(liveLot.item_name)}(${done}/${lots.length} 件已結標)`
+      : `${ui.icon("list-checks")}已結標 ${done}/${lots.length} 件`;
+    container.appendChild(summary);
+  }
+
+  const title = document.createElement("div");
+  title.className = "section-title";
+  title.innerHTML = ui.icon("users") + "參加者(依目前積分排序)";
+  container.appendChild(title);
+
+  if (!standings.length) {
+    container.innerHTML += `<div class="empty">${ui.icon("users")}還沒有人報名</div>`;
+    return;
+  }
+  const onSaved = () => renderAuctionAdminPanel(container, ev);
+  standings.forEach((row) => container.appendChild(auctionParticipantRow(row.participant, onSaved)));
 }
 
 function eventAdminCard(ev) {
   const card = document.createElement("div");
   card.className = "card";
   const isClosed = ev.status === "closed";
+  const isAuction = ev.game_type === "auction";
+
+  const primaryActionBtn = isAuction
+    ? !ev.locked && !isClosed
+      ? `<button class="btn small" data-action="start-auction">${ui.icon("gavel")}開始拍賣</button>`
+      : ""
+    : !ev.locked && !isClosed
+    ? `<button class="btn small" data-action="lock">${ui.icon("lock")}鎖定名單,產生賽程</button>`
+    : "";
 
   card.innerHTML = `
     <div class="event-card" style="margin-bottom:14px;">
@@ -394,7 +491,8 @@ function eventAdminCard(ev) {
         </div>
       </div>
       <div class="action-row">
-        ${!ev.locked && !isClosed ? `<button class="btn small" data-action="lock">${ui.icon("lock")}鎖定名單,產生賽程</button>` : ""}
+        ${primaryActionBtn}
+        ${ev.locked && !isClosed ? `<a class="btn ghost small" href="${GAME_PAGE[ev.game_type]}?event=${ev.id}" target="_blank">${ui.icon("eye")}前往頁面</a>` : ""}
         ${!isClosed ? `<button class="btn ghost small" data-action="close">${ui.icon("flag")}結束活動</button>` : ""}
         <button class="btn ghost small outline-danger" data-action="delete">${ui.icon("trash-2")}刪除活動</button>
       </div>
@@ -406,13 +504,23 @@ function eventAdminCard(ev) {
   const closeBtn = card.querySelector('[data-action="close"]');
   if (closeBtn) {
     closeBtn.onclick = async () => {
-      const ok = await ui.confirm(`確定要結束「${ev.name}」嗎?結束後就不能再進行對戰了。`, {
+      const ok = await ui.confirm(`確定要結束「${ev.name}」嗎?結束後就不能再進行${isAuction ? "拍賣" : "對戰"}了。`, {
         title: "結束活動",
         confirmText: "結束活動",
       });
       if (!ok) return;
-      await db.setEventStatus(ev.id, "closed");
-      loadAll();
+      closeBtn.disabled = true;
+      try {
+        if (isAuction) {
+          await db.closeAuctionEvent(ev.id); // 順便結算名次、套用獎勵設定
+        } else {
+          await db.setEventStatus(ev.id, "closed");
+        }
+        loadAll();
+      } catch (e) {
+        await ui.alert(e.message || "結束活動失敗", { title: "操作失敗", tone: "danger" });
+        closeBtn.disabled = false;
+      }
     };
   }
   const lockBtn = card.querySelector('[data-action="lock"]');
@@ -436,9 +544,32 @@ function eventAdminCard(ev) {
       }
     };
   }
+  const startAuctionBtn = card.querySelector('[data-action="start-auction"]');
+  if (startAuctionBtn) {
+    startAuctionBtn.onclick = async () => {
+      const ok = await ui.confirm(
+        "確定要開始拍賣嗎?開始後就不能再讓新玩家用完整預算加入,系統會立刻依設定自動排好整場商品排程並開拍第一波。",
+        { title: "開始拍賣", confirmText: "開始拍賣" }
+      );
+      if (!ok) return;
+      startAuctionBtn.disabled = true;
+      startAuctionBtn.innerHTML = ui.icon("loader-circle") + "排程產生中...";
+      try {
+        const itemsPerWave = (ev.rules && ev.rules.itemsPerWave) || AUCTION_DEFAULT_ITEMS_PER_WAVE;
+        const waveIntervalSec = (ev.rules && ev.rules.waveIntervalSec) || AUCTION_DEFAULT_WAVE_INTERVAL_SEC;
+        const waves = buildAuctionWaves(itemsPerWave);
+        await db.startAuction(ev.id, { waveIntervalSec, waves });
+        loadAll();
+      } catch (e) {
+        await ui.alert(e.message || "開始拍賣失敗", { title: "開始拍賣失敗", tone: "danger" });
+        startAuctionBtn.disabled = false;
+        startAuctionBtn.innerHTML = ui.icon("gavel") + "開始拍賣";
+      }
+    };
+  }
   card.querySelector('[data-action="delete"]').onclick = async () => {
     const ok = await ui.confirm(
-      `確定要刪除「${ev.name}」嗎?這個動作無法復原,所有報名與對戰紀錄都會一起刪除。`,
+      `確定要刪除「${ev.name}」嗎?這個動作無法復原,所有報名與${isAuction ? "拍賣" : "對戰"}紀錄都會一起刪除。`,
       { title: "刪除活動", confirmText: "永久刪除", tone: "danger" }
     );
     if (!ok) return;
@@ -446,8 +577,12 @@ function eventAdminCard(ev) {
     loadAll();
   };
 
-  renderBracketSummary(card.querySelector(".bracket-summary"), ev);
-  renderParticipants(card.querySelector(".participants"), ev);
+  if (isAuction) {
+    renderAuctionAdminPanel(card.querySelector(".participants"), ev);
+  } else {
+    renderBracketSummary(card.querySelector(".bracket-summary"), ev);
+    renderParticipants(card.querySelector(".participants"), ev);
+  }
   return card;
 }
 
@@ -503,6 +638,11 @@ document.getElementById("create-btn").onclick = async () => {
       if (box.checked) rules[box.dataset.rule] = true;
     });
   }
+  if (type === "auction") {
+    rules.startingBudget = Math.max(1, parseInt(document.getElementById("auction-budget").value) || AUCTION_DEFAULT_BUDGET);
+    rules.waveIntervalSec = Math.max(10, parseInt(document.getElementById("auction-wave-interval").value) || AUCTION_DEFAULT_WAVE_INTERVAL_SEC);
+    rules.itemsPerWave = Math.max(1, Math.min(3, parseInt(document.getElementById("auction-items-per-wave").value) || AUCTION_DEFAULT_ITEMS_PER_WAVE));
+  }
   if (!name) {
     await ui.alert("請先幫這場活動取一個名稱。", { title: "還缺活動名稱" });
     document.getElementById("new-name").focus();
@@ -524,6 +664,9 @@ document.getElementById("create-btn").onclick = async () => {
     document.getElementById("new-name").value = "";
     document.getElementById("new-deadline").value = "";
     document.getElementById("new-losers").checked = false;
+    document.getElementById("auction-budget").value = AUCTION_DEFAULT_BUDGET;
+    document.getElementById("auction-wave-interval").value = AUCTION_DEFAULT_WAVE_INTERVAL_SEC;
+    document.getElementById("auction-items-per-wave").value = AUCTION_DEFAULT_ITEMS_PER_WAVE;
     resetAutoRewardRows();
     document.querySelectorAll("#dice-rules-list .rule-box, #rps5-rules-list .rule-box").forEach((b) => (b.checked = false));
     renderManualRewardInputs();
@@ -560,7 +703,7 @@ document.getElementById("create-btn").onclick = async () => {
     try {
       const events = await db.listEvents();
       for (const ev of events) {
-        if (ev.locked && ev.status !== "closed") {
+        if (ev.locked && ev.status !== "closed" && ev.game_type !== "auction") {
           await db.activateNextMatch(ev.id);
           await db.watchdogActiveMatch(ev.id);
         }

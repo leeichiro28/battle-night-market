@@ -539,14 +539,15 @@ create table if not exists auction_participants (
   unique(event_id, player_id)
 );
 alter table auction_participants add column if not exists lucky_ready_at timestamptz not null default now(); -- 幸運攤位下注的冷卻到期時間
+alter table auction_participants add column if not exists effects jsonb not null default '{}'; -- 特殊券效果庫存,例如 {"intel":1,"priority":0,"refund":2,"boxDouble":1,"freeCommon":0,"intelActive":true}
 
 create table if not exists auction_lots (
   id uuid primary key default gen_random_uuid(),
   event_id uuid references events(id) on delete cascade,
   wave_number int not null default 1,
   item_name text not null,
-  item_tier text not null, -- common | rare | epic | legendary
-  points int not null default 0,          -- 得標可以拿到的分數
+  item_tier text not null, -- common | rare | epic | legendary | special | mystery | bundle
+  points int not null default 0,          -- 得標可以拿到的分數(特殊券固定是 0,不計分)
   base_price int not null default 0,      -- 起標價
   min_increment int not null default 10,  -- 最小加價單位
   current_price int not null default 0,   -- 目前最高價(還沒開拍時等於 base_price)
@@ -557,6 +558,13 @@ create table if not exists auction_lots (
   settled boolean not null default false, -- 是否已經把得標結果算進得標者的分數(避免重複結算)
   created_at timestamptz default now()
 );
+alter table auction_lots add column if not exists special_key text;              -- 特殊券效果代號(intel/priority/refund/boxDouble/freeCommon),一般商品是 null
+alter table auction_lots add column if not exists refunded boolean not null default false; -- 是否已經用退款保證券退貨過
+alter table auction_lots add column if not exists priority_holder_id uuid references players(id); -- 插隊優先權預約在這一波的人
+alter table auction_lots add column if not exists priority_until timestamptz;    -- 插隊優先權的專屬出價時間到什麼時候
+alter table auction_lots add column if not exists box_reveal_name text;         -- 福袋箱開出的獎項名稱(結標才會有值)
+alter table auction_lots add column if not exists box_reveal_tier text;         -- 福袋箱開出的獎項等級(common/rare/epic/legendary/bust)
+alter table auction_lots add column if not exists box_doubled boolean not null default false; -- 是否套用了福袋箱翻倍券
 
 create table if not exists auction_bids (
   id uuid primary key default gen_random_uuid(),

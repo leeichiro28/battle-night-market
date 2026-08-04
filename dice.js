@@ -462,6 +462,10 @@ async function resolveRoundIfReady(state) {
       const suddenDeath = rules.sudden_death && state.hp1 <= SUDDEN_DEATH_HP && state.hp2 <= SUDDEN_DEATH_HP;
       if (suddenDeath) dmg *= 2;
 
+      // 法師大招用:記下防禦骰/金鐘罩擋下來「之前」的原始傷害,反射永遠照這個算,
+      // 不管這局實際上有沒有被防禦骰擋下(以前只有在傷害真的打進來才會反彈,導致同時按防禦+大招時反射直接失效)。
+      const dmgBeforeBlock = dmg;
+
       let guardianUltBlocked = false;
       if (rules.classes && loserUltThis && loserClass === "guardian") {
         guardianUltBlocked = true;
@@ -502,14 +506,16 @@ async function resolveRoundIfReady(state) {
           else hp2 = Math.min(MAX_HP, hp2 + 1);
           entry += `${winnerName}嗜血戰場回血1點。`;
         }
-        // 法師大招:法術反射,這局如果自己受到傷害,反彈50%給對方
-        if (rules.classes && loserUltThis && loserClass === "mage" && dmg > 0) {
-          const reflectDmg = Math.floor(dmg / 2);
-          if (reflectDmg > 0) {
-            if (winnerSlot === 1) hp1 = Math.max(0, hp1 - reflectDmg);
-            else hp2 = Math.max(0, hp2 - reflectDmg);
-            entry += `${loserName}使出大招「法術反射」,反彈 ${reflectDmg} 點傷害給${winnerName}!`;
-          }
+      }
+
+      // 法師大招:法術反射,不看這局傷害有沒有被防禦骰/金鐘罩擋下,一律照對方原本要打出的傷害 100% 反彈回去,
+      // 這樣防禦骰(擋自己)跟反射(彈對方)可以同時生效,大招才不會因為剛好防到就直接白開。
+      if (rules.classes && loserUltThis && loserClass === "mage" && dmgBeforeBlock > 0) {
+        const reflectDmg = dmgBeforeBlock;
+        if (reflectDmg > 0) {
+          if (winnerSlot === 1) hp1 = Math.max(0, hp1 - reflectDmg);
+          else hp2 = Math.max(0, hp2 - reflectDmg);
+          entry += `${loserName}使出大招「法術反射」,反彈 ${reflectDmg} 點傷害給${winnerName}!`;
         }
       }
 
@@ -558,14 +564,14 @@ async function resolveRoundIfReady(state) {
     if (m1.gamble) gamble1++;
     if (m2.gamble) gamble2++;
 
-    // 賭徒被動風險:雙骰豪賭不限次數,但每次都有 25% 機率「凸槌」自傷1點
-    if (rules.classes && rules.dice_gamble && m1.gamble && class1 === "gambler" && Math.random() < 0.25) {
-      hp1 -= 1;
-      entry += `${p1Name}雙骰豪賭凸槌,自傷 1 點!`;
+    // 賭徒被動風險:雙骰豪賭不限次數,但每次都有 35% 機率「凸槌」自傷2點(原本 25%/1點回饋太低,玩家覺得賭徒幾乎沒下檔風險)
+    if (rules.classes && rules.dice_gamble && m1.gamble && class1 === "gambler" && Math.random() < 0.35) {
+      hp1 = Math.max(0, hp1 - 2);
+      entry += `${p1Name}雙骰豪賭凸槌,自傷 2 點!`;
     }
-    if (rules.classes && rules.dice_gamble && m2.gamble && class2 === "gambler" && Math.random() < 0.25) {
-      hp2 -= 1;
-      entry += `${p2Name}雙骰豪賭凸槌,自傷 1 點!`;
+    if (rules.classes && rules.dice_gamble && m2.gamble && class2 === "gambler" && Math.random() < 0.35) {
+      hp2 = Math.max(0, hp2 - 2);
+      entry += `${p2Name}雙骰豪賭凸槌,自傷 2 點!`;
     }
 
     log.push(entry);
