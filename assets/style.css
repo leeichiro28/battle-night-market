@@ -856,10 +856,14 @@ label{
 .big-announce{
   text-align:center;
   font-family:'Archivo Black','PingFang TC','Noto Sans TC',sans-serif;
-  font-size:clamp(18px,5vw,26px);
+  /* 現在會顯示完整回合戰報(誰出了什麼、發生了什麼)，字數比之前的短句多很多，
+     字級縮小一點、加大行高，長文字才不會擠成一團或爆版 */
+  font-size:clamp(14px,3.6vw,19px);
+  line-height:1.5;
   color:var(--gold);
   min-height:36px;
   margin:6px 0 4px;
+  padding:0 6px;
   text-shadow:0 0 18px rgba(242,183,5,.35);
   opacity:0;
   transform:translateY(4px);
@@ -1319,7 +1323,7 @@ body.dialog-open{overflow:hidden;}
   min-height:20px;
 }
 .fighter .cicon .ico{width:15px;height:15px;}
-.big-announce{display:flex;align-items:center;justify-content:center;gap:8px;}
+.big-announce{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;}
 .big-announce .ico{width:1em;height:1em;}
 .reaction-bar .btn{padding:8px 12px;}
 .reaction-bar .ico{width:18px;height:18px;}
@@ -1484,6 +1488,17 @@ input,select,textarea{max-width:100%;min-width:0;}
 @keyframes live-pulse-dot{
   0%,100%{opacity:1;}
   50%{opacity:.3;}
+}
+
+/* 開拍前預告卡(可以先猜價/邀合夥人，跟正式開拍中的 .auction-live 卡片區分開來，用比較沉靜的顏色) */
+.auction-prebid{border-color:rgba(95,194,222,.35);background:rgba(95,194,222,.05);}
+.auction-prebid .live-tag{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:12px;color:#5FC2DE;font-weight:700;margin-bottom:12px;
+}
+.auction-prebid .live-tag .dot{
+  width:8px;height:8px;border-radius:50%;background:#5FC2DE;
+  animation:live-pulse-dot 1s ease-in-out infinite;
 }
 
 .lot-stage{
@@ -1717,6 +1732,25 @@ input,select,textarea{max-width:100%;min-width:0;}
 }
 .bag-empty{text-align:center;color:var(--ink-dim);padding:24px 10px;font-size:13px;}
 .bag-item-row .bag-refund-btn{padding:6px 10px;font-size:12px;}
+
+/* 拍賣・組合系列加成(湊齊指定的幾件單品拿額外分數) */
+.series-list{display:flex;flex-direction:column;gap:8px;margin-bottom:10px;}
+.series-row{
+  border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--panel2);
+}
+.series-row.complete{border-color:rgba(242,183,5,.5);background:rgba(242,183,5,.08);}
+.series-head{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;flex-wrap:wrap;
+}
+.series-bonus{font-size:11.5px;color:var(--gold-d);font-weight:700;display:inline-flex;align-items:center;gap:3px;}
+.series-bonus .ico{width:12px;height:12px;}
+.series-bonus.dim{color:var(--ink-dim);font-weight:400;}
+.series-items{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;}
+.series-item{
+  font-size:11px;padding:3px 7px;border-radius:999px;
+  background:var(--line);color:var(--ink-dim);white-space:nowrap;overflow-wrap:anywhere;
+}
+.series-item.got{background:rgba(242,183,5,.18);color:var(--gold-d);font-weight:700;}
 
 /* 拍賣進行中面板:如果這件是特殊券，邊框改成紅色系跟一般商品區隔 */
 .auction-live.special{border-color:var(--red);}

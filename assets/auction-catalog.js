@@ -1,6 +1,8 @@
 // 夜市拍賣・商品清單與排程規則
 // 這份清單目前是固定的(來自企劃書)，之後想讓主辦人自訂商品清單再擴充成後台可編輯。
-// 每個商品是 [名稱， 底價財神幣]。分數 = 底價 / 10(四捨五入，最少 5 分)，越稀有底價越高、分數也越高。
+// 分數規則(2026/08 調整):改成「得標當下實際成交價」現算分數，不是開拍前用底價就寫死，
+// 這樣搶標搶得越貴、分數也跟著漲，不會出現「越競爭越虧」的狀況。auctionPointsForPrice()
+// 在商品預告清單用底價估一個「最低可能分數」，finalizeAuctionLot() 結標時會用實際成交價重算一次。
 const AUCTION_CATALOG = {
   common: {
     label: "普通",
@@ -40,6 +42,21 @@ const AUCTION_CATALOG = {
   },
 };
 
+// 舊制:分數只跟開拍前的底價有關，得標當下不管實際成交價多少都用這個數字，是拍賣分數
+// 不合理的根源(搶標搶得越貴、CP值越差)。新制改成用「實際成交價」(finalPrice)算分數，
+// 底價只在商品預告清單拿來估一個最低分數用。比例從 0.1(底價/10) 調高到 0.35，並把
+// AUCTION_COIN_TO_SCORE 從 0.5 降到 0.25——這樣「用底價得標」的分數(價格*0.35)已經比
+// 「同樣的幣留著不花」(價格*0.25)更划算，越競爭搶到熱門商品，分數也跟著等比例往上漲，
+// 不會再出現「標到就虧」的狀況。
+// 品級加乘(2026/08新增):稀有度越高，同樣一塊錢換到的分數再多一點點，讓「拚傳說級」
+// 比「同樣的錢拆成好幾件普通級」更有成就感，不是只有絕對分數高(本來價格就比較貴)。
+const AUCTION_ITEM_SCORE_RATIO = 0.35;
+const AUCTION_TIER_SCORE_MULTIPLIER = { common: 1, rare: 1.05, epic: 1.15, legendary: 1.3 };
+function auctionPointsForPrice(price, tier) {
+  const mult = AUCTION_TIER_SCORE_MULTIPLIER[tier] || 1;
+  return Math.max(5, Math.round(price * AUCTION_ITEM_SCORE_RATIO * mult));
+}
+
 // 福袋箱:神秘箱，得標後才知道裡面是什麼，可能超值也可能是雷。
 // 拍賣中顯示固定底價，實際分數是結標時用機率表現場開出來的，寫回這件商品的 points 欄位。
 const AUCTION_MYSTERY_BOXES = [
@@ -50,31 +67,95 @@ const AUCTION_MYSTERY_BOXES = [
 ];
 const AUCTION_MYSTERY_MIN_INCREMENT = 30;
 // weight 決定機率(總和不用是100，函式會自己算比例)，points 是開出這個等級可以拿到的分數。
+// names:開出這個等級時，實際顯示的具體獎品名稱池(隨機抽一個)，取代原本只顯示「XX等級獎項」
+// 這種看不出開了什麼的籠統文字。
 const AUCTION_BOX_OUTCOMES = [
-  { tier: "bust", name: "只有一張參加感謝小卡(雷)", weight: 10, points: 5 },
-  { tier: "common", name: "普通等級獎項", weight: 40, points: 15 },
-  { tier: "rare", name: "稀有等級獎項", weight: 30, points: 40 },
-  { tier: "epic", name: "史詩等級獎項", weight: 15, points: 75 },
-  { tier: "legendary", name: "傳說等級大獎！", weight: 5, points: 150 },
+  { tier: "bust", name: "只有一張參加感謝小卡(雷)", weight: 10, points: 5, names: ["只有一張參加感謝小卡(雷)"] },
+  {
+    tier: "common",
+    name: "普通等級獎項",
+    weight: 40,
+    points: 15,
+    names: ["彈珠汽水任選一瓶", "套圈圈紀念小熊", "抓娃娃機兩次券", "棉花糖一份"],
+  },
+  {
+    tier: "rare",
+    name: "稀有等級獎項",
+    weight: 30,
+    points: 40,
+    names: ["麻辣鴨血中份兌換券", "珍珠奶茶微糖兌換券", "限量版套圈神器", "士林大香腸一支兌換券"],
+  },
+  {
+    tier: "epic",
+    name: "史詩等級獎項",
+    weight: 15,
+    points: 75,
+    names: ["黃金脆皮雞排兌換券", "蚵仔煎主廚特製版兌換券", "夜市街頭傳說涼麵秘技"],
+  },
+  {
+    tier: "legendary",
+    name: "傳說等級大獎！",
+    weight: 5,
+    points: 150,
+    names: ["夜市之王的金色炸雞桶", "整條夜市免費吃三攤兌換券", "鎮攤之寶・招財貓神像"],
+  },
 ];
 
 function auctionRollMysteryBoxOutcome() {
   const total = AUCTION_BOX_OUTCOMES.reduce((s, o) => s + o.weight, 0);
   let r = Math.random() * total;
   for (const o of AUCTION_BOX_OUTCOMES) {
-    if (r < o.weight) return o;
+    if (r < o.weight) {
+      const pool = o.names && o.names.length ? o.names : [o.name];
+      const revealName = pool[Math.floor(Math.random() * pool.length)];
+      return { ...o, revealName };
+    }
     r -= o.weight;
   }
-  return AUCTION_BOX_OUTCOMES[0];
+  const fallback = AUCTION_BOX_OUTCOMES[0];
+  return { ...fallback, revealName: fallback.names[0] };
 }
 
 // 組合包:一次多件小東西綁在一起賣，適合想快速湊分的人。分數比同價位單品略高一點，當作組合優惠。
+// 分數一樣改成用成交價現算(見 auctionPointsForBundlePrice)，這裡的 basePrice 只用來排底價/預告清單。
 const AUCTION_BUNDLE_ITEMS = [
-  { name: "夜市小物組合包(彈珠汽水+套圈圈安慰獎小熊+抓娃娃機三次券)", basePrice: 220, points: 30 },
-  { name: "銅板美食組合包(蔥抓餅加蛋券+木瓜牛奶特調券+剉冰配料加倍券)", basePrice: 260, points: 35 },
-  { name: "遊戲戰利品組合包(彈珠台紀念幣+撈金魚戰利品袋+糖葫蘆一串)", basePrice: 200, points: 28 },
+  { name: "夜市小物組合包(彈珠汽水+套圈圈安慰獎小熊+抓娃娃機三次券)", basePrice: 220 },
+  { name: "銅板美食組合包(蔥抓餅加蛋券+木瓜牛奶特調券+剉冰配料加倍券)", basePrice: 260 },
+  { name: "遊戲戰利品組合包(彈珠台紀念幣+撈金魚戰利品袋+糖葫蘆一串)", basePrice: 200 },
+  { name: "消暑冰品組合包(剉冰配料加倍券+木瓜牛奶特調券+燒仙草加料吃到爽券)", basePrice: 240 },
+  { name: "熱血遊戲控組合包(彈珠台紀念幣+套圈圈安慰獎小熊+抓娃娃機三次券+糖葫蘆一串)", basePrice: 380 },
+  { name: "重口味鹹食組合包(蔥抓餅加蛋券+士林大香腸雙倍肉券+割包三兄弟套餐券)", basePrice: 520 },
+  { name: "傳說夜市饗宴組合包(黃金脆皮雞排一世情緣券+蚵仔煎主廚特製版+棺材板隱藏內餡兌換券)", basePrice: 950 },
 ];
 const AUCTION_BUNDLE_MIN_INCREMENT = 20;
+const AUCTION_BUNDLE_BONUS = 1.25; // 組合包分數比照一般商品公式再加成，維持「組合優惠」的味道
+function auctionPointsForBundlePrice(price) {
+  return Math.max(5, Math.round(price * AUCTION_ITEM_SCORE_RATIO * AUCTION_BUNDLE_BONUS));
+}
+
+// 組合系列加成:湊齊一組指定的單品(横跨不同分級，故意讓玩家不能只顧著搶同一級距)，
+// 結算時額外加一筆固定獎勵分數，跟「這幾件單品各自的得標分數」是分開疊加、不互相取代。
+// 這跟上面的「組合包」是兩回事:組合包是單一件商品直接打包賣，這裡是要分開標到好幾件單品湊成一組。
+const AUCTION_ITEM_SERIES = [
+  { key: "midnight_snack", name: "宵夜控套餐", items: ["蔥抓餅加蛋券", "大腸包小腸豪華加料券", "割包三兄弟套餐券"], bonus: 150 },
+  { key: "sweet_tooth", name: "甜點控套餐", items: ["糖葫蘆一串", "胡椒餅剛出爐搶先取件權", "花枝羹古早味秘傳版"], bonus: 150 },
+  { key: "night_market_legend", name: "傳奇夜市迷", items: ["老闆珍藏麻辣配方", "夜市街頭傳說涼麵秘技", "老闆親筆簽名招牌"], bonus: 200 },
+];
+// ownedNames:某玩家目前所有得標商品(還沒退貨的)的 item_name 陣列。
+// 回傳 { total, completed }:completed 是湊齊的系列清單(給UI顯示用)，total 是加總獎勵分數。
+function auctionSeriesBonusForNames(ownedNames) {
+  const ownedSet = new Set(ownedNames || []);
+  const completed = AUCTION_ITEM_SERIES.filter((series) => series.items.every((n) => ownedSet.has(n)));
+  const total = completed.reduce((s, series) => s + series.bonus, 0);
+  return { total, completed };
+}
+// 給UI顯示「還差哪些」用:某個系列裡，這個玩家已經有的/還缺的品項名稱。
+function auctionSeriesProgress(series, ownedNames) {
+  const ownedSet = new Set(ownedNames || []);
+  const have = series.items.filter((n) => ownedSet.has(n));
+  const missing = series.items.filter((n) => !ownedSet.has(n));
+  return { have, missing, complete: missing.length === 0 };
+}
 
 // 特殊券:不算稀有度分數，而是給一個能影響拍賣本身的功能。固定價位、整場限量供應(各一張)。
 // key 對應 db.js 結標時要加進 auction_participants.effects 的欄位名稱。
@@ -111,15 +192,13 @@ const AUCTION_ANTI_SNIPE_EXTEND_SEC = 15; // 觸發後重新計時到剩幾秒
 const AUCTION_WORK_COOLDOWN_SEC = 75; // 打工按鈕冷卻秒數
 const AUCTION_WORK_MIN = 20; // 打工最少拿到
 const AUCTION_WORK_MAX = 60; // 打工最多拿到
-const AUCTION_COIN_TO_SCORE = 0.5; // 剩餘財神幣折算分數的比例
+const AUCTION_COIN_TO_SCORE = 0.25; // 剩餘財神幣折算分數的比例(調低，避免「留著不花」比「參與競標」還划算)
 const AUCTION_DEFAULT_BUDGET = 1000;
 const AUCTION_DEFAULT_WAVE_INTERVAL_SEC = 90;
 const AUCTION_DEFAULT_ITEMS_PER_WAVE = 1;
 const AUCTION_PARTICIPATION_REFUND_MULT = 2; // 參與退補:出過價沒標到的人，退還「min_increment * 這個倍率」當參與獎勵
 
-function auctionPointsForPrice(basePrice) {
-  return Math.max(5, Math.round(basePrice / 10));
-}
+const AUCTION_DEFAULT_ITEM_LIMIT = 28; // 本場商品上限(不含特殊券，特殊券固定全出)，用來控制活動總時長
 
 function auctionShuffle(arr) {
   const a = arr.slice();
@@ -130,19 +209,93 @@ function auctionShuffle(arr) {
   return a;
 }
 
-// 產生整場拍賣的商品排程:先普通、中段稀有/史詩交錯、尾聲壓軸傳說，
-// 組合包穿插在普通附近、福袋箱穿插在中段、特殊券穿插在中後段。
-// 做法是每件商品依級距給一個基準權重，加一點隨機抖動讓相鄰級距互相穿插，
+// 依商品上限，從各分級/組合包/福袋箱池子「按池子大小比例」抽出一批商品，不是整包出清。
+// groups:[{ key, pool }]，pool.length 當作這組的權重。回傳 { key: 抽幾件 }。
+// 規則:budget 夠的話每組至少抽到1件(不會出現某個分級整場都抽不到)，剩下名額按比例分配，
+// 無條件捨去後有剩的名額，依小數部分大到小、還有名額的組別依序補1件湊滿。
+function auctionPickProportional(groups, budget) {
+  const nonEmpty = groups.filter((g) => g.pool.length > 0);
+  if (!nonEmpty.length || budget <= 0) return {};
+  const totalPoolSize = nonEmpty.reduce((s, g) => s + g.pool.length, 0);
+  const cappedBudget = Math.min(budget, totalPoolSize);
+  const picks = {};
+  const cap = {};
+  nonEmpty.forEach((g) => {
+    picks[g.key] = 0;
+    cap[g.key] = g.pool.length;
+  });
+  let remaining = cappedBudget;
+  auctionShuffle(nonEmpty).forEach((g) => {
+    if (remaining > 0 && picks[g.key] < cap[g.key]) {
+      picks[g.key] += 1;
+      remaining -= 1;
+    }
+  });
+  let guard = 0;
+  while (remaining > 0 && guard < 50) {
+    guard++;
+    const totalPool = nonEmpty.reduce((s, g) => s + g.pool.length, 0);
+    const capacity = nonEmpty.filter((g) => picks[g.key] < cap[g.key]);
+    if (!capacity.length) break;
+    const shares = capacity.map((g) => {
+      const raw = (remaining * g.pool.length) / totalPool;
+      return { key: g.key, base: Math.min(Math.floor(raw), cap[g.key] - picks[g.key]), frac: raw - Math.floor(raw) };
+    });
+    let addedAny = false;
+    shares.forEach((s) => {
+      if (s.base > 0) {
+        picks[s.key] += s.base;
+        remaining -= s.base;
+        addedAny = true;
+      }
+    });
+    if (remaining > 0) {
+      shares.sort((a, b) => b.frac - a.frac);
+      for (const s of shares) {
+        if (remaining <= 0) break;
+        if (picks[s.key] < cap[s.key]) {
+          picks[s.key] += 1;
+          remaining -= 1;
+          addedAny = true;
+        }
+      }
+    }
+    if (!addedAny) break;
+  }
+  return picks;
+}
+
+// 產生整場拍賣的商品排程:先按商品上限「按比例」從各分級/組合包/福袋箱池子抽出這場實際會出現的商品，
+// 再排序成先普通、中段稀有/史詩交錯、尾聲壓軸傳說，組合包穿插在普通附近、福袋箱穿插在中段、
+// 特殊券穿插在中後段。做法是每件商品依級距給一個基準權重，加一點隨機抖動讓相鄰級距互相穿插，
 // 再依權重排序，不是死板地一級距拍完才拍下一個級距。
-function buildAuctionItemSequence() {
+// limit:本場商品上限(不含特殊券)，不傳或傳 0/負數就是沿用舊行為、全部商品都上場。
+function buildAuctionItemSequence(limit) {
+  const groups = [
+    { key: "common", tier: "common", pool: auctionShuffle(AUCTION_CATALOG.common.items) },
+    { key: "rare", tier: "rare", pool: auctionShuffle(AUCTION_CATALOG.rare.items) },
+    { key: "epic", tier: "epic", pool: auctionShuffle(AUCTION_CATALOG.epic.items) },
+    { key: "legendary", tier: "legendary", pool: auctionShuffle(AUCTION_CATALOG.legendary.items) },
+    { key: "bundle", tier: "bundle", pool: auctionShuffle(AUCTION_BUNDLE_ITEMS) },
+    { key: "mystery", tier: "mystery", pool: auctionShuffle(AUCTION_MYSTERY_BOXES) },
+  ];
+  const hasLimit = typeof limit === "number" && limit > 0;
+  let picks = null;
+  if (hasLimit) {
+    const budget = Math.max(0, limit - AUCTION_SPECIAL_ITEMS.length);
+    picks = auctionPickProportional(groups, budget);
+  }
+  const pickedPool = (g) => (picks ? g.pool.slice(0, picks[g.key] || 0) : g.pool);
+
   const pool = [];
   AUCTION_TIER_ORDER.forEach((tier) => {
-    auctionShuffle(AUCTION_CATALOG[tier].items).forEach(([name, basePrice]) => {
+    const g = groups.find((gg) => gg.tier === tier);
+    pickedPool(g).forEach(([name, basePrice]) => {
       pool.push({
         itemName: name,
         itemTier: tier,
         basePrice,
-        points: auctionPointsForPrice(basePrice),
+        points: auctionPointsForPrice(basePrice, tier),
         minIncrement: AUCTION_MIN_INCREMENT[tier],
         specialKey: null,
         isSurprise: false,
@@ -159,19 +312,19 @@ function buildAuctionItemSequence() {
       surpriseCount++;
     }
   });
-  auctionShuffle(AUCTION_BUNDLE_ITEMS).forEach((b) => {
+  pickedPool(groups.find((g) => g.key === "bundle")).forEach((b) => {
     pool.push({
       itemName: b.name,
       itemTier: "bundle",
       basePrice: b.basePrice,
-      points: b.points,
+      points: auctionPointsForBundlePrice(b.basePrice),
       minIncrement: AUCTION_MIN_INCREMENT.bundle,
       specialKey: null,
       isSurprise: false,
       sortKey: AUCTION_TIER_WEIGHT.bundle + Math.random() * 1.6,
     });
   });
-  auctionShuffle(AUCTION_MYSTERY_BOXES).forEach(([name, basePrice]) => {
+  pickedPool(groups.find((g) => g.key === "mystery")).forEach(([name, basePrice]) => {
     pool.push({
       itemName: name,
       itemTier: "mystery",
@@ -183,6 +336,7 @@ function buildAuctionItemSequence() {
       sortKey: AUCTION_TIER_WEIGHT.mystery + Math.random() * 1.6,
     });
   });
+  // 特殊券(道具類)不參與商品上限抽選，固定全部出現
   auctionShuffle(AUCTION_SPECIAL_ITEMS).forEach((sp) => {
     pool.push({
       itemName: sp.name,
@@ -200,8 +354,8 @@ function buildAuctionItemSequence() {
 }
 
 // 把商品序列切成一波一波(每波固定件數，最後一波可能不足額)
-function buildAuctionWaves(itemsPerWave) {
-  const seq = buildAuctionItemSequence();
+function buildAuctionWaves(itemsPerWave, itemLimit) {
+  const seq = buildAuctionItemSequence(itemLimit);
   const perWave = Math.max(1, itemsPerWave || AUCTION_DEFAULT_ITEMS_PER_WAVE);
   const waves = [];
   for (let i = 0; i < seq.length; i += perWave) {

@@ -297,7 +297,7 @@ const db = (function () {
     // game 是目前打到系列賽第幾局，round 則是「這一局」裡的回合數(每局重打會歸1)。
     // ult1/ult2 是這一局已經用掉幾次究極手勢(數字，不是布林值)，
     // 一般情況上限1次，若開了「手速戰場」場地規則，該局上限會變成2次。
-    return { hp1: 30, hp2: 30, round: 1, game: 1, games1: 0, games2: 0, ult1: 0, ult2: 0, log: [] };
+    return { hp1: 15, hp2: 15, round: 1, game: 1, games1: 0, games2: 0, ult1: 0, ult2: 0, log: [] };
   }
 
   function makeInitState(gameType) {
@@ -888,7 +888,15 @@ const db = (function () {
       if (part) {
         const effects = part.effects || {};
         let nextEffects = null;
-        let points = lot.points;
+        // 分數改用「實際成交價」現算，不是開拍前就寫死的 lot.points，搶標搶得越貴分數也跟著漲。
+        // 用「老闆招待券」免費兌換時 finalPrice 是 0，這種情況退回用底價算(不然免費兌換只會拿到分數下限)。
+        const pricingBasis = finalPrice > 0 ? finalPrice : lot.base_price;
+        let points =
+          lot.item_tier === "special"
+            ? 0
+            : lot.item_tier === "bundle"
+            ? auctionPointsForBundlePrice(pricingBasis)
+            : auctionPointsForPrice(pricingBasis, lot.item_tier);
         if (lot.special_key) {
           nextEffects = { ...effects, [lot.special_key]: (effects[lot.special_key] || 0) + 1 };
         }
@@ -901,7 +909,7 @@ const db = (function () {
             doubled = true;
             nextEffects = { ...(nextEffects || effects), boxDoubleActive: false };
           }
-          lotUpdates = { ...(lotUpdates || {}), box_reveal_name: outcome.name, box_reveal_tier: outcome.tier, box_doubled: doubled };
+          lotUpdates = { ...(lotUpdates || {}), box_reveal_name: outcome.revealName, box_reveal_tier: outcome.tier, box_doubled: doubled };
         }
 
         // 合夥競標:這一波如果有成立合夥關係，得標者跟夥伴價錢、分數各分一半(尾數算得標者的)。
@@ -1195,9 +1203,12 @@ const db = (function () {
       });
     const rows = parts.map((p) => {
       const won = wonByPlayer[p.player_id] || [];
-      const itemScore = won.filter((l) => !l.refunded).reduce((s, l) => s + l.points, 0) + (p.bonus_points || 0);
+      const activeWon = won.filter((l) => !l.refunded);
+      const baseItemScore = activeWon.reduce((s, l) => s + l.points, 0) + (p.bonus_points || 0);
+      const seriesBonus = auctionSeriesBonusForNames(activeWon.map((l) => l.item_name));
+      const itemScore = baseItemScore + seriesBonus.total;
       const coinScore = Math.round(p.coins * AUCTION_COIN_TO_SCORE * 10) / 10;
-      return { participant: p, wonLots: won, itemScore, coinScore, score: itemScore + coinScore };
+      return { participant: p, wonLots: won, itemScore, seriesBonus, coinScore, score: itemScore + coinScore };
     });
     rows.sort((a, b) => b.score - a.score);
     return rows;
@@ -1297,7 +1308,7 @@ const db = (function () {
     if (inviterId === partnerId) throw new Error("不能邀請自己合夥");
     const { data: lot, error: lotErr } = await client.from("auction_lots").select("*").eq("id", lotId).single();
     if (lotErr) throw lotErr;
-    if (lot.status !== "live") throw new Error("這件商品現在不是拍賣中");
+    if (lot.status !== "scheduled") throw new Error("開拍前才能邀請合夥，這波已經開拍或已經結束了");
     if (lot.partner_status === "pending" || lot.partner_status === "accepted") throw new Error("這一波已經有合夥關係在進行了");
     const partnerPart = await getMyAuctionParticipant(eventId, partnerId);
     if (!partnerPart) throw new Error("對方還沒報名這場拍賣");
@@ -1305,7 +1316,7 @@ const db = (function () {
       .from("auction_lots")
       .update({ partner_a_id: inviterId, partner_b_id: partnerId, partner_status: "pending" })
       .eq("id", lotId)
-      .eq("status", "live")
+      .eq("status", "scheduled")
       .or("partner_status.is.null,partner_status.eq.declined")
       .select();
     if (claimErr) throw claimErr;
@@ -1350,7 +1361,7 @@ const db = (function () {
     if (!part) throw new Error("還沒報名這場拍賣");
     const { data: lot, error: lotErr } = await client.from("auction_lots").select("status").eq("id", lotId).single();
     if (lotErr) throw lotErr;
-    if (lot.status !== "live") throw new Error("這件商品現在不是拍賣中");
+    if (lot.status !== "scheduled") throw new Error("開拍前才能猜價，這波已經開拍或已經結束了");
     const { error } = await client.from("auction_price_guesses").insert({ lot_id: lotId, event_id: eventId, player_id: playerId, guess: amount });
     if (error) {
       if (error.code === "23505") throw new Error("這件你已經猜過了");

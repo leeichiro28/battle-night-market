@@ -45,7 +45,7 @@ const MOMENTUM_STREAK_BONUS = 2; // 連勝達到這個局數起，下一擊額�
 const MOMENTUM_COMEBACK = 2; // 連敗達到這個局數，靠這次獲勝翻身時傷害直接翻倍
 const COMBO_STREAK_TRIGGER = 3; // 連續用同一手勢獲勝達到這個局數起，額外 +2 傷害
 const MUTATE_AFTER = 3; // 連續出同一手勢達到這個回合數，下一回合系統會把那個手勢從選項中拿掉
-const DUAL_HAND_HP_THRESHOLD = 15; // HP制下，HP≤這個門檻才能使用雙手符(30血制，原案10血制的≤5等比例放大3倍)
+const DUAL_HAND_HP_THRESHOLD = 8; // HP制下，HP≤這個門檻才能使用雙手符(15血制，約等於50%血量的門檻)
 
 // 簡單的字串雜湊(FNV-1a)，用來讓雙方client不用另外同步狀態，
 // 也能各自算出同一個「這回合有沒有炸彈」「這局場地規則是什麼」的結果。
@@ -80,7 +80,7 @@ function getFieldMod(state) {
 // 兩個手勢單獨對決的結果，炸彈/平手都在這裡處理，雙手出招會拿這個函式去跑好幾組配對
 // 回傳 { result:"A"|"B"|"tie"， winGesture， ...炸彈相關旗標 }
 function judgeGesturePair(a, b) {
-  if (a === b) return { result: "tie" };
+  if (a === b) return { result: "tie", bothBomb: a === "bomb" };
   if (a === "bomb" || b === "bomb") {
     const bomberIsA = a === "bomb";
     const other = bomberIsA ? b : a;
@@ -516,7 +516,7 @@ async function resolveRoundIfReady(state) {
     } else {
       judgement = judgeRound(m1, m2);
       if (judgement.winnerSlot === null) {
-        entry += judgement.bombDefused ? flavorFor(judgement, "") : "出了相同的手勢，平手。";
+        entry += judgement.bombDefused ? flavorFor(judgement, "") : judgement.bothBomb ? "雙方同時扔出炸彈，喀啦——兩顆一起被炸開，平手不掉血。" : "出了相同的手勢，平手。";
         lastEvent = { type: "tie" };
       } else {
         winnerSlot = judgement.winnerSlot;
@@ -598,9 +598,10 @@ async function resolveRoundIfReady(state) {
       const winnerName = winnerSlot === 1 ? p1Name : p2Name;
       const loserName = winnerSlot === 1 ? p2Name : p1Name;
       const winnerHp = winnerSlot === 1 ? hp1 : hp2;
-      // HP 上限是 30，低血雙倍傷害的門檻等比例拉高到 9(原本 10 點血制是「≤3」，約剩三成血)
-      let dmg = winnerHp <= 9 ? 2 : 1;
-      let doubled = winnerHp <= 9;
+      // HP 上限調整為 15(2026/08，配合傷害數值一起調，讓一場對戰平均落在5~10回合結束，
+      // 不用再打到30+回合)。低血雙倍傷害的門檻等比例(原本30血制的≤9，約三成血)換算成 ≤5。
+      let dmg = winnerHp <= 5 ? 4 : 2;
+      let doubled = winnerHp <= 5;
       // 場地規則「磐石戰場」:靠石頭贏的那一擊，傷害再 +1
       if (fieldMod === "rock_boost" && winGesture === "rock") dmg += 1;
 
@@ -688,6 +689,12 @@ async function resolveRoundIfReady(state) {
       if (games1 === 2 && games2 === 2) {
         entry += " 賽末點！";
       }
+    }
+    // 「大字提示」需要完整戰報(出了什麼手勢、對方出了什麼、發生了什麼)，不是只有結果，
+    // 這裡把這回合完整的戰報文字(entry)存進 lastEvent，battle-view.js 的大字公告會直接拿來顯示，
+    // 不用再另外精簡成一句短話、也不會漏掉玩家實際出的手勢。
+    if (lastEvent) {
+      lastEvent.detail = entry.replace(/^第\d+回合[:：]\s*/, "");
     }
     log.push(entry);
 
@@ -779,8 +786,8 @@ async function resolveRoundIfReady(state) {
         // 但手勢突變、讀心值統計、逾時代打這些是看整場對戰習慣，所以不用重置)
         const newState = {
           ...state,
-          hp1: 30,
-          hp2: 30,
+          hp1: 15,
+          hp2: 15,
           ult1: 0,
           ult2: 0,
           log,
@@ -862,7 +869,10 @@ async function checkEntryTimeout() {
   const oppSlot = mySlot === 1 ? 2 : 1;
   const oppEntered = mySlot === 1 ? match.p2_entered_at : match.p1_entered_at;
   if (oppEntered) {
-    if (autopilotSlot === oppSlot) autopilotSlot = null; // 對手自己進場了，交還控制權
+    if (autopilotSlot === oppSlot) {
+      autopilotSlot = null; // 對手自己進場了，交還控制權
+      clearAutopilotTimer();
+    }
     return;
   }
   if (autopilotSlot === oppSlot) return; // 已經在幫他代打了
@@ -879,16 +889,53 @@ async function checkEntryTimeout() {
 }
 
 // 代打:輪到被代打的那位時，幫他判定逾時(等同沒出手勢，直接輸掉該局)
-async function maybeAutopilotSubmit() {
+// 注意:不能一偵測到「這回合還沒代打」就立刻送出逾時，否則等於跳過這回合原本該有的
+// 20/30秒思考時間——玩家出招那瞬間觸發的 refresh 會馬上幫對手送出逾時，變成「秒贏」。
+// 改成:每個新回合只排一次計時器，時間到了才真的送出，且送出前重新跟資料庫確認這回合
+// 依然沒人代打過、也還沒結束，避免跟其他分頁重複送出或送到舊回合。
+let autopilotTimer = null;
+let autopilotTimerRoundKey = null;
+
+function clearAutopilotTimer() {
+  if (autopilotTimer) clearTimeout(autopilotTimer);
+  autopilotTimer = null;
+  autopilotTimerRoundKey = null;
+}
+
+function maybeAutopilotSubmit() {
   if (!autopilotSlot || !match) return;
   if (match.status !== "active") return;
   const state = match.state;
-  if (!state || seriesDecided(state)) return;
+  if (!state || seriesDecided(state)) {
+    clearAutopilotTimer();
+    return;
+  }
   const already = autopilotSlot === 1 ? state.m1 : state.m2;
-  if (already) return;
-  try {
-    await db.submitMove(matchId, autopilotSlot, { gesture: null, ult: false, timeout: true });
-  } catch (e) {}
+  if (already) {
+    clearAutopilotTimer();
+    return;
+  }
+
+  const roundKey = `${state.game || 1}-${state.round}`;
+  if (autopilotTimerRoundKey === roundKey) return; // 這回合已經排過計時器了，不要重排
+
+  clearAutopilotTimer();
+  autopilotTimerRoundKey = roundKey;
+  const roundTimeoutMs = getFieldMod(state) === "fast_timer" ? 20000 : 30000;
+  autopilotTimer = setTimeout(async () => {
+    autopilotTimer = null;
+    try {
+      const latest = await db.getMatchSafe(matchId);
+      if (!latest || latest.status !== "active") return;
+      const st = latest.state;
+      if (!st || seriesDecided(st)) return;
+      const stillMissing = autopilotSlot === 1 ? !st.m1 : !st.m2;
+      const sameRound = `${st.game || 1}-${st.round}` === roundKey;
+      if (stillMissing && sameRound) {
+        await db.submitMove(matchId, autopilotSlot, { gesture: null, ult: false, timeout: true });
+      }
+    } catch (e) {}
+  }, roundTimeoutMs);
 }
 
 async function refresh() {

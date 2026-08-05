@@ -12,7 +12,7 @@
 // (dice.html / rps5.html 本身有更完整的狀態文字跟操作按鈕，不要顯示兩份)。
 window.BattleView = (function () {
   const CIRC = 289;
-  const MAX_HP = { dice: 30, rps5: 30 };
+  const MAX_HP = { dice: 30, rps5: 15 };
   const SUDDEN_DEATH_HP = 6;
 
   const CLASS_INFO = {
@@ -143,13 +143,32 @@ window.BattleView = (function () {
     function buildHeadline(evt, mySlot, match) {
       if (!evt) return null;
       const [p1Name, p2Name] = names(match);
-      if (evt.type === "tie") return { icon: "scale", text: "平手，雙方不掉血" };
-      if (evt.type === "timeout_both") return { icon: "hourglass", text: "雙方都逾時，平手" };
       if (evt.type === "match_point") return { icon: "flame", text: "賽末點！下一局就能分出勝負" };
       if (evt.type === "series_game_over") {
         const gWinner = evt.winnerSlot === 1 ? p1Name : p2Name;
         return { icon: "trophy", text: `${gWinner} 拿下第${evt.gameNum}局！比分 ${evt.games1}:${evt.games2}` };
       }
+      // 玩家反映過小字戰報捲動太快看不清楚、被鎖招之類的效果也看不出發生了什麼——
+      // evt.detail 是這回合完整戰報(雙方各自出了什麼手勢、觸發了什麼效果、結果如何)，
+      // 有這個資料就直接放大顯示，不要再自己精簡成一句短話，資訊量才夠。
+      if (evt.detail) {
+        const icon =
+          evt.type === "tie" || evt.type === "timeout_both"
+            ? "scale"
+            : evt.type === "bo_point"
+            ? "flag"
+            : evt.shieldBlocked
+            ? "shield"
+            : mySlot && evt.winnerSlot === mySlot
+            ? "flame"
+            : mySlot && evt.loserSlot === mySlot
+            ? "heart-pulse"
+            : "swords";
+        return { icon, text: evt.detail, holdMs: 4600 };
+      }
+      // 沒有 detail 時(理論上不會發生，保底用舊的精簡版文字)
+      if (evt.type === "tie") return { icon: "scale", text: "平手，雙方不掉血" };
+      if (evt.type === "timeout_both") return { icon: "hourglass", text: "雙方都逾時，平手" };
       if (evt.type === "bo_point") {
         const gWinner = evt.winnerSlot === 1 ? p1Name : p2Name;
         return { icon: "flag", text: `${gWinner} 拿下一分！比分 ${evt.games1}:${evt.games2}` };
@@ -253,7 +272,7 @@ window.BattleView = (function () {
 
       if (lastSeenRound !== null && state.round !== lastSeenRound) {
         const headline = buildHeadline(state.lastEvent, mySlot, match);
-        if (headline) announce(headline.text, { icon: headline.icon });
+        if (headline) announce(headline.text, { icon: headline.icon, holdMs: headline.holdMs });
       }
       lastSeenRound = state.round;
 

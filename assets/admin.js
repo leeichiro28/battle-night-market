@@ -557,7 +557,8 @@ function eventAdminCard(ev) {
       try {
         const itemsPerWave = (ev.rules && ev.rules.itemsPerWave) || AUCTION_DEFAULT_ITEMS_PER_WAVE;
         const waveIntervalSec = (ev.rules && ev.rules.waveIntervalSec) || AUCTION_DEFAULT_WAVE_INTERVAL_SEC;
-        const waves = buildAuctionWaves(itemsPerWave);
+        const itemLimit = (ev.rules && ev.rules.itemLimit) || AUCTION_DEFAULT_ITEM_LIMIT;
+        const waves = buildAuctionWaves(itemsPerWave, itemLimit);
         await db.startAuction(ev.id, { waveIntervalSec, waves });
         loadAll();
       } catch (e) {
@@ -642,6 +643,7 @@ document.getElementById("create-btn").onclick = async () => {
     rules.startingBudget = Math.max(1, parseInt(document.getElementById("auction-budget").value) || AUCTION_DEFAULT_BUDGET);
     rules.waveIntervalSec = Math.max(10, parseInt(document.getElementById("auction-wave-interval").value) || AUCTION_DEFAULT_WAVE_INTERVAL_SEC);
     rules.itemsPerWave = Math.max(1, Math.min(3, parseInt(document.getElementById("auction-items-per-wave").value) || AUCTION_DEFAULT_ITEMS_PER_WAVE));
+    rules.itemLimit = Math.max(10, parseInt(document.getElementById("auction-item-limit").value) || AUCTION_DEFAULT_ITEM_LIMIT);
   }
   if (!name) {
     await ui.alert("請先幫這場活動取一個名稱。", { title: "還缺活動名稱" });
@@ -667,6 +669,7 @@ document.getElementById("create-btn").onclick = async () => {
     document.getElementById("auction-budget").value = AUCTION_DEFAULT_BUDGET;
     document.getElementById("auction-wave-interval").value = AUCTION_DEFAULT_WAVE_INTERVAL_SEC;
     document.getElementById("auction-items-per-wave").value = AUCTION_DEFAULT_ITEMS_PER_WAVE;
+    document.getElementById("auction-item-limit").value = AUCTION_DEFAULT_ITEM_LIMIT;
     resetAutoRewardRows();
     document.querySelectorAll("#dice-rules-list .rule-box, #rps5-rules-list .rule-box").forEach((b) => (b.checked = false));
     renderManualRewardInputs();

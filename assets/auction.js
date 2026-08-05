@@ -14,6 +14,7 @@ let currentPlayer = null; // Discord 登入後的玩家 {id， name}，沒登入
 let pendingLoginResolvers = [];
 
 let tickInterval = null;
+let cooldownTickInterval = null; // 每秒重繪「打工/幸運攤位」冷卻倒數文字，不用等 Realtime 事件才更新
 let countdownInterval = null;
 let taskCountdownInterval = null;
 let unsubLots = null;
@@ -107,6 +108,15 @@ function scheduleRefresh() {
     refreshTimer = null;
     refreshAll();
   }, 400);
+}
+
+// 打工/幸運攤位的冷卻秒數只有在 refreshAll()(Realtime 事件觸發)時算一次就寫死在畫面上，
+// 中間沒有東西會讓它自己跳動，玩家會看到數字卡住不動、以為要手動重新整理才會更新。
+// 這兩個 render 函式本身很輕(只更新文字/disabled 狀態，不重建列表)，所以每秒重繪一次沒有效能疑慮。
+function tickCooldownDisplays() {
+  if (!myParticipant) return;
+  renderBalance();
+  renderLucky();
 }
 
 // ---------- 背景排程推進(只有被選為「隊長」的那台分頁負責推進，其他分頁純被動接收 Realtime 更新) ----------
@@ -529,6 +539,9 @@ function partnerSectionHtml(lot) {
     return `<div class="partner-box accepted">${ui.icon("users")}合夥出價中(與 <b>${ui.esc(nameOf(otherId))}</b>)・標到後價錢跟分數各分一半</div>`;
   }
   if (!status || status === "declined") {
+    if (lot.status !== "scheduled") {
+      return `<div class="partner-box muted">${ui.icon("clock-x")}開拍前沒找到合夥人，這波已經沒辦法再邀請，只能自己單獨出價</div>`;
+    }
     const others = standings.filter((r) => r.participant.player_id !== myId);
     if (!others.length) return "";
     const options = others.map((r) => `<option value="${r.participant.player_id}">${ui.esc(r.participant.players.name)}</option>`).join("");
@@ -549,6 +562,9 @@ function guessSectionHtml(lot, myGuess) {
   if (!currentPlayer || !myParticipant) return "";
   if (myGuess) {
     return `<div class="guess-box">${ui.icon("target")}你猜這件會標到 <b>${myGuess.guess}</b> 財神幣，結標後看誰最接近就加分</div>`;
+  }
+  if (lot.status !== "scheduled") {
+    return `<div class="guess-box muted">${ui.icon("clock-x")}開拍前沒有猜價，這波已經錯過猜價視窗了</div>`;
   }
   return `
     <div class="guess-box">
@@ -598,11 +614,14 @@ function lotStageHtml(lot, isFinalLot, myGuess) {
     )}用老闆招待券免費兌換</button>`;
   }
 
+  // 分數現在跟著成交價走，所以這裡不能用開拍前就寫死的 lot.points，要用目前最高價現算，
+  // 讓大家出價的時候就能即時看到「如果現在標到，會拿多少分」，價格漲分數也跟著漲。
+  const livePoints = lot.item_tier === "bundle" ? auctionPointsForBundlePrice(lot.current_price) : auctionPointsForPrice(lot.current_price, lot.item_tier);
   const priceUnitHtml = isSpecial
     ? `<span class="unit">財神幣(目前最高價，得標後可以使用一次「${ui.esc((specialInfo && specialInfo.name) || "特殊效果")}」)</span>`
     : isMystery
     ? `<span class="unit">財神幣(目前最高價，得標後現場開箱才知道多少分——可能超值也可能是雷)</span>`
-    : `<span class="unit">財神幣(目前最高價，得標可拿 ${lot.points} 分)</span>`;
+    : `<span class="unit">財神幣(目前最高價，得標可拿 ${livePoints} 分)</span>`;
 
   const effectDescHtml = isSpecial && specialInfo ? `<div class="section-note" style="margin:6px 0 0;">${ui.esc(specialInfo.effectDesc)}</div>` : "";
 
@@ -652,6 +671,51 @@ function lotStageHtml(lot, isFinalLot, myGuess) {
       </div>
     </div>
   `;
+}
+
+function nextLotPreviewHtml(lot, myGuess) {
+  const isSpecial = lot.item_tier === "special";
+  const isMystery = lot.item_tier === "mystery";
+  const specialInfo = isSpecial ? AUCTION_SPECIAL_ITEMS.find((s) => s.key === lot.special_key) : null;
+  const estPoints =
+    lot.item_tier === "bundle" ? auctionPointsForBundlePrice(lot.base_price) : auctionPointsForPrice(lot.base_price, lot.item_tier);
+  const pointsNote = isSpecial
+    ? `得標後可以使用一次「${ui.esc((specialInfo && specialInfo.name) || "特殊效果")}」`
+    : isMystery
+    ? "得標後現場開箱才知道多少分"
+    : `用底價得標至少可拿 ${estPoints} 分(實際成交價越高分數越高)`;
+  return `
+    <div class="card auction-prebid">
+      <span class="live-tag prebid"><span class="dot"></span>LOT ${ui.esc(String(lot.wave_number))} · 開拍前預告 · <span id="next-lot-cd">--</span> 秒後開拍</span>
+      <div class="lot-info">
+        ${ui.tierTag(lot.item_tier)}
+        <h3 style="margin-top:10px;">${ui.esc(lot.item_name)}</h3>
+        <div class="price-row">
+          <span class="cur">${lot.base_price}</span>
+          <span class="unit">財神幣起標</span>
+        </div>
+        <div class="section-note" style="margin:6px 0 0;">${ui.icon("info")}${pointsNote}</div>
+        <div class="section-note" style="margin:4px 0 0;">${ui.icon("lock")}猜價/合夥邀請只能在開拍前操作，一開拍就會鎖住</div>
+        ${partnerSectionHtml(lot)}
+        ${guessSectionHtml(lot, myGuess)}
+      </div>
+    </div>
+  `;
+}
+
+function startNextLotCountdown(lot) {
+  stopCountdown();
+  const tick3 = () => {
+    const remainingSec = Math.max(0, Math.ceil((new Date(lot.scheduled_at).getTime() - Date.now()) / 1000));
+    const numEl = document.getElementById("next-lot-cd");
+    if (!numEl) {
+      stopCountdown();
+      return;
+    }
+    numEl.textContent = remainingSec;
+  };
+  tick3();
+  countdownInterval = setInterval(tick3, 1000);
 }
 
 function renderLotSection() {
@@ -706,8 +770,36 @@ function renderLotSection() {
   const scheduled = lots.filter((l) => l.status === "scheduled").sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
   if (scheduled.length) {
     const next = scheduled[0];
-    const secLeft = Math.max(0, Math.ceil((new Date(next.scheduled_at).getTime() - Date.now()) / 1000));
-    box.innerHTML = `<div class="card empty">${ui.icon("hourglass")}下一波即將開始(${secLeft > 0 ? `約 ${secLeft} 秒後` : "馬上就好"})，先去下面「商品預告」看看有什麼</div>`;
+    if (next.is_surprise || !myParticipant) {
+      const secLeft = Math.max(0, Math.ceil((new Date(next.scheduled_at).getTime() - Date.now()) / 1000));
+      box.innerHTML = next.is_surprise
+        ? `<div class="card empty">${ui.icon("gift")}下一波即將開始(${secLeft > 0 ? `約 ${secLeft} 秒後` : "馬上就好"})，這波是隱藏驚喜商品，開拍才知道是什麼！</div>`
+        : `<div class="card empty">${ui.icon("hourglass")}下一波即將開始(${secLeft > 0 ? `約 ${secLeft} 秒後` : "馬上就好"})，先報名才能猜價/合夥</div>`;
+      return;
+    }
+    const myGuess = currentPlayer ? myPriceGuesses.find((g) => g.lot_id === next.id) : null;
+    box.innerHTML = nextLotPreviewHtml(next, myGuess);
+    const partnerInviteBtn = document.getElementById("partner-invite-btn");
+    if (partnerInviteBtn) {
+      partnerInviteBtn.onclick = () => {
+        const select = document.getElementById("partner-select");
+        invitePartner(next, select.value);
+      };
+    }
+    const partnerAcceptBtn = document.getElementById("partner-accept-btn");
+    if (partnerAcceptBtn) partnerAcceptBtn.onclick = () => respondPartner(next, true);
+    const partnerDeclineBtn = document.getElementById("partner-decline-btn");
+    if (partnerDeclineBtn) partnerDeclineBtn.onclick = () => respondPartner(next, false);
+    const partnerCancelBtn = document.getElementById("partner-cancel-btn");
+    if (partnerCancelBtn) partnerCancelBtn.onclick = () => cancelPartner(next);
+    const guessSubmitBtn = document.getElementById("guess-submit-btn");
+    if (guessSubmitBtn) {
+      guessSubmitBtn.onclick = () => {
+        const input = document.getElementById("guess-input");
+        submitGuess(next, input.value);
+      };
+    }
+    startNextLotCountdown(next);
     return;
   }
   if (lots.length) {
@@ -853,7 +945,24 @@ function renderBag() {
     return;
   }
   const canRefund = myParticipant.effects && myParticipant.effects.refund > 0;
-  box.innerHTML = won
+  const ownedNames = won.filter((l) => !l.refunded).map((l) => l.item_name);
+  const seriesHtml = AUCTION_ITEM_SERIES.map((series) => {
+    const progress = auctionSeriesProgress(series, ownedNames);
+    const itemsHtml = series.items
+      .map((n) => `<span class="series-item${progress.have.includes(n) ? " got" : ""}">${ui.esc(n)}</span>`)
+      .join("");
+    return `<div class="series-row${progress.complete ? " complete" : ""}">
+      <div class="series-head"><b>${ui.esc(series.name)}</b>${
+      progress.complete ? `<span class="series-bonus">${ui.icon("sparkles")}已湊齊，加 ${series.bonus} 分</span>` : `<span class="series-bonus dim">湊齊全套加 ${series.bonus} 分</span>`
+    }</div>
+      <div class="series-items">${itemsHtml}</div>
+    </div>`;
+  }).join("");
+  const seriesBlock = `<div class="series-list">${seriesHtml}</div>`;
+
+  box.innerHTML =
+    seriesBlock +
+    won
     .map((l) => {
       const isPrimary = l.current_bidder_id === currentPlayer.id;
       if (!isPrimary) {
@@ -1144,6 +1253,7 @@ function bindRuleModal() {
 
   await refreshAll();
   tickInterval = setInterval(tick, 1000);
+  cooldownTickInterval = setInterval(tickCooldownDisplays, 1000);
   // 同一場拍賣的所有分頁一起選隊長，只有隊長會真的去跑 tick() 推進排程;
   // 隊長分頁關掉的話，presence 會自動讓其他分頁裡的一台變成新隊長，排程不會因此停住。
   unsubLeader = db.electLeader(`auction-tick-${eventId}`, (leader) => {
@@ -1156,6 +1266,7 @@ function bindRuleModal() {
 
 window.addEventListener("beforeunload", () => {
   if (tickInterval) clearInterval(tickInterval);
+  if (cooldownTickInterval) clearInterval(cooldownTickInterval);
   if (refreshTimer) clearTimeout(refreshTimer);
   stopCountdown();
   stopTaskCountdown();
