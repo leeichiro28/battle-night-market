@@ -700,9 +700,12 @@ document.getElementById("create-btn").onclick = async () => {
 
   loadAll();
 
-  // 背景巡邏:每 5 秒檢查一次所有進行中的活動，叫號排下一場、偵測卡住太久沒人進場的對戰。
-  // 這樣只要有人開著後台頁面，就算沒人開著對戰畫面本身，賽程也不會卡死。
+  // 背景巡邏(保底用):叫號推進賽程/偵測卡住的對戰，主要機制已經改成每場活動的大廳頁面
+  // (lobby.js)自己用 realtime leader 選舉去推進，只要有玩家開著大廳就會很快反應。
+  // 這裡降頻到30秒、且分頁不在前景時直接跳過，單純當作「萬一沒有任何玩家開著大廳頁面」
+  // 時的保底，不用再當主力，5秒全表掃描太浪費。
   setInterval(async () => {
+    if (document.visibilityState !== "visible") return;
     try {
       const events = await db.listEvents();
       for (const ev of events) {
@@ -712,7 +715,7 @@ document.getElementById("create-btn").onclick = async () => {
         }
       }
     } catch (e) {}
-  }, 5000);
+  }, 30000);
 
   await loadSponsorSettings();
 })();

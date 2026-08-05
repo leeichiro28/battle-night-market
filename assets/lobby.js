@@ -1,7 +1,9 @@
 const params = new URLSearchParams(location.search);
 const eventId = params.get("event");
 let myParticipant = null;
-let pollTimer = null;
+let advanceInterval = null;
+let unsubLeaderAdvance = null;
+let isAdvanceLeader = false;
 let unsub1 = null;
 let unsub2 = null;
 let currentEv = null;
@@ -497,7 +499,7 @@ async function checkMyStatus(ev, matches) {
   if (myParticipant.status === "matched" && myParticipant.match_id) {
     if (redirecting) return;
     redirecting = true;
-    clearInterval(pollTimer);
+    stopBackgroundSync();
     stopPulse();
     quitBtn.style.display = "none";
     classBtn.style.display = "none";
@@ -507,7 +509,7 @@ async function checkMyStatus(ev, matches) {
   }
 
   if (myParticipant.status === "eliminated") {
-    clearInterval(pollTimer);
+    stopBackgroundSync();
     stopPulse();
     quitBtn.style.display = "none";
     classBtn.style.display = "none";
@@ -520,7 +522,7 @@ async function checkMyStatus(ev, matches) {
   }
 
   if (myParticipant.status === "champion") {
-    clearInterval(pollTimer);
+    stopBackgroundSync();
     stopPulse();
     quitBtn.style.display = "none";
     classBtn.style.display = "none";
@@ -613,20 +615,35 @@ document.getElementById("quit-btn").onclick = async () => {
   }
 };
 
+function stopBackgroundSync() {
+  if (advanceInterval) clearInterval(advanceInterval);
+  advanceInterval = null;
+  if (unsubLeaderAdvance) unsubLeaderAdvance();
+  unsubLeaderAdvance = null;
+}
+
 let pollBusy = false;
 
+// 賽程推進/看門狗:這兩個本質上是「多久沒人動就要自動處理」的時間判定，沒辦法只靠realtime事件觸發
+// (「什麼都沒發生」本來就不會有資料變化事件)，所以還是需要一個背景計時器。但不需要每個開著這頁的
+// 分頁都各自跑一份——用跟拍賣頁一樣的 electLeader，同一場賽事只有1個分頁真的在跑，其他分頁被動接收
+// matches/event_participants 的 realtime 更新就好，不用重複輪詢。
+async function advanceTick(ev) {
+  if (!isAdvanceLeader || !ev.locked || ev.status === "closed") return;
+  try {
+    await db.activateNextMatch(eventId);
+  } catch (e) {}
+  try {
+    await db.watchdogActiveMatch(eventId);
+  } catch (e) {}
+}
+
+// 純粹的「重新抓資料+重render」，不再夾帶推進賽程的副作用，也不再靠固定週期觸發——
+// 改成只在 realtime 通知資料真的變了，或分頁切回前景時才呼叫。
 async function poll(ev) {
-  if (pollBusy) return; // 避免計時器/即時訂閱/切分頁同時觸發，互相干擾造成畫面閃爍或漏掉導向
+  if (pollBusy) return; // 避免 realtime callback 跟切分頁同時觸發，互相干擾造成畫面閃爍或漏掉導向
   pollBusy = true;
   try {
-    if (ev.locked && ev.status !== "closed") {
-      try {
-        await db.activateNextMatch(eventId);
-      } catch (e) {}
-      try {
-        await db.watchdogActiveMatch(eventId);
-      } catch (e) {}
-    }
     const matches = ev.locked ? await db.listMatches(eventId) : [];
     const activeMatch = matches.find((m) => m.status === "active") || null;
     await checkMyStatus(ev, matches);
@@ -709,19 +726,29 @@ function bindRuleModal(ev) {
   bindRuleModal(ev);
   await poll(ev);
 
-  pollTimer = setInterval(() => poll(ev), 2500);
+  unsubLeaderAdvance = db.electLeader(`lobby-advance-${eventId}`, (leader) => {
+    isAdvanceLeader = leader;
+  });
+  advanceInterval = setInterval(() => advanceTick(ev), 4000);
+  advanceTick(ev); // 不用等第一次計時器才推進，選出隊長後馬上跑一次
 
   unsub1 = db.onTableChange("event_participants", `event_id=eq.${eventId}`, () => poll(ev));
   unsub2 = db.onTableChange("matches", `event_id=eq.${eventId}`, () => poll(ev));
 
-  // 分頁從背景切回前景時，馬上刷新一次，避免手機瀏覽器把背景分頁的計時器/連線凍結導致畫面卡在舊狀態
+  // 分頁從背景切回前景時，馬上補一次資料+推進判定，避免手機瀏覽器把背景分頁的
+  // 計時器/realtime連線凍結導致畫面卡在舊狀態(realtime重連後漏掉的變化也靠這個補回來)
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") poll(ev);
+    if (document.visibilityState === "visible") {
+      poll(ev);
+      advanceTick(ev);
+    }
   });
 })();
 
 window.addEventListener("beforeunload", () => {
+  db.cancelAllRequests();
   if (unsub1) unsub1();
   if (unsub2) unsub2();
+  stopBackgroundSync();
   teardownLivePanel();
 });

@@ -1134,6 +1134,7 @@ function bindRuleModal() {
 })();
 
 window.addEventListener("beforeunload", () => {
+  db.cancelAllRequests();
   if (unsub) unsub();
   if (unsubParticipants) unsubParticipants();
   if (battleView) battleView.destroy();

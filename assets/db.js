@@ -5,6 +5,60 @@ const db = (function () {
     window.SUPABASE_ANON_KEY
   );
 
+  // ---------- 資料抓取層:in-flight 去重 + 短期快取 + 可取消 ----------
+  // 只套用在「讀」的查詢函式，不套用在 insert/update/delete 這類寫入——寫入每次都必須真的送出，
+  // 不能被去重或快取掉，語意上也不安全(例如兩次出價金額不同，不該被當成同一份請求)。
+  // key 由呼叫端自己組(通常是「函式名:參數」)，同一個 key 在 ttlMs 內重複呼叫會直接複用結果，
+  // 同一個 key 短時間內被平行呼叫多次(例如好幾個 realtime 事件幾乎同時觸發、debounce 還沒來得及合併)
+  // 也只會真的發一次請求出去，其他呼叫端等同一個 promise。
+  const _cacheStore = new Map(); // key -> { at, value }
+  const _inflightStore = new Map(); // key -> Promise
+  const _abortStore = new Map(); // key -> AbortController(給 fetcher 需要取消上一個請求時用)
+
+  function _cachedFetch(key, ttlMs, fetcher) {
+    const cached = _cacheStore.get(key);
+    if (cached && Date.now() - cached.at < ttlMs) {
+      return Promise.resolve(cached.value);
+    }
+    const existing = _inflightStore.get(key);
+    if (existing) return existing;
+    const controller = new AbortController();
+    _abortStore.set(key, controller);
+    const p = Promise.resolve()
+      .then(() => fetcher(controller.signal))
+      .then((value) => {
+        _cacheStore.set(key, { at: Date.now(), value });
+        return value;
+      })
+      .finally(() => {
+        _inflightStore.delete(key);
+        _abortStore.delete(key);
+      });
+    _inflightStore.set(key, p);
+    return p;
+  }
+
+  // 寫入成功後呼叫，把跟這筆寫入相關的快取清掉，避免下一次讀到還沒更新的舊快取。
+  // prefix 用「函式名:」這種前綴比對，例如 invalidateCache("listAuctionLots:") 會清掉所有
+  // listAuctionLots 不管帶什麼參數的快取。不傳 prefix 就是全部清空(斷線重連補快照那種情境會用到)。
+  function invalidateCache(prefix) {
+    for (const k of _cacheStore.keys()) {
+      if (!prefix || k.startsWith(prefix)) _cacheStore.delete(k);
+    }
+  }
+
+  // 離開頁面(beforeunload)或要整個重新初始化時呼叫:把還在飛的請求全部取消掉，
+  // 不然使用者可能已經切走頁面了，舊請求回來時又去更新一個沒人在看的畫面/寫入過期的快取。
+  function cancelAllRequests() {
+    for (const controller of _abortStore.values()) {
+      try {
+        controller.abort();
+      } catch (e) {}
+    }
+    _abortStore.clear();
+    _inflightStore.clear();
+  }
+
   // ---------- 玩家身份(Discord 登入) ----------
   function getLocalPlayer() {
     return {
@@ -81,12 +135,15 @@ const db = (function () {
 
   // ---------- 活動 ----------
   async function listEvents() {
-    const { data, error } = await client
-      .from("events")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) throw error;
-    return data;
+    return _cachedFetch("listEvents:", 800, async (signal) => {
+      const { data, error } = await client
+        .from("events")
+        .select("*")
+        .abortSignal(signal)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    });
   }
 
   async function getEvent(eventId) {
@@ -187,13 +244,16 @@ const db = (function () {
   }
 
   async function listMatches(eventId) {
-    const { data, error } = await client
-      .from("matches")
-      .select("*, p1:player1_id(name), p2:player2_id(name)")
-      .eq("event_id", eventId)
-      .order("round", { ascending: true });
-    if (error) throw error;
-    return data;
+    return _cachedFetch(`listMatches:${eventId}`, 500, async (signal) => {
+      const { data, error } = await client
+        .from("matches")
+        .select("*, p1:player1_id(name), p2:player2_id(name)")
+        .abortSignal(signal)
+        .eq("event_id", eventId)
+        .order("round", { ascending: true });
+      if (error) throw error;
+      return data;
+    });
   }
 
   async function removeParticipant(participantId) {
@@ -790,14 +850,17 @@ const db = (function () {
   }
 
   async function listAuctionLots(eventId) {
-    const { data, error } = await client
-      .from("auction_lots")
-      .select("*, bidder:current_bidder_id(name)")
-      .eq("event_id", eventId)
-      .order("wave_number", { ascending: true })
-      .order("created_at", { ascending: true });
-    if (error) throw error;
-    return data;
+    return _cachedFetch(`listAuctionLots:${eventId}`, 300, async (signal) => {
+      const { data, error } = await client
+        .from("auction_lots")
+        .select("*, bidder:current_bidder_id(name)")
+        .abortSignal(signal)
+        .eq("event_id", eventId)
+        .order("wave_number", { ascending: true })
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      return data;
+    });
   }
 
   // 主辦人按下「開始拍賣」:把已報名的人鎖住(不能再中途加入拿預算)，
@@ -1078,13 +1141,16 @@ const db = (function () {
 
   // ---------- 夜市任務(問答／猜謎) ----------
   async function listAuctionTasks(eventId) {
-    const { data, error } = await client
-      .from("auction_tasks")
-      .select("*")
-      .eq("event_id", eventId)
-      .order("scheduled_at", { ascending: true });
-    if (error) throw error;
-    return data || [];
+    return _cachedFetch(`listAuctionTasks:${eventId}`, 300, async (signal) => {
+      const { data, error } = await client
+        .from("auction_tasks")
+        .select("*")
+        .abortSignal(signal)
+        .eq("event_id", eventId)
+        .order("scheduled_at", { ascending: true });
+      if (error) throw error;
+      return data || [];
+    });
   }
 
   // 每個看拍賣畫面的人，瀏覽器背景每秒都會呼叫這兩個函式來推進任務，
@@ -1427,11 +1493,29 @@ const db = (function () {
     if (error) throw error;
   }
 
+  // event:"*" 訂閱本身沒有「補齊斷線期間漏掉的變化」這種機制——如果 websocket 斷線又自動重連，
+  // 中間發生的異動不會補發，畫面會停在斷線前的舊狀態，只能等下一次剛好有新異動才會發現不對。
+  // 這裡在重新訂閱成功(而且不是第一次訂閱，是斷線後重連)時，主動呼叫一次 cb 補一份快照——
+  // cb 在這個專案裡一律是「重新抓一次資料」的處理函式(例如 refresh()/scheduleRefresh()/poll())，
+  // 沒有依賴 postgres_changes 帶的 payload 內容，所以直接呼叫效果等同「收到了一次變化通知」。
   function onTableChange(table, filter, cb) {
+    let hasSubscribedBefore = false;
+    // 有資料真的異動了，短期快取要整批作廢，不然下一次讀可能還是拿到異動前的舊快取。
+    // 用「整批清空」而不是精算哪個 key 該清，是因為快取 TTL 很短(通常抓幾百毫秒)，
+    // 清空的成本可以忽略，換來邏輯簡單、不會漏清。
+    const wrappedCb = (payload) => {
+      invalidateCache();
+      cb(payload);
+    };
     const channel = client
       .channel(`${table}-${filter || "all"}-${Math.random()}`)
-      .on("postgres_changes", { event: "*", schema: "public", table, filter }, cb)
-      .subscribe();
+      .on("postgres_changes", { event: "*", schema: "public", table, filter }, wrappedCb)
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          if (hasSubscribedBefore) wrappedCb();
+          hasSubscribedBefore = true;
+        }
+      });
     return () => client.removeChannel(channel);
   }
 
@@ -1703,6 +1787,7 @@ const db = (function () {
 
   return {
     client,
+    cancelAllRequests,
     getLocalPlayer,
     getSession,
     onAuthChange,

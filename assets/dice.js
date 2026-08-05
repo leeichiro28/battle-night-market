@@ -877,6 +877,7 @@ function bindRuleModal() {
 })();
 
 window.addEventListener("beforeunload", () => {
+  db.cancelAllRequests();
   if (unsub) unsub();
   if (unsubParticipants) unsubParticipants();
   if (unsubBets) unsubBets();

@@ -13,7 +13,7 @@ let myPriceGuesses = []; // 我在這場活動已經猜過價的商品
 let currentPlayer = null; // Discord 登入後的玩家 {id， name}，沒登入是 null
 let pendingLoginResolvers = [];
 
-let tickInterval = null;
+let nextTickTimer = null;
 let cooldownTickInterval = null; // 每秒重繪「打工/幸運攤位」冷卻倒數文字，不用等 Realtime 事件才更新
 let countdownInterval = null;
 let taskCountdownInterval = null;
@@ -98,6 +98,7 @@ async function refreshAll() {
     myPriceGuesses = [];
   }
   render();
+  scheduleNextTick();
 }
 
 // 把短時間內連續發生的多個資料變化(例如同一秒裡商品開拍又結標)合併成一次 refreshAll，
@@ -135,7 +136,41 @@ async function tick() {
     console.error(e);
   } finally {
     ticking = false;
+    scheduleNextTick();
   }
+}
+
+// 原本 tick() 是每秒硬查一次「有沒有東西到期」，改成算出目前手上這批 lots/tasks 裡最早的
+// 下一個時間點(開拍時間/截標時間/緩衝結束時間)，直接排一個精準對時的 setTimeout，時間到了才真的去查。
+// 只有隊長分頁需要排這個(其他分頁純被動接收 realtime 更新，不用自己也算一份)。
+// 每次 refreshAll() 重新抓到 lots/tasks 後都要重排一次，因為新開的商品/被延長的截標時間
+// 都可能讓「下一個到期時間」提前，不能只排一次就不管了。
+function scheduleNextTick() {
+  if (nextTickTimer) {
+    clearTimeout(nextTickTimer);
+    nextTickTimer = null;
+  }
+  if (!isTickLeader || !ev || !ev.locked || ev.status === "closed") return;
+  const now = Date.now();
+  const candidates = [];
+  lots.forEach((l) => {
+    if (l.status === "scheduled" && l.scheduled_at) candidates.push(new Date(l.scheduled_at).getTime());
+    if (l.status === "live" && l.ends_at) candidates.push(new Date(l.ends_at).getTime());
+  });
+  tasks.forEach((t) => {
+    if (t.status === "scheduled" && t.scheduled_at) candidates.push(new Date(t.scheduled_at).getTime());
+    if (t.status === "live" && t.ends_at) candidates.push(new Date(t.ends_at).getTime());
+  });
+  if (lots.length && !lots.some((l) => l.status === "scheduled" || l.status === "live")) {
+    const maxEndsAt = lots.reduce((max, l) => (l.ends_at ? Math.max(max, new Date(l.ends_at).getTime()) : max), 0);
+    if (maxEndsAt) candidates.push(maxEndsAt + AUCTION_FINAL_CLOSE_DELAY_SEC * 1000);
+  }
+  // 保底:理論上手上有商品/任務時一定算得出下一個時間點，這個保底間隔只是防止萬一資料
+  // 還沒載入完成、或有沒考慮到的邊界狀況時排程整個停住，不是主要機制。
+  const FALLBACK_MS = 15000;
+  const nextAt = candidates.length ? Math.min(...candidates) : null;
+  const delay = Math.max(200, Math.min(nextAt !== null ? nextAt - now : FALLBACK_MS, FALLBACK_MS));
+  nextTickTimer = setTimeout(tick, delay);
 }
 
 // 商品全部拍賣完畢後(沒有排隊中也沒有拍賣中的商品了)，留一段緩衝時間讓大家繼續打工/任務/下注花錢，
@@ -1252,12 +1287,13 @@ function bindRuleModal() {
   db.onAuthChange((session) => handleAuthSession(session));
 
   await refreshAll();
-  tickInterval = setInterval(tick, 1000);
   cooldownTickInterval = setInterval(tickCooldownDisplays, 1000);
   // 同一場拍賣的所有分頁一起選隊長，只有隊長會真的去跑 tick() 推進排程;
   // 隊長分頁關掉的話，presence 會自動讓其他分頁裡的一台變成新隊長，排程不會因此停住。
+  // 剛選出隊長(或換人當隊長)的當下，要重新排一次 scheduleNextTick，不然新隊長不會自動開始排程。
   unsubLeader = db.electLeader(`auction-tick-${eventId}`, (leader) => {
     isTickLeader = leader;
+    scheduleNextTick();
   });
   unsubLots = db.onTableChange("auction_lots", `event_id=eq.${eventId}`, () => scheduleRefresh());
   unsubParticipants = db.onTableChange("auction_participants", `event_id=eq.${eventId}`, () => scheduleRefresh());
@@ -1265,7 +1301,8 @@ function bindRuleModal() {
 })();
 
 window.addEventListener("beforeunload", () => {
-  if (tickInterval) clearInterval(tickInterval);
+  db.cancelAllRequests();
+  if (nextTickTimer) clearTimeout(nextTickTimer);
   if (cooldownTickInterval) clearInterval(cooldownTickInterval);
   if (refreshTimer) clearTimeout(refreshTimer);
   stopCountdown();
