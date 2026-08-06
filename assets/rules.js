@@ -36,10 +36,6 @@
   const noteEl = document.getElementById("rules-tier-note");
   if (!tabsEl || !listEl) return;
 
-  function auctionPointsForPrice(price) {
-    return Math.max(5, Math.round(price / 10));
-  }
-
   function renderTier(tier) {
     if (tier === "special") {
       listEl.innerHTML = AUCTION_SPECIAL_ITEMS.map(
@@ -71,7 +67,7 @@
         (b) => `
       <div class="item-row">
         <span class="name">${ui.esc(b.name)}</span>
-        <span class="pts">底價 ${b.basePrice}・${b.points} 分</span>
+        <span class="pts">底價 ${b.basePrice}・${auctionPointsForBundlePrice(b.basePrice)} 分</span>
       </div>
     `
       ).join("");
@@ -84,7 +80,7 @@
         ([name, basePrice]) => `
       <div class="item-row">
         <span class="name">${ui.esc(name)}</span>
-        <span class="pts">底價 ${basePrice}・${auctionPointsForPrice(basePrice)} 分</span>
+        <span class="pts">底價 ${basePrice}・${auctionPointsForPrice(basePrice, tier)} 分</span>
       </div>
     `
       )

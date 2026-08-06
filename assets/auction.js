@@ -1075,7 +1075,7 @@ function renderTierList(tier) {
       (b) => `
     <div class="item-row">
       <span class="name">${ui.esc(b.name)}</span>
-      <span class="pts">底價 ${b.basePrice}・${b.points} 分</span>
+      <span class="pts">底價 ${b.basePrice}・${auctionPointsForBundlePrice(b.basePrice)} 分</span>
     </div>
   `
     ).join("");
@@ -1088,7 +1088,7 @@ function renderTierList(tier) {
       ([name, basePrice]) => `
     <div class="item-row">
       <span class="name">${ui.esc(name)}</span>
-      <span class="pts">底價 ${basePrice}・${auctionPointsForPrice(basePrice)} 分</span>
+      <span class="pts">底價 ${basePrice}・${auctionPointsForPrice(basePrice, tier)} 分</span>
     </div>
   `
     )
