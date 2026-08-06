@@ -620,9 +620,22 @@ function stopBackgroundSync() {
   advanceInterval = null;
   if (unsubLeaderAdvance) unsubLeaderAdvance();
   unsubLeaderAdvance = null;
+  if (pollDebounceTimer) clearTimeout(pollDebounceTimer);
+  pollDebounceTimer = null;
 }
 
 let pollBusy = false;
+let pollDebounceTimer = null;
+
+// realtime事件密集連續觸發時(例如好幾個人幾乎同時完成報名/對戰同時結束)，
+// 把短時間內的好幾次通知合併成一次真正的poll，不要每筆變化都各自觸發一次重新抓取+重新render。
+function schedulePoll(ev) {
+  if (pollDebounceTimer) clearTimeout(pollDebounceTimer);
+  pollDebounceTimer = setTimeout(() => {
+    pollDebounceTimer = null;
+    poll(ev);
+  }, 120);
+}
 
 // 賽程推進/看門狗:這兩個本質上是「多久沒人動就要自動處理」的時間判定，沒辦法只靠realtime事件觸發
 // (「什麼都沒發生」本來就不會有資料變化事件)，所以還是需要一個背景計時器。但不需要每個開著這頁的
@@ -732,8 +745,8 @@ function bindRuleModal(ev) {
   advanceInterval = setInterval(() => advanceTick(ev), 4000);
   advanceTick(ev); // 不用等第一次計時器才推進，選出隊長後馬上跑一次
 
-  unsub1 = db.onTableChange("event_participants", `event_id=eq.${eventId}`, () => poll(ev));
-  unsub2 = db.onTableChange("matches", `event_id=eq.${eventId}`, () => poll(ev));
+  unsub1 = db.onTableChange("event_participants", `event_id=eq.${eventId}`, () => schedulePoll(ev));
+  unsub2 = db.onTableChange("matches", `event_id=eq.${eventId}`, () => schedulePoll(ev));
 
   // 分頁從背景切回前景時，馬上補一次資料+推進判定，避免手機瀏覽器把背景分頁的
   // 計時器/realtime連線凍結導致畫面卡在舊狀態(realtime重連後漏掉的變化也靠這個補回來)

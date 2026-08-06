@@ -188,6 +188,9 @@ let autopilotSlot = null; // 對手超過1分鐘沒入場時，代替他自動�
 let autopilotAnnounced = false;
 let entryWatchdog = null;
 let goneAway = false;
+let refreshGen = 0; // 每次真的呼叫 refresh() 就+1，回應回來時比對還是不是最新的一次，
+// 避免realtime事件密集觸發時，比較舊的那次查詢比較慢回來反而蓋掉新的畫面(亂序/過期回應)
+let refreshDebounceTimer = null;
 let battleView = null;
 
 const ENTRY_TIMEOUT_MS = 60000; // 超過1分鐘對手沒入場，自動開始幫他出招
@@ -939,7 +942,9 @@ function maybeAutopilotSubmit() {
 }
 
 async function refresh() {
+  const myGen = ++refreshGen;
   const m = await db.getMatchSafe(matchId);
+  if (myGen !== refreshGen) return; // 這段等待期間又有更新的一次refresh了，這次的結果已經過期，不要套用
   if (!m) {
     if (!goneAway) {
       goneAway = true;
@@ -971,6 +976,16 @@ async function refresh() {
   resolveRoundIfReady(state);
   maybeAutoAdvance(state);
   maybeAutopilotSubmit();
+}
+
+// realtime事件密集連續觸發時(例如雙方幾乎同時出招、道具連鎖觸發)，把短時間內的好幾次通知
+// 合併成一次真正的refresh，不要每筆變化都各自觸發一次重新抓取+重新render。
+function scheduleRefresh() {
+  if (refreshDebounceTimer) clearTimeout(refreshDebounceTimer);
+  refreshDebounceTimer = setTimeout(() => {
+    refreshDebounceTimer = null;
+    refresh();
+  }, 120);
 }
 
 function renderFieldModBanner(state) {
@@ -1125,8 +1140,8 @@ function bindRuleModal() {
   bindControls();
   bindRuleModal();
   await refresh();
-  unsub = db.onTableChange("matches", `id=eq.${matchId}`, () => refresh());
-  unsubParticipants = db.onTableChange("event_participants", `event_id=eq.${eventId}`, () => refresh());
+  unsub = db.onTableChange("matches", `id=eq.${matchId}`, () => scheduleRefresh());
+  unsubParticipants = db.onTableChange("event_participants", `event_id=eq.${eventId}`, () => scheduleRefresh());
   entryWatchdog = setInterval(() => {
     checkEntryTimeout();
     maybeAutopilotSubmit();
@@ -1135,6 +1150,7 @@ function bindRuleModal() {
 
 window.addEventListener("beforeunload", () => {
   db.cancelAllRequests();
+  if (refreshDebounceTimer) clearTimeout(refreshDebounceTimer);
   if (unsub) unsub();
   if (unsubParticipants) unsubParticipants();
   if (battleView) battleView.destroy();

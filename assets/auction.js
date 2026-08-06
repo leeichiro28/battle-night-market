@@ -80,11 +80,15 @@ async function loadMyParticipant() {
   }
 }
 
+let refreshAllGen = 0; // 跟 rps5.js/dice.js 一樣的過期回應防呆:比較慢回來的舊查詢不能蓋掉新的畫面
+
 async function refreshAll() {
+  const myGen = ++refreshAllGen;
   // standings 內部本來也要抓一次商品清單才能算分數，這裡先抓好 lots 直接傳進去，
   // 避免同一輪重複抓兩次 auction_lots(這是拍賣頁流量的大宗)。
   const [lotList, taskList] = await Promise.all([db.listAuctionLots(eventId), db.listAuctionTasks(eventId)]);
   const standingList = await db.computeAuctionStandings(eventId, { lots: lotList });
+  if (myGen !== refreshAllGen) return; // 這段等待期間又有更新的一次refreshAll了，這次的結果已經過期
   lots = lotList;
   standings = standingList;
   tasks = taskList;
@@ -93,6 +97,7 @@ async function refreshAll() {
     if (mine) myParticipant = mine.participant;
     myTaskAnswers = await db.listMyAuctionTaskAnswers(eventId, currentPlayer.id).catch(() => []);
     myPriceGuesses = await db.listMyAuctionPriceGuesses(eventId, currentPlayer.id).catch(() => []);
+    if (myGen !== refreshAllGen) return;
   } else {
     myTaskAnswers = [];
     myPriceGuesses = [];

@@ -458,22 +458,20 @@ const db = (function () {
       return allMatches.find((x) => x.id === id);
     }
 
+    // 原本是每個參賽者各自發一次 update(N個人就N次來回)，改成先在記憶體組好整批要寫的內容，
+    // 一次 upsert(用 id 當衝突鍵，效果等同「依 id 逐筆更新」，但只需要1次網路來回)。
+    const participantUpdates = [];
     for (const m of allMatches.filter((m) => m.round === 1)) {
       for (const side of [m._pa, m._pb]) {
         if (!side) continue;
-        if (m.status === "done") {
-          // 輪空:直接晉級到下一場，但一樣要排隊等 activateNextMatch 叫到才開打
-          await client
-            .from("event_participants")
-            .update({ status: "pending", match_id: m.next_match_id || null })
-            .eq("id", side.id);
-        } else {
-          await client
-            .from("event_participants")
-            .update({ status: "pending", match_id: m.id })
-            .eq("id", side.id);
-        }
+        // 輪空:直接晉級到下一場，但一樣要排隊等 activateNextMatch 叫到才開打
+        const matchId = m.status === "done" ? m.next_match_id || null : m.id;
+        participantUpdates.push({ id: side.id, status: "pending", match_id: matchId });
       }
+    }
+    if (participantUpdates.length) {
+      const { error: partUpdErr } = await client.from("event_participants").upsert(participantUpdates, { onConflict: "id" });
+      if (partUpdErr) throw partUpdErr;
     }
 
     await client

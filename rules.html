@@ -328,7 +328,17 @@
           報名時每人固定發放 <b style="color:var(--gold);">1000</b> 財神幣預算(主辦人可調整)，不用打怪、不用對戰賺，大家起跑點完全一樣。<br/><br/>
           主辦人按下「開始拍賣」後，系統會自動依排程開拍(預設每 <b style="color:var(--ink);">90</b> 秒開新的一波，可調整)，不用主辦人在旁邊一直操作，主辦人也可以下去跟大家一起搶標。<br/><br/>
           拍賣採 <b style="color:var(--ink);">英式競標</b>(價高者得):商品從底價起跳，大家即時喊價加碼，出價至少要比目前最高價高一個「最小加價單位」。倒數最後 <b style="color:var(--gold);">10</b> 秒內如果有人加價，倒數會重新計時到剩 <b style="color:var(--gold);">15</b> 秒，防止蹲點偷襲、最後一秒撿便宜。<br/><br/>
-          活動結束依「商品得分 + 剩餘財神幣折算分數」加總排行:商品得分是用<b style="color:var(--ink);">實際得標成交價</b>現算的(成交價越高分數也越高，不是看開拍前的底價)，剩餘財神幣 <b style="color:var(--ink);">1</b> 枚只能折算 <b style="color:var(--gold);">0.25</b> 分，效益比標到商品低，鼓勵大家積極出手而不是死抱錢包到最後。前五名套用活動設定的獎勵機制。<br/><br/>
+          活動結束依「商品得分 + 剩餘財神幣折算分數」加總排行。<b style="color:var(--ink);">商品得分是用實際得標成交價現算的</b>，公式是:<br/><br/>
+          <div style="background:rgba(242,183,5,.08);border:1px solid var(--gold-d);border-radius:10px;padding:14px 16px;margin:0 0 14px;">
+            <p style="margin:0 0 8px;font-family:'Space Mono',monospace;color:var(--gold);font-size:15px;">得標分數 = 成交價 × 0.35 × 品級加乘</p>
+            <p style="margin:0;color:var(--ink-dim);font-size:13px;line-height:1.8;">
+              品級加乘:普通 ×1、稀有 ×1.05、史詩 ×1.15、傳說 ×1.3(下面「商品分級」表格裡也會分別列出)。<br/>
+              組合包不分品級，固定是「成交價 × 0.35 × 1.25」，這個 1.25 已經取代品級加乘，兩個不會疊加。<br/>
+              算出來的分數不到 5 分一律算 5 分(不會出現 0 分或負分)。<br/>
+              舉例:一件底價 700 的史詩商品，如果用底價 700 標到 = 700×0.35×1.15 ≈ <b style="color:var(--ink);">282</b> 分;如果被搶到 1000 才標到 = 1000×0.35×1.15 ≈ <b style="color:var(--ink);">403</b> 分——成交價越高，分數是跟著同比例往上漲的，不是固定值。
+            </p>
+          </div>
+          剩餘財神幣 <b style="color:var(--ink);">1</b> 枚只能折算 <b style="color:var(--gold);">0.25</b> 分，用底價標到任何商品都至少換算 0.35 分/枚以上，划算過留著不花，鼓勵大家積極出手而不是死抱錢包到最後。前五名套用活動設定的獎勵機制。<br/><br/>
           商品全部拍賣完畢後，還會留 <b style="color:var(--gold);">3</b> 分鐘緩衝時間讓大家繼續打工、答任務、去幸運攤位下注，時間到系統會自動結算活動，不用主辦人手動收尾(主辦人也可以隨時提前手動結束)。
           </p>
         </div>
@@ -337,43 +347,43 @@
           <h4><i data-lucide="layers" class="ico"></i> 商品分級</h4>
           <div class="rule-table-wrap">
             <table class="rule-table">
-              <thead><tr><th>分級</th><th>底價</th><th>分數</th><th>說明</th></tr></thead>
+              <thead><tr><th>分級</th><th>底價</th><th>分數倍率</th><th>說明</th></tr></thead>
               <tbody>
                 <tr>
                   <td><span class="tier-tag common" style="border:none;padding:0;"><i data-lucide="package" class="ico"></i>普通</span></td>
                   <td>50~150</td>
-                  <td>最低</td>
+                  <td>×0.35(×1)</td>
                   <td>—</td>
                 </tr>
                 <tr>
                   <td><span class="tier-tag rare" style="border:none;padding:0;"><i data-lucide="gem" class="ico"></i>稀有</span></td>
                   <td>300~500</td>
-                  <td>中等</td>
+                  <td>×0.35(×1.05)</td>
                   <td>—</td>
                 </tr>
                 <tr>
                   <td><span class="tier-tag epic" style="border:none;padding:0;"><i data-lucide="flame" class="ico"></i>史詩</span></td>
                   <td>600~900</td>
-                  <td>較高</td>
+                  <td>×0.35(×1.15)</td>
                   <td>—</td>
                 </tr>
                 <tr>
                   <td><span class="tier-tag legendary" style="border:none;padding:0;"><i data-lucide="crown" class="ico"></i>傳說</span></td>
                   <td>1000 以上</td>
-                  <td><b style="color:var(--gold);">最高</b></td>
+                  <td><b style="color:var(--gold);">×0.35(×1.3)</b></td>
                   <td>整場限量供應</td>
                 </tr>
                 <tr>
                   <td><span class="tier-tag bundle" style="border:none;padding:0;"><i data-lucide="layers" class="ico"></i>組合包</span></td>
                   <td>200~260</td>
-                  <td>比同價位單品略高</td>
+                  <td>×0.35(×1.25)</td>
                   <td>一次多件小東西綁在一起賣，適合想快速湊分的人</td>
                 </tr>
                 <tr>
                   <td><span class="tier-tag mystery" style="border:none;padding:0;"><i data-lucide="package-open" class="ico"></i>福袋箱</span></td>
                   <td>350~400</td>
                   <td>開箱才知道</td>
-                  <td>得標後現場開箱，機率見下表</td>
+                  <td>得標後現場開箱，機率見下表(分數固定，不受成交價影響)</td>
                 </tr>
                 <tr>
                   <td><span class="tier-tag special" style="border:none;padding:0;"><i data-lucide="ticket" class="ico"></i>特殊</span></td>
@@ -384,6 +394,7 @@
               </tbody>
             </table>
           </div>
+          <p style="color:var(--ink-dim);line-height:1.9;margin-top:10px;font-size:12.5px;">「分數倍率」欄位括號內的數字是品級加乘，跟前面公式「成交價 × 0.35 × 品級加乘」對照著看;組合包的 1.25 是固定倍率，取代品級加乘，不會再疊加。</p>
           <p style="color:var(--ink-dim);line-height:1.9;margin-top:14px;">福袋箱開箱機率:</p>
           <div class="rule-table-wrap">
             <table class="rule-table">
@@ -432,7 +443,7 @@
           <b style="color:var(--ink);"><i data-lucide="users" class="ico"></i> 合夥競標</b>:拍賣進行中可以邀請另一位參加者合夥搶這一波，對方接受後，標到的話價錢跟分數兩人各分一半，適合朋友結伴來玩。<br/><br/>
           <b style="color:var(--ink);"><i data-lucide="target" class="ico"></i> 猜價小遊戲</b>:每件商品拍賣中，大家都可以先猜「這件最後會標到多少錢」(一件只能猜一次，不用出價也能參加)，結標後猜中加 <b style="color:var(--gold);">25</b> 分、最接近的人加 <b style="color:var(--gold);">10</b> 分(平手全部一起拿)。<br/><br/>
           <b style="color:var(--ink);"><i data-lucide="gift" class="ico"></i> 隱藏驚喜商品</b>:整場會有 1~2 件商品不會出現在「商品預告」清單裡(連搶先情報券都看不到)，要等它自己開拍才知道，製造一點意外驚喜。<br/><br/>
-          <b style="color:var(--ink);"><i data-lucide="flag" class="ico"></i> 最後衝刺輪</b>:本場最後一波拍賣會特別標示出來，提醒大家把剩餘財神幣花光光——畢竟折算成分數只有一半效益。
+          <b style="color:var(--ink);"><i data-lucide="flag" class="ico"></i> 最後衝刺輪</b>:本場最後一波拍賣會特別標示出來，提醒大家把剩餘財神幣花光光——畢竟留著不花，折算成分數的效益還是比標到商品差。
           </p>
         </div>
 

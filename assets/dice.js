@@ -22,6 +22,9 @@ let currentRoundKey = null;
 let autoFollowTriggered = false;
 let enteredMarked = false;
 let goneAway = false;
+let refreshGen = 0; // 每次真的呼叫 refresh() 就+1，回應回來時比對還是不是最新的一次，
+// 避免realtime事件密集觸發時，比較舊的那次查詢比較慢回來反而蓋掉新的畫面(亂序/過期回應)
+let refreshDebounceTimer = null;
 let autopilotSlot = null;
 let autopilotAnnounced = false;
 let entryWatchdog = null;
@@ -696,7 +699,9 @@ async function maybeAutopilotSubmit() {
 }
 
 async function refresh() {
+  const myGen = ++refreshGen;
   const m = await db.getMatchSafe(matchId);
+  if (myGen !== refreshGen) return; // 這段等待期間又有更新的一次refresh了，這次的結果已經過期，不要套用
   if (!m) {
     if (!goneAway) {
       goneAway = true;
@@ -711,6 +716,7 @@ async function refresh() {
   match = m;
   if (!ev) {
     ev = await db.getEventSafe(match.event_id);
+    if (myGen !== refreshGen) return;
     if (!ev) {
       if (!goneAway) {
         goneAway = true;
@@ -735,6 +741,16 @@ async function refresh() {
   resolveRoundIfReady(state);
   maybeAutoAdvance(state);
   maybeAutopilotSubmit();
+}
+
+// realtime事件密集連續觸發時，把短時間內的好幾次通知合併成一次真正的refresh，
+// 不要每筆變化都各自觸發一次重新抓取+重新render。
+function scheduleRefresh() {
+  if (refreshDebounceTimer) clearTimeout(refreshDebounceTimer);
+  refreshDebounceTimer = setTimeout(() => {
+    refreshDebounceTimer = null;
+    refresh();
+  }, 120);
 }
 
 function bindControls() {
@@ -865,8 +881,8 @@ function bindRuleModal() {
   bindControls();
   bindRuleModal();
   await refresh();
-  unsub = db.onTableChange("matches", `id=eq.${matchId}`, () => refresh());
-  unsubParticipants = db.onTableChange("event_participants", `event_id=eq.${eventId}`, () => refresh());
+  unsub = db.onTableChange("matches", `id=eq.${matchId}`, () => scheduleRefresh());
+  unsubParticipants = db.onTableChange("event_participants", `event_id=eq.${eventId}`, () => scheduleRefresh());
   unsubBets = db.onTableChange("match_bets", `match_id=eq.${matchId}`, () => {
     if (match) battleView.update(match, ev, mySlot);
   });
@@ -878,6 +894,7 @@ function bindRuleModal() {
 
 window.addEventListener("beforeunload", () => {
   db.cancelAllRequests();
+  if (refreshDebounceTimer) clearTimeout(refreshDebounceTimer);
   if (unsub) unsub();
   if (unsubParticipants) unsubParticipants();
   if (unsubBets) unsubBets();
