@@ -110,27 +110,33 @@ const db = (function () {
 
   async function ensurePlayerFromSession(session) {
     if (!session) return null;
-    const { data: existing, error: readErr } = await client
-      .from("players")
-      .select("*")
-      .eq("id", session.user.id)
-      .maybeSingle();
-    if (readErr) throw readErr;
-    if (existing) {
-      localStorage.setItem("player_id", existing.id);
-      localStorage.setItem("player_name", existing.name);
-      return existing;
-    }
-    const name = discordNameFromSession(session);
-    const { data, error } = await client
-      .from("players")
-      .insert({ id: session.user.id, name })
-      .select()
-      .single();
-    if (error) throw error;
-    localStorage.setItem("player_id", data.id);
-    localStorage.setItem("player_name", data.name);
-    return data;
+    // 這個函式常常被同一個頁面上好幾個獨立模組同時呼叫(例如 header.js 的帳號區塊、
+    // 加上頁面本身各自的登入流程)，實測發現同一個玩家會在幾百毫秒內被查兩三次。
+    // 包進 _cachedFetch 讓這些同時發生的呼叫合併成一次真正的請求。
+    return _cachedFetch(`ensurePlayerFromSession:${session.user.id}`, 3000, async (signal) => {
+      const { data: existing, error: readErr } = await client
+        .from("players")
+        .select("*")
+        .abortSignal(signal)
+        .eq("id", session.user.id)
+        .maybeSingle();
+      if (readErr) throw readErr;
+      if (existing) {
+        localStorage.setItem("player_id", existing.id);
+        localStorage.setItem("player_name", existing.name);
+        return existing;
+      }
+      const name = discordNameFromSession(session);
+      const { data, error } = await client
+        .from("players")
+        .insert({ id: session.user.id, name })
+        .select()
+        .single();
+      if (error) throw error;
+      localStorage.setItem("player_id", data.id);
+      localStorage.setItem("player_name", data.name);
+      return data;
+    });
   }
 
   // ---------- 活動 ----------
@@ -750,6 +756,7 @@ const db = (function () {
       .single();
     if (error) throw error;
     localStorage.setItem("player_name", data.name);
+    invalidateCache("ensurePlayerFromSession:"); // 改名後把快取清掉，不然短時間內其他模組還會拿到改名前的舊資料
     return data;
   }
 
