@@ -177,7 +177,7 @@ const db = (function () {
   async function getMatchSafe(matchId) {
     const { data, error } = await client
       .from("matches")
-      .select("*, p1:player1_id(name), p2:player2_id(name)")
+      .select("*, p1:player1_id(name, is_bot), p2:player2_id(name, is_bot)")
       .eq("id", matchId)
       .maybeSingle();
     if (error) throw error;
@@ -228,6 +228,21 @@ const db = (function () {
     return data;
   }
 
+  // 主辦人一個人測試對戰用:建一個標記成 is_bot 的假玩家、直接幫他報名這場活動。
+  // 之後配對到真人時，對手那邊的 checkEntryTimeout 偵測到對面是機器人，會跳過原本給真人
+  // 用的60秒等待猶豫期，改成幾秒後就直接開始代打，讓主辦人不用真的找第二個人也能跑完整場流程。
+  async function addTestBot(eventId, name) {
+    const botName = name || `🤖 測試機器人 ${Math.floor(Math.random() * 1000)}`;
+    const { data: player, error: playerErr } = await client
+      .from("players")
+      .insert({ name: botName, is_bot: true })
+      .select()
+      .single();
+    if (playerErr) throw playerErr;
+    const participant = await joinEvent(eventId, player.id);
+    return { player, participant };
+  }
+
   async function getMyParticipant(eventId, playerId) {
     const { data, error } = await client
       .from("event_participants")
@@ -242,7 +257,7 @@ const db = (function () {
   async function listParticipants(eventId) {
     const { data, error } = await client
       .from("event_participants")
-      .select("*, players(name)")
+      .select("*, players(name, is_bot)")
       .eq("event_id", eventId)
       .order("created_at", { ascending: true });
     if (error) throw error;
@@ -253,7 +268,7 @@ const db = (function () {
     return _cachedFetch(`listMatches:${eventId}`, 500, async (signal) => {
       const { data, error } = await client
         .from("matches")
-        .select("*, p1:player1_id(name), p2:player2_id(name)")
+        .select("*, p1:player1_id(name, is_bot), p2:player2_id(name, is_bot)")
         .abortSignal(signal)
         .eq("event_id", eventId)
         .order("round", { ascending: true });
@@ -1830,6 +1845,7 @@ const db = (function () {
     deleteEvent,
     setEventStatus,
     joinEvent,
+    addTestBot,
     getMyParticipant,
     listParticipants,
     listMatches,

@@ -661,6 +661,7 @@ async function maybeAutoAdvance(state) {
   } catch (e) {}
 }
 
+const BOT_ENTRY_TIMEOUT_MS = 3000; // 對手是主辦人加的測試機器人時，不用等真人才需要的1分鐘猶豫期
 async function checkEntryTimeout() {
   if (!mySlot || !match) return;
   if (match.status !== "active" || !match.activated_at) return;
@@ -673,15 +674,18 @@ async function checkEntryTimeout() {
     return;
   }
   if (autopilotSlot === oppSlot) return;
+  const oppIsBot = !!(oppSlot === 1 ? match.p1?.is_bot : match.p2?.is_bot);
+  const timeoutMs = oppIsBot ? BOT_ENTRY_TIMEOUT_MS : ENTRY_TIMEOUT_MS;
   const elapsed = Date.now() - new Date(match.activated_at).getTime();
-  if (elapsed < ENTRY_TIMEOUT_MS) return;
+  if (elapsed < timeoutMs) return;
   autopilotSlot = oppSlot;
   if (!autopilotAnnounced) {
     autopilotAnnounced = true;
     const oppName = oppSlot === 1 ? match.p1?.name : match.p2?.name;
-    db
-      .appendMatchLog(matchId, `${oppName || "對手"} 超過1分鐘沒有進入對戰畫面，系統開始自動幫他出招(不會用防禦骰/加注/大招等技能)，他隨時進場都能接手。`)
-      .catch(() => {});
+    const msg = oppIsBot
+      ? `${oppName || "測試機器人"} 是測試用機器人，系統直接開始幫它出招。`
+      : `${oppName || "對手"} 超過1分鐘沒有進入對戰畫面，系統開始自動幫他出招(不會用防禦骰/加注/大招等技能)，他隨時進場都能接手。`;
+    db.appendMatchLog(matchId, msg).catch(() => {});
   }
 }
 

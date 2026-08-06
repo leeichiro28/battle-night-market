@@ -208,7 +208,8 @@ function participantRow(row, ev, onKicked) {
 
   const name = document.createElement("div");
   name.className = "admin-row-name";
-  name.innerHTML = `${ui.rankBadge(rank)}<span class="pname">${ui.esc(row.players.name)}</span><span class="pstate">${ui.esc(stateText)}</span>`;
+  const botBadge = row.players.is_bot ? `<span class="bot-badge">${ui.icon("bot")}測試機器人</span>` : "";
+  name.innerHTML = `${ui.rankBadge(rank)}<span class="pname">${ui.esc(row.players.name)}</span>${botBadge}<span class="pstate">${ui.esc(stateText)}</span>`;
 
   const input = document.createElement("input");
   input.placeholder = "輸入獎勵，例如:傳說之劍 x1";
@@ -493,6 +494,7 @@ function eventAdminCard(ev) {
       <div class="action-row">
         ${primaryActionBtn}
         ${ev.locked && !isClosed ? `<a class="btn ghost small" href="${GAME_PAGE[ev.game_type]}?event=${ev.id}" target="_blank">${ui.icon("eye")}前往頁面</a>` : ""}
+        ${!isAuction && !ev.locked && !isClosed ? `<button class="btn ghost small" data-action="add-bot">${ui.icon("bot")}加入測試機器人</button>` : ""}
         ${!isClosed ? `<button class="btn ghost small" data-action="close">${ui.icon("flag")}結束活動</button>` : ""}
         <button class="btn ghost small outline-danger" data-action="delete">${ui.icon("trash-2")}刪除活動</button>
       </div>
@@ -500,6 +502,23 @@ function eventAdminCard(ev) {
     <div class="bracket-summary"></div>
     <div class="participants"></div>
   `;
+
+  const addBotBtn = card.querySelector('[data-action="add-bot"]');
+  if (addBotBtn) {
+    addBotBtn.onclick = async () => {
+      addBotBtn.disabled = true;
+      addBotBtn.innerHTML = ui.icon("loader-circle") + "加入中...";
+      try {
+        await db.addTestBot(ev.id);
+        renderParticipants(card.querySelector(".participants"), ev);
+      } catch (e) {
+        await ui.alert("加入測試機器人失敗:" + (e.message || "未知錯誤"), { title: "操作失敗", tone: "danger" });
+      } finally {
+        addBotBtn.disabled = false;
+        addBotBtn.innerHTML = ui.icon("bot") + "加入測試機器人";
+      }
+    };
+  }
 
   const closeBtn = card.querySelector('[data-action="close"]');
   if (closeBtn) {

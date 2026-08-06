@@ -12,6 +12,7 @@ create table if not exists players (
   name text not null,
   created_at timestamptz default now()
 );
+alter table players add column if not exists is_bot boolean not null default false; -- 主辦人測試用假玩家，跟真人區分開來
 
 -- 活動場次
 create table if not exists events (

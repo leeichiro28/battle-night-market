@@ -864,6 +864,9 @@ async function maybeAutoAdvance(state) {
 
 // 我自己一進到這個對戰畫面，超過1分鐘對手還沒入場的話，就由我這邊自動幫對手出招，讓對戰照樣打下去
 // 對手之後如果自己進場了，會偵測到並把控制權交還給他自己
+// 如果對手是主辦人自己加的測試機器人(is_bot)，不用等這1分鐘的猶豫期——機器人本來就不會真的
+// 有人操作，等滿1分鐘只是讓主辦人一個人測試的時候白白多等，改成幾秒後就直接開始代打。
+const BOT_ENTRY_TIMEOUT_MS = 3000;
 async function checkEntryTimeout() {
   if (!mySlot || !match) return;
   if (match.status !== "active" || !match.activated_at) return;
@@ -879,15 +882,18 @@ async function checkEntryTimeout() {
     return;
   }
   if (autopilotSlot === oppSlot) return; // 已經在幫他代打了
+  const oppIsBot = !!(oppSlot === 1 ? match.p1?.is_bot : match.p2?.is_bot);
+  const timeoutMs = oppIsBot ? BOT_ENTRY_TIMEOUT_MS : ENTRY_TIMEOUT_MS;
   const elapsed = Date.now() - new Date(match.activated_at).getTime();
-  if (elapsed < ENTRY_TIMEOUT_MS) return;
+  if (elapsed < timeoutMs) return;
   autopilotSlot = oppSlot;
   if (!autopilotAnnounced) {
     autopilotAnnounced = true;
     const oppName = oppSlot === 1 ? match.p1?.name : match.p2?.name;
-    db
-      .appendMatchLog(matchId, `${oppName || "對手"} 超過1分鐘沒有進入對戰畫面，系統開始自動幫他出招(逾時判定，不會使用究極手勢)，他隨時進場都能接手。`)
-      .catch(() => {});
+    const msg = oppIsBot
+      ? `${oppName || "測試機器人"} 是測試用機器人，系統直接開始幫它出招(逾時判定，不會使用究極手勢)。`
+      : `${oppName || "對手"} 超過1分鐘沒有進入對戰畫面，系統開始自動幫他出招(逾時判定，不會使用究極手勢)，他隨時進場都能接手。`;
+    db.appendMatchLog(matchId, msg).catch(() => {});
   }
 }
 
@@ -924,7 +930,10 @@ function maybeAutopilotSubmit() {
 
   clearAutopilotTimer();
   autopilotTimerRoundKey = roundKey;
-  const roundTimeoutMs = getFieldMod(state) === "fast_timer" ? 20000 : 30000;
+  // 對手是測試機器人的話，每回合也不用等滿20/30秒，縮短成幾秒，讓主辦人一個人測試時
+  // 可以很快把整場BO5跑完，不用每回合都乾等對手根本不存在的思考時間。
+  const oppIsBot = !!(autopilotSlot === 1 ? match.p1?.is_bot : match.p2?.is_bot);
+  const roundTimeoutMs = oppIsBot ? BOT_ENTRY_TIMEOUT_MS : getFieldMod(state) === "fast_timer" ? 20000 : 30000;
   autopilotTimer = setTimeout(async () => {
     autopilotTimer = null;
     try {

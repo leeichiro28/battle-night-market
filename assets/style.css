@@ -1133,6 +1133,13 @@ i.ico{opacity:0;}
   color:var(--ink-dim);
   white-space:nowrap;
 }
+.admin-row-name .bot-badge{
+  display:inline-flex;align-items:center;gap:3px;
+  font-size:10.5px;color:#5FC2DE;background:rgba(95,194,222,.12);
+  border:1px solid rgba(95,194,222,.4);border-radius:999px;
+  padding:2px 7px;white-space:nowrap;
+}
+.admin-row-name .bot-badge .ico{width:11px;height:11px;}
 .admin-row-actions{
   display:flex;
   align-items:center;
