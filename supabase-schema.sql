@@ -648,18 +648,26 @@ drop policy if exists "anon all auction_task_answers" on auction_task_answers;
 create policy "anon all auction_task_answers" on auction_task_answers for all using (true) with check (true);
 
 -- ============================================
--- 執行完以上內容後，記得手動開啟 Realtime:
--- 左側選單 Database → Replication →
--- 把 events / event_participants / matches / match_bets 四張表的開關打開
--- (舊專案升級上來，前三張應該已經開過，這次新增的 match_bets 記得也要開)
--- 夜市拍賣新增的表也要打開:auction_participants / auction_lots / auction_bids /
--- auction_tasks / auction_task_answers / auction_price_guesses
--- 或是直接在 SQL Editor 執行下面這幾行也可以:
--- alter publication supabase_realtime add table match_bets;
--- alter publication supabase_realtime add table auction_participants;
--- alter publication supabase_realtime add table auction_lots;
--- alter publication supabase_realtime add table auction_bids;
--- alter publication supabase_realtime add table auction_tasks;
--- alter publication supabase_realtime add table auction_task_answers;
--- alter publication supabase_realtime add table auction_price_guesses;
+-- Realtime(Database Publications):以下這段可以整份跟著上面一起貼到 SQL Editor 執行，
+-- 不用再手動去 Database → Replication 一張一張打開開關。用 pg_publication_tables 先檢查
+-- 這張表是不是已經在 supabase_realtime 這個發布清單裡，不在才加，所以整份重跑也不會出錯
+-- (ALTER PUBLICATION ADD TABLE 對已經加過的表格重複執行會直接報錯，這裡用迴圈避開)。
+do $$
+declare
+  t text;
+begin
+  foreach t in array array[
+    'events', 'event_participants', 'matches', 'match_bets',
+    'auction_participants', 'auction_lots', 'auction_bids',
+    'auction_tasks', 'auction_task_answers', 'auction_price_guesses'
+  ]
+  loop
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t
+    ) then
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    end if;
+  end loop;
+end $$;
 -- ============================================
