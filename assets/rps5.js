@@ -891,7 +891,7 @@ async function checkEntryTimeout() {
     autopilotAnnounced = true;
     const oppName = oppSlot === 1 ? match.p1?.name : match.p2?.name;
     const msg = oppIsBot
-      ? `${oppName || "測試機器人"} 是測試用機器人，系統直接開始幫它出招(逾時判定，不會使用究極手勢)。`
+      ? `${oppName || "測試機器人"} 是測試用機器人，接下來每回合會隨機出手勢應戰(不會用究極手勢)。`
       : `${oppName || "對手"} 超過1分鐘沒有進入對戰畫面，系統開始自動幫他出招(逾時判定，不會使用究極手勢)，他隨時進場都能接手。`;
     db.appendMatchLog(matchId, msg).catch(() => {});
   }
@@ -944,7 +944,17 @@ function maybeAutopilotSubmit() {
       const stillMissing = autopilotSlot === 1 ? !st.m1 : !st.m2;
       const sameRound = `${st.game || 1}-${st.round}` === roundKey;
       if (stillMissing && sameRound) {
-        await db.submitMove(matchId, autopilotSlot, { gesture: null, ult: false, timeout: true });
+        if (oppIsBot) {
+          // 機器人要真的出手勢，不是每回合都判逾時輸掉——不然主辦人永遠贏、根本測不到
+          // 手勢對戰、炸彈、連段這些真正的遊戲機制。隨機挑一個手勢(炸彈有開放時也有機率選到)，
+          // 究極手勢不用，維持機器人「弱但會出招」的定位，讓對戰過程比較好測。
+          const gestures = GESTURE_ORDER.slice();
+          if (bombAvailable(st)) gestures.push("bomb");
+          const gesture = gestures[Math.floor(Math.random() * gestures.length)];
+          await db.submitMove(matchId, autopilotSlot, { gesture, ult: false, timeout: false });
+        } else {
+          await db.submitMove(matchId, autopilotSlot, { gesture: null, ult: false, timeout: true });
+        }
       }
     } catch (e) {}
   }, roundTimeoutMs);
