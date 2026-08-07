@@ -113,6 +113,10 @@ window.BattleView = (function () {
 
     let lastSeenRound = null;
     let announceTimer = null;
+    let announceQueue = []; // 對戰節奏快的時候(尤其是對機器人，回合會解得很快)，新的一則大字公告
+    // 可能在玩家還沒看完上一則的時候就進來——改成排隊播放，每一則都保證顯示滿它自己的
+    // holdMs，不會被下一則直接蓋掉，避免「來不及看完字」。
+    const ANNOUNCE_QUEUE_MAX = 3; // 排隊排太長代表玩家已經跟不上了，只留最新幾則，捨棄更舊的
     let myBet = null;
     let reactionChannel = null;
     let destroyed = false;
@@ -129,14 +133,29 @@ window.BattleView = (function () {
     function announce(text, opts2) {
       if (destroyed) return;
       const oo = typeof opts2 === "number" ? { holdMs: opts2 } : opts2 || {};
+      announceQueue.push({ text, icon: oo.icon, holdMs: oo.holdMs || 2200 });
+      if (announceQueue.length > ANNOUNCE_QUEUE_MAX) {
+        announceQueue = announceQueue.slice(announceQueue.length - ANNOUNCE_QUEUE_MAX);
+      }
+      processAnnounceQueue();
+    }
+
+    function processAnnounceQueue() {
+      if (destroyed) return;
+      if (announceTimer) return; // 目前已經有一則正在顯示中，它跑完的callback會自己接著處理下一則
+      const next = announceQueue.shift();
+      if (!next) return;
       const el = $("big-announce");
       if (!el) return;
-      el.innerHTML = (oo.icon ? ui.icon(oo.icon) : "") + ui.esc(text);
+      el.innerHTML = (next.icon ? ui.icon(next.icon) : "") + ui.esc(next.text);
       el.classList.remove("show");
       void el.offsetWidth;
       el.classList.add("show");
-      clearTimeout(announceTimer);
-      announceTimer = setTimeout(() => el.classList.remove("show"), oo.holdMs || 2200);
+      announceTimer = setTimeout(() => {
+        el.classList.remove("show");
+        announceTimer = null;
+        setTimeout(processAnnounceQueue, 150); // 留一點淡出的空檔，不要無縫接上讓人分不清是新的一則
+      }, next.holdMs);
     }
 
     // 回傳 { text， icon }，交給 announce 去顯示
@@ -428,6 +447,7 @@ window.BattleView = (function () {
       if (destroyed) return;
       destroyed = true;
       clearTimeout(announceTimer);
+      announceQueue = [];
       if (reactionChannel) {
         reactionChannel.close();
         reactionChannel = null;

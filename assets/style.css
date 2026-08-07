@@ -379,7 +379,7 @@ label{
 .choice-btn.picked .ico{color:#1B1706;}
 
 /* 五手勢對戰 BO5 系列賽比分點 */
-.series-dots{display:flex;align-items:center;justify-content:center;gap:14px;margin:0 0 16px;}
+.series-dots{display:flex;align-items:center;justify-content:center;gap:14px;margin:16px 0;}
 .series-dots .sd-side{display:flex;gap:6px;}
 .series-dots .sd-dot{width:14px;height:14px;border-radius:50%;border:2px solid var(--line);background:transparent;}
 .series-dots .sd-dot.won{background:var(--gold);border-color:var(--gold);}
