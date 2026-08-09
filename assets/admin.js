@@ -19,7 +19,7 @@ const RULE_ROWS = [
 const RPS5_RULE_ROWS = [
   { key: "bomb", desc: "第3回合起，約15%機率額外開放隱藏手勢:炸彈" },
   { key: "field_mod", desc: "開局隨機決定當局特殊規則，3選1" },
-  { key: "item_die", desc: "每3回合各自隨機拿到護盾符/增幅符/偵測符" },
+  { key: "item_die", desc: "每3回合各自隨機拿到護盾符/增幅符/擾亂符/洞悉符/延時符(對手看不到是哪種)，自己選擇何時啟動" },
   { key: "stance", desc: "出招前先宣告偏攻擊/偏防禦，純情報心理戰" },
   { key: "combo", desc: "連續3局同招獲勝，額外+2傷害" },
   { key: "mindread", desc: "剋中對方最常出的招並獲勝，額外+1傷害" },
@@ -331,7 +331,7 @@ function matchRowEl(m, ev, onResolved, classByPlayerId) {
           if (!ok) return;
           b.disabled = true;
           try {
-            await db.advanceAfterMatch(m, winnerId, loserId);
+            await db.forceMatchWin(m, winnerId, loserId);
             onResolved();
           } catch (e) {
             await ui.alert("處理失敗:" + (e.message || "未知錯誤"), { title: "操作失敗", tone: "danger" });

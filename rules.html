@@ -218,17 +218,18 @@
         <div class="game-section">
           <h4><i data-lucide="scissors" class="ico"></i> 基礎規則</h4>
           <p style="color:var(--ink-dim);line-height:1.9;">
-          採 <b style="color:var(--ink);">BO5</b> 賽制:雙方各有 <b style="color:var(--ink);">15</b> 點 HP，先讓對方 HP 歸零的人拿下這一局;率先拿下 <b style="color:var(--ink);">3</b> 局的人贏得整場對戰(最多打到第 5 局)。每進入新一局，雙方 HP 會全部回滿，重新開始。<br/><br/>
-          每回合 <b style="color:var(--ink);">30 秒</b>內選一個手勢(場地規則「疾風戰場」時縮短到 20 秒)，超時未選視為該回合直接落敗;如果雙方都超時，則平手不掉血。<br/><br/>
+          一般對戰採 <b style="color:var(--ink);">BO3</b> 賽制(先拿下 <b style="color:var(--ink);">2</b> 局者勝，最多打到第 3 局);<b style="color:var(--ink);">總冠軍賽</b>賽制較長，維持 <b style="color:var(--ink);">BO5</b>(先拿下 <b style="color:var(--ink);">3</b> 局者勝，最多打到第 5 局)。雙方各有 <b style="color:var(--ink);">15</b> 點 HP，先讓對方 HP 歸零的人拿下這一局，每進入新一局，雙方 HP 會全部回滿，重新開始。<br/><br/>
+          每回合 <b style="color:var(--ink);">45 秒</b>內選一個手勢(場地規則「疾風戰場」時縮短到 30 秒)，超時未選視為該回合直接落敗;如果雙方都超時，則平手不掉血。<br/><br/>
           剋制關係(五個手勢圍成一個環，每個手勢各克制另外兩個):<br/>
           &nbsp;&nbsp;• <i data-lucide="mountain" class="ico"></i> 石頭 勝 剪刀、蜥蜴<br/>
           &nbsp;&nbsp;• <i data-lucide="hand" class="ico"></i> 布 勝 石頭、史波克<br/>
           &nbsp;&nbsp;• <i data-lucide="scissors" class="ico"></i> 剪刀 勝 布、蜥蜴<br/>
           &nbsp;&nbsp;• <i data-lucide="bug" class="ico"></i> 蜥蜴 勝 史波克、布<br/>
           &nbsp;&nbsp;• <i data-lucide="hand-metal" class="ico"></i> 史波克 勝 剪刀、石頭<br/>
+          &nbsp;&nbsp;• <i data-lucide="bomb" class="ico"></i> 炸彈(限特定活動開啟「隱藏第六手勢」時登場) 勝 石頭、剪刀;敗 布、蜥蜴;對 史波克 是特殊平局，雙方不掉血<br/>
           出了相同的手勢就是平手，不掉血。<br/><br/>
           <b style="color:var(--ink);"><i data-lucide="zap" class="ico"></i> 究極手勢</b>:每人每一局都有 1 張，出牌保證獲勝該回合;如果雙方同一回合都出究極手勢，兩張互相抵銷，判定平手。場地規則「手速戰場」開啟時，這局可以用 2 次。<br/><br/>
-          當你的 HP ≤5(約三成血)時，你獲勝的那一擊傷害會直接翻倍，適合絕地反擊。系列賽比分打到 2:2 時，畫面會提示「賽末點」，下一局就會分出整場對戰的勝負。<br/><br/>
+          當你的 HP ≤5(約三成血)時，你獲勝的那一擊傷害會直接翻倍，適合絕地反擊。系列賽打到賽末點(BO3 為 1:1、BO5 為 2:2)時，畫面會提示「賽末點」，下一局就會分出整場對戰的勝負。<br/><br/>
           每一場對決，系統都會依照實際出的手勢組合寫出對應的戰報敘述(例如「巨石狠狠壓扁了剪刀的刀刃！」)，不是死板的「X勝過Y」。
           </p>
         </div>
@@ -244,17 +245,17 @@
                 <tr>
                   <td><span class="row-label"><i data-lucide="bomb" class="ico"></i> 隱藏第六手勢:炸彈</span></td>
                   <td>第 3 回合起，每回合約 15% 機率額外開放</td>
-                  <td>勝 石頭、剪刀;敗 布、蜥蜴;對 史波克 是特殊平局，雙方不掉血</td>
+                  <td>剋制關係併入上方基礎規則的剋制關係列表</td>
                 </tr>
                 <tr>
                   <td><span class="row-label"><i data-lucide="tornado" class="ico"></i> 場地規則</span></td>
                   <td>開局隨機 3 選 1，整局固定生效</td>
-                  <td>磐石戰場:石頭獲勝 +1 傷害 / 手速戰場:究極手勢可用 2 次 / 疾風戰場:限時縮短到 20 秒</td>
+                  <td>磐石戰場:石頭獲勝 +1 傷害 / 手速戰場:究極手勢可用 2 次 / 疾風戰場:限時縮短到 30 秒</td>
                 </tr>
                 <tr>
                   <td><span class="row-label"><i data-lucide="gift" class="ico"></i> 道具符</span></td>
-                  <td>每 3 回合雙方各自隨機拿 1 個，持有到觸發時機才消耗</td>
-                  <td><i data-lucide="shield" class="ico"></i> 護盾符:下次落敗免傷 / <i data-lucide="zap" class="ico"></i> 增幅符:下次獲勝 +2 傷害 / <i data-lucide="eye" class="ico"></i> 偵測符:看到對方上一手出了什麼</td>
+                  <td>每 3 回合雙方各自隨機拿 1 個，只有自己看得到是哪一種(對手只看得到你「持有神秘道具」)，持有到自己選擇某回合啟動才會生效，猜錯時機會浪費掉</td>
+                  <td><i data-lucide="shield" class="ico"></i> 護盾符:啟動當局輸了免傷 / <i data-lucide="zap" class="ico"></i> 增幅符:啟動當局贏了 +2 傷害 / <i data-lucide="shield-off" class="ico"></i> 擾亂符:啟動當局能擋掉對方的究極手勢 / <i data-lucide="eye" class="ico"></i> 洞悉符:啟動當下看穿對方目前握著的道具 / <i data-lucide="hourglass" class="ico"></i> 延時符:啟動後下一回合思考時間 +15 秒</td>
                 </tr>
                 <tr>
                   <td><span class="row-label"><i data-lucide="venetian-mask" class="ico"></i> 假動作</span></td>
@@ -297,7 +298,7 @@
                 <tr>
                   <td><span class="row-label"><i data-lucide="list-ordered" class="ico"></i> BO制</span></td>
                   <td>開啟後整場適用</td>
-                  <td>拋開 HP 累加，每回合直接分出這一分的勝負，率先取得 3 分的一方贏得整場;打到 2:2 觸發「賽末點」;道具符裡的護盾符/增幅符(靠傷害運作)不會發放，其餘規則照樣可以搭配</td>
+                  <td>拋開 HP 累加，每回合直接分出這一分的勝負，率先取得 3 分的一方贏得整場;打到 2:2 觸發「賽末點」;道具符(護盾符/增幅符/擾亂符/洞悉符/延時符，都是靠傷害或究極手勢運作)不會發放，其餘規則照樣可以搭配</td>
                 </tr>
                 <tr>
                   <td><span class="row-label"><i data-lucide="split" class="ico"></i> 雙手出招</span></td>

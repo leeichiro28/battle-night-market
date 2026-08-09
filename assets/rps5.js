@@ -27,16 +27,19 @@ const FIELD_MODS_RPS = ["rock_boost", "ult_twice", "fast_timer"];
 const FIELD_MOD_LABEL = {
   rock_boost: { icon: "mountain", text: "磐石戰場:石頭獲勝時傷害額外 +1" },
   ult_twice: { icon: "zap", text: "手速戰場:究極手勢這局可以用 2 次" },
-  fast_timer: { icon: "wind", text: "疾風戰場:思考時間縮短到 20 秒" },
+  fast_timer: { icon: "wind", text: "疾風戰場:思考時間縮短到 30 秒" },
 };
 
-// 道具符(進階規則):每 3 回合各自隨機拿到一個，持有到觸發時機才消耗
+// 道具符(進階規則):每 3 回合各自隨機拿到一個，持有到玩家自己選擇要不要在該回合啟動才會觸發/消耗。
+// shield/amp 要賭這回合的輸贏才會生效，猜錯浪費;disrupt/insight/delay 啟動就一定成功(disrupt要對方那回合真的用究極手勢才擋得到)。
 const ITEM_LABEL = {
   shield: { icon: "shield", text: "護盾符" },
   amp: { icon: "zap", text: "增幅符" },
-  detect: { icon: "eye", text: "偵測符" },
+  disrupt: { icon: "shield-off", text: "擾亂符" },
+  insight: { icon: "eye", text: "洞悉符" },
+  delay: { icon: "hourglass", text: "延時符" },
 };
-const ITEM_TYPES = ["shield", "amp", "detect"];
+const ITEM_TYPES = ["shield", "amp", "disrupt", "insight", "delay"];
 
 // 出招姿態宣告(假動作用):跟骰子對戰共用 stance 這個規則鍵，但五手勢版本純粹是心理戰情報，不直接影響傷害
 const STANCE_LABEL = { attack: { icon: "sword", text: "偏攻擊" }, defense: { icon: "shield", text: "偏防禦" } };
@@ -174,6 +177,7 @@ let mySlot = null;
 let submittedThisRound = false;
 let useUlt = false;
 let feintStance = null;
+let useItemThisRound = false;
 let dualActive = false;
 let dualPicks = [];
 let resolving = false;
@@ -199,9 +203,19 @@ function names() {
   return [match.p1?.name || "玩家一", match.p2?.name || "玩家二"];
 }
 
-// BO5(或進階規則的BO制):先取得3局/3分勝利才算整場對戰結束，不是單局血量歸零就結束
+// 一般對戰是 BO3(先取得2局勝利)，總冠軍賽(match.bracket === "final")維持 BO5(先取得3局勝利)，
+// 賽程更長讓冠軍賽更有份量。進階規則的「BO制」(bo_mode，用分數取代HP)不在這次調整範圍內，維持先搶3分。
+function gamesToWin(m) {
+  return m && m.bracket === "final" ? 3 : 2;
+}
+function seriesWinsNeeded() {
+  return rulesEnabled("bo_mode") ? 3 : gamesToWin(match);
+}
+
+// 先取得目標局數/分數勝利才算整場對戰結束，不是單局血量歸零就結束
 function seriesDecided(state) {
-  return (state.games1 || 0) >= 3 || (state.games2 || 0) >= 3;
+  const need = seriesWinsNeeded();
+  return (state.games1 || 0) >= need || (state.games2 || 0) >= need;
 }
 
 function startTimer(state) {
@@ -212,7 +226,10 @@ function startTimer(state) {
   clearInterval(timerInterval);
   if (submittedThisRound || seriesDecided(state)) return;
 
-  let timeLeft = getFieldMod(state) === "fast_timer" ? 20000 : 30000;
+  let timeLeft = getFieldMod(state) === "fast_timer" ? 30000 : 45000;
+  // 延時符(道具符):上一回合有啟動的話，這一回合思考時間 +15 秒
+  const myTimeBoost = (mySlot === 1 ? state.timeBoost1 : state.timeBoost2) || 0;
+  timeLeft += myTimeBoost * 1000;
   const fill = document.getElementById("timer-fill");
   const started = Date.now();
   timerInterval = setInterval(async () => {
@@ -254,13 +271,20 @@ function render(state) {
     ultBtn.style.display = "none";
     hideFeintRow();
     hideDualButton();
+    hideItemToggleBtn();
     document.getElementById("timer-fill").style.width = "0%";
-    const winnerIsP1 = (state.games1 || 0) >= 3;
+    const winnerIsP1 = (state.games1 || 0) >= seriesWinsNeeded();
     const winnerName = winnerIsP1 ? p1Name : p2Name;
     const score = `${state.games1 || 0}:${state.games2 || 0}`;
     if (state.forfeitReason === "both_afk") {
       battleView.announce("雙方掛機，已自動棄權", { icon: "alert-triangle", holdMs: 4200 });
       statusEl.innerHTML = ui.icon("alert-triangle") + `雙方都太久沒有進場，系統自動判定 ${ui.esc(winnerName)} 晉級`;
+    } else if (state.forfeitReason === "admin_forced") {
+      battleView.announce("主辦人已強制判定勝負", { icon: "gavel", holdMs: 4200 });
+      statusEl.innerHTML = ui.icon("gavel") + `主辦人已在後台強制判定，${ui.esc(winnerName)} 直接晉級`;
+    } else if (state.forfeitReason === "opponent_quit") {
+      battleView.announce("對方已退賽", { icon: "log-out", holdMs: 4200 });
+      statusEl.innerHTML = ui.icon("log-out") + `對方已退出比賽，${ui.esc(winnerName)} 直接晉級`;
     } else if (!mySlot) {
       statusEl.innerHTML = ui.icon("trophy") + `${ui.esc(winnerName)} 以 ${score} 拿下這場系列賽！`;
     } else {
@@ -282,6 +306,7 @@ function render(state) {
     ultBtn.style.display = "none";
     hideFeintRow();
     hideDualButton();
+    hideItemToggleBtn();
     document.getElementById("timer-fill").style.width = "0%";
     statusEl.innerHTML = ui.icon("eye") + "觀戰模式・對戰進行中";
     return;
@@ -289,6 +314,7 @@ function render(state) {
 
   renderFeintRow(state);
   renderDualButton(state);
+  renderItemToggleBtn(state);
   renderAndBindChoiceButtons(state);
   document.getElementById("choice-row").style.display = "grid";
   const fieldMod = getFieldMod(state);
@@ -312,7 +338,7 @@ function render(state) {
     ? ui.icon("hourglass") + "已送出，等待對方..."
     : dualActive
     ? ui.icon("split") + `雙手符啟動中，選 2 個不同的手勢(已選 ${dualPicks.length}/2)`
-    : ui.icon("timer") + "30 秒內選一個手勢！";
+    : ui.icon("timer") + "45 秒內選一個手勢！";
   startTimer(state);
 }
 
@@ -320,13 +346,17 @@ function renderSeriesDots(state) {
   const box = document.getElementById("series-dots");
   if (!box) return;
   const [p1Name, p2Name] = names();
-  const dots = (n) =>
-    Array.from({ length: 3 }, (_, i) => `<span class="sd-dot${i < n ? " won" : ""}"></span>`).join("");
   const boMode = rulesEnabled("bo_mode");
+  const need = seriesWinsNeeded();
+  const dots = (n) =>
+    Array.from({ length: need }, (_, i) => `<span class="sd-dot${i < n ? " won" : ""}"></span>`).join("");
+  const seriesLabel = boMode
+    ? "BO5(分數制)"
+    : `第${state.game || 1}局 · BO${need * 2 - 1}`;
   box.innerHTML = `
     <span class="sd-label">${ui.esc(p1Name)}</span>
     <span class="sd-side">${dots(state.games1 || 0)}</span>
-    <span class="sd-label">${boMode ? "BO3" : `第${state.game || 1}局 · BO5`}</span>
+    <span class="sd-label">${seriesLabel}</span>
     <span class="sd-side">${dots(state.games2 || 0)}</span>
     <span class="sd-label">${ui.esc(p2Name)}</span>
   `;
@@ -378,6 +408,36 @@ function renderMindreadPanel(state) {
 function hideFeintRow() {
   const box = document.getElementById("feint-row");
   if (box) box.style.display = "none";
+}
+
+function hideItemToggleBtn() {
+  const btn = document.getElementById("item-toggle-btn");
+  if (btn) btn.style.display = "none";
+}
+
+// 道具符按鈕(進階規則):手上握著道具的時候才會顯示，玩家自己決定要不要在「這一回合」啟動——
+// 啟動了才會真的消耗/生效，賭錯時機(例如啟動護盾符結果自己贏了)就等於浪費掉，詳見 resolveMatch() 裡的判定。
+function renderItemToggleBtn(state) {
+  const btn = document.getElementById("item-toggle-btn");
+  if (!btn) return;
+  const boMode = rulesEnabled("bo_mode");
+  const myItem = mySlot === 1 ? state.rpsitem1 : state.rpsitem2;
+  if (!rulesEnabled("item_die") || boMode || !myItem || submittedThisRound) {
+    btn.style.display = "none";
+    useItemThisRound = false;
+    return;
+  }
+  const meta = ITEM_LABEL[myItem];
+  btn.style.display = "flex";
+  btn.innerHTML =
+    ui.icon(meta.icon) +
+    (useItemThisRound ? `${meta.text}:已啟動(這回合出招時會一併生效)` : `使用${meta.text}(這回合啟動，賭錯時機會浪費掉)`);
+  btn.classList.toggle("active-choice", useItemThisRound);
+  btn.onclick = () => {
+    if (submittedThisRound) return;
+    useItemThisRound = !useItemThisRound;
+    render(state);
+  };
 }
 
 // 假動作(進階規則):出招前先宣告「偏攻擊」或「偏防禦」，純情報，不直接影響傷害，
@@ -478,12 +538,63 @@ async function resolveRoundIfReady(state) {
     if (m1.dual) dualUsed1 = true;
     if (m2.dual) dualUsed2 = true;
 
+    // 擾亂符/洞悉符/延時符:這三種是「啟動就一定生效」的道具(不像護盾符/增幅符要賭輸贏)，
+    // 在回合判定之前先處理掉。擾亂符要對方那回合真的出究極手勢才擋得到，猜不中一樣浪費;
+    // 洞悉符、延時符只要啟動就一定成功，用掉即消耗。
+    let m1UltEffective = !!m1.ult;
+    let m2UltEffective = !!m2.ult;
+    let timeBoost1 = 0;
+    let timeBoost2 = 0;
+    let itemNote = "";
+    if (rules.item_die && m2.useItem && rpsitem2 === "disrupt") {
+      rpsitem2 = null;
+      if (m1.ult) {
+        m1UltEffective = false;
+        itemNote += ` ${p2Name}的擾亂符發動，擋掉了${p1Name}的究極手勢！`;
+      } else {
+        itemNote += ` ${p2Name}的擾亂符撲空，對方這回合沒有用究極手勢。`;
+      }
+    }
+    if (rules.item_die && m1.useItem && rpsitem1 === "disrupt") {
+      rpsitem1 = null;
+      if (m2.ult) {
+        m2UltEffective = false;
+        itemNote += ` ${p1Name}的擾亂符發動，擋掉了${p2Name}的究極手勢！`;
+      } else {
+        itemNote += ` ${p1Name}的擾亂符撲空，對方這回合沒有用究極手勢。`;
+      }
+    }
+    if (rules.item_die && m1.useItem && rpsitem1 === "insight") {
+      const theirs = rpsitem2; // 對方「這一刻」握著的道具，抓的是本回合他還沒重新抽之前的值
+      rpsitem1 = null;
+      itemNote += theirs
+        ? ` ${p1Name}的洞悉符發動，看穿${p2Name}身上握著${ITEM_LABEL[theirs].text}！`
+        : ` ${p1Name}的洞悉符發動，但${p2Name}身上目前沒有道具。`;
+    }
+    if (rules.item_die && m2.useItem && rpsitem2 === "insight") {
+      const theirs = rpsitem1;
+      rpsitem2 = null;
+      itemNote += theirs
+        ? ` ${p2Name}的洞悉符發動，看穿${p1Name}身上握著${ITEM_LABEL[theirs].text}！`
+        : ` ${p2Name}的洞悉符發動，但${p1Name}身上目前沒有道具。`;
+    }
+    if (rules.item_die && m1.useItem && rpsitem1 === "delay") {
+      rpsitem1 = null;
+      timeBoost1 = 15;
+      itemNote += ` ${p1Name}的延時符發動，下一回合思考時間 +15 秒。`;
+    }
+    if (rules.item_die && m2.useItem && rpsitem2 === "delay") {
+      rpsitem2 = null;
+      timeBoost2 = 15;
+      itemNote += ` ${p2Name}的延時符發動，下一回合思考時間 +15 秒。`;
+    }
+
     let winnerSlot = null;
     let winGesture = null;
     let judgement = null;
     const g1Text = m1.dual && m1.gesture2 ? `${GESTURE_NAME[m1.gesture]}+${GESTURE_NAME[m1.gesture2]}(雙手符)` : m1.gesture ? GESTURE_NAME[m1.gesture] : "逾時未出招";
     const g2Text = m2.dual && m2.gesture2 ? `${GESTURE_NAME[m2.gesture]}+${GESTURE_NAME[m2.gesture2]}(雙手符)` : m2.gesture ? GESTURE_NAME[m2.gesture] : "逾時未出招";
-    let entry = `第${state.round}回合:${p1Name} 出了 ${g1Text},${p2Name} 出了 ${g2Text}。`;
+    let entry = `第${state.round}回合:${p1Name} 出了 ${g1Text},${p2Name} 出了 ${g2Text}。${itemNote}`;
 
     if (m1.stance || m2.stance) {
       const parts = [];
@@ -505,14 +616,14 @@ async function resolveRoundIfReady(state) {
       winnerSlot = 1;
       winGesture = m1.gesture;
       entry += `${p2Name}逾時未出招，${p1Name}直接獲勝。`;
-    } else if (m1.ult && m2.ult) {
+    } else if (m1UltEffective && m2UltEffective) {
       entry += "雙方都使出究極手勢，強強相抵，平手。";
       lastEvent = { type: "tie" };
-    } else if (m1.ult) {
+    } else if (m1UltEffective) {
       winnerSlot = 1;
       winGesture = m1.gesture;
       entry += `${p1Name}使出究極手勢，直接獲勝！`;
-    } else if (m2.ult) {
+    } else if (m2UltEffective) {
       winnerSlot = 2;
       winGesture = m2.gesture;
       entry += `${p2Name}使出究極手勢，直接獲勝！`;
@@ -533,7 +644,19 @@ async function resolveRoundIfReady(state) {
       }
     }
 
-    // 手勢突變 / 讀心值 / 偵測符 用的統計資料，不管這回合誰贏都要更新(逾時的那一方不算數)
+    // 這回合沒有分出勝負(平手/雙方究極手勢互抵/雙方同時扔炸彈)的話，這回合啟動的護盾符/增幅符沒有對象可以生效，直接浪費掉
+    if (rules.item_die && !boMode && !winnerSlot) {
+      if (m1.useItem && (rpsitem1 === "shield" || rpsitem1 === "amp")) {
+        entry += ` ${p1Name}啟動了${ITEM_LABEL[rpsitem1].text}，但這回合沒有分出勝負，浪費掉了。`;
+        rpsitem1 = null;
+      }
+      if (m2.useItem && (rpsitem2 === "shield" || rpsitem2 === "amp")) {
+        entry += ` ${p2Name}啟動了${ITEM_LABEL[rpsitem2].text}，但這回合沒有分出勝負，浪費掉了。`;
+        rpsitem2 = null;
+      }
+    }
+
+    // 手勢突變 / 讀心值 用的統計資料，不管這回合誰贏都要更新(逾時的那一方不算數)
     if (rules.mutation) {
       if (m1.gesture) {
         repeatCount1 = m1.gesture === state.recentGesture1 ? repeatCount1 + 1 : 1;
@@ -569,28 +692,17 @@ async function resolveRoundIfReady(state) {
 
     // 道具符(每3回合各自隨機拿一個新的，還握著沒用掉的話不會被換掉)。
     // 護盾符/增幅符是靠傷害運作的，BO制沒有傷害概念，所以BO制底下不發放這兩種道具。
+    // 三種道具都要玩家自己選擇要不要在該回合啟動(出招時勾選「使用道具」)，不是像以前自動觸發:
+    // 護盾符要在啟動的那回合輸了才擋傷害、增幅符要贏了才加傷害、擾亂符要對方那回合出究極手勢才擋得到——
+    // 賭錯時機就等於白白浪費掉，沒啟動的話會一直留在手上，等你想用的時候再用。
     if (rules.item_die && !boMode && itemEligibleRound(state.round)) {
       if (!rpsitem1) {
         rpsitem1 = ITEM_TYPES[Math.floor(Math.random() * ITEM_TYPES.length)];
-        if (rpsitem1 === "detect") {
-          entry += lastGesture2
-            ? ` ${p1Name}的偵測符發動，看到${p2Name}上一手是${GESTURE_NAME[lastGesture2]}。`
-            : ` ${p1Name}拿到偵測符，但對方還沒出過手，先留著。`;
-          if (lastGesture2) rpsitem1 = null;
-        } else {
-          entry += ` ${p1Name}獲得${ITEM_LABEL[rpsitem1].text}。`;
-        }
+        entry += ` ${p1Name}獲得${ITEM_LABEL[rpsitem1].text}。`;
       }
       if (!rpsitem2) {
         rpsitem2 = ITEM_TYPES[Math.floor(Math.random() * ITEM_TYPES.length)];
-        if (rpsitem2 === "detect") {
-          entry += lastGesture1
-            ? ` ${p2Name}的偵測符發動，看到${p1Name}上一手是${GESTURE_NAME[lastGesture1]}。`
-            : ` ${p2Name}拿到偵測符，但對方還沒出過手，先留著。`;
-          if (lastGesture1) rpsitem2 = null;
-        } else {
-          entry += ` ${p2Name}獲得${ITEM_LABEL[rpsitem2].text}。`;
-        }
+        entry += ` ${p2Name}獲得${ITEM_LABEL[rpsitem2].text}。`;
       }
     }
     if (m1.gesture) lastGesture1 = m1.gesture;
@@ -644,20 +756,32 @@ async function resolveRoundIfReady(state) {
       // 讀心值加成(上面已經判斷過是否命中，這裡只補傷害數字)
       if (mindreadBonus) dmg += mindreadBonus;
 
-      // 道具符:增幅符(獲勝方持有時)/ 護盾符(落敗方持有時，直接免傷)
+      // 道具符:增幅符(獲勝方這回合有啟動時)/ 護盾符(落敗方這回合有啟動時，直接免傷)。
+      // 手上握著的道具類型跟這回合結果對不上(例如啟動了護盾符結果自己贏了)，一樣直接浪費掉，
+      // 賭錯時機就是要付出代價，這樣才有意義去猜「這回合我會贏還是輸」再決定要不要啟動。
       let shieldBlocked = false;
       const loserItem = loserSlot === 1 ? rpsitem1 : rpsitem2;
       const winnerItem = winnerSlot === 1 ? rpsitem1 : rpsitem2;
-      if (rules.item_die && winnerItem === "amp") {
+      const winnerUsedItem = winnerSlot === 1 ? !!m1.useItem : !!m2.useItem;
+      const loserUsedItem = loserSlot === 1 ? !!m1.useItem : !!m2.useItem;
+      if (rules.item_die && winnerUsedItem && winnerItem === "amp") {
         dmg += 2;
         entry += ` ${winnerName}的增幅符發動，追加 2 點傷害！`;
         if (winnerSlot === 1) rpsitem1 = null;
         else rpsitem2 = null;
+      } else if (rules.item_die && winnerUsedItem && winnerItem) {
+        entry += ` ${winnerName}啟動了${ITEM_LABEL[winnerItem].text}，但這回合用不上，浪費掉了。`;
+        if (winnerSlot === 1) rpsitem1 = null;
+        else rpsitem2 = null;
       }
-      if (rules.item_die && loserItem === "shield") {
+      if (rules.item_die && loserUsedItem && loserItem === "shield") {
         shieldBlocked = true;
         dmg = 0;
         entry += ` ${loserName}的護盾符擋下了這次攻擊，毫髮無傷！`;
+        if (loserSlot === 1) rpsitem1 = null;
+        else rpsitem2 = null;
+      } else if (rules.item_die && loserUsedItem && loserItem) {
+        entry += ` ${loserName}啟動了${ITEM_LABEL[loserItem].text}，但這回合用不上，浪費掉了。`;
         if (loserSlot === 1) rpsitem1 = null;
         else rpsitem2 = null;
       }
@@ -693,12 +817,8 @@ async function resolveRoundIfReady(state) {
         entry += " 賽末點！";
       }
     }
-    // 「大字提示」需要完整戰報(出了什麼手勢、對方出了什麼、發生了什麼)，不是只有結果，
-    // 這裡把這回合完整的戰報文字(entry)存進 lastEvent，battle-view.js 的大字公告會直接拿來顯示，
-    // 不用再另外精簡成一句短話、也不會漏掉玩家實際出的手勢。
-    if (lastEvent) {
-      lastEvent.detail = entry.replace(/^第\d+回合[:：]\s*/, "");
-    }
+    // 完整戰報(出了什麼手勢、對方出了什麼、發生了什麼)固定寫進 log，戰況小字看得到完整內容;
+    // 大字戰況只顯示結果(battle-view.js 的 buildHeadline() 自己組簡短文字)，這裡不用再組一份。
     log.push(entry);
 
     if (boMode) {
@@ -755,6 +875,8 @@ async function resolveRoundIfReady(state) {
       lastGesture2,
       rpsitem1,
       rpsitem2,
+      timeBoost1,
+      timeBoost2,
       dualUsed1,
       dualUsed2,
     };
@@ -764,7 +886,9 @@ async function resolveRoundIfReady(state) {
       const newState = { ...state, hp1, hp2, ult1, ult2, log, lastEvent, round: state.round + 1, m1: null, m2: null, ...commonFields };
       await db.updateMatchState(matchId, { state: newState });
     } else {
-      // BO5:這局分出勝負了，但要先取得3局勝利才是整場對戰結束
+      // 一般場BO3(先取得2局勝利)、總冠軍賽BO5(先取得3局勝利)，這局分出勝負了，
+      // 但要先取得目標局數勝利才是整場對戰結束
+      const winsNeeded = gamesToWin(match);
       const gameWinnerSlot = hp1 <= 0 ? 2 : 1;
       games1 = games1 + (gameWinnerSlot === 1 ? 1 : 0);
       games2 = games2 + (gameWinnerSlot === 2 ? 1 : 0);
@@ -772,19 +896,19 @@ async function resolveRoundIfReady(state) {
       const gameWinnerName = gameWinnerSlot === 1 ? p1Name : p2Name;
       log.push(`第${gameNum}局結束，${gameWinnerName}拿下這局！系列賽比分 ${games1}:${games2}。`);
 
-      const seriesOver = games1 >= 3 || games2 >= 3;
+      const seriesOver = games1 >= winsNeeded || games2 >= winsNeeded;
       const seriesEvent = { type: "series_game_over", winnerSlot: gameWinnerSlot, gameNum, games1, games2 };
 
       if (seriesOver) {
         const newState = { ...state, hp1, hp2, ult1, ult2, log, lastEvent: seriesEvent, round: state.round + 1, games1, games2, m1: null, m2: null, ...commonFields };
         await db.updateMatchState(matchId, { state: newState });
 
-        const finalWinnerSlot = games1 >= 3 ? 1 : 2;
+        const finalWinnerSlot = games1 >= winsNeeded ? 1 : 2;
         const winnerId = finalWinnerSlot === 1 ? match.player1_id : match.player2_id;
         const loserId = finalWinnerSlot === 1 ? match.player2_id : match.player1_id;
         await db.advanceAfterMatch(match, winnerId, loserId);
       } else {
-        if (games1 === 2 && games2 === 2) log.push("賽末點！下一局就會分出整場對戰的勝負。");
+        if (games1 === winsNeeded - 1 && games2 === winsNeeded - 1) log.push("賽末點！下一局就會分出整場對戰的勝負。");
         // 系列賽還沒結束，血量全部回滿，開下一局(道具/連段/氣勢/雙手符額度也跟著這一局重新開始，
         // 但手勢突變、讀心值統計、逾時代打這些是看整場對戰習慣，所以不用重置)
         const newState = {
@@ -809,6 +933,8 @@ async function resolveRoundIfReady(state) {
           winGestureStreak2,
           rpsitem1: null,
           rpsitem2: null,
+          timeBoost1: 0,
+          timeBoost2: 0,
           recentGesture1,
           recentGesture2,
           repeatCount1,
@@ -843,7 +969,7 @@ function scheduleReturnToLobby() {
 async function maybeAutoAdvance(state) {
   if (autoFollowTriggered) return;
   if (!seriesDecided(state)) return;
-  const winnerId = (state.games1 || 0) >= 3 ? match.player1_id : match.player2_id;
+  const winnerId = (state.games1 || 0) >= seriesWinsNeeded() ? match.player1_id : match.player2_id;
   if (!winnerId) return;
   try {
     const winnerPart = await db.getMyParticipant(eventId, winnerId);
@@ -899,7 +1025,7 @@ async function checkEntryTimeout() {
 
 // 代打:輪到被代打的那位時，幫他判定逾時(等同沒出手勢，直接輸掉該局)
 // 注意:不能一偵測到「這回合還沒代打」就立刻送出逾時，否則等於跳過這回合原本該有的
-// 20/30秒思考時間——玩家出招那瞬間觸發的 refresh 會馬上幫對手送出逾時，變成「秒贏」。
+// 30/45秒思考時間——玩家出招那瞬間觸發的 refresh 會馬上幫對手送出逾時，變成「秒贏」。
 // 改成:每個新回合只排一次計時器，時間到了才真的送出，且送出前重新跟資料庫確認這回合
 // 依然沒人代打過、也還沒結束，避免跟其他分頁重複送出或送到舊回合。
 let autopilotTimer = null;
@@ -930,10 +1056,11 @@ function maybeAutopilotSubmit() {
 
   clearAutopilotTimer();
   autopilotTimerRoundKey = roundKey;
-  // 對手是測試機器人的話，每回合也不用等滿20/30秒，縮短成幾秒，讓主辦人一個人測試時
+  // 對手是測試機器人的話，每回合也不用等滿30/45秒，縮短成幾秒，讓主辦人一個人測試時
   // 可以很快把整場BO5跑完，不用每回合都乾等對手根本不存在的思考時間。
   const oppIsBot = !!(autopilotSlot === 1 ? match.p1?.is_bot : match.p2?.is_bot);
-  const roundTimeoutMs = oppIsBot ? BOT_ENTRY_TIMEOUT_MS : getFieldMod(state) === "fast_timer" ? 20000 : 30000;
+  const myTimeBoost = (autopilotSlot === 1 ? state.timeBoost1 : state.timeBoost2) || 0;
+  const roundTimeoutMs = oppIsBot ? BOT_ENTRY_TIMEOUT_MS : (getFieldMod(state) === "fast_timer" ? 30000 : 45000) + myTimeBoost * 1000;
   autopilotTimer = setTimeout(async () => {
     autopilotTimer = null;
     try {
@@ -988,6 +1115,7 @@ async function refresh() {
   if (!submittedThisRound && wasSubmitted !== submittedThisRound) {
     useUlt = false;
     feintStance = null;
+    useItemThisRound = false;
     dualActive = false;
     dualPicks = [];
   }
@@ -1068,6 +1196,7 @@ function renderAndBindChoiceButtons(state) {
             ult: false,
             timeout: false,
             stance: feintStance,
+            useItem: useItemThisRound,
           });
         } else {
           render(state);
@@ -1078,7 +1207,7 @@ function renderAndBindChoiceButtons(state) {
       submittedThisRound = true;
       clearInterval(timerInterval);
       battleView.announce(`你使出了${GESTURE_NAME[gesture]}!`, { icon: GESTURE_ICON[gesture] });
-      await db.submitMove(matchId, mySlot, { gesture, ult: useUlt, timeout: false, stance: feintStance });
+      await db.submitMove(matchId, mySlot, { gesture, ult: useUlt, timeout: false, stance: feintStance, useItem: useItemThisRound });
       useUlt = false;
     };
   });
@@ -1096,27 +1225,34 @@ function bindControls() {
 
 // 跟 dice.js 共用同一套「基礎規則 + 本場額外開啟的機制」呈現方式，說明文字盡量跟 rules.html 的用詞一致
 const RULE_EXPLAIN = {
-  bomb: "第 3 回合起，每回合約有 15% 機率額外開放隱藏手勢「炸彈」。炸彈 勝 石頭、剪刀;炸彈 敗 布、蜥蜴;炸彈 對 史波克 是特殊平局，雙方不掉血。",
-  field_mod: "開局隨機決定這一局固定生效的特殊效果，3 選 1:磐石戰場(靠石頭獲勝時傷害+1)、手速戰場(究極手勢這局可用2次)、疾風戰場(思考時間縮短到20秒)。",
-  item_die: "每 3 回合雙方各自隨機拿到一個道具，持有到觸發時機才消耗:護盾符(下次落敗免傷)、增幅符(下次獲勝+2傷害)、偵測符(立刻看到對方上一手出了什麼)。開啟「BO制」時，護盾符/增幅符不會發放(靠傷害運作，BO制沒有傷害概念)。",
+  // 剋制關係已經整合進 renderRules() 的基礎規則段落，這裡只保留「什麼時候會開放炸彈」的說明
+  bomb: "第 3 回合起，每回合約有 15% 機率額外開放這隻隱藏手勢，開放時選擇列會多一個「炸彈」選項可以選。",
+  field_mod: "開局隨機決定這一局固定生效的特殊效果，3 選 1:磐石戰場(靠石頭獲勝時傷害+1)、手速戰場(究極手勢這局可用2次)、疾風戰場(思考時間縮短到30秒)。",
+  item_die: "每 3 回合雙方各自隨機拿到一個道具，只有自己看得到是哪一種(對手畫面上只會看到你「持有神秘道具」，不知道實際是什麼)。持有到你自己選擇要不要在某一回合啟動才會生效:護盾符(啟動的那回合輸了免傷)、增幅符(啟動的那回合贏了+2傷害)、擾亂符(啟動的那回合能擋掉對方那回合的究極手勢，對方沒用究極手勢就浪費掉)、洞悉符(啟動當下立刻看穿對方目前握著的道具是什麼)、延時符(啟動後下一回合思考時間+15秒)。護盾符/增幅符猜錯時機(例如啟動護盾符結果自己贏了、或那回合平手)一樣會浪費掉;洞悉符、延時符啟動了就一定成功。開啟「BO制」時，這五種道具都不會發放(靠傷害/究極手勢/計時運作，BO制沒有這些概念)。",
   stance: "出招前可以先公開宣告這局「偏攻擊」或「偏防禦」，純粹是情報，不會直接影響傷害，對方看得到但不知道真假;宣告會跟手勢一起在戰報揭曉，唬多了容易被〈讀心值〉或對方肉眼抓到規律。",
   combo: "系統會記錄你最近用哪個手勢獲勝。連續 3 局都用同一手勢獲勝，額外 +2 傷害，並跳出「連段技發動！」;之後繼續用同一招連勝下去，每一局都會持續拿到加成。要不要賭一把繼續出同一招，風險自負。",
   mindread: "系統偷偷統計對方整場出招的習慣分布，如果你選中「剋制對方最常出的那招」並獲勝，額外 +1 傷害，並跳出「讀心成功！」。開啟這項規則時，對戰畫面也會顯示對方的即時出招傾向統計，觀眾也看得到同一份統計。",
   momentum: "連勝 2 局起，下一擊額外 +1 傷害，氣勢會一直維持到輸掉一局為止;連續落敗 2 局後，如果靠獲勝逆轉，那一擊的傷害會直接翻倍(背水一戰)。",
   mutation: "連續 3 回合都出同一個手勢，下一回合系統會把那個手勢從選項裡鎖住，逼你換一招，防止靠「無腦一直出同一招」硬撐。",
-  bo_mode: "整場對戰拋開 HP 累加機制，改成每回合直接分出這一分的勝負，率先取得 3 分的一方贏得整場;打到 2:2 時觸發「賽末點！」提示。以下基礎規則裡跟 HP / BO5 相關的敘述，本場一律不適用。",
+  bo_mode: "整場對戰拋開 HP 累加機制，改成每回合直接分出這一分的勝負，率先取得 3 分的一方贏得整場;打到 2:2 時觸發「賽末點！」提示。以下基礎規則裡跟 HP / 局數相關的敘述，本場一律不適用。",
   dual_hand: "落後的一方整場限用 1 次「雙手符」，可以同時出兩個手勢，只要其中一個贏過對方的招就算贏。觸發資格:HP 制下自己 HP ≤8 才能使用;BO制下自己的局分落後對方才能使用。限用 1 次，是殘局翻盤手段，不會變成必勝招。",
 };
 
 function renderRules() {
   const box = document.getElementById("rule-content");
   const rules = (event && event.rules) || {};
+  const isFinal = match && match.bracket === "final";
+  const need = gamesToWin(match); // 一般場 2(BO3)，總冠軍賽 3(BO5)
+  const maxGame = need * 2 - 1;
+  const bombOn = !!rules.bomb;
   let html = `
-    <p>採 BO5 賽制:雙方各有 15 點 HP，先讓對方 HP 歸零的人拿下這一局;率先拿下 3 局的人贏得整場對戰(最多打到第 5 局)。每進入新一局，雙方 HP 會全部回滿。</p>
-    <p>每回合 30 秒內選一個手勢:石頭 / 布 / 剪刀 / 蜥蜴 / 史波克。超時未選視為該回合落敗，雙方都超時則平手不掉血。</p>
-    <p>石頭勝剪刀、蜥蜴;布勝石頭、史波克;剪刀勝布、蜥蜴;蜥蜴勝史波克、布;史波克勝剪刀、石頭。出了相同的手勢就是平手。</p>
+    <p>採 BO${maxGame} 賽制${isFinal ? "(總冠軍賽賽制較長，更有份量)" : ""}:雙方各有 15 點 HP，先讓對方 HP 歸零的人拿下這一局;率先拿下 ${need} 局的人贏得整場對戰(最多打到第 ${maxGame} 局)。每進入新一局，雙方 HP 會全部回滿。</p>
+    <p>每回合 45 秒內選一個手勢:石頭 / 布 / 剪刀 / 蜥蜴 / 史波克${bombOn ? "(本場另有機率額外開放隱藏手勢「炸彈」，見下方說明)" : ""}。超時未選視為該回合落敗，雙方都超時則平手不掉血。</p>
+    <p>石頭勝剪刀、蜥蜴;布勝石頭、史波克;剪刀勝布、蜥蜴;蜥蜴勝史波克、布;史波克勝剪刀、石頭。出了相同的手勢就是平手。${
+      bombOn ? "本場額外開放的「炸彈」:炸彈 勝 石頭、剪刀;炸彈 敗 布、蜥蜴;炸彈 對 史波克 是特殊平局，雙方不掉血。" : ""
+    }</p>
     <p>每人每一局都有 1 張「究極手勢」卡:出牌保證獲勝該回合，除非對方同一回合也出究極手勢，此時雙方抵銷、判定平手。</p>
-    <p>當你的 HP ≤5 時，獲勝的那一擊傷害會翻倍，適合絕地反擊。系列賽打到 2:2 時會有「賽末點」提示。</p>
+    <p>當你的 HP ≤5 時，獲勝的那一擊傷害會翻倍，適合絕地反擊。系列賽打到 ${need - 1}:${need - 1} 時會有「賽末點」提示。</p>
     <p>每一場對決，系統都會依照實際出的手勢組合寫出對應的戰報敘述，不是死板的「X勝過Y」。</p>
   `;
   const active = Object.keys(rules).filter((k) => rules[k] && RULE_EXPLAIN[k]);

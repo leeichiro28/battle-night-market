@@ -575,6 +575,44 @@ const db = (function () {
   }
 
   // 一場對戰結束後的晉級/淘汰/敗部/總冠軍賽路由邏輯
+  // 依遊戲類型算出「直接判一方獲勝」該怎麼改 state:
+  //  - dice 是純 HP 制單局對戰，把敗方 HP 打到 0，畫面本來就是看 hp<=0 判定結束。
+  //  - rps5 是 BO3(一般場)/BO5(bracket==="final")系列賽制，畫面看的是 seriesDecided()，
+  //    也就是 games1/games2 有沒有到達門檻——只把 HP 歸零不會被判定系列賽結束，
+  //    畫面會停在對戰中卡住不跳轉，所以要直接把贏家的局數推到達標局數。
+  //    門檻算法要跟 rps5.js 的 gamesToWin() 保持一致，改其中一邊記得同步改另一邊。
+  function forfeitStatePatch(gameType, match, state, winnerIsP1, reason, logMessage) {
+    const log = [...(state.log || []), logMessage];
+    if (gameType === "dice") {
+      return {
+        ...state,
+        hp1: winnerIsP1 ? state.hp1 : 0,
+        hp2: winnerIsP1 ? 0 : state.hp2,
+        forfeitReason: reason,
+        log,
+      };
+    }
+    const winsNeeded = match && match.bracket === "final" ? 3 : 2;
+    return {
+      ...state,
+      games1: winnerIsP1 ? winsNeeded : state.games1 || 0,
+      games2: winnerIsP1 ? state.games2 || 0 : winsNeeded,
+      forfeitReason: reason,
+      log,
+    };
+  }
+
+  // 主辦後台「卡住了嗎?強制判定勝負」用的入口:先把 state 改成「已分出勝負」
+  // (依遊戲類型走 forfeitStatePatch)，玩家畫面才會偵測到並自動跳轉，
+  // 再呼叫 advanceAfterMatch 走正常的賽程晉級流程。
+  async function forceMatchWin(match, winnerId, loserId) {
+    const ev = await getEvent(match.event_id);
+    const winnerIsP1 = winnerId === match.player1_id;
+    const newState = forfeitStatePatch(ev.game_type, match, match.state || {}, winnerIsP1, "admin_forced", "主辦人已在後台強制判定這場對戰的勝負。");
+    await client.from("matches").update({ state: newState }).eq("id", match.id);
+    await advanceAfterMatch({ ...match, state: newState }, winnerId, loserId);
+  }
+
   async function advanceAfterMatch(match, winnerId, loserId) {
     // 用 status='active' 當條件鎖，避免兩個瀏覽器同時把同一場對戰結算兩次
     const { data: claimed, error: claimErr } = await client
@@ -715,19 +753,21 @@ const db = (function () {
     const elapsed = Date.now() - new Date(m.activated_at).getTime();
     const p1In = !!m.p1_entered_at;
     const p2In = !!m.p2_entered_at;
+    const ev = await getEvent(eventId);
 
     if (!p1In && !p2In) {
       if (elapsed < BOTH_NO_SHOW_MS) return;
       const winnerId = Math.random() < 0.5 ? m.player1_id : m.player2_id;
       const loserId = winnerId === m.player1_id ? m.player2_id : m.player1_id;
-      const loserIsP1 = loserId === m.player1_id;
-      const newState = {
-        ...m.state,
-        hp1: loserIsP1 ? 0 : m.state.hp1,
-        hp2: loserIsP1 ? m.state.hp2 : 0,
-        forfeitReason: "both_afk",
-        log: [...(m.state.log || []), "雙方都太久沒有進場對戰，系統自動判定一方直接晉級。"],
-      };
+      const winnerIsP1 = winnerId === m.player1_id;
+      const newState = forfeitStatePatch(
+        ev.game_type,
+        m,
+        m.state || {},
+        winnerIsP1,
+        "both_afk",
+        "雙方都太久沒有進場對戰，系統自動判定一方直接晉級。"
+      );
       await client.from("matches").update({ state: newState }).eq("id", m.id);
       await advanceAfterMatch({ ...m, state: newState }, winnerId, loserId);
       return;
@@ -736,7 +776,6 @@ const db = (function () {
     if (elapsed < ENTER_GRACE_MS) return;
     if (p1In && p2In) return; // 雙方都進場了，交給對戰畫面自己的代打機制處理即時出招
 
-    const ev = await getEvent(eventId);
     const absentSlot = !p1In ? 1 : 2;
     const already = absentSlot === 1 ? m.state.m1 : m.state.m2;
     if (already) return; // 這回合已經出過招了，等對方出招或下一輪再說
@@ -752,9 +791,11 @@ const db = (function () {
       if (error) throw error;
       if (m.status === "active") {
         const winnerId = m.player1_id === playerId ? m.player2_id : m.player1_id;
-        const newState = { ...m.state, log: [...(m.state.log || []), "一方主動退賽，對手直接獲勝"] };
+        const winnerIsP1 = winnerId === m.player1_id;
+        const ev = await getEvent(eventId);
+        const newState = forfeitStatePatch(ev.game_type, m, m.state || {}, winnerIsP1, "opponent_quit", "一方主動退賽，對手直接獲勝。");
         await client.from("matches").update({ state: newState }).eq("id", m.id);
-        await advanceAfterMatch(m, winnerId, playerId);
+        await advanceAfterMatch({ ...m, state: newState }, winnerId, playerId);
         return;
       }
     }
@@ -1866,6 +1907,7 @@ const db = (function () {
     submitMove,
     tryCreateGrandFinal,
     advanceAfterMatch,
+    forceMatchWin,
     onTableChange,
     electLeader,
     joinAuctionEvent,

@@ -131,6 +131,12 @@ function render(state) {
     if (state.forfeitReason === "both_afk") {
       announce("雙方掛機，已自動棄權", { icon: "alert-triangle", holdMs: 4200 });
       statusEl.innerHTML = ui.icon("alert-triangle") + `雙方都太久沒有進場，系統自動判定 ${ui.esc(winnerName)} 晉級`;
+    } else if (state.forfeitReason === "admin_forced") {
+      announce("主辦人已強制判定勝負", { icon: "gavel", holdMs: 4200 });
+      statusEl.innerHTML = ui.icon("gavel") + `主辦人已在後台強制判定，${ui.esc(winnerName)} 直接晉級`;
+    } else if (state.forfeitReason === "opponent_quit") {
+      announce("對方已退賽", { icon: "log-out", holdMs: 4200 });
+      statusEl.innerHTML = ui.icon("log-out") + `對方已退出比賽，${ui.esc(winnerName)} 直接晉級`;
     } else if (!mySlot) {
       statusEl.innerHTML = ui.icon("trophy") + `${ui.esc(winnerName)} 獲勝了這場對戰！`;
     } else {

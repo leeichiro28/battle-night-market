@@ -167,25 +167,10 @@ window.BattleView = (function () {
         const gWinner = evt.winnerSlot === 1 ? p1Name : p2Name;
         return { icon: "trophy", text: `${gWinner} 拿下第${evt.gameNum}局！比分 ${evt.games1}:${evt.games2}` };
       }
-      // 玩家反映過小字戰報捲動太快看不清楚、被鎖招之類的效果也看不出發生了什麼——
-      // evt.detail 是這回合完整戰報(雙方各自出了什麼手勢、觸發了什麼效果、結果如何)，
-      // 有這個資料就直接放大顯示，不要再自己精簡成一句短話，資訊量才夠。
-      if (evt.detail) {
-        const icon =
-          evt.type === "tie" || evt.type === "timeout_both"
-            ? "scale"
-            : evt.type === "bo_point"
-            ? "flag"
-            : evt.shieldBlocked
-            ? "shield"
-            : mySlot && evt.winnerSlot === mySlot
-            ? "flame"
-            : mySlot && evt.loserSlot === mySlot
-            ? "heart-pulse"
-            : "swords";
-        return { icon, text: evt.detail, holdMs: 4600 };
-      }
-      // 沒有 detail 時(理論上不會發生，保底用舊的精簡版文字)
+      // 大字戰況只顯示「結果」，不放出招過程——過程(雙方各自出了什麼手勢、觸發了什麼效果)
+      // 一律看下面戰況小字(log)，log 一定會記錄完整內容，不會漏掉。
+      // 這裡刻意不用 evt.detail(完整戰報字串)，避免大字太長、holdMs 拉太久，
+      // 快節奏對戰時後面的回合會一直排隊等，累積延遲、蓋住畫面又跟不上，玩家會看到過期的舊資訊。
       if (evt.type === "tie") return { icon: "scale", text: "平手，雙方不掉血" };
       if (evt.type === "timeout_both") return { icon: "hourglass", text: "雙方都逾時，平手" };
       if (evt.type === "bo_point") {
@@ -204,7 +189,7 @@ window.BattleView = (function () {
       return { icon: "swords", text: `${winnerName} 獲勝！${loserName} 扣 ${evt.dmg} 血` };
     }
 
-    function renderBadges(slot, state, rules) {
+    function renderBadges(slot, state, rules, mySlot) {
       const box = $(`p${slot}-badges`);
       if (!box) return;
       const badges = [];
@@ -224,9 +209,22 @@ window.BattleView = (function () {
         badges.push(`<span class="mini-badge combo">${ui.icon("zap")}連段 x${winGestureStreak}</span>`);
       }
       const item = slot === 1 ? state.rpsitem1 : state.rpsitem2;
-      const itemLabels = { shield: { icon: "shield", text: "護盾符" }, amp: { icon: "zap", text: "增幅符" } };
+      const itemLabels = {
+        shield: { icon: "shield", text: "護盾符" },
+        amp: { icon: "zap", text: "增幅符" },
+        disrupt: { icon: "shield-off", text: "擾亂符" },
+        insight: { icon: "eye", text: "洞悉符" },
+        delay: { icon: "hourglass", text: "延時符" },
+      };
+      // 道具是隱藏資訊:自己這排(或觀戰模式)看得到實際是哪一種道具，對手那排只看得到「有拿到道具」，
+      // 不會直接洩漏是哪一種——不然像洞悉符這種道具就沒有意義了(反正畫面上早就看得到)。
+      const isMine = !mySlot || slot === mySlot;
       if (rules.item_die && item && itemLabels[item]) {
-        badges.push(`<span class="mini-badge item">${ui.icon(itemLabels[item].icon)}${itemLabels[item].text}</span>`);
+        if (isMine) {
+          badges.push(`<span class="mini-badge item">${ui.icon(itemLabels[item].icon)}${itemLabels[item].text}</span>`);
+        } else {
+          badges.push(`<span class="mini-badge item">${ui.icon("help-circle")}持有神秘道具</span>`);
+        }
       }
       const streak = slot === 1 ? state.streak1 : state.streak2;
       if (rules.momentum && streak >= 2) {
@@ -256,8 +254,8 @@ window.BattleView = (function () {
       logBox.innerHTML = (state.log || []).map((l) => `<div>${l}</div>`).join("");
       logBox.scrollTop = logBox.scrollHeight;
 
-      renderBadges(1, state, rules);
-      renderBadges(2, state, rules);
+      renderBadges(1, state, rules, mySlot);
+      renderBadges(2, state, rules, mySlot);
 
       const c1 = CLASS_INFO[state.class1];
       const c2 = CLASS_INFO[state.class2];
