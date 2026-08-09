@@ -38,6 +38,19 @@ html,body{
   overflow-x:hidden;
 }
 img,svg,iframe,video{max-width:100%;}
+
+/* ===== 全站統一捲軸樣式 =====
+   取代瀏覽器預設的方形灰色捲軸(含上下箭頭按鈕那種)，改成細窄、圓角、跟主題配色一致的版本。
+   套用範圍是全站所有可捲動區塊(規則說明彈窗、戰況小字、對話框…等)，不用每個地方各自加。
+   個別地方如果想要完全隱藏捲軸(例如橫向捲動的分頁列)，維持用原本 .xxx::-webkit-scrollbar{display:none} 蓋掉即可，
+   那些規則在檔案後面，CSS 疊加順序上會蓋過這裡的全域樣式。 */
+*{scrollbar-width:thin;scrollbar-color:var(--line) transparent;}
+*::-webkit-scrollbar{width:8px;height:8px;}
+*::-webkit-scrollbar-track{background:transparent;}
+*::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px;}
+*::-webkit-scrollbar-thumb:hover{background:var(--gold-d);}
+*::-webkit-scrollbar-corner{background:transparent;}
+*::-webkit-scrollbar-button{display:none;height:0;width:0;}
 body{
   background:
     radial-gradient(circle at 15% 0%, #241f38 0%, transparent 45%),
@@ -851,6 +864,16 @@ label{
 .rule-table.calc-table td:nth-child(2){color:var(--ink);}
 .modal-card p{font-size:13px;color:var(--ink-dim);margin:0 0 10px;line-height:1.7;}
 .modal-card p:first-of-type{margin-top:0;}
+/* 「本場活動額外開啟的機制」每一條規則的容器，取代原本直接塞進 <p> 的做法，
+   這樣裡面才能安全放 <ul> 條列清單(例如道具符五種效果)，不會有 <ul> 塞進 <p> 的無效巢狀標籤 */
+.modal-card .rule-item{margin:0 0 14px;}
+.modal-card .rule-item:last-child{margin-bottom:0;}
+.modal-card .rule-item-body{font-size:13px;color:var(--ink-dim);line-height:1.7;margin-top:3px;}
+/* 規則說明裡條列式的道具/選項清單(例如道具符五種效果)，一行一個，比塞成一整段文字好讀 */
+.modal-card .rule-item-list{list-style:none;margin:6px 0 10px;padding:0;display:flex;flex-direction:column;gap:7px;}
+.modal-card .rule-item-list li{font-size:13px;color:var(--ink-dim);line-height:1.5;padding-left:14px;position:relative;}
+.modal-card .rule-item-list li::before{content:"";position:absolute;left:0;top:7px;width:5px;height:5px;border-radius:50%;background:var(--gold);}
+.modal-card .rule-item-list b{color:var(--ink);}
 
 /* ===== 大字即時公告 ===== */
 .big-announce{
