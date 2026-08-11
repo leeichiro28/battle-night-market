@@ -1789,6 +1789,12 @@ input,select,textarea{max-width:100%;min-width:0;}
 .auction-live.mystery{border-color:#3D8FA6;}
 .auction-live.mystery .live-tag{color:#5FC2DE;}
 .auction-live.mystery .live-tag .dot{background:#5FC2DE;}
+.auction-live.flash{border-color:var(--gold);box-shadow:0 0 0 1px rgba(242,183,5,.25);}
+.auction-live.flash .live-tag.flash-tag{color:var(--gold);}
+.auction-live.flash .live-tag.flash-tag .dot{background:var(--gold);}
+.auction-live.sealed{border-color:#8B7FD6;}
+.auction-live.sealed .live-tag{color:#B3A8F0;}
+.auction-live.sealed .live-tag .dot{background:#B3A8F0;}
 
 /* 插隊優先權時間窗橫幅 */
 .priority-banner{

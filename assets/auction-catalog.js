@@ -116,6 +116,19 @@ function auctionRollMysteryBoxOutcome() {
   return { ...fallback, revealName: fallback.names[0] };
 }
 
+// 商品鑑定符要用的:福袋箱在「排程當下」就先偷偷開好結果(不是結標當下才開)，
+// 這樣鑑定符才有東西可以偷看——結標時直接讀這個預先開好的結果，不是重新開一次，
+// 統計上完全一樣(還是同一張機率表隨機抽)，只是把「開獎」的時間點提前而已。
+function auctionPreRollMysteryBox() {
+  const outcome = auctionRollMysteryBoxOutcome();
+  return { tier: outcome.tier, name: outcome.revealName, points: outcome.points };
+}
+// 結標時如果拿得到 lot.box_pre_roll_tier(新排程的商品都會有)，就照這個 tier 去查對應分數，
+// 不用整包 outcome 物件也能還原分數，用來配合「讀預先開好的結果」而不是重新 roll。
+function auctionBoxOutcomeByTier(tier) {
+  return AUCTION_BOX_OUTCOMES.find((o) => o.tier === tier) || AUCTION_BOX_OUTCOMES[0];
+}
+
 // 組合包:一次多件小東西綁在一起賣，適合想快速湊分的人。分數比同價位單品略高一點，當作組合優惠。
 // 分數一樣改成用成交價現算(見 auctionPointsForBundlePrice)，這裡的 basePrice 只用來排底價/預告清單。
 const AUCTION_BUNDLE_ITEMS = [
@@ -165,6 +178,7 @@ const AUCTION_SPECIAL_ITEMS = [
   { key: "refund", name: "退款保證券", basePrice: 450, effectDesc: "手上任一件已得標的商品，可以無條件退回一次，拿回一半財神幣(分數也會一起扣掉)" },
   { key: "boxDouble", name: "福袋箱翻倍券", basePrice: 400, effectDesc: "使用後，下一次你標到福袋箱時，開出的分數直接翻倍" },
   { key: "freeCommon", name: "老闆招待券", basePrice: 300, effectDesc: "免費兌換一件正在拍賣中的「普通」級商品，不用出財神幣" },
+  { key: "appraise", name: "商品鑑定符", basePrice: 380, effectDesc: "使用在正在拍賣中的福袋箱上，私下看到這箱大概是哪個等級(雷/普通/稀有/史詩/傳說)，只有你自己看得到，可以再決定要不要搶標" },
 ];
 const AUCTION_TICKET_META = {
   intel: { name: "搶先情報券", icon: "eye" },
@@ -172,6 +186,7 @@ const AUCTION_TICKET_META = {
   refund: { name: "退款保證券", icon: "undo-2" },
   boxDouble: { name: "福袋箱翻倍券", icon: "package-open" },
   freeCommon: { name: "老闆招待券", icon: "hand-platter" },
+  appraise: { name: "商品鑑定符", icon: "search" },
 };
 
 const AUCTION_TIER_ORDER = ["common", "rare", "epic", "legendary"];
@@ -197,6 +212,20 @@ const AUCTION_DEFAULT_BUDGET = 1000;
 const AUCTION_DEFAULT_WAVE_INTERVAL_SEC = 90;
 const AUCTION_DEFAULT_ITEMS_PER_WAVE = 1;
 const AUCTION_PARTICIPATION_REFUND_MULT = 2; // 參與退補:出過價沒標到的人，退還「min_increment * 這個倍率」當參與獎勵
+
+// 暗標/密封競標:一般分級商品(普通/稀有/史詩/傳說)裡，每件大約這個機率被抽成暗標——
+// 大家同時盲出一個心中最高價，時間到才一起揭曉，最高價得標、付的是自己出的價(不是別人的價)，
+// 拍賣進行中看不到別人出多少、只看得到「已經有幾人出價」，跟英式競標的節奏刻意做出區隔。
+const AUCTION_SEALED_CHANCE = 0.15;
+
+// 限時快閃攤:額外插進拍賣序列的商品，不佔商品上限、不用比價，用打折後的固定價格「先搶先贏」，
+// 上架後很短時間內沒人搶就直接流標，穿插在正式拍賣中間製造突發的搶購感。
+const AUCTION_FLASH_MIN_COUNT = 1;
+const AUCTION_FLASH_MAX_COUNT = 3;
+const AUCTION_FLASH_DISCOUNT = 0.6; // 搶購價 = 正常底價的這個比例
+const AUCTION_FLASH_DURATION_SEC = 15; // 上架後這麼多秒沒人搶，自動流標
+const AUCTION_WIN_STREAK_BONUS_START = 3; // 連續標到幾件(不含特殊券)起，下一件加成分數
+const AUCTION_WIN_STREAK_BONUS_RATIO = 0.1; // 加成比例(對這件商品的分數而言)
 
 const AUCTION_DEFAULT_ITEM_LIMIT = 28; // 本場商品上限(不含特殊券，特殊券固定全出)，用來控制活動總時長
 
@@ -299,6 +328,7 @@ function buildAuctionItemSequence(limit) {
         minIncrement: AUCTION_MIN_INCREMENT[tier],
         specialKey: null,
         isSurprise: false,
+        isSealed: Math.random() < AUCTION_SEALED_CHANCE,
         sortKey: AUCTION_TIER_WEIGHT[tier] + Math.random() * 1.6,
       });
     });
@@ -333,7 +363,31 @@ function buildAuctionItemSequence(limit) {
       minIncrement: AUCTION_MIN_INCREMENT.mystery,
       specialKey: null,
       isSurprise: false,
+      boxPreRoll: auctionPreRollMysteryBox(), // 排程當下就先偷偷開好，給商品鑑定符看用
       sortKey: AUCTION_TIER_WEIGHT.mystery + Math.random() * 1.6,
+    });
+  });
+  // 限時快閃攤:從普通/稀有池子「額外」多抽幾件(不佔商品上限、不跟主序列搶名額)，
+  // 用打折價格＋先搶先贏的方式插進序列，穿插在中後段，製造突發的搶購感。
+  const flashSourcePool = auctionShuffle([...AUCTION_CATALOG.common.items, ...AUCTION_CATALOG.rare.items]);
+  const flashCount = Math.min(
+    flashSourcePool.length,
+    AUCTION_FLASH_MIN_COUNT + Math.floor(Math.random() * (AUCTION_FLASH_MAX_COUNT - AUCTION_FLASH_MIN_COUNT + 1))
+  );
+  const commonNames = new Set(AUCTION_CATALOG.common.items.map(([n]) => n));
+  flashSourcePool.slice(0, flashCount).forEach(([name, basePrice]) => {
+    const tier = commonNames.has(name) ? "common" : "rare";
+    const flashPrice = Math.max(30, Math.round(basePrice * AUCTION_FLASH_DISCOUNT));
+    pool.push({
+      itemName: `⚡快閃搶購・${name}`,
+      itemTier: tier,
+      basePrice: flashPrice,
+      points: auctionPointsForPrice(basePrice, tier), // 分數照「原價」算，價格打折，划算感才出得來
+      minIncrement: AUCTION_MIN_INCREMENT[tier],
+      specialKey: null,
+      isSurprise: false,
+      isFlash: true,
+      sortKey: 1.2 + Math.random() * 1.8, // 讓快閃攤散落在中後段，不要一開場就出現
     });
   });
   // 特殊券(道具類)不參與商品上限抽選，固定全部出現

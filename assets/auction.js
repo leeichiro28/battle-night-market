@@ -10,6 +10,7 @@ let standings = [];
 let tasks = [];
 let myTaskAnswers = []; // 我在這場活動已經回答過的任務
 let myPriceGuesses = []; // 我在這場活動已經猜過價的商品
+let mySealedBids = []; // 我在暗標競標商品上已經盲出的價格(自己看得到自己的，別人的看不到)
 let currentPlayer = null; // Discord 登入後的玩家 {id， name}，沒登入是 null
 let pendingLoginResolvers = [];
 
@@ -97,10 +98,12 @@ async function refreshAll() {
     if (mine) myParticipant = mine.participant;
     myTaskAnswers = await db.listMyAuctionTaskAnswers(eventId, currentPlayer.id).catch(() => []);
     myPriceGuesses = await db.listMyAuctionPriceGuesses(eventId, currentPlayer.id).catch(() => []);
+    mySealedBids = await db.listMySealedBids(eventId, currentPlayer.id).catch(() => []);
     if (myGen !== refreshAllGen) return;
   } else {
     myTaskAnswers = [];
     myPriceGuesses = [];
+    mySealedBids = [];
   }
   render();
   scheduleNextTick();
@@ -282,6 +285,59 @@ async function customBid(lot) {
     return;
   }
   bid(lot, amount);
+}
+
+// ---------- 暗標/密封競標:出價互不可見，時間到才一起結算，時間內可以改價 ----------
+async function sealedBid(lot) {
+  const player = await ensureLogin();
+  const value = await ui.prompt(`底價 ${lot.base_price} 財神幣起，盲出你心中的最高價(時間到才會揭曉，可以在截標前修改):`, {
+    title: "暗標出價",
+    placeholder: String(lot.base_price),
+    value: mySealedBidAmount(lot) ? String(mySealedBidAmount(lot)) : String(lot.base_price),
+  });
+  if (value === null) return;
+  const amount = parseInt(value);
+  if (!amount || amount < lot.base_price) {
+    await ui.alert(`出價不能低於底價 ${lot.base_price}。`, { title: "金額太小", tone: "danger" });
+    return;
+  }
+  try {
+    await db.submitSealedBid(lot, player.id, amount);
+    await refreshAll();
+  } catch (e) {
+    await ui.alert(e.message || "出價失敗", { title: "出價失敗", tone: "danger" });
+    await refreshAll();
+  }
+}
+function mySealedBidAmount(lot) {
+  const mine = mySealedBids.find((b) => b.lot_id === lot.id);
+  return mine ? mine.amount : null;
+}
+
+// ---------- 限時快閃攤:不用比價，固定價格先搶先贏 ----------
+async function claimFlash(lot) {
+  const player = await ensureLogin();
+  try {
+    await db.claimFlashLot(lot, player.id);
+    await refreshAll();
+  } catch (e) {
+    await ui.alert(e.message || "搶購失敗", { title: "搶購失敗", tone: "danger" });
+    await refreshAll();
+  }
+}
+
+// ---------- 商品鑑定符:私下看福袋箱大概是哪個等級 ----------
+async function appraise(lot) {
+  const player = await ensureLogin();
+  try {
+    const tier = await db.useAppraisal(eventId, player.id, lot);
+    await refreshAll();
+    const tierLabel = { bust: "雷", common: "普通", rare: "稀有", epic: "史詩", legendary: "傳說" }[tier] || tier;
+    await ui.alert(`這箱鑑定結果大概是「${tierLabel}」等級，只有你看得到，其他人不知道。`, { title: "鑑定結果", tone: "info" });
+  } catch (e) {
+    await ui.alert(e.message || "鑑定失敗", { title: "鑑定失敗", tone: "danger" });
+    await refreshAll();
+  }
 }
 
 // ---------- 夜市任務作答 ----------
@@ -527,7 +583,7 @@ function stopCountdown() {
 
 function startCountdown(lot) {
   stopCountdown();
-  const totalSec = AUCTION_LOT_DURATION_SEC;
+  const totalSec = lot.is_flash ? AUCTION_FLASH_DURATION_SEC : AUCTION_LOT_DURATION_SEC;
   const tickDial = () => {
     const remainingMs = new Date(lot.ends_at).getTime() - Date.now();
     const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000));
@@ -643,8 +699,48 @@ function lotStageHtml(lot, isFinalLot, myGuess) {
   if (lot.is_surprise) {
     flourishBannerHtml += `<div class="flourish-banner surprise">${ui.icon("gift")}隱藏驚喜商品！商品預告沒有預告到這件</div>`;
   }
+  if (lot.is_sealed) {
+    flourishBannerHtml += `<div class="flourish-banner surprise">${ui.icon("eye-off")}暗標競標！大家同時盲出價，時間到才一起揭曉，看不到別人出多少</div>`;
+  }
   if (isFinalLot) {
     flourishBannerHtml += `<div class="flourish-banner sprint">${ui.icon("flag")}最後衝刺！這是本場最後一波，剩餘財神幣快點花掉，沒花完只值一半分數</div>`;
+  }
+
+  // 限時快閃攤:完全不同的介面，固定價格先搶先贏，不用比價、不用合夥/猜價這些搭配英式競標的功能
+  if (lot.is_flash) {
+    const flashPoints = auctionPointsForPrice(lot.current_price, lot.item_tier);
+    const claimed = !!lot.current_bidder_id;
+    const flashActionHtml = !myParticipant
+      ? `<span class="section-note" style="margin:0;">${ui.icon("info")}先報名才能搶購</span>`
+      : claimed
+      ? `<span class="section-note" style="margin:0;">${ui.icon("check")}已經被搶走了</span>`
+      : `<button class="btn" id="flash-claim-btn" style="width:100%;">${ui.icon("zap")}立刻搶購(固定價格，先搶先贏)</button>`;
+    return `
+      <div class="card auction-live flash">
+        <span class="live-tag flash-tag"><span class="dot"></span>⚡ 限時快閃攤 · 手刀搶購</span>
+        ${flourishBannerHtml}
+        <div class="lot-stage">
+          <div class="lot-info">
+            ${ui.tierTag(lot.item_tier)}
+            <h3 style="margin-top:10px;">${ui.esc(lot.item_name)}</h3>
+            <div class="price-row">
+              <span class="cur">${lot.current_price}</span>
+              <span class="unit">財神幣(固定搶購價，得標可拿 ${flashPoints} 分)</span>
+            </div>
+            <div class="bid-row" id="bid-row">${flashActionHtml}</div>
+          </div>
+          <div class="countdown-dial">
+            <svg width="96" height="96" viewBox="0 0 96 96">
+              <circle cx="48" cy="48" r="40" fill="none" stroke="#34304A" stroke-width="8"/>
+              <circle id="cd-ring" cx="48" cy="48" r="40" fill="none" stroke="#F2B705" stroke-width="8"
+                stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="0"/>
+            </svg>
+            <div class="num" id="cd-num">--</div>
+            <div class="lbl">秒後流標</div>
+          </div>
+        </div>
+      </div>
+    `;
   }
 
   let extraActionHtml = "";
@@ -652,6 +748,19 @@ function lotStageHtml(lot, isFinalLot, myGuess) {
     extraActionHtml = `<button class="btn ghost" id="bid-free-common" style="margin-top:10px;">${ui.icon(
       "hand-platter"
     )}用老闆招待券免費兌換</button>`;
+  }
+  // 商品鑑定符:只能用在福袋箱上，用過的話私下顯示鑑定結果(只有自己看得到)
+  if (isMystery && myParticipant) {
+    const appraisals = (myParticipant.effects && myParticipant.effects.appraisals) || {};
+    const myAppraisal = appraisals[lot.id];
+    const tierLabel = { bust: "雷", common: "普通", rare: "稀有", epic: "史詩", legendary: "傳說" };
+    if (myAppraisal) {
+      extraActionHtml += `<div class="section-note" style="margin-top:10px;">${ui.icon("search")}你鑑定過這箱，大概是「${
+        tierLabel[myAppraisal] || myAppraisal
+      }」等級(只有你看得到)</div>`;
+    } else if (myParticipant.effects && myParticipant.effects.appraise > 0) {
+      extraActionHtml += `<button class="btn ghost" id="bid-appraise" style="margin-top:10px;">${ui.icon("search")}使用商品鑑定符偷看等級</button>`;
+    }
   }
 
   // 分數現在跟著成交價走，所以這裡不能用開拍前就寫死的 lot.points，要用目前最高價現算，
@@ -665,8 +774,23 @@ function lotStageHtml(lot, isFinalLot, myGuess) {
 
   const effectDescHtml = isSpecial && specialInfo ? `<div class="section-note" style="margin:6px 0 0;">${ui.esc(specialInfo.effectDesc)}</div>` : "";
 
-  const bidRowHtml =
-    !myParticipant
+  // 暗標競標:看不到別人出多少、也看不到目前價格/領先者(不然就不叫暗標了)，只顯示自己出過的價格
+  let bidRowHtml;
+  let priceRowHtml;
+  let bidderRowHtml;
+  if (lot.is_sealed) {
+    const mine = mySealedBidAmount(lot);
+    priceRowHtml = `<div class="price-row"><span class="cur">${lot.base_price}</span><span class="unit">財神幣起標(暗標中，看不到目前最高價)</span></div>`;
+    bidderRowHtml = `<div class="bidder">${mine ? `你目前盲出的價格:<b>${mine}</b>(截標前都可以改)` : "你還沒出價"}</div>`;
+    bidRowHtml = !myParticipant
+      ? `<span class="section-note" style="margin:0;">${ui.icon("info")}先報名才能出價</span>`
+      : `<button class="btn" id="sealed-bid-btn">${ui.icon("eye-off")}${mine ? "修改我的暗標" : "盲出一個價格"}</button>`;
+  } else {
+    priceRowHtml = `<div class="price-row"><span class="cur">${lot.current_price}</span>${priceUnitHtml}</div>`;
+    bidderRowHtml = `<div class="bidder">目前領先:<b>${
+      lot.current_bidder_id ? ui.esc(lot.bidder ? lot.bidder.name : "??") + (isMineLeading ? "(你)" : "") : "尚無人出價"
+    }</b> ・ 最小加價 ${lot.min_increment} 枚</div>`;
+    bidRowHtml = !myParticipant
       ? `<span class="section-note" style="margin:0;">${ui.icon("info")}先報名才能出價</span>`
       : priorityBlocked
       ? `<span class="section-note" style="margin:0;">${ui.icon("hourglass")}等插隊優先權時間結束才能搶標</span>`
@@ -675,9 +799,10 @@ function lotStageHtml(lot, isFinalLot, myGuess) {
       <button class="btn" id="bid-x5">${ui.icon("gavel")}加價 ${lot.min_increment * 5}</button>
       <button class="btn ghost" id="bid-custom">${ui.icon("pencil")}自訂金額</button>
     `;
+  }
 
   return `
-    <div class="card auction-live${isSpecial ? " special" : ""}${isMystery ? " mystery" : ""}">
+    <div class="card auction-live${isSpecial ? " special" : ""}${isMystery ? " mystery" : ""}${lot.is_sealed ? " sealed" : ""}">
       <span class="live-tag"><span class="dot"></span>LOT ${ui.esc(String(lot.wave_number))} · 本波拍賣進行中</span>
       ${flourishBannerHtml}
       ${priorityBannerHtml}
@@ -685,19 +810,13 @@ function lotStageHtml(lot, isFinalLot, myGuess) {
         <div class="lot-info">
           ${ui.tierTag(lot.item_tier)}
           <h3 style="margin-top:10px;">${ui.esc(lot.item_name)}</h3>
-          <div class="price-row">
-            <span class="cur">${lot.current_price}</span>
-            ${priceUnitHtml}
-          </div>
+          ${priceRowHtml}
           ${effectDescHtml}
-          <div class="bidder">
-            目前領先:<b>${lot.current_bidder_id ? ui.esc(lot.bidder ? lot.bidder.name : "??") + (isMineLeading ? "(你)" : "") : "尚無人出價"}</b>
-            ・ 最小加價 ${lot.min_increment} 枚
-          </div>
+          ${bidderRowHtml}
           <div class="bid-row" id="bid-row">${bidRowHtml}</div>
           ${extraActionHtml}
-          ${partnerSectionHtml(lot)}
-          ${guessSectionHtml(lot, myGuess)}
+          ${lot.is_sealed ? "" : partnerSectionHtml(lot)}
+          ${lot.is_sealed ? "" : guessSectionHtml(lot, myGuess)}
         </div>
         <div class="countdown-dial">
           <svg width="96" height="96" viewBox="0 0 96 96">
@@ -719,11 +838,18 @@ function nextLotPreviewHtml(lot, myGuess) {
   const specialInfo = isSpecial ? AUCTION_SPECIAL_ITEMS.find((s) => s.key === lot.special_key) : null;
   const estPoints =
     lot.item_tier === "bundle" ? auctionPointsForBundlePrice(lot.base_price) : auctionPointsForPrice(lot.base_price, lot.item_tier);
-  const pointsNote = isSpecial
+  const pointsNote = lot.is_flash
+    ? `固定搶購價 ${lot.base_price} 枚，不用比價，先搶先贏，用底價估至少可拿 ${estPoints} 分`
+    : isSpecial
     ? `得標後可以使用一次「${ui.esc((specialInfo && specialInfo.name) || "特殊效果")}」`
     : isMystery
     ? "得標後現場開箱才知道多少分"
     : `用底價得標至少可拿 ${estPoints} 分(實際成交價越高分數越高)`;
+  const modeNote = lot.is_flash
+    ? `<div class="section-note" style="margin:4px 0 0;">${ui.icon("zap")}限時快閃攤:開拍後手刀點「搶購」，不用出價比大小</div>`
+    : lot.is_sealed
+    ? `<div class="section-note" style="margin:4px 0 0;">${ui.icon("eye-off")}暗標競標:開拍後盲出一個價格，看不到別人出多少，時間到才揭曉</div>`
+    : `<div class="section-note" style="margin:4px 0 0;">${ui.icon("lock")}猜價/合夥邀請只能在開拍前操作，一開拍就會鎖住</div>`;
   return `
     <div class="card auction-prebid">
       <span class="live-tag prebid"><span class="dot"></span>LOT ${ui.esc(String(lot.wave_number))} · 開拍前預告 · <span id="next-lot-cd">--</span> 秒後開拍</span>
@@ -732,12 +858,12 @@ function nextLotPreviewHtml(lot, myGuess) {
         <h3 style="margin-top:10px;">${ui.esc(lot.item_name)}</h3>
         <div class="price-row">
           <span class="cur">${lot.base_price}</span>
-          <span class="unit">財神幣起標</span>
+          <span class="unit">財神幣${lot.is_flash ? "(固定搶購價)" : "起標"}</span>
         </div>
         <div class="section-note" style="margin:6px 0 0;">${ui.icon("info")}${pointsNote}</div>
-        <div class="section-note" style="margin:4px 0 0;">${ui.icon("lock")}猜價/合夥邀請只能在開拍前操作，一開拍就會鎖住</div>
-        ${partnerSectionHtml(lot)}
-        ${guessSectionHtml(lot, myGuess)}
+        ${modeNote}
+        ${lot.is_flash || lot.is_sealed ? "" : partnerSectionHtml(lot)}
+        ${lot.is_flash ? "" : guessSectionHtml(lot, myGuess)}
       </div>
     </div>
   `;
@@ -781,6 +907,12 @@ function renderLotSection() {
     if (bidMinBtn) bidMinBtn.onclick = () => bid(liveLot, liveLot.min_increment);
     if (bidX5Btn) bidX5Btn.onclick = () => bid(liveLot, liveLot.min_increment * 5);
     if (bidCustomBtn) bidCustomBtn.onclick = () => customBid(liveLot);
+    const flashClaimBtn = document.getElementById("flash-claim-btn");
+    if (flashClaimBtn) flashClaimBtn.onclick = () => claimFlash(liveLot);
+    const sealedBidBtn = document.getElementById("sealed-bid-btn");
+    if (sealedBidBtn) sealedBidBtn.onclick = () => sealedBid(liveLot);
+    const appraiseBtn = document.getElementById("bid-appraise");
+    if (appraiseBtn) appraiseBtn.onclick = () => appraise(liveLot);
     const freeCommonBtn = document.getElementById("bid-free-common");
     if (freeCommonBtn) freeCommonBtn.onclick = () => redeemFreeCommon(liveLot);
     const partnerInviteBtn = document.getElementById("partner-invite-btn");
@@ -1246,6 +1378,11 @@ function renderRules() {
   html += `<p><b style="color:var(--ink);">${ui.icon("target")} 猜價小遊戲</b><br/>每件商品拍賣中，大家都可以先猜「這件最後會標到多少錢」(一件只能猜一次，不用出價也能參加)，結標後猜中加 ${AUCTION_GUESS_BONUS_EXACT} 分、最接近的人加 ${AUCTION_GUESS_BONUS_CLOSE} 分(平手全部一起拿)。</p>`;
   html += `<p><b style="color:var(--ink);">${ui.icon("gift")} 隱藏驚喜商品</b><br/>整場會有 1~2 件商品不會出現在「商品預告」清單裡(連搶先情報券都看不到)，要等它自己開拍才知道，製造一點意外驚喜。</p>`;
   html += `<p><b style="color:var(--ink);">${ui.icon("flag")} 最後衝刺輪</b><br/>本場最後一波拍賣會特別標示出來，提醒大家把剩餘財神幣花光光——畢竟折算成分數只有一半效益。</p>`;
+  html += `<p><b style="color:var(--ink);">${ui.icon("eye-off")} 暗標競標</b><br/>少數商品(標示「暗標競標」)是盲出價:大家同時默默出一個心中最高價，看不到別人出多少，時間到才一起揭曉，最高價得標、付的是自己出的價。截標前都可以修改自己的出價。</p>`;
+  html += `<p><b style="color:var(--ink);">${ui.icon("zap")} 限時快閃攤</b><br/>偶爾會插進一件「⚡快閃搶購」商品，不用比價，固定折扣價、先搶先贏，上架後只有短短 ${AUCTION_FLASH_DURATION_SEC} 秒，手刀點下去才搶得到。</p>`;
+  html += `<p><b style="color:var(--ink);">${ui.icon("trending-up")} 連標加成</b><br/>連續標到 ${AUCTION_WIN_STREAK_BONUS_START} 件以上商品(不含特殊券)，下一件標到的分數會多加 ${Math.round(
+    AUCTION_WIN_STREAK_BONUS_RATIO * 100
+  )}%，出過價卻沒標到會讓連續紀錄中斷歸零。</p>`;
 
   box.innerHTML = html;
 }

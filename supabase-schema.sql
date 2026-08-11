@@ -571,6 +571,11 @@ alter table auction_lots add column if not exists partner_b_id uuid references p
 alter table auction_lots add column if not exists partner_status text;          -- 合夥競標狀態:null(沒有合夥) | pending(等對方回應) | accepted(合夥中) | declined(對方婉拒)
 alter table auction_lots add column if not exists is_surprise boolean not null default false; -- 隱藏驚喜商品:true 的話「商品預告」不會顯示這件，開拍才會知道
 alter table auction_participants add column if not exists bonus_points numeric not null default 0; -- 合夥競標分到的分數 + 猜價小遊戲贏得的分數，加總進排行榜分數
+alter table auction_participants add column if not exists win_streak int not null default 0; -- 連續標到幾件商品(不含特殊券)，斷了(出過價卻沒標到)就歸零，連續3件起下一件加10%分數
+alter table auction_lots add column if not exists box_pre_roll_tier text;   -- 福袋箱在「排程當下」就先偷偷開好的等級，給商品鑑定符看用，真正結標拿分數還是用這個值(不是重新開一次)
+alter table auction_lots add column if not exists box_pre_roll_name text;   -- 同上，偷偷開好的獎項名稱
+alter table auction_lots add column if not exists is_sealed boolean not null default false; -- 暗標/密封競標:true 的話出價是盲出，看不到別人出多少，時間到才一起揭曉
+alter table auction_lots add column if not exists is_flash boolean not null default false;  -- 限時快閃攤:true 的話不用比價，固定價格先搶先贏，搶到當下就直接結標
 
 -- 猜價小遊戲:每件商品開拍中，大家可以先猜「這件最後會標到多少錢」，不用出價也能參與，
 -- 結標時猜中或最接近的人加一點 bonus_points。一人一件商品只能猜一次。
@@ -595,6 +600,21 @@ create table if not exists auction_bids (
   amount int not null,
   created_at timestamptz default now()
 );
+
+-- 商品鑑定符(暗標競標同理，出價要盲出，所以不用共用 auction_bids 這張大家都看得到目前最高價的表，
+-- 另外開一張各自出價互不可見的表。真正結標時直接查這張表算最高價，跟英式競標的 current_price/current_bidder_id 是兩條平行邏輯)
+create table if not exists auction_sealed_bids (
+  id uuid primary key default gen_random_uuid(),
+  lot_id uuid references auction_lots(id) on delete cascade,
+  event_id uuid references events(id) on delete cascade,
+  player_id uuid references players(id) on delete cascade,
+  amount int not null,
+  created_at timestamptz default now(),
+  unique(lot_id, player_id) -- 同一人同一件可以改價(用 upsert)，但只留最後一次出的
+);
+alter table auction_sealed_bids enable row level security;
+drop policy if exists "anon all auction_sealed_bids" on auction_sealed_bids;
+create policy "anon all auction_sealed_bids" on auction_sealed_bids for all using (true) with check (true);
 
 alter table auction_participants enable row level security;
 drop policy if exists "anon all auction_participants" on auction_participants;

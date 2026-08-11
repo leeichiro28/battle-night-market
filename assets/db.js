@@ -947,6 +947,10 @@ const db = (function () {
           scheduled_at: scheduledAt,
           special_key: item.specialKey || null,
           is_surprise: !!item.isSurprise,
+          is_sealed: !!item.isSealed,
+          is_flash: !!item.isFlash,
+          box_pre_roll_tier: item.boxPreRoll ? item.boxPreRoll.tier : null,
+          box_pre_roll_name: item.boxPreRoll ? item.boxPreRoll.name : null,
         });
       });
     });
@@ -984,15 +988,17 @@ const db = (function () {
     const nowIso = new Date().toISOString();
     const { data: due, error } = await client
       .from("auction_lots")
-      .select("id, base_price, priority_holder_id")
+      .select("id, base_price, priority_holder_id, is_flash")
       .eq("event_id", eventId)
       .eq("status", "scheduled")
       .lte("scheduled_at", nowIso);
     if (error) throw error;
     if (!due || !due.length) return;
     const now = Date.now();
-    const endsAt = new Date(now + AUCTION_LOT_DURATION_SEC * 1000).toISOString();
     for (const lot of due) {
+      // 限時快閃攤上架時間短很多(先搶先贏，不用比價)，其餘商品維持原本的拍賣倒數秒數
+      const durationSec = lot.is_flash ? AUCTION_FLASH_DURATION_SEC : AUCTION_LOT_DURATION_SEC;
+      const endsAt = new Date(now + durationSec * 1000).toISOString();
       const updates = { status: "live", current_price: lot.base_price, ends_at: endsAt };
       // 如果這一波有人用插隊優先權預約過，開拍時順便算出他的專屬優先出價時間窗
       if (lot.priority_holder_id) updates.priority_until = new Date(now + AUCTION_PRIORITY_WINDOW_SEC * 1000).toISOString();
@@ -1025,7 +1031,12 @@ const db = (function () {
           nextEffects = { ...effects, [lot.special_key]: (effects[lot.special_key] || 0) + 1 };
         }
         if (lot.item_tier === "mystery") {
-          const outcome = auctionRollMysteryBoxOutcome();
+          // 商品鑑定符要看得到「排程當下」就先開好的結果，所以結標這裡改成讀 box_pre_roll_tier/name，
+          // 不是重新開一次——統計上跟原本重新 roll 完全一樣(還是同一張機率表)，只是提早決定而已。
+          // 舊資料沒有 box_pre_roll_tier(升級前排的商品)才退回原本「結標當下重新開」的做法。
+          const outcome = lot.box_pre_roll_tier
+            ? { ...auctionBoxOutcomeByTier(lot.box_pre_roll_tier), revealName: lot.box_pre_roll_name }
+            : auctionRollMysteryBoxOutcome();
           points = outcome.points;
           let doubled = false;
           if (effects.boxDoubleActive) {
@@ -1049,10 +1060,16 @@ const db = (function () {
           myPoints = myPointsShare;
         }
 
+        // 連標加成:連續標到幾件(不含特殊券)商品，從第 N 件開始這件分數多加一點，鼓勵手氣正旺的人繼續投入，
+        // 出過價卻沒標到的人(下面「參與退補」那段)會把對方的連續紀錄歸零。
+        const newStreak = lot.item_tier === "special" ? part.win_streak || 0 : (part.win_streak || 0) + 1;
         if (lot.item_tier !== "special") {
+          if (newStreak >= AUCTION_WIN_STREAK_BONUS_START) {
+            myPoints = Math.round(myPoints * (1 + AUCTION_WIN_STREAK_BONUS_RATIO));
+          }
           lotUpdates = { ...(lotUpdates || {}), points: myPoints };
         }
-        const updates = { coins: Math.max(0, part.coins - myPrice) };
+        const updates = { coins: Math.max(0, part.coins - myPrice), win_streak: newStreak };
         if (nextEffects) updates.effects = nextEffects;
         await client.from("auction_participants").update(updates).eq("id", part.id);
       }
@@ -1109,7 +1126,10 @@ const db = (function () {
     for (const pid of losingBidderIds) {
       const losingPart = await getMyAuctionParticipant(lot.event_id, pid);
       if (losingPart) {
-        await client.from("auction_participants").update({ coins: losingPart.coins + refund }).eq("id", losingPart.id);
+        const resetUpdates = { coins: losingPart.coins + refund };
+        // 連標加成:出過價卻沒標到，連續紀錄中斷歸零(特殊券不影響連續紀錄，不用重置)
+        if (lot.item_tier !== "special" && (losingPart.win_streak || 0) > 0) resetUpdates.win_streak = 0;
+        await client.from("auction_participants").update(resetUpdates).eq("id", losingPart.id);
       }
     }
     await client.from("auction_lots").update({ settled: true }).eq("id", lot.id);
@@ -1135,8 +1155,79 @@ const db = (function () {
         .select();
       if (claimErr) throw claimErr;
       if (!claimed || !claimed.length) continue;
-      await finalizeAuctionLot(lot, lot.current_bidder_id, lot.current_price);
+      if (lot.is_sealed) {
+        // 暗標競標:結算時才第一次去查大家盲出的價格，最高價得標、付自己出的價(不是別人的價)。
+        // 順便把每筆暗標也寫一份進 auction_bids(共用表)，這樣參與退補/連標加成重置這些既有邏輯
+        // 才抓得到「這件商品有誰出過價但沒標到」，不用另外重寫一套。
+        const { data: sealedRows, error: sealedErr } = await client.from("auction_sealed_bids").select("*").eq("lot_id", lot.id);
+        if (sealedErr) throw sealedErr;
+        let winnerId = null;
+        let finalPrice = 0;
+        (sealedRows || []).forEach((b) => {
+          if (b.amount > finalPrice) {
+            finalPrice = b.amount;
+            winnerId = b.player_id;
+          }
+        });
+        if (sealedRows && sealedRows.length) {
+          await client
+            .from("auction_bids")
+            .insert(sealedRows.map((b) => ({ lot_id: lot.id, event_id: lot.event_id, player_id: b.player_id, amount: b.amount })));
+        }
+        await finalizeAuctionLot(lot, winnerId, finalPrice);
+      } else {
+        await finalizeAuctionLot(lot, lot.current_bidder_id, lot.current_price);
+      }
     }
+  }
+
+  // 暗標/密封競標:出價互不可見，時間到才一起結算。可以在時間內改價(upsert)，只留最後一次出的。
+  async function submitSealedBid(lot, playerId, amount) {
+    if (!lot.is_sealed) throw new Error("這件商品不是暗標競標");
+    if (amount < lot.base_price) throw new Error(`出價不能低於底價 ${lot.base_price}`);
+    const part = await getMyAuctionParticipant(lot.event_id, playerId);
+    if (!part) throw new Error("找不到你的參賽資料");
+    if (part.coins < amount) throw new Error("財神幣不夠出這個價");
+    const { error } = await client
+      .from("auction_sealed_bids")
+      .upsert({ lot_id: lot.id, event_id: lot.event_id, player_id: playerId, amount }, { onConflict: "lot_id,player_id" });
+    if (error) throw error;
+  }
+
+  // 限時快閃攤:先搶先贏，用「current_bidder_id 目前是 null」當條件鎖，
+  // 誰先送出這個條件成立的更新誰就搶到，其他晚一步的人 update 會影響 0 筆知道自己搶輸了。
+  // 搶到的當下直接把 ends_at 設成現在，讓正常的結算流程(settleExpiredAuctionLots)馬上把它收掉。
+  async function claimFlashLot(lot, playerId) {
+    if (!lot.is_flash) throw new Error("這件不是限時快閃攤");
+    const part = await getMyAuctionParticipant(lot.event_id, playerId);
+    if (!part) throw new Error("找不到你的參賽資料");
+    if (part.coins < lot.base_price) throw new Error("財神幣不夠搶購這件");
+    const { data, error } = await client
+      .from("auction_lots")
+      .update({ current_bidder_id: playerId, current_price: lot.base_price, ends_at: new Date().toISOString() })
+      .eq("id", lot.id)
+      .eq("status", "live")
+      .is("current_bidder_id", null)
+      .select();
+    if (error) throw error;
+    if (!data || !data.length) throw new Error("慢了一步，已經被別人搶走了");
+  }
+
+  // 商品鑑定符:使用在正在拍賣中的福袋箱上，私下看到「排程當下就先開好」的等級(不是即時算的)，
+  // 只寫回自己的 auction_participants.effects，不會廣播給別人，所以其他人畫面上看不到你用了。
+  async function useAppraisal(eventId, playerId, lot) {
+    if (lot.item_tier !== "mystery") throw new Error("鑑定符只能用在福袋箱上");
+    if (lot.status !== "live") throw new Error("這件商品目前不是拍賣中");
+    if (!lot.box_pre_roll_tier) throw new Error("這件商品還沒有可以鑑定的資料，稍後再試");
+    const part = await getMyAuctionParticipant(eventId, playerId);
+    if (!part) throw new Error("找不到你的參賽資料");
+    const effects = part.effects || {};
+    if (!(effects.appraise > 0)) throw new Error("沒有商品鑑定符可以用");
+    const appraisals = { ...(effects.appraisals || {}), [lot.id]: lot.box_pre_roll_tier };
+    const nextEffects = { ...effects, appraise: effects.appraise - 1, appraisals };
+    const { error } = await client.from("auction_participants").update({ effects: nextEffects }).eq("id", part.id);
+    if (error) throw error;
+    return lot.box_pre_roll_tier;
   }
 
   // 出價:用「目前最高價沒變」當樂觀鎖條件，避免兩個人同時搶標時其中一口價憑空消失。
@@ -1498,6 +1589,12 @@ const db = (function () {
 
   async function listMyAuctionPriceGuesses(eventId, playerId) {
     const { data, error } = await client.from("auction_price_guesses").select("*").eq("event_id", eventId).eq("player_id", playerId);
+    if (error) throw error;
+    return data || [];
+  }
+
+  async function listMySealedBids(eventId, playerId) {
+    const { data, error } = await client.from("auction_sealed_bids").select("*").eq("event_id", eventId).eq("player_id", playerId);
     if (error) throw error;
     return data || [];
   }
@@ -1918,6 +2015,9 @@ const db = (function () {
     activateDueAuctionLots,
     settleExpiredAuctionLots,
     placeAuctionBid,
+    submitSealedBid,
+    claimFlashLot,
+    useAppraisal,
     workForAuctionCoins,
     listAuctionTasks,
     activateDueAuctionTasks,
@@ -1935,6 +2035,7 @@ const db = (function () {
     cancelAuctionPartner,
     submitAuctionPriceGuess,
     listMyAuctionPriceGuesses,
+    listMySealedBids,
     computeAuctionStandings,
     closeAuctionEvent,
     setAuctionReward,
