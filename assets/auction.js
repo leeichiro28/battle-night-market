@@ -21,9 +21,7 @@ let taskCountdownInterval = null;
 let unsubLots = null;
 let unsubParticipants = null;
 let unsubTasks = null;
-let unsubLeader = null;
 let ticking = false;
-let isTickLeader = false; // 是不是目前這場拍賣裡負責推進排程的那台(其他分頁保持 false，純被動接收更新)
 let refreshTimer = null; // 把短時間內連續多個 Realtime 變化事件合併成一次 refreshAll，不用每個事件都各自重抓一次
 let laborFlashUntil = 0;
 let luckyFlashUntil = 0;
@@ -128,11 +126,24 @@ function tickCooldownDisplays() {
   renderLucky();
 }
 
-// ---------- 背景排程推進(只有被選為「隊長」的那台分頁負責推進，其他分頁純被動接收 Realtime 更新) ----------
-// 排程本身寫進資料庫的變化(商品開拍/結標、任務開放/結算)會透過下面的 onTableChange 訂閱
-// 自動通知包含隊長在內的所有分頁去 refreshAll，所以這裡不用每秒都強制重抓一次資料。
+// ---------- 背景排程推進 ----------
+// 商品開拍/結標、任務開放/結算這些「時間到了要自動發生」的事，沒辦法只靠 realtime 事件觸發
+// (什麼都沒發生，本來就不會有資料異動事件)，所以還是需要背景計時器主動去檢查。
+//
+// 這裡原本設計成「只有被推選為隊長的那一台分頁負責跑」，其他分頁純被動接收更新，用意是避免
+// 所有人的分頁都同時打資料庫。但實測發現一個嚴重問題:如果被選為隊長的那一台分頁被瀏覽器
+// 切到背景(切到別的 App、鎖螢幕、切分頁)，瀏覽器會大幅延後甚至完全暫停背景分頁的 setTimeout，
+// 導致隊長雖然還「連著」(Presence 沒有斷線，所以不會自動換人當隊長)，但實際上完全沒有在推進，
+// 排程就會整個卡死在原地(玩家會看到商品卡在「0 秒後開拍」不會動，兩人以上一起玩時特別容易踩到，
+// 因為只要輪到手機切出去看一下 Discord，那台如果剛好是隊長就會卡住)。
+//
+// 改成:不挑隊長，只要「分頁目前在前景(document.visibilityState === 'visible')」就會自己排程、
+// 自己去檢查有沒有東西到期。多台分頁同時檢查也不會重複觸發，因為 activateDueAuctionLots /
+// settleExpiredAuctionLots 底層的資料庫更新本來就有 .eq("status", "scheduled"/"live") 這種
+// 條件式寫入當保護，同一筆資料只有第一個搶到的分頁會真的寫入成功，其他分頁的更新會直接生效 0 筆、
+// 不會出錯也不會重複扣款/重複結算。分頁切回前景的當下也會立刻補跑一次，不用等下一個排定時間到。
 async function tick() {
-  if (!isTickLeader || ticking || !ev || !ev.locked || ev.status === "closed") return;
+  if (document.visibilityState !== "visible" || ticking || !ev || !ev.locked || ev.status === "closed") return;
   ticking = true;
   try {
     await db.activateDueAuctionLots(eventId);
@@ -150,7 +161,6 @@ async function tick() {
 
 // 原本 tick() 是每秒硬查一次「有沒有東西到期」，改成算出目前手上這批 lots/tasks 裡最早的
 // 下一個時間點(開拍時間/截標時間/緩衝結束時間)，直接排一個精準對時的 setTimeout，時間到了才真的去查。
-// 只有隊長分頁需要排這個(其他分頁純被動接收 realtime 更新，不用自己也算一份)。
 // 每次 refreshAll() 重新抓到 lots/tasks 後都要重排一次，因為新開的商品/被延長的截標時間
 // 都可能讓「下一個到期時間」提前，不能只排一次就不管了。
 function scheduleNextTick() {
@@ -158,7 +168,7 @@ function scheduleNextTick() {
     clearTimeout(nextTickTimer);
     nextTickTimer = null;
   }
-  if (!isTickLeader || !ev || !ev.locked || ev.status === "closed") return;
+  if (document.visibilityState !== "visible" || !ev || !ev.locked || ev.status === "closed") return;
   const now = Date.now();
   const candidates = [];
   lots.forEach((l) => {
@@ -1430,13 +1440,8 @@ function bindRuleModal() {
 
   await refreshAll();
   cooldownTickInterval = setInterval(tickCooldownDisplays, 1000);
-  // 同一場拍賣的所有分頁一起選隊長，只有隊長會真的去跑 tick() 推進排程;
-  // 隊長分頁關掉的話，presence 會自動讓其他分頁裡的一台變成新隊長，排程不會因此停住。
-  // 剛選出隊長(或換人當隊長)的當下，要重新排一次 scheduleNextTick，不然新隊長不會自動開始排程。
-  unsubLeader = db.electLeader(`auction-tick-${eventId}`, (leader) => {
-    isTickLeader = leader;
-    scheduleNextTick();
-  });
+  // 排程改成「分頁在前景就自己排」，不用再選隊長(見上面 tick() 註解說明原因)。
+  scheduleNextTick();
   unsubLots = db.onTableChange("auction_lots", `event_id=eq.${eventId}`, () => scheduleRefresh());
   unsubParticipants = db.onTableChange("auction_participants", `event_id=eq.${eventId}`, () => scheduleRefresh());
   unsubTasks = db.onTableChange("auction_tasks", `event_id=eq.${eventId}`, () => scheduleRefresh());
@@ -1452,9 +1457,15 @@ window.addEventListener("beforeunload", () => {
   if (unsubLots) unsubLots();
   if (unsubParticipants) unsubParticipants();
   if (unsubTasks) unsubTasks();
-  if (unsubLeader) unsubLeader();
 });
 
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") refreshAll();
+  if (document.visibilityState === "visible") {
+    // 切回前景:先補跑一次到期檢查(不用等下一個排定時間，切出去那段時間累積的到期項目立刻處理掉)，
+    // 順便重新排程(分頁在背景時 scheduleNextTick 會直接跳過，回到前景要重新排一次)，
+    // 也重抓一次最新資料以防背景時漏接了 realtime 事件。
+    tick();
+    scheduleNextTick();
+    refreshAll();
+  }
 });

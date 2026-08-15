@@ -2,8 +2,6 @@ const params = new URLSearchParams(location.search);
 const eventId = params.get("event");
 let myParticipant = null;
 let advanceInterval = null;
-let unsubLeaderAdvance = null;
-let isAdvanceLeader = false;
 let unsub1 = null;
 let unsub2 = null;
 let currentEv = null;
@@ -618,8 +616,6 @@ document.getElementById("quit-btn").onclick = async () => {
 function stopBackgroundSync() {
   if (advanceInterval) clearInterval(advanceInterval);
   advanceInterval = null;
-  if (unsubLeaderAdvance) unsubLeaderAdvance();
-  unsubLeaderAdvance = null;
   if (pollDebounceTimer) clearTimeout(pollDebounceTimer);
   pollDebounceTimer = null;
 }
@@ -638,11 +634,17 @@ function schedulePoll(ev) {
 }
 
 // 賽程推進/看門狗:這兩個本質上是「多久沒人動就要自動處理」的時間判定，沒辦法只靠realtime事件觸發
-// (「什麼都沒發生」本來就不會有資料變化事件)，所以還是需要一個背景計時器。但不需要每個開著這頁的
-// 分頁都各自跑一份——用跟拍賣頁一樣的 electLeader，同一場賽事只有1個分頁真的在跑，其他分頁被動接收
-// matches/event_participants 的 realtime 更新就好，不用重複輪詢。
+// (「什麼都沒發生」本來就不會有資料變化事件)，所以還是需要一個背景計時器。
+//
+// 這裡原本設計成「用 electLeader 選出隊長，只有隊長分頁真的會跑」，用意是避免所有開著這頁的分頁
+// 都同時打資料庫。但實測發現嚴重問題:隊長分頁如果被瀏覽器切到背景(切到別的App、鎖螢幕)，瀏覽器
+// 會大幅延後甚至暫停背景分頁的 setInterval，隊長雖然 Presence 還連著(不會自動換人當隊長)，
+// 但實際上完全沒有在推進，會導致賽程整個卡住(掛機自動判定、下一場自動開打都不會發生)。
+// 改成「分頁在前景就自己推進」，不挑隊長。activateNextMatch 底層是資料庫函式(單一交易，天生原子性)，
+// watchdogActiveMatch 內部的寫入也都有條件式判斷(例如已經分出勝負就直接跳過)，多個前景分頁
+// 同時檢查不會造成重複判定或壞資料。
 async function advanceTick(ev) {
-  if (!isAdvanceLeader || !ev.locked || ev.status === "closed") return;
+  if (document.visibilityState !== "visible" || !ev.locked || ev.status === "closed") return;
   try {
     await db.activateNextMatch(eventId);
   } catch (e) {}
@@ -782,11 +784,8 @@ function bindRuleModal(ev) {
   bindRuleModal(ev);
   await poll(ev);
 
-  unsubLeaderAdvance = db.electLeader(`lobby-advance-${eventId}`, (leader) => {
-    isAdvanceLeader = leader;
-  });
   advanceInterval = setInterval(() => advanceTick(ev), 4000);
-  advanceTick(ev); // 不用等第一次計時器才推進，選出隊長後馬上跑一次
+  advanceTick(ev); // 不用等第一次計時器才推進，馬上跑一次
 
   unsub1 = db.onTableChange("event_participants", `event_id=eq.${eventId}`, () => schedulePoll(ev));
   unsub2 = db.onTableChange("matches", `event_id=eq.${eventId}`, () => schedulePoll(ev));
