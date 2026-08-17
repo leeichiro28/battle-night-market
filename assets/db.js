@@ -1017,7 +1017,12 @@ const db = (function () {
       const part = await getMyAuctionParticipant(lot.event_id, winnerId);
       if (part) {
         const effects = part.effects || {};
-        let nextEffects = null;
+        // 用來組 adjust_auction_participant 呼叫參數的道具券異動(最多同時一種數量異動+一種旗標異動，
+        // 一件商品只會是「特殊券」或「福袋箱」其中一種，不會兩種同時成立，所以這樣就夠用)
+        let effectKey = null;
+        let effectDelta = 0;
+        let effectFlagKey = null;
+        let effectFlagValue = null;
         // 分數改用「實際成交價」現算，不是開拍前就寫死的 lot.points，搶標搶得越貴分數也跟著漲。
         // 用「老闆招待券」免費兌換時 finalPrice 是 0，這種情況退回用底價算(不然免費兌換只會拿到分數下限)。
         const pricingBasis = finalPrice > 0 ? finalPrice : lot.base_price;
@@ -1028,7 +1033,8 @@ const db = (function () {
             ? auctionPointsForBundlePrice(pricingBasis)
             : auctionPointsForPrice(pricingBasis, lot.item_tier);
         if (lot.special_key) {
-          nextEffects = { ...effects, [lot.special_key]: (effects[lot.special_key] || 0) + 1 };
+          effectKey = lot.special_key;
+          effectDelta = 1;
         }
         if (lot.item_tier === "mystery") {
           // 商品鑑定符要看得到「排程當下」就先開好的結果，所以結標這裡改成讀 box_pre_roll_tier/name，
@@ -1042,7 +1048,8 @@ const db = (function () {
           if (effects.boxDoubleActive) {
             points *= 2;
             doubled = true;
-            nextEffects = { ...(nextEffects || effects), boxDoubleActive: false };
+            effectFlagKey = "boxDoubleActive";
+            effectFlagValue = false;
           }
           lotUpdates = { ...(lotUpdates || {}), box_reveal_name: outcome.revealName, box_reveal_tier: outcome.tier, box_doubled: doubled };
         }
@@ -1069,21 +1076,25 @@ const db = (function () {
           }
           lotUpdates = { ...(lotUpdates || {}), points: myPoints };
         }
-        const updates = { coins: Math.max(0, part.coins - myPrice), win_streak: newStreak };
-        if (nextEffects) updates.effects = nextEffects;
-        await client.from("auction_participants").update(updates).eq("id", part.id);
+        await client.rpc("adjust_auction_participant", {
+          p_participant_id: part.id,
+          p_coins_delta: -myPrice,
+          p_win_streak: newStreak,
+          p_effect_key: effectKey,
+          p_effect_delta: effectDelta,
+          p_effect_flag_key: effectFlagKey,
+          p_effect_flag_value: effectFlagValue,
+        });
       }
     }
     if (partnerCredit) {
       const partnerPart = await getMyAuctionParticipant(lot.event_id, partnerCredit.partnerId);
       if (partnerPart) {
-        await client
-          .from("auction_participants")
-          .update({
-            coins: Math.max(0, partnerPart.coins + partnerCredit.coinsDelta),
-            bonus_points: (partnerPart.bonus_points || 0) + partnerCredit.bonusPoints,
-          })
-          .eq("id", partnerPart.id);
+        await client.rpc("adjust_auction_participant", {
+          p_participant_id: partnerPart.id,
+          p_coins_delta: partnerCredit.coinsDelta,
+          p_bonus_points_delta: partnerCredit.bonusPoints,
+        });
       }
     }
     if (lotUpdates) {
@@ -1106,18 +1117,15 @@ const db = (function () {
         for (const g of winners) {
           const guesserPart = await getMyAuctionParticipant(lot.event_id, g.player_id);
           if (guesserPart) {
-            await client
-              .from("auction_participants")
-              .update({ bonus_points: (guesserPart.bonus_points || 0) + bonus })
-              .eq("id", guesserPart.id);
+            await client.rpc("adjust_auction_participant", { p_participant_id: guesserPart.id, p_bonus_points_delta: bonus });
           }
         }
       }
     }
 
-    // 參與退補:這件商品有出過價、但最後沒標到的人，結標後每人退一小筆財神幣當參與獎勵，
-    // 鼓勵大家踴躍出手而不是全場觀望。金額 = 這件商品的最小加價單位 * 倍率，越稀有的商品退越多。
-    // 合夥的夥伴不算「沒標到」，不用再額外領一次參與退補。
+    // 參與獎勵:這件商品有出過價、但最後沒標到的人，結標後每人發一小筆財神幣鼓勵踴躍出手(不是退款，
+    // 出價當下本來就沒有預先扣錢，得標才會真的扣)。金額 = 這件商品的最小加價單位 * 倍率，越稀有的商品給越多。
+    // 合夥的夥伴不算「沒標到」，不用再額外領一次。
     const { data: bidRows, error: bidErr } = await client.from("auction_bids").select("player_id").eq("lot_id", lot.id);
     if (bidErr) throw bidErr;
     const refund = lot.min_increment * AUCTION_PARTICIPATION_REFUND_MULT;
@@ -1126,10 +1134,13 @@ const db = (function () {
     for (const pid of losingBidderIds) {
       const losingPart = await getMyAuctionParticipant(lot.event_id, pid);
       if (losingPart) {
-        const resetUpdates = { coins: losingPart.coins + refund };
         // 連標加成:出過價卻沒標到，連續紀錄中斷歸零(特殊券不影響連續紀錄，不用重置)
-        if (lot.item_tier !== "special" && (losingPart.win_streak || 0) > 0) resetUpdates.win_streak = 0;
-        await client.from("auction_participants").update(resetUpdates).eq("id", losingPart.id);
+        const shouldReset = lot.item_tier !== "special" && (losingPart.win_streak || 0) > 0;
+        await client.rpc("adjust_auction_participant", {
+          p_participant_id: losingPart.id,
+          p_coins_delta: refund,
+          p_win_streak: shouldReset ? 0 : null,
+        });
       }
     }
     await client.from("auction_lots").update({ settled: true }).eq("id", lot.id);
@@ -1223,9 +1234,13 @@ const db = (function () {
     if (!part) throw new Error("找不到你的參賽資料");
     const effects = part.effects || {};
     if (!(effects.appraise > 0)) throw new Error("沒有商品鑑定符可以用");
-    const appraisals = { ...(effects.appraisals || {}), [lot.id]: lot.box_pre_roll_tier };
-    const nextEffects = { ...effects, appraise: effects.appraise - 1, appraisals };
-    const { error } = await client.from("auction_participants").update({ effects: nextEffects }).eq("id", part.id);
+    const { error } = await client.rpc("adjust_auction_participant", {
+      p_participant_id: part.id,
+      p_effect_key: "appraise",
+      p_effect_delta: -1,
+      p_appraisal_lot_id: lot.id,
+      p_appraisal_tier: lot.box_pre_roll_tier,
+    });
     if (error) throw error;
     return lot.box_pre_roll_tier;
   }
@@ -1356,13 +1371,9 @@ const db = (function () {
       const part = await getMyAuctionParticipant(eventId, playerId);
       if (part) {
         gain = task.reward;
-        const { data: updated, error: updErr } = await client
-          .from("auction_participants")
-          .update({ coins: part.coins + gain })
-          .eq("id", part.id)
-          .select();
+        const { data, error: updErr } = await client.rpc("adjust_auction_participant", { p_participant_id: part.id, p_coins_delta: gain });
         if (updErr) throw updErr;
-        participant = updated && updated[0];
+        participant = data;
       }
     }
     return { correct, gain, participant };
@@ -1439,10 +1450,15 @@ const db = (function () {
     if (!part) throw new Error("還沒報名這場拍賣");
     const effects = part.effects || {};
     if (!effects.intel || effects.intel < 1) throw new Error("你沒有搶先情報券");
-    const nextEffects = { ...effects, intel: effects.intel - 1, intelActive: true };
-    const { data: updated, error } = await client.from("auction_participants").update({ effects: nextEffects }).eq("id", part.id).select();
+    const { data, error } = await client.rpc("adjust_auction_participant", {
+      p_participant_id: part.id,
+      p_effect_key: "intel",
+      p_effect_delta: -1,
+      p_effect_flag_key: "intelActive",
+      p_effect_flag_value: true,
+    });
     if (error) throw error;
-    return updated[0];
+    return data;
   }
 
   // 插隊優先權:預約「目前排隊中最早的下一波商品」，那一波開拍時這位玩家會拿到專屬優先出價時間窗
@@ -1472,8 +1488,11 @@ const db = (function () {
       .select();
     if (claimErr) throw claimErr;
     if (!claimed || !claimed.length) throw new Error("手慢了，插隊名額剛剛被別人搶走，請再試一次");
-    const nextEffects = { ...effects, priority: effects.priority - 1 };
-    const { error: partErr } = await client.from("auction_participants").update({ effects: nextEffects }).eq("id", part.id);
+    const { error: partErr } = await client.rpc("adjust_auction_participant", {
+      p_participant_id: part.id,
+      p_effect_key: "priority",
+      p_effect_delta: -1,
+    });
     if (partErr) throw partErr;
     return claimed[0];
   }
@@ -1497,14 +1516,14 @@ const db = (function () {
     if (claimErr) throw claimErr;
     if (!claimed || !claimed.length) throw new Error("手慢了，請重新整理再試一次");
     const refundCoins = Math.floor(lot.current_price / 2);
-    const nextEffects = { ...effects, refund: effects.refund - 1 };
-    const { data: updatedPart, error: partErr } = await client
-      .from("auction_participants")
-      .update({ coins: part.coins + refundCoins, effects: nextEffects })
-      .eq("id", part.id)
-      .select();
+    const { data: updatedPart, error: partErr } = await client.rpc("adjust_auction_participant", {
+      p_participant_id: part.id,
+      p_coins_delta: refundCoins,
+      p_effect_key: "refund",
+      p_effect_delta: -1,
+    });
     if (partErr) throw partErr;
-    return { refundCoins, participant: updatedPart[0] };
+    return { refundCoins, participant: updatedPart };
   }
 
   // 福袋箱翻倍券:設一個「下次開箱翻倍」的持續生效旗標，實際翻倍在 finalizeAuctionLot 開箱那一刻套用並消耗掉。
@@ -1514,10 +1533,15 @@ const db = (function () {
     const effects = part.effects || {};
     if (!effects.boxDouble || effects.boxDouble < 1) throw new Error("你沒有福袋箱翻倍券");
     if (effects.boxDoubleActive) throw new Error("已經啟用中了，等下一次開箱生效");
-    const nextEffects = { ...effects, boxDouble: effects.boxDouble - 1, boxDoubleActive: true };
-    const { data: updated, error } = await client.from("auction_participants").update({ effects: nextEffects }).eq("id", part.id).select();
+    const { data, error } = await client.rpc("adjust_auction_participant", {
+      p_participant_id: part.id,
+      p_effect_key: "boxDouble",
+      p_effect_delta: -1,
+      p_effect_flag_key: "boxDoubleActive",
+      p_effect_flag_value: true,
+    });
     if (error) throw error;
-    return updated[0];
+    return data;
   }
 
   // ---------- 合夥競標 ----------
@@ -1618,8 +1642,11 @@ const db = (function () {
       .select();
     if (claimErr) throw claimErr;
     if (!claimed || !claimed.length) throw new Error("手慢了，這件商品剛結標了");
-    const nextEffects = { ...effects, freeCommon: effects.freeCommon - 1 };
-    const { error: partErr } = await client.from("auction_participants").update({ effects: nextEffects }).eq("id", part.id);
+    const { error: partErr } = await client.rpc("adjust_auction_participant", {
+      p_participant_id: part.id,
+      p_effect_key: "freeCommon",
+      p_effect_delta: -1,
+    });
     if (partErr) throw partErr;
     await finalizeAuctionLot(claimed[0], playerId, 0);
     return claimed[0];

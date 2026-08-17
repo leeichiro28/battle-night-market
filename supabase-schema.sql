@@ -287,6 +287,71 @@ begin
 end;
 $$;
 
+-- 夜市拍賣:財神幣/分數/道具券的統一異動函式(原子化，取代前端「先讀出來算一算再整包寫回去」的舊寫法)。
+--
+-- 舊寫法(auction_participants.update({coins: part.coins - price, ...}))在多個異動同時發生時(例如結標
+-- 扣錢的同時又有人打工賺錢、或合夥分潤跟參與退補同時觸發)，會互相蓋掉對方剛寫入的值，等於憑空少一筆錢/
+-- 加成，這是玩家回報「錢對不上帳」的根因。改成這個函式後，coins/bonus_points 一律用「相對增減」而不是
+-- 「絕對值覆蓋」，而且整個異動包在單一 UPDATE 陳述式裡，靠 Postgres 對同一列的更新天生序列化來保證不會
+-- 互相蓋掉——不管幾件事同時打進來，最後結果都是「所有增減值都有被正確加總」，不會有任何一筆遺失。
+--
+-- 參數:
+--   p_coins_delta        財神幣要加多少(負數就是扣)，預設 0
+--   p_bonus_points_delta 額外分數(猜價小遊戲/合夥分潤用)要加多少，預設 0
+--   p_win_streak         連標加成的連續紀錄，直接設成這個絕對值，null 表示不動
+--   p_effect_key         要異動數量的道具券 key(例如 'intel'、'refund')，null 表示不動
+--   p_effect_delta       上面那個道具券數量要加多少(通常是 -1 消耗、+1 得到)
+--   p_effect_flag_key    要設定的布林旗標 key(例如 'intelActive'、'boxDoubleActive')，null 表示不動
+--   p_effect_flag_value  上面那個旗標要設成什麼
+--   p_appraisal_lot_id   商品鑑定符用:要寫進 effects.appraisals 這個巢狀物件的商品 id，null 表示不動
+--   p_appraisal_tier     上面那個商品鑑定出來的等級文字
+create or replace function adjust_auction_participant(
+  p_participant_id uuid,
+  p_coins_delta int default 0,
+  p_bonus_points_delta numeric default 0,
+  p_win_streak int default null,
+  p_effect_key text default null,
+  p_effect_delta int default 0,
+  p_effect_flag_key text default null,
+  p_effect_flag_value boolean default null,
+  p_appraisal_lot_id uuid default null,
+  p_appraisal_tier text default null
+)
+returns auction_participants
+language plpgsql
+as $$
+declare
+  result auction_participants;
+  cur_effects jsonb;
+begin
+  -- for update 鎖住這一列，直到這個函式(單一交易)結束才釋放，確保下面讀到的 effects 是
+  -- 「這個異動輪到自己處理的那一刻」最新的值，不會跟其他同時發生的異動互相蓋掉。
+  select effects into cur_effects from auction_participants where id = p_participant_id for update;
+  if cur_effects is null then cur_effects := '{}'::jsonb; end if;
+
+  if p_effect_key is not null then
+    cur_effects := jsonb_set(cur_effects, array[p_effect_key], to_jsonb(coalesce((cur_effects->>p_effect_key)::int, 0) + p_effect_delta));
+  end if;
+  if p_effect_flag_key is not null then
+    cur_effects := jsonb_set(cur_effects, array[p_effect_flag_key], to_jsonb(p_effect_flag_value));
+  end if;
+  if p_appraisal_lot_id is not null then
+    cur_effects := jsonb_set(cur_effects, array['appraisals', p_appraisal_lot_id::text], to_jsonb(p_appraisal_tier), true);
+  end if;
+
+  update auction_participants
+  set
+    coins = greatest(0, coins + p_coins_delta),
+    bonus_points = coalesce(bonus_points, 0) + p_bonus_points_delta,
+    win_streak = coalesce(p_win_streak, win_streak),
+    effects = cur_effects
+  where id = p_participant_id
+  returning * into result;
+
+  return result;
+end;
+$$;
+
 -- 總冠軍賽產生函式:勝部冠軍 + 敗部冠軍都出爐後，原子化建立唯一一場總決賽
 create or replace function create_grand_final(p_event_id uuid)
 returns uuid
