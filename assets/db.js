@@ -1477,6 +1477,8 @@ const db = (function () {
 
   // 插隊優先權:預約「目前排隊中最早的下一波商品」，那一波開拍時這位玩家會拿到專屬優先出價時間窗
   // (實際時間窗是 activateDueAuctionLots 開拍那一刻才算出來，這裡只先把 priority_holder_id 卡在商品上)。
+  // 限時快閃攤(先搶先贏，沒有「出價時間窗」可言)、暗標競標(盲出價，看不到別人搶標所以優先權沒有意義)
+  // 這兩種商品排除在外，不然優先權卡到這種商品上會直接浪費掉、玩家還不知道為什麼沒效果。
   async function useAuctionPriorityTicket(eventId, playerId) {
     const part = await getMyAuctionParticipant(eventId, playerId);
     if (!part) throw new Error("還沒報名這場拍賣");
@@ -1487,12 +1489,14 @@ const db = (function () {
       .select("*")
       .eq("event_id", eventId)
       .eq("status", "scheduled")
+      .eq("is_flash", false)
+      .eq("is_sealed", false)
       .is("priority_holder_id", null)
       .order("scheduled_at", { ascending: true })
       .limit(1)
       .maybeSingle();
     if (nextErr) throw nextErr;
-    if (!nextLot) throw new Error("目前沒有可以插隊的下一波商品了");
+    if (!nextLot) throw new Error("目前沒有可以插隊的下一波商品了(限時快閃攤/暗標競標不能插隊，用不上優先權)");
     const { data: claimed, error: claimErr } = await client
       .from("auction_lots")
       .update({ priority_holder_id: playerId })
@@ -1648,6 +1652,7 @@ const db = (function () {
     if (lotErr) throw lotErr;
     if (lot.status !== "live") throw new Error("這件商品現在不是拍賣中");
     if (lot.item_tier !== "common") throw new Error("招待券只能兌換「普通」級商品");
+    if (lot.is_flash) throw new Error("招待券不能用在限時快閃攤上(那本來就是先搶先贏、沒有比價，用招待券等於搶在所有人前面白拿，不公平)");
     const { data: claimed, error: claimErr } = await client
       .from("auction_lots")
       .update({ status: "done", current_bidder_id: playerId, current_price: 0 })

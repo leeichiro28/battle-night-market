@@ -81,6 +81,7 @@ document.getElementById("discord-login-btn").onclick = async () => {
 
 async function handleAuthSession(session) {
   currentPlayer = session ? await db.ensurePlayerFromSession(session).catch(() => null) : null;
+  lastKnownRank = null; // 換了身分(登入/登出/切換帳號)，名次基準點要重算，不然可能拿舊身分的排名去跟新身分比較，跳出誤導的提示
   if (currentPlayer) document.getElementById("who-card").style.display = "none";
   if (currentPlayer && pendingLoginResolvers.length) {
     const resolvers = pendingLoginResolvers;
