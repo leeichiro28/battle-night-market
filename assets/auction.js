@@ -1607,7 +1607,7 @@ function renderRules() {
 
   html += `<h4>${ui.icon("coins")} 途中賺財神幣</h4>`;
   html += `<p><b style="color:var(--ink);">${ui.icon("hand-coins")} 打工賺財神幣</b><br/>每 ${AUCTION_WORK_COOLDOWN_SEC} 秒可以按一次，隨機拿到 ${AUCTION_WORK_MIN}~${AUCTION_WORK_MAX} 財神幣。</p>`;
-  html += `<p><b style="color:var(--ink);">${ui.icon("puzzle")} 夜市任務</b><br/>拍賣過程中偶爾跳出問答／猜謎，答對現領財神幣，一題一人只能答一次。</p>`;
+  html += `<p><b style="color:var(--ink);">${ui.icon("puzzle")} 夜市任務</b><br/>拍賣過程中偶爾跳出問答／猜謎，${AUCTION_TASK_DURATION_SEC} 秒內答對現領財神幣，一題一人只能答一次。</p>`;
   html += `<p><b style="color:var(--ink);">${ui.icon("dice-5")} 幸運攤位</b><br/>花財神幣(${AUCTION_LUCKY_MIN_BET}~${AUCTION_LUCKY_MAX_BET})骰骰子猜大小，猜對雙倍拿回，猜錯拿回一半，每 ${AUCTION_LUCKY_COOLDOWN_SEC} 秒能下注一次。</p>`;
   html += `<p><b style="color:var(--ink);">${ui.icon("gift")} 參與獎勵</b><br/>某件商品你出過價、但最後沒標到，結標後會自動發一小筆財神幣當獎勵(不是退款，出價當下本來就沒扣錢)。</p>`;
 
@@ -1626,6 +1626,9 @@ function renderRules() {
   html += `<p><b style="color:var(--ink);">${ui.icon("trending-up")} 連標加成</b><br/>連續標到 ${AUCTION_WIN_STREAK_BONUS_START} 件以上商品(不含特殊券)，下一件標到的分數會多加 ${Math.round(
     AUCTION_WIN_STREAK_BONUS_RATIO * 100
   )}%，出過價卻沒標到會讓連續紀錄中斷歸零。</p>`;
+  html += `<p><b style="color:var(--ink);">${ui.icon(
+    "layers"
+  )} 收集組合</b><br/>有幾件單品其實分屬同一個隱藏系列(橫跨不同分級)，全部湊齊的話結算時額外拿一筆固定獎勵分數，是額外加成、不影響單品各自的得標分數。拍賣中/開拍前預告如果看到商品名稱下面有提示，代表這件是某個系列的一部分。</p>`;
 
   box.innerHTML = html;
 }
