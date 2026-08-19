@@ -914,7 +914,7 @@ const db = (function () {
     return _cachedFetch(`listAuctionLots:${eventId}`, 300, async (signal) => {
       const { data, error } = await client
         .from("auction_lots")
-        .select("*, bidder:current_bidder_id(name)")
+        .select("*, bidder:current_bidder_id(name), partner_a:partner_a_id(name), partner_b:partner_b_id(name)")
         .abortSignal(signal)
         .eq("event_id", eventId)
         .order("wave_number", { ascending: true })
@@ -1006,7 +1006,7 @@ const db = (function () {
     }
   }
 
-  // 共用結標邏輯:扣得標者的錢(招待券免費兌換時 finalPrice 是 0)、幫其他出過價但沒標到的人辦參與退補、
+  // 共用結標邏輯:扣得標者的錢(招待券免費兌換時 finalPrice 是 0)、幫其他出過價但沒標到的人辦參與獎勵、
   // 如果是特殊券商品就把效果加進得標者的 auction_participants.effects、如果是福袋箱就現場開箱算分數、
   // 如果這一波有成立合夥競標就把價錢跟分數分一半給夥伴、幫猜價小遊戲猜中/最接近的人加分，最後標記 settled。
   // 呼叫端(settleExpiredAuctionLots / useAuctionFreeCommonTicket)都已經先用 status 條件鎖搶到這件商品的處理權。
@@ -1068,7 +1068,7 @@ const db = (function () {
         }
 
         // 連標加成:連續標到幾件(不含特殊券)商品，從第 N 件開始這件分數多加一點，鼓勵手氣正旺的人繼續投入，
-        // 出過價卻沒標到的人(下面「參與退補」那段)會把對方的連續紀錄歸零。
+        // 出過價卻沒標到的人(下面「參與獎勵」那段)會把對方的連續紀錄歸零。
         const newStreak = lot.item_tier === "special" ? part.win_streak || 0 : (part.win_streak || 0) + 1;
         if (lot.item_tier !== "special") {
           if (newStreak >= AUCTION_WIN_STREAK_BONUS_START) {
@@ -1168,7 +1168,7 @@ const db = (function () {
       if (!claimed || !claimed.length) continue;
       if (lot.is_sealed) {
         // 暗標競標:結算時才第一次去查大家盲出的價格，最高價得標、付自己出的價(不是別人的價)。
-        // 順便把每筆暗標也寫一份進 auction_bids(共用表)，這樣參與退補/連標加成重置這些既有邏輯
+        // 順便把每筆暗標也寫一份進 auction_bids(共用表)，這樣參與獎勵/連標加成重置這些既有邏輯
         // 才抓得到「這件商品有誰出過價但沒標到」，不用另外重寫一套。
         const { data: sealedRows, error: sealedErr } = await client.from("auction_sealed_bids").select("*").eq("lot_id", lot.id);
         if (sealedErr) throw sealedErr;
@@ -1252,7 +1252,6 @@ const db = (function () {
     if (lot.priority_holder_id && lot.priority_holder_id !== playerId && lot.priority_until && new Date(lot.priority_until).getTime() > Date.now()) {
       throw new Error("現在是別人的插隊優先權時間，請稍後再搶標");
     }
-    const newPrice = lot.current_price + amount;
     const part = await getMyAuctionParticipant(lot.event_id, playerId);
     if (!part) throw new Error("還沒報名這場拍賣");
     const { data: myLiveLeads, error: leadErr } = await client
@@ -1262,27 +1261,42 @@ const db = (function () {
       .eq("status", "live")
       .eq("current_bidder_id", playerId);
     if (leadErr) throw leadErr;
-    const committed = (myLiveLeads || []).filter((l) => l.id !== lot.id).reduce((s, l) => s + l.current_price, 0);
-    if (part.coins - committed < newPrice) {
-      throw new Error("財神幣不夠喊這個價(要扣掉你目前其他領先中的商品)");
+
+    // 「加價 X 枚」這個操作本身是相對值(不是喊一個絕對金額)，所以價格被別人搶先改掉的話，
+    // 直接拿最新的價格重算一次「加價後應該是多少」再試一次即可，玩家不用手動重新整理再點一次。
+    // 大家同時點按鈕本來就很容易撞在一起，這裡自動重試 1 次，撞第二次才真的請玩家自己來。
+    let workingLot = lot;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const newPrice = workingLot.current_price + amount;
+      const committed = (myLiveLeads || []).filter((l) => l.id !== workingLot.id).reduce((s, l) => s + l.current_price, 0);
+      if (part.coins - committed < newPrice) {
+        throw new Error("財神幣不夠喊這個價(要扣掉你目前其他領先中的商品)");
+      }
+      const now = new Date();
+      let endsAt = workingLot.ends_at;
+      const remainingMs = new Date(workingLot.ends_at).getTime() - now.getTime();
+      if (remainingMs <= AUCTION_ANTI_SNIPE_WINDOW_SEC * 1000) {
+        endsAt = new Date(now.getTime() + AUCTION_ANTI_SNIPE_EXTEND_SEC * 1000).toISOString();
+      }
+      const { data: updated, error } = await client
+        .from("auction_lots")
+        .update({ current_price: newPrice, current_bidder_id: playerId, ends_at: endsAt })
+        .eq("id", workingLot.id)
+        .eq("status", "live")
+        .eq("current_price", workingLot.current_price)
+        .select();
+      if (error) throw error;
+      if (updated && updated.length) {
+        await client.from("auction_bids").insert({ lot_id: workingLot.id, event_id: workingLot.event_id, player_id: playerId, amount: newPrice });
+        return updated[0];
+      }
+      if (attempt === 0) {
+        const { data: freshLot, error: freshErr } = await client.from("auction_lots").select("*").eq("id", lot.id).single();
+        if (freshErr || !freshLot || freshLot.status !== "live") throw new Error("手慢了，價格剛剛被別人改變了，請重新出價");
+        workingLot = freshLot;
+      }
     }
-    const now = new Date();
-    let endsAt = lot.ends_at;
-    const remainingMs = new Date(lot.ends_at).getTime() - now.getTime();
-    if (remainingMs <= AUCTION_ANTI_SNIPE_WINDOW_SEC * 1000) {
-      endsAt = new Date(now.getTime() + AUCTION_ANTI_SNIPE_EXTEND_SEC * 1000).toISOString();
-    }
-    const { data: updated, error } = await client
-      .from("auction_lots")
-      .update({ current_price: newPrice, current_bidder_id: playerId, ends_at: endsAt })
-      .eq("id", lot.id)
-      .eq("status", "live")
-      .eq("current_price", lot.current_price)
-      .select();
-    if (error) throw error;
-    if (!updated || !updated.length) throw new Error("手慢了，價格剛剛被別人改變了，請重新出價");
-    await client.from("auction_bids").insert({ lot_id: lot.id, event_id: lot.event_id, player_id: playerId, amount: newPrice });
-    return updated[0];
+    throw new Error("手慢了，價格剛剛被別人改變了，請重新出價");
   }
 
   // 打工賺財神幣:用 work_ready_at<=now 當樂觀鎖，同一秒連點兩次也只會成功一次。
@@ -1624,7 +1638,7 @@ const db = (function () {
   }
 
   // 老闆招待券:直接把一件「拍賣中的普通級商品」免費送給這位玩家，結標流程走跟一般結標同一套
-  // finalizeAuctionLot(參與退補等邏輯都一致)，只是 finalPrice 固定是 0。
+  // finalizeAuctionLot(參與獎勵等邏輯都一致)，只是 finalPrice 固定是 0。
   async function useAuctionFreeCommonTicket(lotId, eventId, playerId) {
     const part = await getMyAuctionParticipant(eventId, playerId);
     if (!part) throw new Error("還沒報名這場拍賣");
@@ -1649,6 +1663,42 @@ const db = (function () {
     });
     if (partErr) throw partErr;
     await finalizeAuctionLot(claimed[0], playerId, 0);
+    return claimed[0];
+  }
+
+  // 劫標券:直接用「目前最高價 x (1+溢價比例)」瞬間把商品搶下來，付溢價換穩贏，其他人來不及反應。
+  // 不能用在暗標競標(沒有可見的「目前最高價」可以算)、限時快閃攤(本來就是先搶先贏，用不上)、特殊券
+  // (道具券本身用溢價搶沒意義)上，其餘分級的商品都能用。
+  async function useAuctionSnipeTicket(lotId, eventId, playerId) {
+    const part = await getMyAuctionParticipant(eventId, playerId);
+    if (!part) throw new Error("還沒報名這場拍賣");
+    const effects = part.effects || {};
+    if (!effects.snipe || effects.snipe < 1) throw new Error("你沒有劫標券");
+    const { data: lot, error: lotErr } = await client.from("auction_lots").select("*").eq("id", lotId).single();
+    if (lotErr) throw lotErr;
+    if (lot.status !== "live") throw new Error("這件商品現在不是拍賣中");
+    if (lot.is_sealed) throw new Error("劫標券不能用在暗標競標的商品上");
+    if (lot.is_flash) throw new Error("這件已經是先搶先贏了，不需要用劫標券");
+    if (lot.item_tier === "special") throw new Error("劫標券不能用在特殊券上");
+    const snipePrice = Math.ceil(lot.current_price * (1 + AUCTION_SNIPE_PREMIUM));
+    if (part.coins < snipePrice) throw new Error(`財神幣不夠付劫標的溢價(需要 ${snipePrice})`);
+    const { data: claimed, error: claimErr } = await client
+      .from("auction_lots")
+      .update({ status: "done", current_bidder_id: playerId, current_price: snipePrice })
+      .eq("id", lotId)
+      .eq("status", "live")
+      .eq("current_price", lot.current_price)
+      .select();
+    if (claimErr) throw claimErr;
+    if (!claimed || !claimed.length) throw new Error("手慢了，價格剛剛變了，請重新確認金額再試一次");
+    await client.from("auction_bids").insert({ lot_id: lotId, event_id: eventId, player_id: playerId, amount: snipePrice });
+    const { error: partErr } = await client.rpc("adjust_auction_participant", {
+      p_participant_id: part.id,
+      p_effect_key: "snipe",
+      p_effect_delta: -1,
+    });
+    if (partErr) throw partErr;
+    await finalizeAuctionLot(claimed[0], playerId, snipePrice);
     return claimed[0];
   }
 
@@ -2057,6 +2107,7 @@ const db = (function () {
     useAuctionRefundTicket,
     useAuctionBoxDoubleTicket,
     useAuctionFreeCommonTicket,
+    useAuctionSnipeTicket,
     inviteAuctionPartner,
     respondAuctionPartner,
     cancelAuctionPartner,

@@ -1616,9 +1616,11 @@ input,select,textarea{max-width:100%;min-width:0;}
 }
 .upnext-card{
   min-width:0;
+  position:relative;
   background:var(--panel2);border:1px solid var(--line);border-radius:10px;
   padding:12px 10px;text-align:center;
 }
+.upnext-card.watched{border-color:rgba(242,183,5,.6);box-shadow:0 0 0 1px rgba(242,183,5,.2);}
 .upnext-card .ico-wrap{
   width:40px;height:40px;margin:0 auto 8px;border-radius:50%;
   display:flex;align-items:center;justify-content:center;
@@ -1626,6 +1628,62 @@ input,select,textarea{max-width:100%;min-width:0;}
 }
 .upnext-card .name{font-size:12px;line-height:1.35;height:32px;overflow:hidden;overflow-wrap:anywhere;}
 .upnext-card .tier-tag{margin-top:8px;}
+/* 收集組合的小角標:縮圖空間不夠放完整文字，用一個小圖示+滑鼠停留提示(title)取代 */
+.upnext-series-badge{
+  position:absolute;top:6px;right:6px;width:18px;height:18px;border-radius:50%;
+  background:rgba(242,183,5,.85);color:#1B1706;
+  display:flex;align-items:center;justify-content:center;
+}
+/* 商品追蹤星號，放左上角跟收集組合角標(右上角)區隔開 */
+.upnext-watch-btn{
+  position:absolute;top:4px;left:4px;width:22px;height:22px;border-radius:50%;
+  border:1px solid var(--line);background:var(--panel);color:var(--ink-dim);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;
+}
+.upnext-card.watched .upnext-watch-btn{background:var(--gold);border-color:var(--gold);color:#1B1706;}
+.upnext-watch-btn svg{width:12px;height:12px;}
+
+/* 戰況跑馬燈:固定在標題下方，淡入淡出切換訊息 */
+.ticker-bar{
+  display:flex;align-items:center;gap:8px;
+  background:linear-gradient(90deg,rgba(242,183,5,.14),rgba(242,183,5,.04));
+  border:1px solid rgba(242,183,5,.35);border-radius:10px;
+  padding:10px 14px;margin:0 0 16px;font-size:13px;color:var(--gold-d);font-weight:600;
+  animation:ticker-fade .35s ease;
+}
+@keyframes ticker-fade{from{opacity:0;transform:translateY(-4px);}to{opacity:1;transform:translateY(0);}}
+
+/* 個人排名浮動提示:固定在右上角，跟頁面捲動無關 */
+.rank-toast{
+  position:fixed;top:16px;right:16px;z-index:80;
+  display:flex;align-items:center;gap:8px;
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  padding:12px 16px;font-size:13px;font-weight:700;
+  box-shadow:0 8px 24px rgba(0,0,0,.4);
+  opacity:0;transform:translateY(-10px);transition:opacity .25s ease,transform .25s ease;
+}
+.rank-toast.show{opacity:1;transform:translateY(0);}
+.rank-toast.up{color:var(--green);border-color:rgba(61,190,108,.4);}
+.rank-toast.down{color:var(--red);border-color:rgba(229,72,77,.4);}
+@media (max-width:520px){.rank-toast{left:16px;right:16px;top:auto;bottom:16px;}}
+
+/* 本場之最:趣味統計小卡 */
+.fun-stat-row{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 0;border-bottom:1px solid var(--line);font-size:13px;
+}
+.fun-stat-row:last-child{border-bottom:none;}
+.fun-stat-row svg{width:18px;height:18px;color:var(--gold);flex-shrink:0;}
+.fun-stat-row .label{color:var(--ink-dim);flex-shrink:0;}
+.fun-stat-row .text{color:var(--ink);font-weight:600;text-align:right;margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* 拍賣中/開拍前預告卡片裡的收集組合提示，放在商品名稱下面，跟其他 section-note 同一種輕量風格 */
+.series-hint{
+  display:flex;align-items:center;gap:6px;
+  font-size:12px;color:var(--gold-d);
+  background:rgba(242,183,5,.1);border:1px solid rgba(242,183,5,.3);
+  border-radius:8px;padding:6px 10px;margin:8px 0 0;
+}
+.series-hint svg{width:14px;height:14px;flex-shrink:0;}
 
 /* 賺財神幣管道卡片 */
 .income-grid{

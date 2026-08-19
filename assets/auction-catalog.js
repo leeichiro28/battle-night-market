@@ -28,7 +28,7 @@ const AUCTION_CATALOG = {
     items: [
       ["夜市街頭傳說涼麵秘技", 600], ["老闆娘的招牌笑容加持券", 630], ["限量印刷版夜市地圖", 660],
       ["黃金脆皮雞排一世情緣券", 700], ["蚵仔煎主廚特製版", 750], ["棺材板隱藏內餡兌換券", 800],
-      ["割包三兄弟套餐券", 850], ["花枝羹古早味秘傳版", 900],
+      ["刈包三兄弟套餐券", 850], ["花枝羹古早味秘傳版", 900],
     ],
   },
   legendary: {
@@ -137,7 +137,7 @@ const AUCTION_BUNDLE_ITEMS = [
   { name: "遊戲戰利品組合包(彈珠台紀念幣+撈金魚戰利品袋+糖葫蘆一串)", basePrice: 200 },
   { name: "消暑冰品組合包(剉冰配料加倍券+木瓜牛奶特調券+燒仙草加料吃到爽券)", basePrice: 240 },
   { name: "熱血遊戲控組合包(彈珠台紀念幣+套圈圈安慰獎小熊+抓娃娃機三次券+糖葫蘆一串)", basePrice: 380 },
-  { name: "重口味鹹食組合包(蔥抓餅加蛋券+士林大香腸雙倍肉券+割包三兄弟套餐券)", basePrice: 520 },
+  { name: "重口味鹹食組合包(蔥抓餅加蛋券+士林大香腸雙倍肉券+刈包三兄弟套餐券)", basePrice: 520 },
   { name: "傳說夜市饗宴組合包(黃金脆皮雞排一世情緣券+蚵仔煎主廚特製版+棺材板隱藏內餡兌換券)", basePrice: 950 },
 ];
 const AUCTION_BUNDLE_MIN_INCREMENT = 20;
@@ -150,7 +150,7 @@ function auctionPointsForBundlePrice(price) {
 // 結算時額外加一筆固定獎勵分數，跟「這幾件單品各自的得標分數」是分開疊加、不互相取代。
 // 這跟上面的「組合包」是兩回事:組合包是單一件商品直接打包賣，這裡是要分開標到好幾件單品湊成一組。
 const AUCTION_ITEM_SERIES = [
-  { key: "midnight_snack", name: "宵夜控套餐", items: ["蔥抓餅加蛋券", "大腸包小腸豪華加料券", "割包三兄弟套餐券"], bonus: 150 },
+  { key: "midnight_snack", name: "宵夜控套餐", items: ["蔥抓餅加蛋券", "大腸包小腸豪華加料券", "刈包三兄弟套餐券"], bonus: 150 },
   { key: "sweet_tooth", name: "甜點控套餐", items: ["糖葫蘆一串", "胡椒餅剛出爐搶先取件權", "花枝羹古早味秘傳版"], bonus: 150 },
   { key: "night_market_legend", name: "傳奇夜市迷", items: ["老闆珍藏麻辣配方", "夜市街頭傳說涼麵秘技", "老闆親筆簽名招牌"], bonus: 200 },
 ];
@@ -170,8 +170,17 @@ function auctionSeriesProgress(series, ownedNames) {
   return { have, missing, complete: missing.length === 0 };
 }
 
+// 給拍賣中/預告清單用的:這件商品的名字是不是剛好屬於某個收集組合，是的話回傳那個組合資料，
+// 不是就回傳 null。拍賣進行中/開拍前預告都要能看到這個提示，玩家才知道要不要為了湊套組去搶標，
+// 不然這個機制原本只有標到後、翻開背包才看得到已經湊了幾件，等看到的時候常常已經來不及規劃了。
+function auctionSeriesForItemName(itemName) {
+  return AUCTION_ITEM_SERIES.find((series) => series.items.includes(itemName)) || null;
+}
+
 // 特殊券:不算稀有度分數，而是給一個能影響拍賣本身的功能。固定價位、整場限量供應(各一張)。
 // key 對應 db.js 結標時要加進 auction_participants.effects 的欄位名稱。
+const AUCTION_SNIPE_PREMIUM = 0.2; // 劫標券:用「目前最高價 x (1+這個比例)」直接搶下商品，付出溢價換取穩贏
+
 const AUCTION_SPECIAL_ITEMS = [
   { key: "intel", name: "搶先情報券", basePrice: 400, effectDesc: "使用後永久生效:提前看到全場剩餘的完整商品清單(其他人只能看到最近幾件，連隱藏驚喜商品都不會顯示)" },
   { key: "priority", name: "插隊優先權", basePrice: 350, effectDesc: "使用後預約下一波:那一波開拍時你有 6 秒專屬優先出價時間，其他人要等時間到才能搶標" },
@@ -179,6 +188,12 @@ const AUCTION_SPECIAL_ITEMS = [
   { key: "boxDouble", name: "福袋箱翻倍券", basePrice: 400, effectDesc: "使用後，下一次你標到福袋箱時，開出的分數直接翻倍" },
   { key: "freeCommon", name: "老闆招待券", basePrice: 300, effectDesc: "免費兌換一件正在拍賣中的「普通」級商品，不用出財神幣" },
   { key: "appraise", name: "商品鑑定符", basePrice: 380, effectDesc: "使用在正在拍賣中的福袋箱上，私下看到這箱大概是哪個等級(雷/普通/稀有/史詩/傳說)，只有你自己看得到，可以再決定要不要搶標" },
+  {
+    key: "snipe",
+    name: "劫標券",
+    basePrice: 500,
+    effectDesc: `使用在正在拍賣中的商品上，直接用「目前最高價 x ${1 + AUCTION_SNIPE_PREMIUM}」瞬間標下，其他人來不及反應，商品立刻結標——用溢價換穩贏，不能用在暗標競標/限時快閃攤/特殊券上`,
+  },
 ];
 const AUCTION_TICKET_META = {
   intel: { name: "搶先情報券", icon: "eye" },
@@ -187,6 +202,7 @@ const AUCTION_TICKET_META = {
   boxDouble: { name: "福袋箱翻倍券", icon: "package-open" },
   freeCommon: { name: "老闆招待券", icon: "hand-platter" },
   appraise: { name: "商品鑑定符", icon: "search" },
+  snipe: { name: "劫標券", icon: "swords" },
 };
 
 const AUCTION_TIER_ORDER = ["common", "rare", "epic", "legendary"];
@@ -211,7 +227,7 @@ const AUCTION_COIN_TO_SCORE = 0.25; // 剩餘財神幣折算分數的比例(調�
 const AUCTION_DEFAULT_BUDGET = 1000;
 const AUCTION_DEFAULT_WAVE_INTERVAL_SEC = 90;
 const AUCTION_DEFAULT_ITEMS_PER_WAVE = 1;
-const AUCTION_PARTICIPATION_REFUND_MULT = 2; // 參與退補:出過價沒標到的人，退還「min_increment * 這個倍率」當參與獎勵
+const AUCTION_PARTICIPATION_REFUND_MULT = 2; // 參與獎勵:出過價沒標到的人，發「min_increment * 這個倍率」財神幣當獎勵(不是退款)
 
 // 暗標/密封競標:一般分級商品(普通/稀有/史詩/傳說)裡，每件大約這個機率被抽成暗標——
 // 大家同時盲出一個心中最高價，時間到才一起揭曉，最高價得標、付的是自己出的價(不是別人的價)，
@@ -390,8 +406,16 @@ function buildAuctionItemSequence(limit) {
       sortKey: 1.2 + Math.random() * 1.8, // 讓快閃攤散落在中後段，不要一開場就出現
     });
   });
-  // 特殊券(道具類)不參與商品上限抽選，固定全部出現
-  auctionShuffle(AUCTION_SPECIAL_ITEMS).forEach((sp) => {
+  // 特殊券(道具類)不參與商品上限抽選，固定全部出現。
+  // 原本用單一權重(AUCTION_TIER_WEIGHT.special=2.5)+隨機數決定順序，結果全部擠在中後段(接近傳說級的位置)，
+  // 玩家反映「道具都是快結束才出現，根本來不及用」。改成用「第幾張券」平均分攤整場拍賣的時間軸(從偏早到
+  // 偏晚都各分配到一些，每張再加一點隨機抖動不要排太整齊)，让玩家從中前段開始就能陸續拿到、有機會用上。
+  const specialItemsShuffled = auctionShuffle(AUCTION_SPECIAL_ITEMS);
+  const specialSpanStart = 0.4; // 避免比第一件普通商品還早出現
+  const specialSpanEnd = AUCTION_TIER_WEIGHT.legendary + 1.2; // 最晚也差不多落在傳說級商品的區間內，不會拖到最後才出現
+  specialItemsShuffled.forEach((sp, idx) => {
+    const t = specialItemsShuffled.length > 1 ? idx / (specialItemsShuffled.length - 1) : 0.5;
+    const baseSlot = specialSpanStart + t * (specialSpanEnd - specialSpanStart);
     pool.push({
       itemName: sp.name,
       itemTier: "special",
@@ -400,7 +424,7 @@ function buildAuctionItemSequence(limit) {
       minIncrement: AUCTION_MIN_INCREMENT.special,
       specialKey: sp.key,
       isSurprise: false,
-      sortKey: AUCTION_TIER_WEIGHT.special + Math.random() * 1.6,
+      sortKey: baseSlot + (Math.random() - 0.5) * 0.6,
     });
   });
   pool.sort((a, b) => a.sortKey - b.sortKey);
@@ -421,7 +445,7 @@ function buildAuctionWaves(itemsPerWave, itemLimit) {
 // ---------- 夜市任務(問答／猜謎) ----------
 // 「找彩蛋」在 MVP 階段沿用同一套選擇題邏輯，只是題目風格/圖示不同，
 // 之後如果要做真的畫面上藏一顆可以點的彩蛋，再另外擴充。
-const AUCTION_TASK_DURATION_SEC = 45; // 每題開放作答的秒數
+const AUCTION_TASK_DURATION_SEC = 60; // 每題開放作答的秒數
 const AUCTION_TASK_MIN_REWARD = 30;
 const AUCTION_TASK_MAX_REWARD = 80;
 const AUCTION_TASK_INTERVAL_SEC = 240; // 大約每隔幾秒排一題(整場時長會依此估算題數)
@@ -433,16 +457,16 @@ const AUCTION_TASK_LABEL = { quiz: "夜市問答", riddle: "夜市猜謎", egg: 
 
 // 題庫:一部分是拍賣規則本身(答對還能順便搞懂遊戲怎麼玩)，一部分是原創的夜市主題猜謎。
 const AUCTION_TASK_BANK = [
-  { type: "quiz", q: "活動結束時，沒花完的財神幣 1 枚可以折算多少分?", options: ["0.5 分", "1 分", "2 分", "不能折算"], correct: 0 },
+  { type: "quiz", q: "活動結束時，沒花完的財神幣 1 枚可以折算多少分?", options: ["0.25 分", "0.5 分", "1 分", "不能折算"], correct: 0 },
   { type: "quiz", q: "拍賣倒數剩最後幾秒內加價，會觸發防偷襲重新計時?", options: ["5 秒", "10 秒", "20 秒", "30 秒"], correct: 1 },
   { type: "quiz", q: "打工按鈕按一次之後，大約要等多久才能再按一次?", options: ["30 秒", "45 秒", "60 秒", "75 秒"], correct: 3 },
   { type: "quiz", q: "拍賣商品裡，哪個級距的底價通常最高?", options: ["普通", "稀有", "史詩", "傳說"], correct: 3 },
   { type: "quiz", q: "出價的時候，加價金額至少要達到多少才會成功?", options: ["任意金額都可以", "最小加價單位", "目前最高價的兩倍", "底價的一半"], correct: 1 },
   { type: "riddle", q: "謎面:全身金黃酥脆，是排隊天王，可以加辣加大，你猜是什麼?", options: ["雞排", "蚵仔煎", "大腸包小腸", "剉冰"], correct: 0 },
-  { type: "riddle", q: "謎面:一鍋滾燙翻騰，加了藥材燉到骨肉分離，補身首選，你猜是什麼?", options: ["藥燉排骨", "麻辣鴨血", "燒仙草", "割包"], correct: 0 },
+  { type: "riddle", q: "謎面:一鍋滾燙翻騰，加了藥材燉到骨肉分離，補身首選，你猜是什麼?", options: ["藥燉排骨", "麻辣鴨血", "燒仙草", "刈包"], correct: 0 },
   { type: "riddle", q: "謎面:兩片吐司中間夾滿內餡，外型神秘像個小盒子，你猜是什麼?", options: ["棺材板", "胡椒餅", "花枝羹", "涼麵"], correct: 0 },
-  { type: "riddle", q: "謎面:圓滾滾冰涼透心，配料任你選，是消暑聖品，你猜是什麼?", options: ["剉冰", "彈珠汽水", "木瓜牛奶", "珍珠奶茶"], correct: 0 },
-  { type: "riddle", q: "謎面:白胖胖的身體裡包著滷肉跟酸菜，咬下去滿滿古早味，你猜是什麼?", options: ["割包", "蔥抓餅", "士林大香腸", "燒仙草"], correct: 0 },
+  { type: "riddle", q: "謎面:一碗雪白冰花堆得像小山，淋上糖水，配料任你選，是消暑聖品，你猜是什麼?", options: ["剉冰", "彈珠汽水", "木瓜牛奶", "珍珠奶茶"], correct: 0 },
+  { type: "riddle", q: "謎面:白胖胖的身體裡包著滷肉跟酸菜，咬下去滿滿古早味，你猜是什麼?", options: ["刈包", "蔥抓餅", "士林大香腸", "燒仙草"], correct: 0 },
   { type: "egg", q: "夜市彩蛋:如果想跟老闆多要一點「人情味」，通常要先做什麼?", options: ["笑著打招呼閒聊兩句", "板著臉一直殺價", "假裝沒帶錢包", "站在攤位前面滑手機"], correct: 0 },
   { type: "egg", q: "夜市彩蛋:排隊排最長的攤位，通常代表什麼?", options: ["東西大機率不錯吃", "老闆動作特別慢", "在辦活動抽獎", "純粹巧合而已"], correct: 0 },
 ];

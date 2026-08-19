@@ -27,6 +27,31 @@ let laborFlashUntil = 0;
 let luckyFlashUntil = 0;
 let luckyFlashNote = "";
 
+// ---------- 戰況跑馬燈 ----------
+let tickerQueue = [];
+let tickerShowing = false;
+let tickerTimer = null;
+
+// ---------- 個人排名浮動提示 ----------
+let lastKnownRank = null; // 上一次算出來自己排第幾名(0-based index)，第一次不知道就先不比較，避免一進頁面就跳提示
+let rankToastTimer = null;
+
+// ---------- 商品追蹤清單:存在 localStorage，重新整理/離開再回來都還記得，不用另外開資料表 ----------
+const WATCHLIST_KEY = `auction-watchlist-${eventId}`;
+function getWatchlist() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(WATCHLIST_KEY) || "[]"));
+  } catch (e) {
+    return new Set();
+  }
+}
+function toggleWatch(itemName) {
+  const set = getWatchlist();
+  if (set.has(itemName)) set.delete(itemName);
+  else set.add(itemName);
+  localStorage.setItem(WATCHLIST_KEY, JSON.stringify([...set]));
+}
+
 if (!eventId) location.href = "index.html";
 
 // ---------- 登入(跟首頁同一套，只是縮小版:只在需要互動時才要求登入) ----------
@@ -88,6 +113,8 @@ async function refreshAll() {
   const [lotList, taskList] = await Promise.all([db.listAuctionLots(eventId), db.listAuctionTasks(eventId)]);
   const standingList = await db.computeAuctionStandings(eventId, { lots: lotList });
   if (myGen !== refreshAllGen) return; // 這段等待期間又有更新的一次refreshAll了，這次的結果已經過期
+  detectTickerMoments(lots, lotList); // 要在 lots 被換成新資料之前比對新舊差異，順序不能換
+  detectRankChange(standings, standingList);
   lots = lotList;
   standings = standingList;
   tasks = taskList;
@@ -483,6 +510,23 @@ async function redeemFreeCommon(lot) {
   }
 }
 
+async function snipeLot(lot) {
+  const player = await ensureLogin();
+  const snipePrice = Math.ceil(lot.current_price * (1 + AUCTION_SNIPE_PREMIUM));
+  const ok = await ui.confirm(`確定要用劫標券花 ${snipePrice} 財神幣(目前最高價 ${lot.current_price} 的 ${Math.round((1 + AUCTION_SNIPE_PREMIUM) * 100)}%)直接搶下「${lot.item_name}」嗎?這個動作沒辦法反悔。`, {
+    title: "使用劫標券",
+    confirmText: "劫標！",
+  });
+  if (!ok) return;
+  try {
+    await db.useAuctionSnipeTicket(lot.id, eventId, player.id);
+    await refreshAll();
+  } catch (e) {
+    await ui.alert(e.message || "劫標失敗", { title: "劫標失敗", tone: "danger" });
+    await refreshAll();
+  }
+}
+
 // ---------- 畫面渲染 ----------
 function renderBalance() {
   const box = document.getElementById("balance-card");
@@ -687,6 +731,14 @@ function priorityWindowActive(lot) {
   return !!(lot.priority_holder_id && lot.priority_until && new Date(lot.priority_until).getTime() > Date.now());
 }
 
+// 收集組合提示:這件商品的名字如果剛好屬於某個組合，顯示一個小提示，
+// 拍賣中、開拍前預告、後面的「即將登場」清單都會用到，所以拉出來共用。
+function seriesHintHtml(itemName) {
+  const series = auctionSeriesForItemName(itemName);
+  if (!series) return "";
+  return `<div class="series-hint">${ui.icon("layers")}屬於「${ui.esc(series.name)}」收集組(集滿 ${series.items.length} 件加 ${series.bonus} 分)</div>`;
+}
+
 function lotStageHtml(lot, isFinalLot, myGuess) {
   const myId = currentPlayer && currentPlayer.id;
   const isMineLeading = lot.current_bidder_id && myId && lot.current_bidder_id === myId;
@@ -772,6 +824,11 @@ function lotStageHtml(lot, isFinalLot, myGuess) {
       extraActionHtml += `<button class="btn ghost" id="bid-appraise" style="margin-top:10px;">${ui.icon("search")}使用商品鑑定符偷看等級</button>`;
     }
   }
+  // 劫標券:暗標競標看不到目前最高價、特殊券溢價搶沒意義，這兩種不能用
+  if (!lot.is_sealed && lot.item_tier !== "special" && myParticipant && myParticipant.effects && myParticipant.effects.snipe > 0) {
+    const snipePrice = Math.ceil(lot.current_price * (1 + AUCTION_SNIPE_PREMIUM));
+    extraActionHtml += `<button class="btn ghost" id="bid-snipe" style="margin-top:10px;">${ui.icon("swords")}用劫標券直接搶下(花 ${snipePrice})</button>`;
+  }
 
   // 分數現在跟著成交價走，所以這裡不能用開拍前就寫死的 lot.points，要用目前最高價現算，
   // 讓大家出價的時候就能即時看到「如果現在標到，會拿多少分」，價格漲分數也跟著漲。
@@ -820,6 +877,7 @@ function lotStageHtml(lot, isFinalLot, myGuess) {
         <div class="lot-info">
           ${ui.tierTag(lot.item_tier)}
           <h3 style="margin-top:10px;">${ui.esc(lot.item_name)}</h3>
+          ${seriesHintHtml(lot.item_name)}
           ${priceRowHtml}
           ${effectDescHtml}
           ${bidderRowHtml}
@@ -866,6 +924,7 @@ function nextLotPreviewHtml(lot, myGuess) {
       <div class="lot-info">
         ${ui.tierTag(lot.item_tier)}
         <h3 style="margin-top:10px;">${ui.esc(lot.item_name)}</h3>
+        ${seriesHintHtml(lot.item_name)}
         <div class="price-row">
           <span class="cur">${lot.base_price}</span>
           <span class="unit">財神幣${lot.is_flash ? "(固定搶購價)" : "起標"}</span>
@@ -894,7 +953,43 @@ function startNextLotCountdown(lot) {
   countdownInterval = setInterval(tick3, 1000);
 }
 
+// 重繪畫面前先記住玩家「目前正在操作中」的輸入框/下拉選單(id、打了什麼字、游標位置)，
+// 重繪完再放回去——不然任何人只要一有動作(出價、打工賺錢…)，全場所有人的畫面都會整個重繪，
+// 剛好在猜價輸入框打字、或剛點開合夥人下拉選單，都會被直接清空重來，這是最多人抱怨的體驗問題。
+// 只包住「會重建整段 innerHTML」的區塊，不是全站都要包，避免不必要的效能負擔。
+function withFocusPreserved(containerEl, renderFn) {
+  const active = document.activeElement;
+  let saved = null;
+  if (active && containerEl && containerEl.contains(active) && active.id) {
+    saved = {
+      id: active.id,
+      value: "value" in active ? active.value : undefined,
+      selStart: typeof active.selectionStart === "number" ? active.selectionStart : null,
+      selEnd: typeof active.selectionEnd === "number" ? active.selectionEnd : null,
+    };
+  }
+  renderFn();
+  if (saved) {
+    const el = document.getElementById(saved.id);
+    if (el) {
+      if (saved.value !== undefined && "value" in el) el.value = saved.value;
+      el.focus();
+      if (saved.selStart !== null && typeof el.setSelectionRange === "function") {
+        try {
+          el.setSelectionRange(saved.selStart, saved.selEnd);
+        } catch (e) {
+          // 有些 input type(例如 number)不支援 setSelectionRange，忽略即可，focus + value 還是有恢復
+        }
+      }
+    }
+  }
+}
+
 function renderLotSection() {
+  withFocusPreserved(document.getElementById("lot-section"), renderLotSectionInner);
+}
+
+function renderLotSectionInner() {
   const box = document.getElementById("lot-section");
   if (!ev.locked) {
     stopCountdown();
@@ -923,6 +1018,8 @@ function renderLotSection() {
     if (sealedBidBtn) sealedBidBtn.onclick = () => sealedBid(liveLot);
     const appraiseBtn = document.getElementById("bid-appraise");
     if (appraiseBtn) appraiseBtn.onclick = () => appraise(liveLot);
+    const snipeBtn = document.getElementById("bid-snipe");
+    if (snipeBtn) snipeBtn.onclick = () => snipeLot(liveLot);
     const freeCommonBtn = document.getElementById("bid-free-common");
     if (freeCommonBtn) freeCommonBtn.onclick = () => redeemFreeCommon(liveLot);
     const partnerInviteBtn = document.getElementById("partner-invite-btn");
@@ -1060,9 +1157,130 @@ function renderTaskSection() {
   startTaskCountdown(liveTask);
 }
 
+// ---------- 戰況跑馬燈:對比新舊 lots 資料，發現剛結標的亮點商品就排進隊列 ----------
+function detectTickerMoments(oldLots, newLots) {
+  const oldById = new Map(oldLots.map((l) => [l.id, l]));
+  newLots.forEach((l) => {
+    const prev = oldById.get(l.id);
+    if (!prev) return; // 剛進頁面沒有「之前」可以比較，不用補發還沒看過的歷史動態
+    if (prev.status === "done" || l.status !== "done" || !l.current_bidder_id || !(l.current_price > 0)) return;
+    const winnerName = l.bidder ? l.bidder.name : "某位玩家";
+    const notable = l.item_tier === "legendary" || l.item_tier === "epic" || l.item_tier === "mystery" || l.is_flash || l.current_price >= l.base_price * 2;
+    if (!notable) return;
+    let msg;
+    if (l.item_tier === "mystery" && l.box_reveal_tier) {
+      const tierLabel = { bust: "雷", common: "普通", rare: "稀有", epic: "史詩", legendary: "傳說" }[l.box_reveal_tier] || l.box_reveal_tier;
+      msg = `🎁 ${winnerName} 開了福袋箱，開出「${l.box_reveal_name}」(${tierLabel}級)${l.box_doubled ? "，還翻倍了！" : "！"}`;
+    } else if (l.is_flash) {
+      msg = `⚡ ${winnerName} 手刀搶下限時快閃「${l.item_name}」！`;
+    } else if (l.current_price >= l.base_price * 2) {
+      msg = `🔥 ${winnerName} 豪氣加價到 ${l.current_price}，搶下「${l.item_name}」！`;
+    } else {
+      msg = `🏆 ${winnerName} 標下了「${l.item_name}」！`;
+    }
+    tickerQueue.push(msg);
+  });
+  if (tickerQueue.length && !tickerShowing) showNextTicker();
+}
+
+function showNextTicker() {
+  const bar = document.getElementById("event-ticker");
+  const textEl = document.getElementById("ticker-text");
+  if (!bar || !textEl) return;
+  if (!tickerQueue.length) {
+    tickerShowing = false;
+    bar.style.display = "none";
+    return;
+  }
+  tickerShowing = true;
+  textEl.textContent = tickerQueue.shift();
+  bar.style.display = "flex";
+  clearTimeout(tickerTimer);
+  tickerTimer = setTimeout(showNextTicker, 4200);
+}
+
+// ---------- 個人排名浮動提示:對比新舊 standings 裡自己的名次 ----------
+function detectRankChange(oldStandings, newStandings) {
+  if (!currentPlayer) return;
+  const newIdx = newStandings.findIndex((r) => r.participant.player_id === currentPlayer.id);
+  if (newIdx === -1) return;
+  if (lastKnownRank === null) {
+    lastKnownRank = newIdx; // 第一次算出名次，不用跳提示(不然一進頁面就跳一次)
+    return;
+  }
+  if (newIdx !== lastKnownRank) {
+    showRankToast(newIdx, lastKnownRank);
+    lastKnownRank = newIdx;
+  }
+}
+
+function showRankToast(newIdx, oldIdx) {
+  const box = document.getElementById("rank-toast");
+  if (!box) return;
+  const up = newIdx < oldIdx;
+  box.className = `rank-toast show ${up ? "up" : "down"}`;
+  box.innerHTML = up ? `${ui.icon("trending-up")}名次上升到第 ${newIdx + 1} 名!` : `${ui.icon("trending-down")}被超車，掉到第 ${newIdx + 1} 名`;
+  box.style.display = "flex";
+  clearTimeout(rankToastTimer);
+  rankToastTimer = setTimeout(() => {
+    box.classList.remove("show");
+    setTimeout(() => {
+      box.style.display = "none";
+    }, 300);
+  }, 3500);
+}
+
+// ---------- 本場之最:純觀賞的趣味統計，都是從已經抓好的 lots/standings 現算，不用額外查詢 ----------
+function renderFunStats() {
+  const card = document.getElementById("fun-stats-card");
+  const box = document.getElementById("fun-stats-list");
+  if (!card || !box) return;
+  const doneLots = lots.filter((l) => l.status === "done" && l.current_bidder_id && l.current_price > 0 && l.item_tier !== "special");
+  const stats = [];
+  const priciest = [...doneLots].sort((a, b) => b.current_price - a.current_price)[0];
+  if (priciest) {
+    stats.push({ icon: "flame", label: "出手最闊氣", text: `${priciest.bidder ? priciest.bidder.name : "??"}・「${priciest.item_name}」花了 ${priciest.current_price}` });
+  }
+  const bargain = [...doneLots].sort((a, b) => a.current_price - a.base_price - (b.current_price - b.base_price))[0];
+  if (bargain) {
+    stats.push({ icon: "badge-percent", label: "撿到最大便宜", text: `${bargain.bidder ? bargain.bidder.name : "??"}・底價 ${bargain.base_price} 標到「${bargain.item_name}」` });
+  }
+  const bestBox = doneLots
+    .filter((l) => l.item_tier === "mystery" && (l.box_reveal_tier === "legendary" || l.box_reveal_tier === "epic"))
+    .sort((a, b) => (b.box_reveal_tier === "legendary" ? 1 : 0) - (a.box_reveal_tier === "legendary" ? 1 : 0))[0];
+  if (bestBox) {
+    stats.push({ icon: "gift", label: "福袋箱大成功", text: `${bestBox.bidder ? bestBox.bidder.name : "??"}開出「${bestBox.box_reveal_name}」` });
+  }
+  const richest = standings.length ? [...standings].sort((a, b) => b.participant.coins - a.participant.coins)[0] : null;
+  if (richest && richest.participant.coins > 0) {
+    stats.push({ icon: "coins", label: "財神幣最多", text: `${richest.participant.players.name}・還有 ${richest.participant.coins} 枚` });
+  }
+  if (!stats.length) {
+    card.style.display = "none";
+    return;
+  }
+  card.style.display = "block";
+  box.innerHTML = stats
+    .map((s) => `<div class="fun-stat-row">${ui.icon(s.icon)}<span class="label">${s.label}</span><span class="text">${ui.esc(s.text)}</span></div>`)
+    .join("");
+}
+
 function upnextCardHtml(lot) {
+  const series = auctionSeriesForItemName(lot.item_name);
+  const seriesBadge = series
+    ? `<div class="upnext-series-badge" title="屬於「${ui.esc(series.name)}」收集組(集滿 ${series.items.length} 件加 ${series.bonus} 分)">${ui.icon(
+        "layers",
+        { size: "12px" }
+      )}</div>`
+    : "";
+  const watched = getWatchlist().has(lot.item_name);
   return `
-    <div class="upnext-card">
+    <div class="upnext-card${watched ? " watched" : ""}">
+      ${seriesBadge}
+      <button class="upnext-watch-btn" data-name="${ui.esc(lot.item_name)}" title="${watched ? "取消追蹤" : "追蹤這件商品"}">${ui.icon(
+    "star",
+    { size: "14px" }
+  )}</button>
       <div class="ico-wrap">${ui.icon(ui.TIER_ICON[lot.item_tier], { size: "18px" })}</div>
       <div class="name">${ui.esc(lot.item_name)}</div>
       ${ui.tierTag(lot.item_tier)}
@@ -1083,6 +1301,12 @@ function renderUpnext() {
   const hasIntel = !!(myParticipant && myParticipant.effects && myParticipant.effects.intelActive);
   const limit = hasIntel ? AUCTION_INTEL_PREVIEW_UNLOCKED : AUCTION_INTEL_PREVIEW_DEFAULT;
   document.getElementById("upnext-scroll").innerHTML = scheduled.slice(0, limit).map(upnextCardHtml).join("");
+  document.querySelectorAll(".upnext-watch-btn").forEach((btn) => {
+    btn.onclick = () => {
+      toggleWatch(btn.dataset.name);
+      renderUpnext();
+    };
+  });
   const note = document.getElementById("upnext-note");
   if (hasIntel) {
     note.innerHTML = `${ui.icon("eye")}已使用搶先情報券，看到全場剩餘的完整清單`;
@@ -1147,20 +1371,28 @@ function renderBag() {
     won
     .map((l) => {
       const isPrimary = l.current_bidder_id === currentPlayer.id;
+      const isPartnered = l.partner_status === "accepted" && l.partner_a_id && l.partner_b_id;
+      const partnerName = isPartnered
+        ? l.partner_a_id === currentPlayer.id
+          ? l.partner_b && l.partner_b.name
+          : l.partner_a && l.partner_a.name
+        : null;
       if (!isPrimary) {
         // 我是這一波的合夥夥伴(不是主要出價者)，價錢跟分數已經各分一半算進我自己的排行分數裡，這裡不能退貨。
         return `
       <div class="bag-item-row">
         ${ui.tierTag(l.item_tier)}
         <span class="bag-name"><span class="n">${ui.esc(l.item_name)}</span></span>
-        <span class="bag-paid">${ui.icon("users")}合夥得標・價錢分數各半</span>
+        <span class="bag-paid">${ui.icon("users")}與${ui.esc(partnerName || "夥伴")}合夥得標・價錢分數各半</span>
       </div>
     `;
       }
       const isMysteryReveal = l.item_tier === "mystery" && l.box_reveal_name;
-      const subHtml = isMysteryReveal
-        ? `<span class="sub">開箱結果:${ui.esc(l.box_reveal_name)}${l.box_doubled ? "・翻倍！" : ""}</span>`
+      const partnerSubHtml = isPartnered
+        ? `<span class="sub">${ui.icon("users", { size: "12px" })}與${ui.esc(partnerName || "夥伴")}合夥標得</span>`
         : "";
+      const subHtml =
+        (isMysteryReveal ? `<span class="sub">開箱結果:${ui.esc(l.box_reveal_name)}${l.box_doubled ? "・翻倍！" : ""}</span>` : "") + partnerSubHtml;
       const priceLabel = `得標 ${l.current_price}`;
       let tailHtml;
       if (l.refunded) {
@@ -1344,6 +1576,7 @@ function render() {
   renderBag();
   renderTickets();
   renderLeaderboard();
+  renderFunStats();
 }
 
 // ---------- 規則說明彈窗 ----------
@@ -1376,7 +1609,7 @@ function renderRules() {
   html += `<p><b style="color:var(--ink);">${ui.icon("hand-coins")} 打工賺財神幣</b><br/>每 ${AUCTION_WORK_COOLDOWN_SEC} 秒可以按一次，隨機拿到 ${AUCTION_WORK_MIN}~${AUCTION_WORK_MAX} 財神幣。</p>`;
   html += `<p><b style="color:var(--ink);">${ui.icon("puzzle")} 夜市任務</b><br/>拍賣過程中偶爾跳出問答／猜謎，答對現領財神幣，一題一人只能答一次。</p>`;
   html += `<p><b style="color:var(--ink);">${ui.icon("dice-5")} 幸運攤位</b><br/>花財神幣(${AUCTION_LUCKY_MIN_BET}~${AUCTION_LUCKY_MAX_BET})骰骰子猜大小，猜對雙倍拿回，猜錯拿回一半，每 ${AUCTION_LUCKY_COOLDOWN_SEC} 秒能下注一次。</p>`;
-  html += `<p><b style="color:var(--ink);">${ui.icon("undo-2")} 參與退補</b><br/>某件商品你出過價、但最後沒標到，結標後會自動退還一小筆財神幣當參與獎勵。</p>`;
+  html += `<p><b style="color:var(--ink);">${ui.icon("gift")} 參與獎勵</b><br/>某件商品你出過價、但最後沒標到，結標後會自動發一小筆財神幣當獎勵(不是退款，出價當下本來就沒扣錢)。</p>`;
 
   html += `<h4>${ui.icon("ticket")} 特殊券效果</h4>`;
   AUCTION_SPECIAL_ITEMS.forEach((sp) => {

@@ -16,6 +16,14 @@
       <p>公平起跑，人人同額財神幣。系統自動開拍，邊搶標邊賺錢，看誰把商品跟分數都搬回家。</p>
     </div>
 
+    <!-- 戰況跑馬燈:有人標到大件商品/福袋開出好東西時，跳出簡短動態，純觀賞用，等待期間也有新鮮事看 -->
+    <div class="ticker-bar" id="event-ticker" style="display:none;">
+      <span id="ticker-text"></span>
+    </div>
+
+    <!-- 個人排名變化的浮動提示，右上角淡入淡出 -->
+    <div class="rank-toast" id="rank-toast" style="display:none;"></div>
+
     <!-- 還沒登入:提示卡(跟首頁同款) -->
     <div class="card" id="who-card" style="display:none;text-align:center;">
       <p style="margin:0 0 14px;color:var(--ink-dim);">要參加拍賣、出價或打工，請先用 Discord 登入(觀戰不需要登入)</p>
@@ -133,6 +141,12 @@
       <h3><i data-lucide="trophy" class="ico" style="color:var(--gold);"></i> 即時排行榜</h3>
       <div id="leaderboard-list"></div>
       <div class="section-note">前五名套用主辦人設定的獎勵機制;沒花完的財神幣會折算成分數</div>
+    </div>
+
+    <!-- 本場之最:趣味統計，跟排名無關，純粹看熱鬧 -->
+    <div class="card" id="fun-stats-card" style="display:none;">
+      <h3><i data-lucide="sparkles" class="ico" style="color:var(--gold);"></i> 本場之最</h3>
+      <div id="fun-stats-list"></div>
     </div>
 
     <div class="footer-nav" id="back-link"><a href="index.html"><i data-lucide="arrow-left" class="ico"></i>回活動列表</a></div>
