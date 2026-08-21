@@ -390,6 +390,9 @@ label{
 .choice-btn.g-lizard .ico{color:#6CD97E;}
 .choice-btn.g-spock .ico{color:#B48CF2;}
 .choice-btn.picked .ico{color:#1B1706;}
+/* 手牌制:顯示這個手勢自己還剩幾張，小小一行字放在圖示下面，不搶主要視覺 */
+.choice-btn .hand-count{font-size:11px;font-family:'Space Mono',monospace;color:var(--ink-dim);}
+.choice-btn.picked .hand-count{color:#1B1706;}
 
 /* 五手勢對戰 BO5 系列賽比分點 */
 .series-dots{display:flex;align-items:center;justify-content:center;gap:14px;margin:16px 0;}

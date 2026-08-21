@@ -25,6 +25,7 @@ const RPS5_RULE_ROWS = [
   { key: "mindread", desc: "剋中對方最常出的招並獲勝，額外+1傷害" },
   { key: "momentum", desc: "連勝2局+1傷害;連敗2局逆轉時傷害翻倍" },
   { key: "mutation", desc: "連續3回合出同招，下回合系統強制鎖住" },
+  { key: "hand_limit", desc: "整局發固定手牌(石頭布剪刀各4張、蜥蜴史波克各3張)，出完不能再選，逼你管理資源;開啟時手勢突變自動停用" },
   { key: "bo_mode", desc: "拋開HP累加，每回合定輸贏，先3分獲勝整場" },
   { key: "dual_hand", desc: "落後方整場限用1次，同時出兩招取其一", nested: true },
 ];

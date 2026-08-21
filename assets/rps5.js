@@ -14,6 +14,22 @@ const GESTURE_ICON = { rock: "mountain", paper: "hand", scissors: "scissors", li
 const GESTURE_NAME = { rock: "石頭", paper: "布", scissors: "剪刀", lizard: "蜥蜴", spock: "史波克", bomb: "炸彈" };
 const GESTURE_ORDER = ["rock", "paper", "scissors", "lizard", "spock"];
 
+// 手牌制(進階規則):整局開局發固定數量的手勢牌，出一次少一張，某手勢的牌出完就選不了那個手勢，
+// 逼玩家管理資源、猜對方手上還剩什麼招。炸彈(隱藏第六手勢)不計入手牌，機率隨機開放的邏輯不變;
+// 究極手勢底層仍然要選一個普通手勢，那張牌一樣要扣。18張是抓一般對戰局數的安全空間，
+// 真的打到手牌全部出完(理論上很少見)就當作安全閥，那一局剩下的回合改回自由選擇不受限制。
+const HAND_LIMIT_COUNTS = { rock: 4, paper: 4, scissors: 4, lizard: 3, spock: 3 };
+function freshHand() {
+  return { ...HAND_LIMIT_COUNTS };
+}
+function getHand(state, slot) {
+  const h = slot === 1 ? state.hand1 : state.hand2;
+  return h && typeof h === "object" ? h : freshHand();
+}
+function handExhausted(hand) {
+  return GESTURE_ORDER.every((g) => (hand[g] || 0) <= 0);
+}
+
 // 專屬戰報敘述:每種對決組合都有獨立描述文字，取代死板的「X勝過Y」
 const FLAVOR = {
   rock: { scissors: "巨石狠狠壓扁了剪刀的刀刃！", lizard: "石塊精準砸中了蜥蜴的頭！" },
@@ -165,7 +181,9 @@ function dualEligible(state, slot) {
 }
 
 function mutationBlockedGesture(state, slot) {
-  if (!rulesEnabled("mutation")) return null;
+  // 手牌制開啟時自動停用手勢突變:手牌本身就限制了連續出同招最多幾次(最多4次)，
+  // 兩個規則同時存在意義重疊、容易讓玩家搞不清楚是被哪個規則卡住，所以擇一。
+  if (!rulesEnabled("mutation") || rulesEnabled("hand_limit")) return null;
   const repeat = slot === 1 ? state.repeatCount1 || 0 : state.repeatCount2 || 0;
   const recent = slot === 1 ? state.recentGesture1 : state.recentGesture2;
   return repeat >= MUTATE_AFTER ? recent : null;
@@ -525,6 +543,8 @@ async function resolveRoundIfReady(state) {
     let lastGesture2 = state.lastGesture2 || null;
     let rpsitem1 = state.rpsitem1 || null;
     let rpsitem2 = state.rpsitem2 || null;
+    let hand1 = getHand(state, 1);
+    let hand2 = getHand(state, 2);
     let dualUsed1 = !!state.dualUsed1;
     let dualUsed2 = !!state.dualUsed2;
     const log = state.log ? [...state.log] : [];
@@ -532,6 +552,19 @@ async function resolveRoundIfReady(state) {
     const m2 = state.m2;
     let lastEvent = null;
     const fieldMod = getFieldMod(state);
+
+    // 手牌制:出過的手勢扣一張，雙手符同時出兩招要扣兩張，逾時沒出招不扣，炸彈不算在手牌裡。
+    // 如果手牌已經整副出完(理論上很少見)，那一局剩下的回合當作安全閥不再受手牌限制。
+    if (rules.hand_limit) {
+      if (!handExhausted(hand1)) {
+        if (m1.gesture && m1.gesture !== "bomb" && hand1[m1.gesture] > 0) hand1 = { ...hand1, [m1.gesture]: hand1[m1.gesture] - 1 };
+        if (m1.dual && m1.gesture2 && m1.gesture2 !== "bomb" && hand1[m1.gesture2] > 0) hand1 = { ...hand1, [m1.gesture2]: hand1[m1.gesture2] - 1 };
+      }
+      if (!handExhausted(hand2)) {
+        if (m2.gesture && m2.gesture !== "bomb" && hand2[m2.gesture] > 0) hand2 = { ...hand2, [m2.gesture]: hand2[m2.gesture] - 1 };
+        if (m2.dual && m2.gesture2 && m2.gesture2 !== "bomb" && hand2[m2.gesture2] > 0) hand2 = { ...hand2, [m2.gesture2]: hand2[m2.gesture2] - 1 };
+      }
+    }
 
     if (m1.ult) ult1 += 1;
     if (m2.ult) ult2 += 1;
@@ -877,6 +910,8 @@ async function resolveRoundIfReady(state) {
       rpsitem2,
       timeBoost1,
       timeBoost2,
+      hand1,
+      hand2,
       dualUsed1,
       dualUsed2,
     };
@@ -935,6 +970,8 @@ async function resolveRoundIfReady(state) {
           rpsitem2: null,
           timeBoost1: 0,
           timeBoost2: 0,
+          hand1: null,
+          hand2: null,
           recentGesture1,
           recentGesture2,
           repeatCount1,
@@ -1148,19 +1185,30 @@ function renderFieldModBanner(state) {
   box.innerHTML = ui.icon(meta.icon) + `<span>本局場地規則:${meta.text}</span>`;
 }
 
-// 手勢按鈕每次 render 都重建:因為「炸彈這回合有沒有開放」「手勢突變擋掉哪一招」是每回合可能變的
+// 手勢按鈕每次 render 都重建:因為「炸彈這回合有沒有開放」「手勢突變擋掉哪一招」「手牌還剩幾張」是每回合可能變的
 function renderAndBindChoiceButtons(state) {
   let gestures = GESTURE_ORDER.slice();
   if (bombAvailable(state)) gestures.push("bomb");
   const blocked = mutationBlockedGesture(state, mySlot);
 
+  // 手牌制:只顯示「自己」剩幾張(不洩漏對手手牌，跟道具符「對手看不到你持有什麼」是同一套隱藏資訊原則)。
+  // 手牌整副出完的話(安全閥)不再受限，所有手勢都可以自由選，也不顯示張數。
+  const myHand = rulesEnabled("hand_limit") ? getHand(state, mySlot) : null;
+  const handOut = myHand && !handExhausted(myHand);
+
   document.getElementById("choice-row").innerHTML = gestures
     .map((g) => {
       const isBlocked = g === blocked;
+      const isHandEmpty = handOut && g !== "bomb" && (myHand[g] || 0) <= 0;
       const isPicked = dualActive ? dualPicks.includes(g) : false;
+      const countLabel = handOut && g !== "bomb" ? `<span class="hand-count">x${myHand[g] || 0}</span>` : "";
       return `<button class="choice-btn g-${g}${g === "bomb" ? " bomb" : ""}${isPicked ? " picked" : ""}" data-g="${g}" ${
-        isBlocked ? "disabled title=\"連續出太多次同一招，這回合系統把它鎖住了\"" : ""
-      }>${ui.icon(GESTURE_ICON[g])}<span class="lbl">${GESTURE_NAME[g]}</span></button>`;
+        isBlocked
+          ? 'disabled title="連續出太多次同一招，這回合系統把它鎖住了"'
+          : isHandEmpty
+          ? 'disabled title="這張手牌已經出完了"'
+          : ""
+      }>${ui.icon(GESTURE_ICON[g])}<span class="lbl">${GESTURE_NAME[g]}</span>${countLabel}</button>`;
     })
     .join("");
 
@@ -1243,6 +1291,8 @@ const RULE_EXPLAIN = {
   mindread: "系統偷偷統計對方整場出招的習慣分布，如果你選中「剋制對方最常出的那招」並獲勝，額外 +1 傷害，並跳出「讀心成功！」。開啟這項規則時，對戰畫面也會顯示對方的即時出招傾向統計，觀眾也看得到同一份統計。",
   momentum: "連勝 2 局起，下一擊額外 +1 傷害，氣勢會一直維持到輸掉一局為止;連續落敗 2 局後，如果靠獲勝逆轉，那一擊的傷害會直接翻倍(背水一戰)。",
   mutation: "連續 3 回合都出同一個手勢，下一回合系統會把那個手勢從選項裡鎖住，逼你換一招，防止靠「無腦一直出同一招」硬撐。",
+  hand_limit:
+    "整局(每進新一局重新發牌)開局固定發手勢牌:石頭/布/剪刀各 4 張、蜥蜴/史波克各 3 張，共 18 張。出一次少一張，某手勢的牌出完那個按鈕就會鎖住選不了，只看得到自己的張數、看不到對方剩多少。炸彈(隱藏第六手勢)不算在手牌裡，機率照常隨機開放;究極手勢底層還是要選一個普通手勢，那張牌一樣會扣。真的把整副牌出完的話(理論上很少發生)，那一局剩下的回合會解除限制、改回自由選擇。開啟這項規則時，手勢突變會自動停用(手牌本身就限制了連續出招次數，兩個規則同時存在意義重疊)。",
   bo_mode: "整場對戰拋開 HP 累加機制，改成每回合直接分出這一分的勝負，率先取得 3 分的一方贏得整場;打到 2:2 時觸發「賽末點！」提示。以下基礎規則裡跟 HP / 局數相關的敘述，本場一律不適用。",
   dual_hand: "落後的一方整場限用 1 次「雙手符」，可以同時出兩個手勢，只要其中一個贏過對方的招就算贏。觸發資格:HP 制下自己 HP ≤8 才能使用;BO制下自己的局分落後對方才能使用。限用 1 次，是殘局翻盤手段，不會變成必勝招。",
 };

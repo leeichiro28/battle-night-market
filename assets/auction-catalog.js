@@ -192,7 +192,7 @@ const AUCTION_SPECIAL_ITEMS = [
     key: "snipe",
     name: "劫標券",
     basePrice: 500,
-    effectDesc: `使用在正在拍賣中的商品上，直接用「目前最高價 x ${1 + AUCTION_SNIPE_PREMIUM}」瞬間標下，其他人來不及反應，商品立刻結標——用溢價換穩贏，不能用在暗標競標/限時快閃攤/特殊券上`,
+    effectDesc: `用「目前最高價 x ${1 + AUCTION_SNIPE_PREMIUM}」瞬間標下商品，其他人來不及反應。不能用在暗標競標/限時快閃攤/特殊券上。`,
   },
 ];
 const AUCTION_TICKET_META = {

@@ -123,6 +123,7 @@ const ui = (function () {
     bomb: { icon: "bomb", label: "隱藏第六手勢" },
     momentum: { icon: "trending-up", label: "氣勢系統" },
     mutation: { icon: "shuffle", label: "手勢突變" },
+    hand_limit: { icon: "layers", label: "手牌制" },
     mindread: { icon: "brain", label: "讀心值" },
     bo_mode: { icon: "list-ordered", label: "BO制" },
     dual_hand: { icon: "split", label: "雙手出招" },

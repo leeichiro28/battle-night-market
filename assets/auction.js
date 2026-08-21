@@ -1379,12 +1379,13 @@ function renderBag() {
           : l.partner_a && l.partner_a.name
         : null;
       if (!isPrimary) {
-        // 我是這一波的合夥夥伴(不是主要出價者)，價錢跟分數已經各分一半算進我自己的排行分數裡，這裡不能退貨。
+        // 我是這一波的合夥夥伴(不是主要出價者)，分數已經算進我自己的排行分數裡，這裡不能退貨。
+        // l.points 現在雙方拿到的數字保證一樣(finalizeAuctionLot 改成雙方都用 floor 分)，直接顯示給我看沒問題。
         return `
       <div class="bag-item-row">
         ${ui.tierTag(l.item_tier)}
         <span class="bag-name"><span class="n">${ui.esc(l.item_name)}</span></span>
-        <span class="bag-paid">${ui.icon("users")}與${ui.esc(partnerName || "夥伴")}合夥得標・價錢分數各半</span>
+        <span class="bag-paid">${ui.icon("users")}與${ui.esc(partnerName || "夥伴")}合夥得標・各拿 ${l.points} 分</span>
       </div>
     `;
       }

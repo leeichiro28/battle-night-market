@@ -1054,26 +1054,31 @@ const db = (function () {
           lotUpdates = { ...(lotUpdates || {}), box_reveal_name: outcome.revealName, box_reveal_tier: outcome.tier, box_doubled: doubled };
         }
 
-        // 合夥競標:這一波如果有成立合夥關係，得標者跟夥伴價錢、分數各分一半(尾數算得標者的)。
+        // 連標加成:連續標到幾件(不含特殊券)商品，從第 N 件開始這件分數多加一點，鼓勵手氣正旺的人繼續投入，
+        // 出過價卻沒標到的人(下面「參與獎勵」那段)會把對方的連續紀錄歸零。這裡要在「合夥分帳」之前先算好、
+        // 先套用在整批 points 上，兩人才是各分「加成後」總分的一半;如果搬到分帳後面才加成，會變成只有
+        // 主要出價者自己拿到的那一份被加成，夥伴那份沒加到，兩邊看到的 lot.points 數字就會對不上實際入帳。
+        const newStreak = lot.item_tier === "special" ? part.win_streak || 0 : (part.win_streak || 0) + 1;
+        if (lot.item_tier !== "special" && newStreak >= AUCTION_WIN_STREAK_BONUS_START) {
+          points = Math.round(points * (1 + AUCTION_WIN_STREAK_BONUS_RATIO));
+        }
+
+        // 合夥競標:這一波如果有成立合夥關係，得標者跟夥伴價錢各分一半(尾數算主要出價者的)，分數雙方拿一樣的數字。
         let myPrice = finalPrice;
         let myPoints = points;
         const isPartnered = lot.partner_status === "accepted" && (lot.partner_a_id === winnerId || lot.partner_b_id === winnerId);
         if (isPartnered) {
           const partnerId = lot.partner_a_id === winnerId ? lot.partner_b_id : lot.partner_a_id;
+          // 價錢用 ceil/剩下的方式分(主要出價者多扛一點尾數)，分數改成雙方都用 floor 取一樣的數字
+          // (不是一個 ceil 一個 floor)，這樣「我的背包」才能直接把 lot.points 顯示給雙方看，
+          // 兩邊看到的數字保證一致，不用另外存一份「夥伴分到多少」才能顯示——最多就是尾數的 1 分不發，可以接受。
           const myPriceShare = Math.ceil(finalPrice / 2);
-          const myPointsShare = Math.ceil(points / 2);
-          partnerCredit = { partnerId, coinsDelta: -(finalPrice - myPriceShare), bonusPoints: points - myPointsShare };
+          const myPointsShare = Math.floor(points / 2);
+          partnerCredit = { partnerId, coinsDelta: -(finalPrice - myPriceShare), bonusPoints: myPointsShare };
           myPrice = myPriceShare;
           myPoints = myPointsShare;
         }
-
-        // 連標加成:連續標到幾件(不含特殊券)商品，從第 N 件開始這件分數多加一點，鼓勵手氣正旺的人繼續投入，
-        // 出過價卻沒標到的人(下面「參與獎勵」那段)會把對方的連續紀錄歸零。
-        const newStreak = lot.item_tier === "special" ? part.win_streak || 0 : (part.win_streak || 0) + 1;
         if (lot.item_tier !== "special") {
-          if (newStreak >= AUCTION_WIN_STREAK_BONUS_START) {
-            myPoints = Math.round(myPoints * (1 + AUCTION_WIN_STREAK_BONUS_RATIO));
-          }
           lotUpdates = { ...(lotUpdates || {}), points: myPoints };
         }
         await client.rpc("adjust_auction_participant", {
