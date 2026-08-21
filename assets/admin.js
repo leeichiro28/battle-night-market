@@ -32,7 +32,9 @@ const RPS5_RULE_ROWS = [
 
 function renderRuleCheckboxes() {
   document.getElementById("dice-rules-list").innerHTML = RULE_ROWS.map((row) => {
-    const meta = ui.RULE[row.key];
+    // 防呆:如果 ui.js 的 ui.RULE 少了某個 key(例如檔案沒同步更新)，不要讓整個後台白屏當機，
+    // 用一個保底的圖示/文字頂著，至少後台其他功能還能正常用，一眼就看得出這個規則的資料沒接好。
+    const meta = ui.RULE[row.key] || { icon: "help-circle", label: row.key };
     return `
       <label class="check-item${row.nested ? " nested" : ""}">
         <input type="checkbox" class="rule-box" data-rule="${row.key}" />
@@ -46,7 +48,7 @@ renderRuleCheckboxes();
 
 function renderRps5RuleCheckboxes() {
   document.getElementById("rps5-rules-list").innerHTML = RPS5_RULE_ROWS.map((row) => {
-    const meta = ui.RULE[row.key];
+    const meta = ui.RULE[row.key] || { icon: "help-circle", label: row.key };
     return `
       <label class="check-item${row.nested ? " nested" : ""}">
         <input type="checkbox" class="rule-box" data-rule="${row.key}" />
