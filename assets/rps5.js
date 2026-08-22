@@ -1289,12 +1289,17 @@ function renderAndBindChoiceButtons(state) {
   }
 
   // 逐格比對現有DOM跟這次要顯示的手牌:同一格如果還是同一張卡，只更新鎖住/選取這種
-  // 狀態，DOM元素完全不動——不會重播card-deal-in進場動畫，也就不會「按了之後全部一起彈跳」
-  // 或是被realtime頻繁的refresh()重整到跳個不停。只有真的抽到新卡换上的那一格，才建立
-  // 新按鈕、也只有那一格會播放彈簧進場動畫，其餘卡片完全不受影響。
+  // 狀態，DOM元素完全不動，不會被realtime頻繁的refresh()重整到跳動或閃爍。只有真的
+  // 換上新卡的那一格，才整個重建那一顆按鈕。
+  // 但如果換新的一回合了(state.round變了)，就算剛好抽到同一種手勢、判斷成「同一張卡」，
+  // 也要把pressing/playing-out這種上一回合按下去才有的暫時效果清掉，不然剛好抽到同種
+  // 手勢時，上一張已經淡出到看不見的卡片會卡在那裡，變成畫面上「少一張」的空格。
   const modeKey = cardMode ? "card" : "plain";
   const modeChanged = box.dataset.mode !== modeKey;
   box.dataset.mode = modeKey;
+  const roundKey = String(state.round);
+  const roundChanged = box.dataset.round !== roundKey;
+  box.dataset.round = roundKey;
 
   if (modeChanged) {
     box.innerHTML = specs.map((s) => s.html).join("");
@@ -1313,6 +1318,7 @@ function renderAndBindChoiceButtons(state) {
         if (spec.isBlocked) el.title = "連續出太多次同一招，這回合系統把它鎖住了";
         else el.removeAttribute("title");
         el.classList.toggle("picked", spec.isPicked);
+        if (roundChanged) el.classList.remove("pressing", "playing-out");
         continue;
       }
       const tmp = document.createElement("div");
