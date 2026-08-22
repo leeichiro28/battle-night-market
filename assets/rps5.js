@@ -1266,7 +1266,7 @@ function renderAndBindChoiceButtons(state) {
   const makeHtml = (g, i) => {
     const isBlocked = g === blocked;
     const isPicked = dualActive ? dualPicks.includes(g) : false;
-    const cls = `choice-btn${cardMode ? " card" : ""} g-${g}${g === "bomb" ? " bomb" : ""}${isPicked ? " picked" : ""}`;
+    const cls = `choice-btn${cardMode ? " hand-card" : ""} g-${g}${g === "bomb" ? " bomb" : ""}${isPicked ? " picked" : ""}`;
     return `<button class="${cls}" data-g="${g}" data-idx="${i}" ${
       isBlocked ? 'disabled title="連續出太多次同一招，這回合系統把它鎖住了"' : ""
     }>${ui.icon(GESTURE_ICON[g])}<span class="lbl">${GESTURE_NAME[g]}</span></button>`;

@@ -395,13 +395,13 @@ label{
    不用aspect-ratio(它跟grid的內容高度/伸縮互動太多眉角，容易讓某幾張卡跟別的高度對不上)，
    改用固定高度，確定每張卡在任何情況下都是同一個高度、排整齊。 */
 .choice-row.card-mode{display:grid;grid-template-columns:repeat(auto-fit,minmax(64px,1fr));}
-.choice-btn.card{
+.choice-btn.hand-card{
   height:128px;
   padding:10px 6px;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
 }
-.choice-btn.card:hover{transform:none;}
-.choice-btn.card .lbl{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+.choice-btn.hand-card:hover{transform:none;}
+.choice-btn.hand-card .lbl{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
 #deck-note{
   display:flex;align-items:center;gap:6px;
   font-size:12px;color:var(--ink-dim);margin:0 0 8px;
@@ -472,7 +472,7 @@ label{
 
 /* 隱藏第六手勢:炸彈，額外高亮提醒這是限時出現的選項 */
 .choice-btn.bomb{border-color:var(--red);position:relative;animation:bomb-pulse 1.6s ease-in-out infinite;}
-.choice-btn.card.bomb{animation:none;}
+.choice-btn.hand-card.bomb{animation:none;}
 .choice-btn.bomb .ico,.choice-btn.bomb .lbl{color:var(--red);}
 .choice-btn.bomb.picked .ico,.choice-btn.bomb.picked .lbl{color:#1B1706;}
 @keyframes bomb-pulse{
