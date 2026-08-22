@@ -1263,70 +1263,32 @@ function renderAndBindChoiceButtons(state) {
   const box = document.getElementById("choice-row");
   box.classList.toggle("card-mode", cardMode);
 
-  // 每一格按鈕的規格。identity = 那一格「是不是同一張卡」的判斷依據(手勢種類)，
-  // 同一張卡只是鎖住/選取狀態變了，不算換卡。
-  const makeSpec = (g, i) => {
+  const makeHtml = (g, i) => {
     const isBlocked = g === blocked;
     const isPicked = dualActive ? dualPicks.includes(g) : false;
     const cls = `choice-btn${cardMode ? " card" : ""} g-${g}${g === "bomb" ? " bomb" : ""}${isPicked ? " picked" : ""}`;
-    return {
-      identity: g,
-      isBlocked,
-      isPicked,
-      html: `<button class="${cls}" data-g="${g}" data-idx="${i}" ${
-        isBlocked ? 'disabled title="連續出太多次同一招，這回合系統把它鎖住了"' : ""
-      }>${ui.icon(GESTURE_ICON[g])}<span class="lbl">${GESTURE_NAME[g]}</span></button>`,
-    };
+    return `<button class="${cls}" data-g="${g}" data-idx="${i}" ${
+      isBlocked ? 'disabled title="連續出太多次同一招，這回合系統把它鎖住了"' : ""
+    }>${ui.icon(GESTURE_ICON[g])}<span class="lbl">${GESTURE_NAME[g]}</span></button>`;
   };
 
-  let specs;
+  let html;
   if (cardMode) {
     const cardGestures = myHandInfo.hand.slice();
     if (bombAvailable(state)) cardGestures.push("bomb");
-    specs = cardGestures.map(makeSpec);
+    html = cardGestures.map(makeHtml).join("");
   } else {
-    specs = gestures.map(makeSpec);
+    html = gestures.map(makeHtml).join("");
   }
 
-  // 逐格比對現有DOM跟這次要顯示的手牌:同一格如果還是同一張卡，只更新鎖住/選取這種
-  // 狀態，DOM元素完全不動，不會被realtime頻繁的refresh()重整到跳動或閃爍。只有真的
-  // 換上新卡的那一格，才整個重建那一顆按鈕。
-  // 但如果換新的一回合了(state.round變了)，就算剛好抽到同一種手勢、判斷成「同一張卡」，
-  // 也要把pressing/playing-out這種上一回合按下去才有的暫時效果清掉，不然剛好抽到同種
-  // 手勢時，上一張已經淡出到看不見的卡片會卡在那裡，變成畫面上「少一張」的空格。
-  const modeKey = cardMode ? "card" : "plain";
-  const modeChanged = box.dataset.mode !== modeKey;
-  box.dataset.mode = modeKey;
-  const roundKey = String(state.round);
-  const roundChanged = box.dataset.round !== roundKey;
-  box.dataset.round = roundKey;
-
-  if (modeChanged) {
-    box.innerHTML = specs.map((s) => s.html).join("");
-  } else {
-    const existing = Array.from(box.children);
-    const max = Math.max(existing.length, specs.length);
-    for (let i = 0; i < max; i++) {
-      const el = existing[i];
-      const spec = specs[i];
-      if (!spec) {
-        if (el) el.remove();
-        continue;
-      }
-      if (el && el.dataset.g === spec.identity) {
-        el.disabled = spec.isBlocked;
-        if (spec.isBlocked) el.title = "連續出太多次同一招，這回合系統把它鎖住了";
-        else el.removeAttribute("title");
-        el.classList.toggle("picked", spec.isPicked);
-        if (roundChanged) el.classList.remove("pressing", "playing-out");
-        continue;
-      }
-      const tmp = document.createElement("div");
-      tmp.innerHTML = spec.html;
-      const newEl = tmp.firstElementChild;
-      if (el) el.replaceWith(newEl);
-      else box.appendChild(newEl);
-    }
+  // 完全沒有動畫了，所以整排重建不會有任何視覺跳動/閃爍的副作用。反過來說，只要
+  // 內容跟現在畫面上的一模一樣，也不用白白重建一次(省一點事、不會打斷正在hover的滑鼠等)。
+  // 直接拿這次要顯示的HTML內容整組比對，內容不同才整個換掉，不再做「同一格是不是同一張卡」
+  // 這種逐格猜測——猜錯就會有卡片卡住不消失、或該出現的新卡沒出現的問題。
+  const signature = (cardMode ? "card" : "plain") + "|" + html;
+  if (box.dataset.sig !== signature) {
+    box.dataset.sig = signature;
+    box.innerHTML = html;
   }
 
   const mutationHint = document.getElementById("mutation-hint");
@@ -1339,22 +1301,13 @@ function renderAndBindChoiceButtons(state) {
     }
   }
 
-  // .onclick只是重新指派JS屬性，不會動到DOM/觸發任何CSS動畫，所以每次都可以放心重新綁，
+  // .onclick只是重新指派JS屬性，不會動到DOM，所以每次都可以放心重新綁，
   // 確保綁定的是這次最新的state，不會有拿到舊資料的問題。
   document.querySelectorAll(".choice-btn").forEach((btn) => {
     btn.onclick = async () => {
       if (submittedThisRound || btn.disabled) return;
       const gesture = btn.dataset.g;
 
-      // 卡牌式手牌的按下手感:先快速壓一下(仿實體按鈕回饋)，再讓卡片縮小淡出，
-      // 純粹是視覺效果，不影響底下送出出招的邏輯，也不會因為動畫還沒播完就卡住操作。
-      if (btn.classList.contains("card")) {
-        btn.classList.add("pressing");
-        setTimeout(() => {
-          btn.classList.remove("pressing");
-          btn.classList.add("playing-out");
-        }, 80);
-      }
       if (dualActive) {
         if (dualPicks.includes(gesture)) {
           dualPicks = dualPicks.filter((g) => g !== gesture);
