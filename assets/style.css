@@ -390,9 +390,31 @@ label{
 .choice-btn.g-lizard .ico{color:#6CD97E;}
 .choice-btn.g-spock .ico{color:#B48CF2;}
 .choice-btn.picked .ico{color:#1B1706;}
-/* 手牌制:顯示這個手勢自己還剩幾張，小小一行字放在圖示下面，不搶主要視覺 */
-.choice-btn .hand-count{font-size:11px;font-family:'Space Mono',monospace;color:var(--ink-dim);}
-.choice-btn.picked .hand-count{color:#1B1706;}
+/* 手牌制:出招按鈕改成顯示自己手上實際的卡片(3:4 比例、獨立卡片感)，取代原本5選1的方形按鈕。
+   動畫手感分三段:按下去先快速壓一下(pressing) → 放開後那張卡縮小淡出(playing-out) →
+   下一輪重新整理整排手牌時，每張卡用彈簧曲線一起彈進來(deal-in)，像實際抽牌落地的感覺。 */
+.choice-row.card-mode{display:grid;grid-template-columns:repeat(auto-fit,minmax(64px,1fr));}
+.choice-btn.card{
+  aspect-ratio:3/4;
+  padding:10px 6px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+  animation:card-deal-in .4s cubic-bezier(.34,1.56,.64,1) backwards;
+  transition:transform .12s, border-color .12s;
+}
+.choice-btn.card .lbl{font-size:12px;}
+.choice-btn.card.pressing{transition:transform .08s ease-out;transform:scale(.92);}
+.choice-btn.card.playing-out{transition:transform .24s ease-in, opacity .24s ease-in;transform:scale(.4);opacity:0;}
+@keyframes card-deal-in{from{transform:scale(.4);opacity:0;}to{transform:scale(1);opacity:1;}}
+/* 手牌卡片按進場動畫用交錯時間，同一批一起彈出來但不要完全同步、更有「一張張發牌」的感覺 */
+.choice-btn.card:nth-child(1){animation-delay:0s;}
+.choice-btn.card:nth-child(2){animation-delay:.05s;}
+.choice-btn.card:nth-child(3){animation-delay:.1s;}
+.choice-btn.card:nth-child(4){animation-delay:.15s;}
+.choice-btn.card:nth-child(5){animation-delay:.2s;}
+#deck-note{
+  display:flex;align-items:center;gap:6px;
+  font-size:12px;color:var(--ink-dim);margin:0 0 8px;
+}
 
 /* 五手勢對戰 BO5 系列賽比分點 */
 .series-dots{display:flex;align-items:center;justify-content:center;gap:14px;margin:16px 0;}
