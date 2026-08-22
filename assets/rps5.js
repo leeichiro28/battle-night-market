@@ -245,7 +245,6 @@ let refreshGen = 0; // 每次真的呼叫 refresh() 就+1，回應回來時比�
 // 避免realtime事件密集觸發時，比較舊的那次查詢比較慢回來反而蓋掉新的畫面(亂序/過期回應)
 let refreshDebounceTimer = null;
 let battleView = null;
-let lastChoiceHtmlSignature = null; // 手牌卡片目前實際渲染出的內容指紋，沒變就不reset DOM，避免發牌動畫每次refresh都重播
 
 const ENTRY_TIMEOUT_MS = 60000; // 超過1分鐘對手沒入場，自動開始幫他出招
 
@@ -1264,40 +1263,64 @@ function renderAndBindChoiceButtons(state) {
   const box = document.getElementById("choice-row");
   box.classList.toggle("card-mode", cardMode);
 
-  let html;
+  // 每一格按鈕的規格。identity = 那一格「是不是同一張卡」的判斷依據(手勢種類)，
+  // 同一張卡只是鎖住/選取狀態變了，不算換卡。
+  const makeSpec = (g, i) => {
+    const isBlocked = g === blocked;
+    const isPicked = dualActive ? dualPicks.includes(g) : false;
+    const cls = `choice-btn${cardMode ? " card" : ""} g-${g}${g === "bomb" ? " bomb" : ""}${isPicked ? " picked" : ""}`;
+    return {
+      identity: g,
+      isBlocked,
+      isPicked,
+      html: `<button class="${cls}" data-g="${g}" data-idx="${i}" ${
+        isBlocked ? 'disabled title="連續出太多次同一招，這回合系統把它鎖住了"' : ""
+      }>${ui.icon(GESTURE_ICON[g])}<span class="lbl">${GESTURE_NAME[g]}</span></button>`,
+    };
+  };
+
+  let specs;
   if (cardMode) {
     const cardGestures = myHandInfo.hand.slice();
     if (bombAvailable(state)) cardGestures.push("bomb");
-    html = cardGestures
-      .map((g, i) => {
-        const isBlocked = g === blocked;
-        const isPicked = dualActive ? dualPicks.includes(g) : false;
-        return `<button class="choice-btn card g-${g}${g === "bomb" ? " bomb" : ""}${isPicked ? " picked" : ""}" data-g="${g}" data-idx="${i}" ${
-          isBlocked ? 'disabled title="連續出太多次同一招，這回合系統把它鎖住了"' : ""
-        }>${ui.icon(GESTURE_ICON[g])}<span class="lbl">${GESTURE_NAME[g]}</span></button>`;
-      })
-      .join("");
+    specs = cardGestures.map(makeSpec);
   } else {
-    html = gestures
-      .map((g) => {
-        const isBlocked = g === blocked;
-        const isPicked = dualActive ? dualPicks.includes(g) : false;
-        return `<button class="choice-btn g-${g}${g === "bomb" ? " bomb" : ""}${isPicked ? " picked" : ""}" data-g="${g}" ${
-          isBlocked ? 'disabled title="連續出太多次同一招，這回合系統把它鎖住了"' : ""
-        }>${ui.icon(GESTURE_ICON[g])}<span class="lbl">${GESTURE_NAME[g]}</span></button>`;
-      })
-      .join("");
+    specs = gestures.map(makeSpec);
   }
 
-  // 這裡是每次 refresh() 都會跑到的地方(realtime只要match那筆row有任何欄位變動就會觸發，
-  // 不是只有真的換手牌才會進來)。如果卡片內容跟上次渲染出來的一模一樣，就不要動DOM，
-  // 不然card-deal-in那個彈簧進場動畫會被reset重播一次，看起來變成每隔幾秒卡牌自己在跳。
-  // 只有手牌真的變了(重新發牌、被鎖住、被選取...)才重繪+重播動畫。
-  const signature = cardMode + "|" + html;
-  const contentChanged = signature !== lastChoiceHtmlSignature;
-  if (contentChanged) {
-    lastChoiceHtmlSignature = signature;
-    box.innerHTML = html;
+  // 逐格比對現有DOM跟這次要顯示的手牌:同一格如果還是同一張卡，只更新鎖住/選取這種
+  // 狀態，DOM元素完全不動——不會重播card-deal-in進場動畫，也就不會「按了之後全部一起彈跳」
+  // 或是被realtime頻繁的refresh()重整到跳個不停。只有真的抽到新卡换上的那一格，才建立
+  // 新按鈕、也只有那一格會播放彈簧進場動畫，其餘卡片完全不受影響。
+  const modeKey = cardMode ? "card" : "plain";
+  const modeChanged = box.dataset.mode !== modeKey;
+  box.dataset.mode = modeKey;
+
+  if (modeChanged) {
+    box.innerHTML = specs.map((s) => s.html).join("");
+  } else {
+    const existing = Array.from(box.children);
+    const max = Math.max(existing.length, specs.length);
+    for (let i = 0; i < max; i++) {
+      const el = existing[i];
+      const spec = specs[i];
+      if (!spec) {
+        if (el) el.remove();
+        continue;
+      }
+      if (el && el.dataset.g === spec.identity) {
+        el.disabled = spec.isBlocked;
+        if (spec.isBlocked) el.title = "連續出太多次同一招，這回合系統把它鎖住了";
+        else el.removeAttribute("title");
+        el.classList.toggle("picked", spec.isPicked);
+        continue;
+      }
+      const tmp = document.createElement("div");
+      tmp.innerHTML = spec.html;
+      const newEl = tmp.firstElementChild;
+      if (el) el.replaceWith(newEl);
+      else box.appendChild(newEl);
+    }
   }
 
   const mutationHint = document.getElementById("mutation-hint");
@@ -1310,8 +1333,8 @@ function renderAndBindChoiceButtons(state) {
     }
   }
 
-  if (!contentChanged) return; // DOM沒重建，舊按鈕的onclick還在，不用也不該重新綁一次
-
+  // .onclick只是重新指派JS屬性，不會動到DOM/觸發任何CSS動畫，所以每次都可以放心重新綁，
+  // 確保綁定的是這次最新的state，不會有拿到舊資料的問題。
   document.querySelectorAll(".choice-btn").forEach((btn) => {
     btn.onclick = async () => {
       if (submittedThisRound || btn.disabled) return;

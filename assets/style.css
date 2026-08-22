@@ -400,8 +400,12 @@ label{
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
   animation:card-deal-in .4s cubic-bezier(.34,1.56,.64,1) backwards;
   transition:transform .12s, border-color .12s;
+  /* grid item預設 align-self:stretch + min-height:auto，內容(圖示+字)一多就會撐高、
+     蓋過aspect-ratio訂的高度，害同一排卡片高度對不齊。強制回到自己的比例、不要被撐高、也不要被其他卡片拉伸。 */
+  min-height:0;
+  align-self:start;
 }
-.choice-btn.card .lbl{font-size:12px;}
+.choice-btn.card .lbl{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
 .choice-btn.card.pressing{transition:transform .08s ease-out;transform:scale(.92);}
 .choice-btn.card.playing-out{transition:transform .24s ease-in, opacity .24s ease-in;transform:scale(.4);opacity:0;}
 @keyframes card-deal-in{from{transform:scale(.4);opacity:0;}to{transform:scale(1);opacity:1;}}
