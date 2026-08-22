@@ -245,6 +245,7 @@ let refreshGen = 0; // 每次真的呼叫 refresh() 就+1，回應回來時比�
 // 避免realtime事件密集觸發時，比較舊的那次查詢比較慢回來反而蓋掉新的畫面(亂序/過期回應)
 let refreshDebounceTimer = null;
 let battleView = null;
+let lastChoiceHtmlSignature = null; // 手牌卡片目前實際渲染出的內容指紋，沒變就不reset DOM，避免發牌動畫每次refresh都重播
 
 const ENTRY_TIMEOUT_MS = 60000; // 超過1分鐘對手沒入場，自動開始幫他出招
 
@@ -1263,10 +1264,11 @@ function renderAndBindChoiceButtons(state) {
   const box = document.getElementById("choice-row");
   box.classList.toggle("card-mode", cardMode);
 
+  let html;
   if (cardMode) {
     const cardGestures = myHandInfo.hand.slice();
     if (bombAvailable(state)) cardGestures.push("bomb");
-    box.innerHTML = cardGestures
+    html = cardGestures
       .map((g, i) => {
         const isBlocked = g === blocked;
         const isPicked = dualActive ? dualPicks.includes(g) : false;
@@ -1276,7 +1278,7 @@ function renderAndBindChoiceButtons(state) {
       })
       .join("");
   } else {
-    box.innerHTML = gestures
+    html = gestures
       .map((g) => {
         const isBlocked = g === blocked;
         const isPicked = dualActive ? dualPicks.includes(g) : false;
@@ -1285,6 +1287,17 @@ function renderAndBindChoiceButtons(state) {
         }>${ui.icon(GESTURE_ICON[g])}<span class="lbl">${GESTURE_NAME[g]}</span></button>`;
       })
       .join("");
+  }
+
+  // 這裡是每次 refresh() 都會跑到的地方(realtime只要match那筆row有任何欄位變動就會觸發，
+  // 不是只有真的換手牌才會進來)。如果卡片內容跟上次渲染出來的一模一樣，就不要動DOM，
+  // 不然card-deal-in那個彈簧進場動畫會被reset重播一次，看起來變成每隔幾秒卡牌自己在跳。
+  // 只有手牌真的變了(重新發牌、被鎖住、被選取...)才重繪+重播動畫。
+  const signature = cardMode + "|" + html;
+  const contentChanged = signature !== lastChoiceHtmlSignature;
+  if (contentChanged) {
+    lastChoiceHtmlSignature = signature;
+    box.innerHTML = html;
   }
 
   const mutationHint = document.getElementById("mutation-hint");
@@ -1296,6 +1309,8 @@ function renderAndBindChoiceButtons(state) {
       mutationHint.style.display = "none";
     }
   }
+
+  if (!contentChanged) return; // DOM沒重建，舊按鈕的onclick還在，不用也不該重新綁一次
 
   document.querySelectorAll(".choice-btn").forEach((btn) => {
     btn.onclick = async () => {
