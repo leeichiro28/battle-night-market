@@ -14,6 +14,20 @@ create table if not exists players (
 );
 alter table players add column if not exists is_bot boolean not null default false; -- 主辦人測試用假玩家，跟真人區分開來
 
+-- 跨場永久系統(Phase 0):稱號、歷史累計數據，獨立於任何一場 events，不會被任何一場活動的刪除/重辦影響，
+-- 也不會反過來影響任何一場活動的起始數值——資料流是單向的(活動結果 → 寫進這裡)，
+-- 純粹是顯示用的紀錄，跟排名獎勵、下一場的起始屬性完全無關，保證每場活動對新人老手都公平起跑。
+create table if not exists player_profiles (
+  player_id uuid primary key references players(id) on delete cascade,
+  titles jsonb not null default '[]'::jsonb,          -- 已解鎖的稱號 key 陣列，例如 ["first_championship","high_roller"]
+  lifetime_stats jsonb not null default '{}'::jsonb,   -- 跨場累計數字，例如 {"total_championships":2}
+  display_title text,                                  -- 玩家自己選要掛在名字旁邊的稱號 key(解鎖多個也只能秀一個)
+  updated_at timestamptz default now()
+);
+alter table player_profiles enable row level security;
+drop policy if exists "anon all player_profiles" on player_profiles;
+create policy "anon all player_profiles" on player_profiles for all using (true) with check (true);
+
 -- 活動場次
 create table if not exists events (
   id uuid primary key default gen_random_uuid(),

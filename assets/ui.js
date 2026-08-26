@@ -162,6 +162,15 @@ const ui = (function () {
   function losersTag() {
     return tag("medal", "敗部復活賽");
   }
+  // 跨場永久系統(Phase 0):玩家名字旁邊的稱號小標籤，titleKey 是空的就不顯示任何東西。
+  // 稱號定義(名稱/圖示/說明)存在 db.TITLE_CATALOG，這裡只負責照 key 找出來組成標籤 HTML，
+  // 純粹顯示用，不影響任何一場活動的起始數值或名次計算。
+  function titleBadge(titleKey) {
+    if (!titleKey) return "";
+    const meta = (typeof db !== "undefined" && db.TITLE_CATALOG && db.TITLE_CATALOG.find((t) => t.key === titleKey)) || null;
+    if (!meta) return "";
+    return `<span class="tag title-badge" title="${esc(meta.desc || "")}">${icon(meta.icon || "crown")}<span>${esc(meta.name)}</span></span>`;
+  }
   // 賽程列表/賽制圖裡玩家名字旁邊的職業小標籤，沒選職業就不顯示
   function classTag(key) {
     if (!key || !CLASS_NAME[key]) return "";
@@ -367,6 +376,7 @@ const ui = (function () {
     gameTag,
     statusTag,
     losersTag,
+    titleBadge,
     classTag,
     ruleTags,
     tierTag,

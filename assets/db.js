@@ -214,6 +214,122 @@ const db = (function () {
     if (error) throw error;
   }
 
+  // ---------- 跨場永久系統(Phase 0):稱號與歷史統計 ----------
+  // 這裡的東西全部只是「顯示用的紀錄」，不會讓下一場活動的起始數值有任何差異，
+  // 有稱號的老手跟第一次參加的新人，下一場開局站在同一條起跑線。
+  //
+  // titles 的判定條件目前先接骰子/五手勢對戰(錦標賽制)、夜市拍賣這兩種現有玩法，
+  // 之後職業養成對決上線後，直接往 lifetime_stats 這個 jsonb 加新的累計欄位、
+  // TITLE_CATALOG 加新的稱號定義就好，不用改資料表結構。
+  const TITLE_CATALOG = [
+    { key: "first_championship", name: "初登王座", desc: "第一次拿下某場活動冠軍", icon: "crown" },
+    { key: "triple_champion", name: "三連霸", desc: "累積拿下 3 次活動冠軍", icon: "crown" },
+    { key: "flawless_champion", name: "不敗戰神", desc: "拿下冠軍的那場賽事，全程沒有輸掉任何一場對戰", icon: "shield-check" },
+    { key: "high_roller", name: "散盡家財的賭徒", desc: "夜市拍賣結束時，財神幣幾乎花光", icon: "coins" },
+    { key: "auction_tycoon", name: "夜市大戶", desc: "夜市拍賣拿下第一名", icon: "gem" },
+  ];
+
+  async function getOrCreatePlayerProfile(playerId) {
+    const { data, error } = await client.from("player_profiles").select("*").eq("player_id", playerId).maybeSingle();
+    if (error) throw error;
+    if (data) return data;
+    const { data: created, error: createErr } = await client
+      .from("player_profiles")
+      .insert({ player_id: playerId, titles: [], lifetime_stats: {} })
+      .select()
+      .single();
+    if (createErr) throw createErr;
+    return created;
+  }
+
+  async function getPlayerProfile(playerId) {
+    const { data, error } = await client.from("player_profiles").select("*").eq("player_id", playerId).maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
+  // 批次查詢多個玩家的檔案(例如排行榜要一次顯示所有人的稱號)，比一列一列各自查快很多。
+  // 回傳一個 { [playerId]: profile } 的物件方便查找，沒有檔案的玩家不會出現在物件裡。
+  async function getPlayerProfiles(playerIds) {
+    const ids = [...new Set(playerIds || [])].filter(Boolean);
+    if (!ids.length) return {};
+    const { data, error } = await client.from("player_profiles").select("*").in("player_id", ids);
+    if (error) throw error;
+    const map = {};
+    (data || []).forEach((p) => (map[p.player_id] = p));
+    return map;
+  }
+
+  // 幫玩家解鎖幾個稱號、疊加幾筆累計數字。一場活動結束只會呼叫這裡一次(不是高併發場景)，
+  // 所以用普通的讀出來改一改寫回去就夠，不用比照夜市拍賣財神幣那樣特別做原子加減。
+  async function grantTitleAndStats(playerId, titleKeys, statPatch) {
+    const profile = await getOrCreatePlayerProfile(playerId);
+    const titleSet = new Set(profile.titles || []);
+    const hadNoTitlesBefore = titleSet.size === 0;
+    let changed = false;
+    (titleKeys || []).forEach((k) => {
+      if (!titleSet.has(k)) {
+        titleSet.add(k);
+        changed = true;
+      }
+    });
+    const stats = { ...(profile.lifetime_stats || {}) };
+    Object.entries(statPatch || {}).forEach(([k, delta]) => {
+      stats[k] = (stats[k] || 0) + delta;
+      changed = true;
+    });
+    if (!changed) return profile;
+    const updates = { titles: [...titleSet], lifetime_stats: stats, updated_at: new Date().toISOString() };
+    // 人生第一次拿到稱號的話，順手幫他預設掛上，不用讓玩家一定要自己先手動去設定過一次
+    // 才看得到稱號顯示在名字旁邊。
+    if (!profile.display_title && hadNoTitlesBefore && titleSet.size > 0) {
+      updates.display_title = [...titleSet][0];
+    }
+    const { data, error } = await client.from("player_profiles").update(updates).eq("player_id", playerId).select().single();
+    if (error) throw error;
+    return data;
+  }
+
+  async function setDisplayTitle(playerId, titleKey) {
+    const profile = await getOrCreatePlayerProfile(playerId);
+    if (titleKey && !(profile.titles || []).includes(titleKey)) throw new Error("這個稱號還沒解鎖");
+    const { error } = await client.from("player_profiles").update({ display_title: titleKey || null }).eq("player_id", playerId);
+    if (error) throw error;
+  }
+
+  // 錦標賽(骰子/五手勢對戰)拿到冠軍時呼叫:算這場有沒有全勝、累計奪冠次數、檢查稱號。
+  async function awardTournamentChampionTitles(eventId, championPlayerId) {
+    const { data: matches, error } = await client
+      .from("matches")
+      .select("player1_id, player2_id, winner_id")
+      .eq("event_id", eventId)
+      .or(`player1_id.eq.${championPlayerId},player2_id.eq.${championPlayerId}`);
+    if (error) throw error;
+    const playedAny = matches && matches.length > 0;
+    const lostAny = (matches || []).some((m) => m.winner_id && m.winner_id !== championPlayerId);
+    const profile = await getOrCreatePlayerProfile(championPlayerId);
+    const totalChampionships = ((profile.lifetime_stats || {}).total_championships || 0) + 1;
+    const titleKeys = ["first_championship"];
+    if (totalChampionships >= 3) titleKeys.push("triple_champion");
+    if (playedAny && !lostAny) titleKeys.push("flawless_champion");
+    await grantTitleAndStats(championPlayerId, titleKeys, { total_championships: 1 });
+  }
+
+  // 夜市拍賣結束時呼叫:檢查散盡家財、拍賣大戶這兩個稱號。standings 直接沿用 closeAuctionEvent
+  // 裡已經算好的那份，不用重算一次。
+  async function awardAuctionTitles(eventId, standings) {
+    if (!standings || !standings.length) return;
+    const ev = await getEvent(eventId);
+    const startingBudget = (ev.rules && ev.rules.startingBudget) || AUCTION_DEFAULT_BUDGET;
+    for (let i = 0; i < standings.length; i++) {
+      const row = standings[i];
+      const titleKeys = [];
+      if (row.participant.coins <= startingBudget * 0.05) titleKeys.push("high_roller");
+      if (i === 0) titleKeys.push("auction_tycoon");
+      if (titleKeys.length) await grantTitleAndStats(row.participant.player_id, titleKeys, {});
+    }
+  }
+
   // ---------- 報名 ----------
   async function joinEvent(eventId, playerId) {
     const { data, error } = await client
@@ -642,6 +758,7 @@ const db = (function () {
         .update({ status: "champion", final_rank: 1, reward: winnerPart.reward || rewardForRank(ev, 1) })
         .eq("id", winnerPart.id);
       await setEventStatus(eventId, "closed");
+      await awardTournamentChampionTitles(eventId, winnerId);
     } else if (match.bracket === "winners") {
       if (match.next_match_id) {
         const slotField = match.next_slot === 1 ? "player1_id" : "player2_id";
@@ -669,6 +786,7 @@ const db = (function () {
           .update({ status: "champion", final_rank: 1, match_id: null, reward: winnerPart.reward || rewardForRank(ev, 1) })
           .eq("id", winnerPart.id);
         await setEventStatus(eventId, "closed");
+        await awardTournamentChampionTitles(eventId, winnerId);
       }
 
       if (ev.losers_bracket) {
@@ -1725,6 +1843,7 @@ const db = (function () {
         .eq("id", row.participant.id);
     }
     await setEventStatus(eventId, "closed");
+    await awardAuctionTitles(eventId, standings);
     return standings;
   }
 
@@ -2069,6 +2188,10 @@ const db = (function () {
     createEvent,
     deleteEvent,
     setEventStatus,
+    TITLE_CATALOG,
+    getPlayerProfile,
+    getPlayerProfiles,
+    setDisplayTitle,
     joinEvent,
     addTestBot,
     getMyParticipant,

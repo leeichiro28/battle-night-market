@@ -506,6 +506,21 @@ label{
   padding:3px 12px;
   font-size:12px;
 }
+/* 跨場永久系統(Phase 0):稱號小標籤，跟 reward-badge 同一種 pill 樣式但用中性色，
+   不跟金色的獎勵徽章搶視覺、也不會被誤認成這場活動的獎勵 */
+.title-badge{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  background:var(--panel2);
+  border:1px solid var(--line);
+  color:var(--ink-dim);
+  border-radius:999px;
+  padding:3px 12px;
+  font-size:12px;
+  margin-left:6px;
+}
+.title-badge .ico{width:12px;height:12px;}
 
 .bracket-row{
   display:flex;

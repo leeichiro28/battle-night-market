@@ -7,6 +7,7 @@ let ev = null;
 let myParticipant = null; // 還沒報名是 null
 let lots = [];
 let standings = [];
+let playerProfiles = {}; // 跨場永久系統(Phase 0):player_id -> player_profiles 資料列，排行榜顯示稱號用
 let tasks = [];
 let myTaskAnswers = []; // 我在這場活動已經回答過的任務
 let myPriceGuesses = []; // 我在這場活動已經猜過價的商品
@@ -119,6 +120,10 @@ async function refreshAll() {
   lots = lotList;
   standings = standingList;
   tasks = taskList;
+  // 跨場永久系統(Phase 0):排行榜名字旁邊要顯示稱號，批次抓一次所有參加者的玩家檔案存起來，
+  // render() 裡同步讀快取就好，不用每次重繪都各自查一次資料庫。
+  playerProfiles = await db.getPlayerProfiles(standings.map((r) => r.participant.player_id)).catch(() => ({}));
+  if (myGen !== refreshAllGen) return;
   if (currentPlayer) {
     const mine = standings.find((r) => r.participant.player_id === currentPlayer.id);
     if (mine) myParticipant = mine.participant;
@@ -1554,10 +1559,12 @@ function renderLeaderboard() {
         ev.status === "closed" && row.participant.reward
           ? `<span class="reward-badge">${ui.icon("gift")}${ui.esc(row.participant.reward)}</span>`
           : "";
+      const profile = playerProfiles[row.participant.player_id];
+      const titleLine = profile ? ui.titleBadge(profile.display_title) : "";
       return `
       <div class="lb-row${isMe ? " me" : ""}">
         ${ui.rankBadge(rank)}
-        <span class="lb-name">${ui.esc(row.participant.players.name)}${isMe ? "(你)" : ""}${rewardLine}</span>
+        <span class="lb-name">${ui.esc(row.participant.players.name)}${isMe ? "(你)" : ""}${titleLine}${rewardLine}</span>
         <span class="lb-score">${row.score}</span>
       </div>
     `;
