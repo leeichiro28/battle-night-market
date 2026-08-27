@@ -163,8 +163,8 @@
       <span class="header-user" title="${ui.esc(player.name)}">
         ${ui.icon("user")}<span class="header-name">${ui.esc(player.name)}</span>
       </span>
-      <button type="button" class="icon-btn" id="header-title-btn" title="選擇稱號" aria-label="選擇稱號">${ui.icon("crown")}</button>
       <button type="button" class="icon-btn" id="header-rename-btn" title="修改暱稱" aria-label="修改暱稱">${ui.icon("pencil")}</button>
+      <button type="button" class="icon-btn" id="header-title-btn" title="選擇稱號" aria-label="選擇稱號">${ui.icon("crown")}</button>
       <button type="button" class="icon-btn danger" id="header-logout-btn" title="登出" aria-label="登出">${ui.icon("log-out")}</button>
     `;
 
