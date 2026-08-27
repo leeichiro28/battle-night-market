@@ -6,6 +6,7 @@ let unsub1 = null;
 let unsub2 = null;
 let currentEv = null;
 let classByPlayerId = {}; // 每次 renderBracket 重新整理，matchRowHtml/bracketCardInnerHtml 讀這份來畫職業小標籤
+let bracketPlayerProfiles = {}; // 跨場永久系統(Phase 0):冠軍名字旁邊要顯示稱號，player_id -> player_profiles
 
 const GAME_PAGE = { dice: "dice.html", rps5: "rps5.html" };
 const BRACKET_ORDER = { winners: 0, losers: 1, final: 2 };
@@ -100,7 +101,8 @@ function renderBracketListView(ev, parts, matches) {
 
   const champion = parts.find((p) => p.status === "champion");
   if (champion) {
-    html += `<div class="bracket-row" style="background:rgba(242,183,5,.1);border-radius:10px;padding:12px 14px;border:1px solid var(--gold-d);margin-bottom:8px;"><span class="win">${ui.icon("crown")} 冠軍・${ui.esc(champion.players.name)}</span><span></span></div>`;
+    const championTitle = bracketPlayerProfiles[champion.player_id];
+    html += `<div class="bracket-row" style="background:rgba(242,183,5,.1);border-radius:10px;padding:12px 14px;border:1px solid var(--gold-d);margin-bottom:8px;"><span class="win">${ui.icon("crown")} 冠軍・${ui.esc(champion.players.name)}${championTitle ? ui.titleBadge(championTitle.display_title) : ""}</span><span></span></div>`;
   }
 
   html += sectionTitle("swords", "勝部賽程");
@@ -230,11 +232,12 @@ function renderBracketTreeView(ev, parts, matches) {
     extraRound++;
   }
   if (champion) {
+    const championTitle = bracketPlayerProfiles[champion.player_id];
     cols += `<div class="bt-col">
       <div class="bt-col-title gold">${ui.icon("crown")}冠軍</div>
       <div class="bt-col-matches">
         <div class="bt-match champion-card" data-round="${extraRound}" data-slot="0">
-          <div class="bt-row win">${ui.icon("crown")}<span>${ui.esc(champion.players.name)}</span></div>
+          <div class="bt-row win">${ui.icon("crown")}<span>${ui.esc(champion.players.name)}${championTitle ? ui.titleBadge(championTitle.display_title) : ""}</span></div>
         </div>
       </div>
     </div>`;
@@ -332,6 +335,10 @@ async function renderBracket(ev) {
 
   classByPlayerId = {};
   parts.forEach((p) => (classByPlayerId[p.player_id] = p.class));
+
+  // 只有賽事結束、冠軍已經產生時才需要查稱號(進行中的賽程不用查，省一次查詢)
+  const championPart = parts.find((p) => p.status === "champion");
+  bracketPlayerProfiles = championPart ? await db.getPlayerProfiles([championPart.player_id]).catch(() => ({})) : {};
 
   if (!ev.locked) {
     const showClass = classesEnabled(ev);

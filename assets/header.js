@@ -31,6 +31,80 @@
     }
   }
 
+  // 跨場永久系統(Phase 0):選要掛在名字旁邊的稱號。跟現有 ui.prompt/ui.confirm 那套單一輸入框
+  // 不太合(這裡要顯示一整排單選清單)，所以自己另外組一個對話框，但沿用同樣的 .dialog-overlay/
+  // .dialog-card 樣式，看起來還是同一套系統，不會像另外做了一個風格不一致的彈窗。
+  async function openTitlePicker(player) {
+    let profile = null;
+    try {
+      profile = await db.getPlayerProfile(player.id);
+    } catch (e) {}
+    const unlocked = (profile && profile.titles) || [];
+    if (!unlocked.length) {
+      await ui.alert("還沒解鎖任何稱號，去比賽或拍賣裡拿下佳績試試看吧！", { title: "稱號" });
+      return;
+    }
+    const current = (profile && profile.display_title) || "";
+    const optionsHtml = unlocked
+      .map((key) => {
+        const meta = (db.TITLE_CATALOG || []).find((t) => t.key === key);
+        if (!meta) return "";
+        return `
+          <label class="title-pick-row">
+            <input type="radio" name="title-pick" value="${ui.esc(key)}" ${current === key ? "checked" : ""} />
+            ${ui.icon(meta.icon || "crown")}
+            <span><b>${ui.esc(meta.name)}</b><span class="hint">${ui.esc(meta.desc || "")}</span></span>
+          </label>`;
+      })
+      .join("");
+
+    const overlay = document.createElement("div");
+    overlay.className = "dialog-overlay show";
+    overlay.innerHTML = `
+      <div class="dialog-card" role="dialog" aria-modal="true">
+        <div class="dialog-head">
+          <span class="dialog-icon tone-info">${ui.icon("crown")}</span>
+          <h3 class="dialog-title">選擇要顯示的稱號</h3>
+        </div>
+        <div class="dialog-body">
+          <label class="title-pick-row">
+            <input type="radio" name="title-pick" value="" ${!current ? "checked" : ""} />
+            <span><b>不顯示任何稱號</b></span>
+          </label>
+          ${optionsHtml}
+        </div>
+        <div class="dialog-actions">
+          <button type="button" class="btn ghost" id="title-pick-cancel">取消</button>
+          <button type="button" class="btn" id="title-pick-ok">儲存</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    document.body.classList.add("dialog-open");
+
+    return new Promise((resolve) => {
+      function close() {
+        overlay.remove();
+        document.body.classList.remove("dialog-open");
+        resolve();
+      }
+      overlay.querySelector("#title-pick-cancel").onclick = close;
+      overlay.querySelector("#title-pick-ok").onclick = async () => {
+        const picked = overlay.querySelector('input[name="title-pick"]:checked');
+        const key = picked ? picked.value : "";
+        try {
+          await db.setDisplayTitle(player.id, key || null);
+        } catch (e) {
+          await ui.alert(e.message || "儲存失敗", { title: "儲存失敗", tone: "danger" });
+        }
+        close();
+      };
+      overlay.onclick = (e) => {
+        if (e.target === overlay) close();
+      };
+    });
+  }
+
   async function askRename(player, opts) {
     const o = opts || {};
     const next = await ui.prompt(o.message || "取一個在擂台上顯示的暱稱(最多 16 字)", {
@@ -89,10 +163,12 @@
       <span class="header-user" title="${ui.esc(player.name)}">
         ${ui.icon("user")}<span class="header-name">${ui.esc(player.name)}</span>
       </span>
+      <button type="button" class="icon-btn" id="header-title-btn" title="選擇稱號" aria-label="選擇稱號">${ui.icon("crown")}</button>
       <button type="button" class="icon-btn" id="header-rename-btn" title="修改暱稱" aria-label="修改暱稱">${ui.icon("pencil")}</button>
       <button type="button" class="icon-btn danger" id="header-logout-btn" title="登出" aria-label="登出">${ui.icon("log-out")}</button>
     `;
 
+    document.getElementById("header-title-btn").onclick = () => openTitlePicker(player);
     document.getElementById("header-rename-btn").onclick = async () => {
       const changed = await askRename(player);
       if (changed) refreshAccount();
