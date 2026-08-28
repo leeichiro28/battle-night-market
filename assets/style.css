@@ -1947,3 +1947,61 @@ input,select,textarea{max-width:100%;min-width:0;}
 
 /* 後台：拍賣參加者列(名字 / 財神幣 / 獎勵輸入框 對齊同一套 .admin-row grid) */
 .admin-row .coin-tag{color:var(--gold);border-color:var(--gold-d);flex-shrink:0;}
+
+/* ===== 職業養成對決(career.html) ===== */
+
+/* 職業選擇:力量/敏捷/魔法三路、每路2個最終職業的卡片 */
+.career-path-block{margin-bottom:18px;}
+.career-path-title{
+  display:flex;align-items:center;gap:8px;font-weight:700;color:var(--gold);
+  margin-bottom:10px;font-size:14px;
+}
+.career-class-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+@media (max-width:480px){.career-class-grid{grid-template-columns:1fr;}}
+.career-class-card{
+  min-width:0;background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius);
+  padding:14px;cursor:pointer;transition:border-color .15s,transform .15s;
+}
+.career-class-card:hover{border-color:var(--gold-d);}
+.career-class-card.selected{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold) inset;}
+.career-class-card .cc-head{display:flex;align-items:center;gap:8px;font-weight:700;margin-bottom:6px;}
+.career-class-card .cc-head .ico{color:var(--gold);}
+.career-class-card .cc-desc{font-size:11.5px;color:var(--ink-dim);line-height:1.6;overflow-wrap:anywhere;}
+.career-class-card .cc-ult{font-size:11.5px;color:var(--ink);margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);}
+.career-class-card .cc-ult b{color:var(--gold);}
+.career-class-card .cc-stats{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+.career-class-card .cc-stat{
+  font-size:10.5px;font-family:'Space Mono',monospace;color:var(--ink-dim);
+  background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:2px 6px;
+}
+
+/* 通用細長進度條(經驗值/HP共用一套元件，粗細/顏色靠 modifier class 區分) */
+.stat-bar-row{margin-bottom:8px;}
+.stat-bar-label{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-dim);margin-bottom:3px;}
+.stat-bar{background:var(--bg);border:1px solid var(--line);border-radius:20px;overflow:hidden;height:8px;}
+.stat-bar.hp{height:12px;}
+.stat-bar-fill{height:100%;background:var(--green);transition:width .3s ease;}
+.stat-bar-fill.hp{background:var(--green);}
+.stat-bar-fill.hp.low{background:var(--red);}
+.stat-bar-fill.exp{background:var(--gold);}
+
+/* PVP 對戰畫面:左右對稱 + 中間 VS，沿用 .vs-row 的 grid 置中邏輯 */
+.career-vs-row{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:start;margin-bottom:16px;}
+.career-side{min-width:0;}
+.career-side.right{text-align:right;}
+.career-side .cs-name{display:flex;align-items:center;gap:6px;font-weight:700;font-size:14px;overflow-wrap:anywhere;}
+.career-side.right .cs-name{justify-content:flex-end;}
+.career-side .cs-sub{font-size:10.5px;color:var(--ink-dim);margin:2px 0 6px;}
+.career-vs-mid{align-self:center;font-family:'Display',sans-serif;font-size:13px;color:var(--gold);letter-spacing:.1em;}
+
+.career-action-row{display:flex;gap:10px;margin-top:14px;}
+.career-action-row .btn{flex:1 1 0;min-width:0;}
+.career-ult-btn{border-color:var(--gold) !important;color:var(--gold) !important;}
+.career-ult-btn:disabled{opacity:.45;}
+
+.career-log-panel{margin-top:14px;}
+.career-log-panel div{padding:4px 0;border-bottom:1px dashed var(--line);font-size:12px;overflow-wrap:anywhere;}
+.career-log-panel div:first-child{border-bottom:none;color:var(--ink);font-weight:600;}
+
+.career-queue-box{text-align:center;padding:22px 10px;}
+.career-queue-box .ico{color:var(--gold);}

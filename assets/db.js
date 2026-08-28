@@ -2149,6 +2149,185 @@ const db = (function () {
     return data.publicUrl;
   }
 
+  // ---------- 職業養成對決(獨立第三種遊戲類型,自己的資料表,見 career.html / career.js) ----------
+
+  // 玩家在這場活動裡選好的職業建置。Phase1 一次寫入(選線 = 整組 tier1+tier2+最終職業一起定案),
+  // upsert 讓玩家能重選(對戰前重新選一次不用另外做「轉職」介面,Phase2 塔爬上線後轉職才會是真的
+  // 花幣行為)。
+  async function getMyCareerBuild(eventId, playerId) {
+    const { data, error } = await client
+      .from("career_builds")
+      .select("*")
+      .eq("event_id", eventId)
+      .eq("player_id", playerId)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
+  async function saveCareerBuild(eventId, playerId, { path, finalClass, skillKeys }) {
+    const { data, error } = await client
+      .from("career_builds")
+      .upsert(
+        { event_id: eventId, player_id: playerId, path, final_class: finalClass, skill_keys: skillKeys },
+        { onConflict: "event_id,player_id" }
+      )
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  async function getCareerBuildFor(eventId, playerId) {
+    const { data, error } = await client
+      .from("career_builds")
+      .select("*")
+      .eq("event_id", eventId)
+      .eq("player_id", playerId)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
+  // ---- 配對佇列 ----
+  async function getMyCareerQueueEntry(eventId, playerId) {
+    const { data, error } = await client
+      .from("career_pvp_queue")
+      .select("*")
+      .eq("event_id", eventId)
+      .eq("player_id", playerId)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
+  // 加入配對佇列(已經在裡面就直接回傳現有那筆,不重置 last_matched_at,避免插隊)
+  async function joinCareerQueue(eventId, playerId) {
+    const existing = await getMyCareerQueueEntry(eventId, playerId);
+    if (existing) return existing;
+    const { data, error } = await client
+      .from("career_pvp_queue")
+      .insert({ event_id: eventId, player_id: playerId, status: "waiting" })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  async function listCareerQueue(eventId) {
+    const { data, error } = await client
+      .from("career_pvp_queue")
+      .select("*, player:player_id(name)")
+      .eq("event_id", eventId)
+      .order("current_score", { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }
+
+  // 呼叫 match_career_players RPC:撈佇列裡等最久的兩人配對。任何開著頁面的分頁都能呼叫,
+  // 沒人可配對時回傳 null,不用特別處理。
+  async function scanCareerMatchmaking(eventId) {
+    const { data, error } = await client.rpc("match_career_players", { p_event_id: eventId });
+    if (error) throw error;
+    return data;
+  }
+
+  // 找自己目前是不是在一場進行中的對戰裡(配對成功後兩邊都要能查到同一場)
+  async function getMyActiveCareerMatch(eventId, playerId) {
+    const { data, error } = await client
+      .from("career_matches")
+      .select("*, p1:player1_id(name,is_bot), p2:player2_id(name,is_bot)")
+      .eq("event_id", eventId)
+      .eq("status", "active")
+      .or(`player1_id.eq.${playerId},player2_id.eq.${playerId}`)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
+  async function getCareerMatch(matchId) {
+    const { data, error } = await client
+      .from("career_matches")
+      .select("*, p1:player1_id(name,is_bot), p2:player2_id(name,is_bot)")
+      .eq("id", matchId)
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  // 配對成功後,第一個偵測到的分頁把雙方完整戰鬥數值(HP/攻防速幸運/職業)寫進 state。
+  // initialized=false 這個條件本身就是原子鎖,兩邊分頁同時搶著寫也只有一個會成功,
+  // 不需要另外設計樂觀鎖重試。
+  async function initializeCareerMatch(match) {
+    const [build1, build2] = await Promise.all([
+      getCareerBuildFor(match.event_id, match.player1_id),
+      getCareerBuildFor(match.event_id, match.player2_id),
+    ]);
+    if (!build1 || !build2) return null; // 理論上配對前雙方都該選好職業了,防呆用
+    const stats1 = window.CareerData.computeStats(build1.final_class);
+    const stats2 = window.CareerData.computeStats(build2.final_class);
+    const initState = window.CareerEngine.initialMatchState(
+      { classKey: build1.final_class, stats: stats1 },
+      { classKey: build2.final_class, stats: stats2 }
+    );
+    const { data, error } = await client
+      .from("career_matches")
+      .update({ state: initState, initialized: true })
+      .eq("id", match.id)
+      .eq("initialized", false)
+      .select();
+    if (error) throw error;
+    return data && data.length ? data[0] : null;
+  }
+
+  async function submitCareerMove(matchId, slot, payload) {
+    const { error } = await client.rpc("submit_career_move", {
+      p_match_id: matchId,
+      p_slot: slot,
+      p_payload: payload,
+    });
+    if (error) throw error;
+  }
+
+  async function updateCareerMatchState(matchId, patch) {
+    const { error } = await client.from("career_matches").update(patch).eq("id", matchId);
+    if (error) throw error;
+  }
+
+  // 一場結束時呼叫:寫入 winner_id、雙方 +10/+2 分並退回佇列繼續配對(RPC 用 status='active'
+  // 當條件鎖,兩邊分頁同時判定結束也只會真的結算一次)。
+  async function finishCareerMatch(matchId, winnerId, loserId) {
+    const { error } = await client.rpc("finish_career_match", {
+      p_match_id: matchId,
+      p_winner_id: winnerId,
+      p_loser_id: loserId,
+    });
+    if (error) throw error;
+  }
+
+  // 主辦人/玩家自己測試用:建一個機器人玩家、隨機挑一個職業建置、直接排進佇列,
+  // 方便一個人也能測完整場 PVP 流程,不用真的找第二個人。
+  async function addCareerTestBot(eventId) {
+    const botName = `🤖 測試機器人 ${Math.floor(Math.random() * 1000)}`;
+    const { data: player, error: playerErr } = await client
+      .from("players")
+      .insert({ name: botName, is_bot: true })
+      .select()
+      .single();
+    if (playerErr) throw playerErr;
+    const classes = window.CareerData.listClasses();
+    const pick = classes[Math.floor(Math.random() * classes.length)];
+    const build = await saveCareerBuild(eventId, player.id, {
+      path: pick.path,
+      finalClass: pick.key,
+      skillKeys: pick.skillKeys,
+    });
+    const queueEntry = await joinCareerQueue(eventId, player.id);
+    return { player, build, queueEntry };
+  }
+
   return {
     client,
     cancelAllRequests,
@@ -2250,5 +2429,19 @@ const db = (function () {
     computeAuctionStandings,
     closeAuctionEvent,
     setAuctionReward,
+    getMyCareerBuild,
+    saveCareerBuild,
+    getCareerBuildFor,
+    getMyCareerQueueEntry,
+    joinCareerQueue,
+    listCareerQueue,
+    scanCareerMatchmaking,
+    getMyActiveCareerMatch,
+    getCareerMatch,
+    initializeCareerMatch,
+    submitCareerMove,
+    updateCareerMatchState,
+    finishCareerMatch,
+    addCareerTestBot,
   };
 })();

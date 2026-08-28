@@ -747,6 +747,159 @@ drop policy if exists "anon all auction_task_answers" on auction_task_answers;
 create policy "anon all auction_task_answers" on auction_task_answers for all using (true) with check (true);
 
 -- ============================================
+-- 職業養成對決(獨立第三種遊戲類型，走 career.html，自己的資料表，不跟骰子/五手勢共用賽程晉級架構，
+-- 不跟夜市拍賣共用商品/波次結構)——Phase 1:戰鬥引擎驗證
+-- ============================================
+
+-- 開放 events.game_type 多一個 'career' 選項
+alter table events drop constraint if exists events_game_type_check;
+alter table events add constraint events_game_type_check check (game_type in ('dice','rps5','auction','career'));
+
+-- 玩家在某場活動裡選的職業建置。Phase1 簡化版:玩家直接選一條「線」(例如力量系攻擊線)，
+-- 對應的 tier1+tier2 技能節點跟最終職業會一起自動代入，不用像正式版 Phase2 塔爬完成後那樣
+-- 兩層分開點——真正的技能樹節點資料仍然共用 assets/career-data.js 的 CAREER_TREE(跟企劃書
+-- 第十三節的資料結構完全一致)，這裡只是 Phase1 先固定「整條線一起選」，Phase2 接上塔爬與自由
+-- 數值點之後，skill_keys 才會允許玩家分開勾選 tier1/tier2。
+create table if not exists career_builds (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid references events(id) on delete cascade,
+  player_id uuid references players(id) on delete cascade,
+  path text not null,          -- strength | agility | magic
+  final_class text not null,   -- warrior | guardian | archer | assassin | mage | healer
+  skill_keys jsonb not null default '[]'::jsonb,
+  created_at timestamptz default now(),
+  unique(event_id, player_id)
+);
+alter table career_builds enable row level security;
+drop policy if exists "anon all career_builds" on career_builds;
+create policy "anon all career_builds" on career_builds for all using (true) with check (true);
+
+-- PVP 配對佇列。Phase1 只做「最陽春的先進先配」(企劃書十三節):誰等最久誰先配對，
+-- 不做分數排位邏輯，也先不做賽程式的「輪空(bye)」——這是一個持續在跑的配對池(打完自動回到
+-- waiting 再排下一場)，不是每輪都要湊滿對數的賽程制，落單的人單純留在佇列裡等下一個人加入就好，
+-- 不會有「這一輪配不到人要吃 bye」的情境，所以企劃書原稿裡 bye_count 那段先不做，等 Phase3
+-- 接上真正的排行榜/積分排位邏輯時再一起考慮。
+create table if not exists career_pvp_queue (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid references events(id) on delete cascade,
+  player_id uuid references players(id) on delete cascade,
+  status text not null default 'waiting', -- waiting | matched
+  current_score int not null default 0,
+  wins int not null default 0,
+  losses int not null default 0,
+  last_matched_at timestamptz default now(),
+  created_at timestamptz default now(),
+  unique(event_id, player_id)
+);
+alter table career_pvp_queue enable row level security;
+drop policy if exists "anon all career_pvp_queue" on career_pvp_queue;
+create policy "anon all career_pvp_queue" on career_pvp_queue for all using (true) with check (true);
+
+-- PVP 對戰場次。獨立於 matches 表之外，state 的欄位結構(hp1/hp2/atk1.../m1/m2/log)自己一套，
+-- 不會跟骰子/五手勢的 state 混在一起。initialized 是給「配對成功後才把雙方完整戰鬥數值寫進 state」
+-- 這一步用的旗標(見 assets/career.js initializeCareerMatch)，兩個分頁同時偵測到新場次也只有一個
+-- 能真的寫入(update ... where initialized=false 這個條件本身就是原子鎖)。
+create table if not exists career_matches (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid references events(id) on delete cascade,
+  player1_id uuid references players(id),
+  player2_id uuid references players(id),
+  status text not null default 'active', -- active | done
+  winner_id uuid,
+  initialized boolean not null default false,
+  state jsonb not null default '{"round":1,"log":[]}'::jsonb,
+  created_at timestamptz default now()
+);
+alter table career_matches enable row level security;
+drop policy if exists "anon all career_matches" on career_matches;
+create policy "anon all career_matches" on career_matches for all using (true) with check (true);
+
+-- 回合出招合併寫入,跟 submit_move 同一套原子合併寫法(state = state || 新的一小塊)，
+-- 避免兩人幾乎同時出招，後送到的那個把先送到的蓋掉。
+create or replace function submit_career_move(p_match_id uuid, p_slot int, p_payload jsonb)
+returns void
+language plpgsql
+as $$
+begin
+  update career_matches
+  set state = state || jsonb_build_object('m' || p_slot, p_payload)
+  where id = p_match_id;
+end;
+$$;
+
+-- 配對(先進先配):撈佇列裡等最久的兩人配對成一場新的 career_matches。
+-- 用 for update skip locked 讓兩個分頁同時掃描也不會搶到同一個人(比企劃書原稿描述的
+-- 「client端讀到waiting再UPDATE、失敗就退回重試」的樂觀鎖版本更穩，這裡直接用 Postgres
+-- 原生的悲觀鎖做掉，邏輯更短也不會有兩個分頁互相重試的空窗期)。
+create or replace function match_career_players(p_event_id uuid)
+returns uuid
+language plpgsql
+as $$
+declare
+  p1 record;
+  p2 record;
+  new_match_id uuid;
+begin
+  select id, player_id into p1
+  from career_pvp_queue
+  where event_id = p_event_id and status = 'waiting'
+  order by last_matched_at
+  limit 1
+  for update skip locked;
+
+  if p1 is null then
+    return null;
+  end if;
+
+  select id, player_id into p2
+  from career_pvp_queue
+  where event_id = p_event_id and status = 'waiting' and id <> p1.id
+  order by last_matched_at
+  limit 1
+  for update skip locked;
+
+  if p2 is null then
+    return null; -- 目前佇列裡只有一個人，等下一個人加入才能配對
+  end if;
+
+  insert into career_matches(event_id, player1_id, player2_id, status, state)
+  values (p_event_id, p1.player_id, p2.player_id, 'active', '{"round":1,"log":[]}'::jsonb)
+  returning id into new_match_id;
+
+  update career_pvp_queue set status = 'matched' where id in (p1.id, p2.id);
+
+  return new_match_id;
+end;
+$$;
+
+-- 一場 PVP 打完呼叫:贏家 +10 分、輸家 +2 分(企劃書第九節)，各自 wins/losses 累計，
+-- 然後兩人的佇列狀態都退回 waiting、last_matched_at 更新成現在，可以馬上排下一場繼續測試引擎。
+-- 用 status='matched' 當條件鎖，兩個分頁同時判定同一場結束也只有一次會真的加到分。
+create or replace function finish_career_match(p_match_id uuid, p_winner_id uuid, p_loser_id uuid)
+returns void
+language plpgsql
+as $$
+declare
+  m record;
+begin
+  select * into m from career_matches where id = p_match_id and status = 'active';
+  if m is null then
+    return; -- 已經被結算過了
+  end if;
+
+  update career_matches set status = 'done', winner_id = p_winner_id where id = p_match_id;
+
+  update career_pvp_queue
+  set status = 'waiting', current_score = current_score + 10, wins = wins + 1, last_matched_at = now()
+  where event_id = m.event_id and player_id = p_winner_id;
+
+  update career_pvp_queue
+  set status = 'waiting', current_score = current_score + 2, losses = losses + 1, last_matched_at = now()
+  where event_id = m.event_id and player_id = p_loser_id;
+end;
+$$;
+
+-- ============================================
 -- Realtime(Database Publications):以下這段可以整份跟著上面一起貼到 SQL Editor 執行，
 -- 不用再手動去 Database → Replication 一張一張打開開關。用 pg_publication_tables 先檢查
 -- 這張表是不是已經在 supabase_realtime 這個發布清單裡，不在才加，所以整份重跑也不會出錯
@@ -758,7 +911,8 @@ begin
   foreach t in array array[
     'events', 'event_participants', 'matches', 'match_bets',
     'auction_participants', 'auction_lots', 'auction_bids',
-    'auction_tasks', 'auction_task_answers', 'auction_price_guesses'
+    'auction_tasks', 'auction_task_answers', 'auction_price_guesses',
+    'career_pvp_queue', 'career_matches'
   ]
   loop
     if not exists (

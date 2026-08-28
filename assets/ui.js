@@ -101,6 +101,7 @@ const ui = (function () {
     dice: { icon: "dices", label: "骰子對戰" },
     rps5: { icon: "scissors", label: "五手勢對戰" },
     auction: { icon: "gavel", label: "夜市拍賣" },
+    career: { icon: "swords", label: "職業養成對決" },
   };
   // 夜市拍賣・商品分級圖示與中文名稱(共用給後台商品清單、拍賣畫面、我的背包)
   const TIER_ICON = { common: "package", rare: "gem", epic: "flame", legendary: "crown", special: "ticket", mystery: "package-open", bundle: "layers" };

@@ -1,4 +1,4 @@
-const GAME_PAGE = { dice: "dice.html", rps5: "rps5.html", auction: "auction.html" };
+const GAME_PAGE = { dice: "dice.html", rps5: "rps5.html", auction: "auction.html", career: "career.html" };
 
 // 後台勾選用的進階規則說明(圖示與名稱共用 ui.RULE，這裡只補上說明文字)
 const RULE_ROWS = [
@@ -65,8 +65,8 @@ document.getElementById("new-type").onchange = (e) => {
   document.getElementById("dice-rules-box").style.display = type === "dice" ? "block" : "none";
   document.getElementById("rps5-rules-box").style.display = type === "rps5" ? "block" : "none";
   document.getElementById("auction-settings-box").style.display = type === "auction" ? "block" : "none";
-  // 夜市拍賣不是賽程對戰，沒有敗部復活賽這個概念
-  document.getElementById("losers-field").style.display = type === "auction" ? "none" : "block";
+  // 夜市拍賣、職業養成對決都不是賽程對戰(career是持續配對的PVP佇列)，沒有敗部復活賽這個概念
+  document.getElementById("losers-field").style.display = type === "auction" || type === "career" ? "none" : "block";
 };
 
 // ---------- 獎勵設定區 ----------
@@ -473,11 +473,16 @@ function eventAdminCard(ev) {
   card.className = "card";
   const isClosed = ev.status === "closed";
   const isAuction = ev.game_type === "auction";
+  const isCareer = ev.game_type === "career";
 
+  // 職業養成對決不用「鎖定名單/產生賽程」這一步:玩家在活動開放中就能直接進 career.html
+  // 選職業、加入配對佇列，系統背景持續配對，不需要主辦人手動觸發開始
   const primaryActionBtn = isAuction
     ? !ev.locked && !isClosed
       ? `<button class="btn small" data-action="start-auction">${ui.icon("gavel")}開始拍賣</button>`
       : ""
+    : isCareer
+    ? ""
     : !ev.locked && !isClosed
     ? `<button class="btn small" data-action="lock">${ui.icon("lock")}鎖定名單，產生賽程</button>`
     : "";
@@ -496,8 +501,8 @@ function eventAdminCard(ev) {
       </div>
       <div class="action-row">
         ${primaryActionBtn}
-        ${ev.locked && !isClosed ? `<a class="btn ghost small" href="${GAME_PAGE[ev.game_type]}?event=${ev.id}" target="_blank">${ui.icon("eye")}前往頁面</a>` : ""}
-        ${!isAuction && !ev.locked && !isClosed ? `<button class="btn ghost small" data-action="add-bot">${ui.icon("bot")}加入測試機器人</button>` : ""}
+        ${(isCareer ? !isClosed : ev.locked && !isClosed) ? `<a class="btn ghost small" href="${GAME_PAGE[ev.game_type]}?event=${ev.id}" target="_blank">${ui.icon("eye")}前往頁面</a>` : ""}
+        ${!isAuction && !isCareer && !ev.locked && !isClosed ? `<button class="btn ghost small" data-action="add-bot">${ui.icon("bot")}加入測試機器人</button>` : ""}
         ${!isClosed ? `<button class="btn ghost small" data-action="close">${ui.icon("flag")}結束活動</button>` : ""}
         <button class="btn ghost small outline-danger" data-action="delete">${ui.icon("trash-2")}刪除活動</button>
       </div>
