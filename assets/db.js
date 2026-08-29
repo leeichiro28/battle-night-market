@@ -227,6 +227,8 @@ const db = (function () {
     { key: "flawless_champion", name: "不敗戰神", desc: "拿下冠軍的那場賽事，全程沒有輸掉任何一場對戰", icon: "shield-check" },
     { key: "high_roller", name: "散盡家財的賭徒", desc: "夜市拍賣結束時，財神幣幾乎花光", icon: "coins" },
     { key: "auction_tycoon", name: "夜市大戶", desc: "夜市拍賣拿下第一名", icon: "gem" },
+    { key: "career_champion", name: "夜市擂台之王", desc: "職業養成對決積分排行拿下第一名", icon: "crown" },
+    { key: "tower_conqueror", name: "爬塔霸主", desc: "本場已經爬完目前開放的所有樓層", icon: "mountain" },
   ];
 
   async function getOrCreatePlayerProfile(playerId) {
@@ -2266,8 +2268,19 @@ const db = (function () {
       getCareerBuildFor(match.event_id, match.player2_id),
     ]);
     if (!build1 || !build2) return null; // 理論上配對前雙方都該選好職業了,防呆用
-    const stats1 = window.CareerData.computeStats(build1.final_class);
-    const stats2 = window.CareerData.computeStats(build2.final_class);
+    // Phase3 銜接:玩家只要去爬過塔(有 career_progress 這筆資料)，PVP 數值就改用
+    // 「職業基礎值 + 加點 + 裝備」算，沒去爬過塔的人(或還沒接訓練期的舊測試活動)就還是
+    // 用 Phase1 那個固定基礎值，兩種情況都能正常開打，不會因為對手沒爬過塔就打不成。
+    const [progress1, progress2] = await Promise.all([
+      getCareerProgressFor(match.event_id, match.player1_id),
+      getCareerProgressFor(match.event_id, match.player2_id),
+    ]);
+    const stats1 = progress1
+      ? window.CareerData.applyProgress(build1.final_class, progress1.stat_alloc, progress1.equipment)
+      : window.CareerData.computeStats(build1.final_class);
+    const stats2 = progress2
+      ? window.CareerData.applyProgress(build2.final_class, progress2.stat_alloc, progress2.equipment)
+      : window.CareerData.computeStats(build2.final_class);
     const initState = window.CareerEngine.initialMatchState(
       { classKey: build1.final_class, stats: stats1 },
       { classKey: build2.final_class, stats: stats2 }
@@ -2326,6 +2339,370 @@ const db = (function () {
     });
     const queueEntry = await joinCareerQueue(eventId, player.id);
     return { player, build, queueEntry };
+  }
+
+  // ---------- 職業養成對決 Phase2:爬塔骨架(career_progress，見 tower.html / tower.js) ----------
+
+  const CAREER_TRAIN_COOLDOWN_SEC = 90; // 企劃書第五、八節:特訓每90秒可領一次
+  const CAREER_TRAIN_COIN_MIN = 6;
+  const CAREER_TRAIN_COIN_MAX = 14; // 平均約10幣，跟企劃書經濟平衡表估算一致
+  const CAREER_TRAIN_EXP_MIN = 2;
+  const CAREER_TRAIN_EXP_MAX = 5;
+  const CAREER_AUTO_FARM_INTERVAL_SEC = 25; // 掛機每隔幾秒背景推進一次
+  const CAREER_AUTO_FARM_EFFICIENCY = 0.7; // 掛機效率打七折(企劃書第五、八節)
+
+  function _emptyStatAlloc() {
+    return { atk: 0, def: 0, spd: 0, hp: 0, luck: 0 };
+  }
+
+  // 等級曲線用 career-floors.js 的 expToNextLevel，在本地把 exp 疊代扣光算出最終等級，
+  // 一次特訓/一場戰鬥要連跳好幾級也能一次算完。
+  function _applyExpGain(progress, expGain) {
+    let exp = progress.exp + expGain;
+    let level = progress.level;
+    let statPoints = progress.stat_points;
+    let leveledUp = false;
+    while (exp >= window.CareerFloors.expToNextLevel(level)) {
+      exp -= window.CareerFloors.expToNextLevel(level);
+      level += 1;
+      statPoints += 2; // 每升一級送2自由數值點(企劃書第三節；技能點目前沒有可花的地方，Phase2先不發)
+      leveledUp = true;
+    }
+    return { exp, level, stat_points: statPoints, leveledUp, newLevel: level };
+  }
+
+  async function getOrCreateCareerProgress(eventId, playerId) {
+    const { data: existing, error: readErr } = await client
+      .from("career_progress")
+      .select("*")
+      .eq("event_id", eventId)
+      .eq("player_id", playerId)
+      .maybeSingle();
+    if (readErr) throw readErr;
+    if (existing) return existing;
+    const { data, error } = await client
+      .from("career_progress")
+      .insert({
+        event_id: eventId,
+        player_id: playerId,
+        stat_alloc: _emptyStatAlloc(),
+        equipment: { weapon: null, armor: null, accessory: null },
+      })
+      .select()
+      .single();
+    if (error) {
+      // 兩個分頁同時第一次進來，其中一個會撞到 unique(event_id,player_id)；
+      // 撞到就代表另一個分頁已經幫忙建好了，直接回頭讀那一筆就好。
+      const { data: raceWinner, error: reReadErr } = await client
+        .from("career_progress")
+        .select("*")
+        .eq("event_id", eventId)
+        .eq("player_id", playerId)
+        .maybeSingle();
+      if (reReadErr) throw reReadErr;
+      if (raceWinner) return raceWinner;
+      throw error;
+    }
+    return data;
+  }
+
+  // 特訓領幣:跟拍賣「打工」同一套機制，用 train_ready_at<=now 當樂觀鎖，
+  // 同一秒連點兩次也只會成功一次。
+  async function trainForCareerCoins(eventId, playerId) {
+    const progress = await getOrCreateCareerProgress(eventId, playerId);
+    if (new Date(progress.train_ready_at).getTime() > Date.now()) {
+      throw new Error("還在冷卻中");
+    }
+    const coinGain = CAREER_TRAIN_COIN_MIN + Math.floor(Math.random() * (CAREER_TRAIN_COIN_MAX - CAREER_TRAIN_COIN_MIN + 1));
+    const expGain = CAREER_TRAIN_EXP_MIN + Math.floor(Math.random() * (CAREER_TRAIN_EXP_MAX - CAREER_TRAIN_EXP_MIN + 1));
+    const leveled = _applyExpGain(progress, expGain);
+    const nextReady = new Date(Date.now() + CAREER_TRAIN_COOLDOWN_SEC * 1000).toISOString();
+    const { data: updated, error } = await client
+      .from("career_progress")
+      .update({
+        coins: progress.coins + coinGain,
+        exp: leveled.exp,
+        level: leveled.level,
+        stat_points: leveled.stat_points,
+        train_ready_at: nextReady,
+      })
+      .eq("id", progress.id)
+      .eq("train_ready_at", progress.train_ready_at)
+      .select();
+    if (error) throw error;
+    if (!updated || !updated.length) throw new Error("手慢了，請再按一次");
+    return { coinGain, expGain, leveledUp: leveled.leveledUp, newLevel: leveled.newLevel, progress: updated[0] };
+  }
+
+  // 挑戰樓層:無CD，AI對手直接算完整場(見 career-pve.js)，贏了才推進樓層拿獎勵，
+  // 輸了留在原樓層、不扣任何東西，可以馬上重試。floorNumber 可以是「下一個還沒清的樓層」
+  // (真的推進進度)，也可以是任何已經清過的樓層(單純想farm，不會改變 floor 記錄)。
+  async function challengeCareerFloor(eventId, playerId, floorNumber) {
+    const [progress, build] = await Promise.all([
+      getOrCreateCareerProgress(eventId, playerId),
+      getCareerBuildFor(eventId, playerId),
+    ]);
+    if (!build) throw new Error("請先選好職業再挑戰樓層");
+    if (floorNumber > progress.floor + 1) throw new Error("還沒清到這一層，請先按順序往上爬");
+    const floorDef = window.CareerFloors.getFloor(floorNumber);
+    if (!floorDef) throw new Error("找不到這一層的資料");
+
+    const playerStats = window.CareerData.applyProgress(build.final_class, progress.stat_alloc, progress.equipment);
+    const battle = window.CareerPve.simulateFloorBattle(
+      { classKey: build.final_class, stats: playerStats },
+      { classKey: floorDef.classKey, stats: floorDef.stats }
+    );
+
+    if (!battle.won) {
+      return { won: false, log: battle.log, progress, floorDef };
+    }
+
+    const leveled = _applyExpGain(progress, floorDef.expReward);
+    const isAdvance = floorNumber === progress.floor + 1;
+    const drop = window.CareerFloors.rollDrop(floorDef);
+    let equipment = progress.equipment;
+    let equippedDrop = null;
+    if (drop) {
+      const current = equipment[drop.slot];
+      // 沒裝備、或新掉的是稀有而目前是普通，就直接自動穿上(Phase2先不做背包/比較介面)
+      const shouldEquip = !current || (drop.rarity === "rare" && current.rarity !== "rare");
+      if (shouldEquip) {
+        equipment = { ...equipment, [drop.slot]: drop };
+        equippedDrop = drop;
+      }
+    }
+
+    const { data: updated, error } = await client
+      .from("career_progress")
+      .update({
+        floor: isAdvance ? floorNumber : progress.floor,
+        coins: progress.coins + floorDef.coinReward,
+        exp: leveled.exp,
+        level: leveled.level,
+        stat_points: leveled.stat_points,
+        equipment,
+      })
+      .eq("id", progress.id)
+      .select()
+      .single();
+    if (error) throw error;
+
+    return {
+      won: true,
+      log: battle.log,
+      floorDef,
+      coinGain: floorDef.coinReward,
+      expGain: floorDef.expReward,
+      leveledUp: leveled.leveledUp,
+      newLevel: leveled.newLevel,
+      drop: equippedDrop,
+      progress: updated,
+    };
+  }
+
+  // 花一點自由數值點(atk/def/spd/hp/luck 其中一項 +1)
+  async function allocateCareerStatPoint(eventId, playerId, statKey) {
+    const progress = await getOrCreateCareerProgress(eventId, playerId);
+    if (progress.stat_points <= 0) throw new Error("沒有可以分配的數值點了");
+    const alloc = { ...progress.stat_alloc, [statKey]: (progress.stat_alloc[statKey] || 0) + 1 };
+    const { data: updated, error } = await client
+      .from("career_progress")
+      .update({ stat_points: progress.stat_points - 1, stat_alloc: alloc })
+      .eq("id", progress.id)
+      .eq("stat_points", progress.stat_points)
+      .select();
+    if (error) throw error;
+    if (!updated || !updated.length) throw new Error("手慢了，請再按一次");
+    return updated[0];
+  }
+
+  // 開關練功掛機。floorNumber=null 表示關閉；開啟時樓層必須是已經清過的(<=目前floor)。
+  async function toggleCareerAutoFarm(eventId, playerId, floorNumber) {
+    const progress = await getOrCreateCareerProgress(eventId, playerId);
+    if (floorNumber != null && floorNumber > progress.floor) {
+      throw new Error("只有已經清過的樓層才能開自動掛機");
+    }
+    const { data: updated, error } = await client
+      .from("career_progress")
+      .update({ auto_farm_floor: floorNumber, auto_farm_last_at: new Date().toISOString() })
+      .eq("id", progress.id)
+      .select()
+      .single();
+    if (error) throw error;
+    return updated;
+  }
+
+  // 背景推進所有玩家的自動掛機。任何一個開著頁面的分頁(不一定是掛機玩家本人)都能呼叫，
+  // 跟夜市拍賣「前景分頁互相支援」同一個原則。用 auto_farm_last_at 當樂觀鎖，
+  // 兩個分頁同時想幫同一個人推進也只會有一個成功。
+  async function processCareerAutoFarmTicks(eventId) {
+    const cutoff = new Date(Date.now() - CAREER_AUTO_FARM_INTERVAL_SEC * 1000).toISOString();
+    const { data: dueRows, error } = await client
+      .from("career_progress")
+      .select("*")
+      .eq("event_id", eventId)
+      .not("auto_farm_floor", "is", null)
+      .lte("auto_farm_last_at", cutoff);
+    if (error) throw error;
+    if (!dueRows || !dueRows.length) return [];
+
+    const results = [];
+    for (const progress of dueRows) {
+      try {
+        const build = await getCareerBuildFor(eventId, progress.player_id);
+        if (!build) continue;
+        const floorDef = window.CareerFloors.getFloor(progress.auto_farm_floor);
+        if (!floorDef) continue;
+        const playerStats = window.CareerData.applyProgress(build.final_class, progress.stat_alloc, progress.equipment);
+        const battle = window.CareerPve.simulateFloorBattle(
+          { classKey: build.final_class, stats: playerStats },
+          { classKey: floorDef.classKey, stats: floorDef.stats }
+        );
+        const patch = { auto_farm_last_at: new Date().toISOString() };
+        if (battle.won) {
+          const coinGain = Math.round(floorDef.coinReward * CAREER_AUTO_FARM_EFFICIENCY);
+          const expGain = Math.round(floorDef.expReward * CAREER_AUTO_FARM_EFFICIENCY);
+          const leveled = _applyExpGain(progress, expGain);
+          patch.coins = progress.coins + coinGain;
+          patch.exp = leveled.exp;
+          patch.level = leveled.level;
+          patch.stat_points = leveled.stat_points;
+        }
+        const { data: updated, error: updErr } = await client
+          .from("career_progress")
+          .update(patch)
+          .eq("id", progress.id)
+          .eq("auto_farm_last_at", progress.auto_farm_last_at)
+          .select();
+        if (updErr) throw updErr;
+        if (updated && updated.length) results.push({ playerId: progress.player_id, won: battle.won });
+      } catch (e) {
+        console.error("processCareerAutoFarmTicks row failed", e);
+      }
+    }
+    return results;
+  }
+
+  // ---------- 職業養成對決 Phase3:訓練期/對戰期銜接、排行榜、獎勵、稱號 ----------
+  //
+  // 訓練期/對戰期的「相」存在 events.rules(舊有的 dice 規則、auction 設定也是存在同一個
+  // jsonb 欄位裡，同一套模式)，不新增欄位:
+  //   rules.careerPhase: 'training' | 'battle'(沒設定過就當作沒開啟分期，兩邊頁面都直接開放，
+  //                       跟 Phase1/2 原本的行為完全一樣，不會讓還沒設定過的舊測試活動壞掉)
+  //   rules.trainingEndsAt: 訓練期結束時間(ISO字串)
+
+  async function getCareerProgressFor(eventId, playerId) {
+    const { data, error } = await client
+      .from("career_progress")
+      .select("*")
+      .eq("event_id", eventId)
+      .eq("player_id", playerId)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
+  // 主辦人開始訓練期:設定倒數分鐘數，寫入 trainingEndsAt。
+  async function startCareerTrainingPhase(eventId, minutes) {
+    const ev = await getEvent(eventId);
+    const trainingEndsAt = new Date(Date.now() + minutes * 60 * 1000).toISOString();
+    const rules = { ...(ev.rules || {}), careerPhase: "training", trainingMinutes: minutes, trainingEndsAt };
+    const { error } = await client.from("events").update({ rules }).eq("id", eventId);
+    if (error) throw error;
+  }
+
+  // 主辦人提前結束訓練期(有時候大家練完想早點開戰)，立刻切到對戰期。
+  async function endCareerTrainingPhaseNow(eventId) {
+    const ev = await getEvent(eventId);
+    const rules = { ...(ev.rules || {}), careerPhase: "battle" };
+    const { error } = await client.from("events").update({ rules }).eq("id", eventId);
+    if (error) throw error;
+  }
+
+  // 時間到自動切:任何開著 tower.html/career.html 的分頁都會定期呼叫這個檢查，
+  // 這是單純的「設成同一個值」，兩個分頁同時觸發也沒關係，不需要額外加鎖。
+  async function maybeAdvanceCareerPhase(eventId) {
+    const ev = await getEvent(eventId);
+    const rules = ev.rules || {};
+    if (rules.careerPhase !== "training" || !rules.trainingEndsAt) return false;
+    if (new Date(rules.trainingEndsAt).getTime() > Date.now()) return false;
+    await client
+      .from("events")
+      .update({ rules: { ...rules, careerPhase: "battle" } })
+      .eq("id", eventId);
+    return true;
+  }
+
+  // 最終積分 = PVP戰績分(含連勝加成，已經算在 current_score 裡) + 爬塔高度加成(每爬10層+5分)
+  // (企劃書第九節；戰功勳章分目前還沒有可以買的商店，先跳過，等 Phase4 商店上線再併進來)
+  async function computeCareerStandings(eventId) {
+    const [queueRows, progressRows] = await Promise.all([
+      client.from("career_pvp_queue").select("*, player:player_id(name)").eq("event_id", eventId),
+      client.from("career_progress").select("player_id, floor").eq("event_id", eventId),
+    ]);
+    if (queueRows.error) throw queueRows.error;
+    if (progressRows.error) throw progressRows.error;
+    const floorByPlayer = {};
+    (progressRows.data || []).forEach((p) => (floorByPlayer[p.player_id] = p.floor));
+    const rows = (queueRows.data || []).map((q) => {
+      const floor = floorByPlayer[q.player_id] || 0;
+      const floorBonus = Math.floor(floor / 10) * 5;
+      return { queueEntry: q, floor, floorBonus, score: q.current_score + floorBonus };
+    });
+    rows.sort((a, b) => b.score - a.score);
+    return rows;
+  }
+
+  // 職業養成對決結束時呼叫:結算名次、套用 reward_plan、順便判定稱號。
+  async function closeCareerEvent(eventId) {
+    const standings = await computeCareerStandings(eventId);
+    const ev = await getEvent(eventId);
+    for (let i = 0; i < standings.length; i++) {
+      const rank = i + 1;
+      const row = standings[i];
+      await client
+        .from("career_pvp_queue")
+        .update({ final_rank: rank, reward: row.queueEntry.reward || rewardForRank(ev, rank) })
+        .eq("id", row.queueEntry.id);
+    }
+    await setEventStatus(eventId, "closed");
+    await awardCareerTitles(eventId, standings);
+    return standings;
+  }
+
+  // 檢查「夜市擂台之王」(積分第一)、「爬塔霸主」(爬完目前開放的所有樓層)這兩個稱號，
+  // 拿第一名的話也順手疊加 total_championships，讓 first_championship/triple_champion
+  // 這兩個原本給錦標賽制用的稱號也能透過職業養成對決拿到，不用另外重寫一套判定。
+  // 「歷史最高樓層」是取最大值、不是累加，grantTitleAndStats 只做累加，所以這裡另外用
+  // 讀出來比大小再寫回去的方式處理，不能跟其他累計數字混在同一個 statPatch 裡。
+  async function awardCareerTitles(eventId, standings) {
+    if (!standings || !standings.length) return;
+    const topFloor = window.CareerFloors ? window.CareerFloors.FLOORS.length : 20;
+    for (let i = 0; i < standings.length; i++) {
+      const row = standings[i];
+      const playerId = row.queueEntry.player_id;
+      const titleKeys = [];
+      const profile = await getOrCreatePlayerProfile(playerId);
+
+      if (i === 0) {
+        titleKeys.push("career_champion", "first_championship");
+        const totalChampionships = ((profile.lifetime_stats || {}).total_championships || 0) + 1;
+        if (totalChampionships >= 3) titleKeys.push("triple_champion");
+      }
+      if (row.floor >= topFloor) titleKeys.push("tower_conqueror");
+
+      const prevHighest = (profile.lifetime_stats || {}).career_highest_floor || 0;
+      if (row.floor > prevHighest) {
+        await client
+          .from("player_profiles")
+          .update({ lifetime_stats: { ...(profile.lifetime_stats || {}), career_highest_floor: row.floor } })
+          .eq("player_id", playerId);
+      }
+
+      const statPatch = { career_total_wins: row.queueEntry.wins || 0 };
+      if (i === 0) statPatch.total_championships = 1;
+      if (titleKeys.length || row.queueEntry.wins) await grantTitleAndStats(playerId, titleKeys, statPatch);
+    }
   }
 
   return {
@@ -2443,5 +2820,18 @@ const db = (function () {
     updateCareerMatchState,
     finishCareerMatch,
     addCareerTestBot,
+    getOrCreateCareerProgress,
+    trainForCareerCoins,
+    challengeCareerFloor,
+    allocateCareerStatPoint,
+    toggleCareerAutoFarm,
+    processCareerAutoFarmTicks,
+    getCareerProgressFor,
+    startCareerTrainingPhase,
+    endCareerTrainingPhaseNow,
+    maybeAdvanceCareerPhase,
+    computeCareerStandings,
+    closeCareerEvent,
+    awardCareerTitles,
   };
 })();

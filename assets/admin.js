@@ -468,15 +468,29 @@ async function renderAuctionAdminPanel(container, ev) {
   standings.forEach((row) => container.appendChild(auctionParticipantRow(row.participant, onSaved)));
 }
 
+// 職業養成對決訓練期倒數文字，卡片重繪時算一次就好(不需要到秒更新，主辦人畫面本來就會定期整批重繪)
+function careerTrainingCountdownText(ev) {
+  const endsAt = ev.rules && ev.rules.trainingEndsAt;
+  if (!endsAt) return "";
+  const ms = new Date(endsAt).getTime() - Date.now();
+  if (ms <= 0) return "時間快到了，隨時會自動切到對戰期";
+  const totalSec = Math.ceil(ms / 1000);
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `剩餘 ${min} 分 ${sec} 秒`;
+}
+
 function eventAdminCard(ev) {
   const card = document.createElement("div");
   card.className = "card";
   const isClosed = ev.status === "closed";
   const isAuction = ev.game_type === "auction";
   const isCareer = ev.game_type === "career";
+  const careerPhase = isCareer ? (ev.rules && ev.rules.careerPhase) : null;
 
   // 職業養成對決不用「鎖定名單/產生賽程」這一步:玩家在活動開放中就能直接進 career.html
-  // 選職業、加入配對佇列，系統背景持續配對，不需要主辦人手動觸發開始
+  // 選職業、加入配對佇列，系統背景持續配對，不需要主辦人手動觸發開始。
+  // 訓練期/對戰期則是另外一組獨立的按鈕(見下面 career-phase-row)，跟這顆主按鈕無關。
   const primaryActionBtn = isAuction
     ? !ev.locked && !isClosed
       ? `<button class="btn small" data-action="start-auction">${ui.icon("gavel")}開始拍賣</button>`
@@ -485,6 +499,21 @@ function eventAdminCard(ev) {
     ? ""
     : !ev.locked && !isClosed
     ? `<button class="btn small" data-action="lock">${ui.icon("lock")}鎖定名單，產生賽程</button>`
+    : "";
+
+  const careerPhaseRow = isCareer && !isClosed
+    ? `<div class="action-row" style="margin-top:8px;">
+        ${
+          !careerPhase
+            ? `<button class="btn small" data-action="start-career-training">${ui.icon("hourglass")}開始訓練期(60分鐘)</button>`
+            : careerPhase === "training"
+            ? `<span class="tag" style="margin-right:8px;">${ui.icon("hourglass")}訓練期倒數中，${ui.esc(
+                careerTrainingCountdownText(ev)
+              )}</span>
+               <button class="btn ghost small" data-action="end-career-training-now">${ui.icon("flag-off")}提前結束訓練期，開放PVP</button>`
+            : `<span class="tag">${ui.icon("swords")}對戰期進行中</span>`
+        }
+      </div>`
     : "";
 
   card.innerHTML = `
@@ -506,6 +535,7 @@ function eventAdminCard(ev) {
         ${!isClosed ? `<button class="btn ghost small" data-action="close">${ui.icon("flag")}結束活動</button>` : ""}
         <button class="btn ghost small outline-danger" data-action="delete">${ui.icon("trash-2")}刪除活動</button>
       </div>
+      ${careerPhaseRow}
     </div>
     <div class="bracket-summary"></div>
     <div class="participants"></div>
@@ -540,6 +570,8 @@ function eventAdminCard(ev) {
       try {
         if (isAuction) {
           await db.closeAuctionEvent(ev.id); // 順便結算名次、套用獎勵設定
+        } else if (isCareer) {
+          await db.closeCareerEvent(ev.id); // 順便結算名次、套用獎勵設定、判定稱號
         } else {
           await db.setEventStatus(ev.id, "closed");
         }
@@ -547,6 +579,39 @@ function eventAdminCard(ev) {
       } catch (e) {
         await ui.alert(e.message || "結束活動失敗", { title: "操作失敗", tone: "danger" });
         closeBtn.disabled = false;
+      }
+    };
+  }
+
+  const startTrainingBtn = card.querySelector('[data-action="start-career-training"]');
+  if (startTrainingBtn) {
+    startTrainingBtn.onclick = async () => {
+      startTrainingBtn.disabled = true;
+      startTrainingBtn.innerHTML = ui.icon("loader-circle") + "開始中...";
+      try {
+        await db.startCareerTrainingPhase(ev.id, 60);
+        loadAll();
+      } catch (e) {
+        await ui.alert(e.message || "開始訓練期失敗", { title: "操作失敗", tone: "danger" });
+        startTrainingBtn.disabled = false;
+      }
+    };
+  }
+  const endTrainingBtn = card.querySelector('[data-action="end-career-training-now"]');
+  if (endTrainingBtn) {
+    endTrainingBtn.onclick = async () => {
+      const ok = await ui.confirm("確定要提前結束訓練期嗎?結束後爬塔功能會關閉，玩家改成可以開始PVP對戰。", {
+        title: "提前結束訓練期",
+        confirmText: "結束訓練期",
+      });
+      if (!ok) return;
+      endTrainingBtn.disabled = true;
+      try {
+        await db.endCareerTrainingPhaseNow(ev.id);
+        loadAll();
+      } catch (e) {
+        await ui.alert(e.message || "操作失敗", { title: "操作失敗", tone: "danger" });
+        endTrainingBtn.disabled = false;
       }
     };
   }

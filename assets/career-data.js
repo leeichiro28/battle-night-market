@@ -118,6 +118,30 @@ window.CareerData = (function () {
     return Object.keys(CLASS_INFO).map((key) => ({ key, ...CLASS_INFO[key] }));
   }
 
+  // Phase2:職業基礎值 + 自由數值點分配 + 裝備加成,算出目前實際戰鬥數值。
+  // 1點數值點 = 攻擊+1/防禦+1/速度+1/HP+3/幸運+1(企劃書第三節)
+  function applyProgress(finalClassKey, statAlloc, equipment) {
+    const base = computeStats(finalClassKey);
+    if (!base) return null;
+    const alloc = statAlloc || {};
+    const out = { ...base };
+    out.atk += alloc.atk || 0;
+    out.def += alloc.def || 0;
+    out.spd += alloc.spd || 0;
+    out.luck += alloc.luck || 0;
+    out.hp += (alloc.hp || 0) * 3;
+    if (equipment) {
+      ["weapon", "armor", "accessory"].forEach((slot) => {
+        const item = equipment[slot];
+        if (!item) return;
+        if (item.statKey) out[item.statKey] += item.statValue || 0;
+        if (item.extraHp) out.hp += item.extraHp;
+      });
+    }
+    out.maxHp = out.hp;
+    return out;
+  }
+
   return {
     BASE_STATS,
     BASE_CRIT,
@@ -127,6 +151,7 @@ window.CareerData = (function () {
     CLASS_INFO,
     CLASS_EFFECTS,
     computeStats,
+    applyProgress,
     critChance,
     listClasses,
   };

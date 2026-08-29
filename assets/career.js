@@ -55,12 +55,15 @@
       return;
     }
     document.getElementById("page-eyebrow").textContent = ev.name;
-    if (ev.status === "closed") {
-      app.innerHTML = emptyMsg("這場活動已經結束了。");
-      return;
-    }
+    const towerLink = document.getElementById("to-tower-link");
+    if (towerLink) towerLink.href = `tower.html?event=${eventId}`;
     const local = db.getLocalPlayer();
     myId = local && local.id;
+
+    if (ev.status === "closed") {
+      await renderClosedSummary();
+      return;
+    }
     if (!myId) {
       app.innerHTML = emptyMsg("請先在右上角使用 Discord 登入，才能選職業、加入配對。", "log-in");
       return;
@@ -70,9 +73,12 @@
 
     unsubQueue = db.onTableChange("career_pvp_queue", `event_id=eq.${eventId}`, scheduleRefresh);
     unsubMatches = db.onTableChange("career_matches", `event_id=eq.${eventId}`, scheduleRefresh);
-    // 任何開著這頁的分頁都幫忙推進配對(誰先掃到都一樣，match_career_players 本身是原子的)
+    // 任何開著這頁的分頁都幫忙推進配對、也幫忙檢查訓練期時間到了沒(誰先掃到都一樣，
+    // match_career_players/maybeAdvanceCareerPhase 本身都是安全可以重複呼叫的)
     scanTimer = setInterval(async () => {
       try {
+        const advanced = await db.maybeAdvanceCareerPhase(eventId);
+        if (advanced) ev = await db.getEventSafe(eventId);
         if (!activeMatch) {
           await db.scanCareerMatchmaking(eventId);
         }
@@ -81,6 +87,68 @@
         console.error(e);
       }
     }, 3000);
+  }
+
+  function trainingActive() {
+    return ev && ev.rules && ev.rules.careerPhase === "training";
+  }
+
+  // ---------------- 活動已結束:排行榜 + 賽後小傳 ----------------
+  async function renderClosedSummary() {
+    const standings = await db.computeCareerStandings(eventId);
+    const playerIds = standings.map((r) => r.queueEntry.player_id);
+    const profiles = await db.getPlayerProfiles(playerIds).catch(() => ({}));
+
+    let bioHtml = "";
+    if (myId) {
+      const mine = standings.find((r) => r.queueEntry.player_id === myId);
+      const build = await db.getMyCareerBuild(eventId, myId).catch(() => null);
+      if (mine && build) {
+        const info = CareerData.CLASS_INFO[build.final_class];
+        const rank = standings.indexOf(mine) + 1;
+        const winRate = mine.queueEntry.wins + mine.queueEntry.losses > 0
+          ? Math.round((mine.queueEntry.wins / (mine.queueEntry.wins + mine.queueEntry.losses)) * 100)
+          : 0;
+        bioHtml = `
+          <div style="background:var(--panel2);border:1px solid var(--gold-d);border-radius:var(--radius);padding:14px;margin-bottom:16px;">
+            <p style="margin:0 0 8px;font-weight:700;color:var(--gold);display:flex;align-items:center;gap:6px;">
+              ${ui.icon(info.icon)}你的賽後小傳
+            </p>
+            <p style="margin:0;font-size:13px;line-height:1.9;color:var(--ink);">
+              這一場你選擇了<b>${ui.esc(info.name)}</b>之路，一路爬到了<b>第 ${mine.floor} 層</b>，
+              PVP 打了 ${mine.queueEntry.wins + mine.queueEntry.losses} 場、${mine.queueEntry.wins} 勝 ${mine.queueEntry.losses} 敗(勝率 ${winRate}%)，
+              最終積分 <b style="color:var(--gold);">${mine.score}</b> 分，排名第 <b>${rank}</b> 名。
+              ${mine.queueEntry.reward ? `獲得獎勵:<b style="color:var(--gold);">${ui.esc(mine.queueEntry.reward)}</b>。` : ""}
+            </p>
+          </div>`;
+      }
+    }
+
+    const rows = standings
+      .map((row, idx) => {
+        const rank = idx + 1;
+        const isMe = myId && row.queueEntry.player_id === myId;
+        const name = (row.queueEntry.player && row.queueEntry.player.name) || "?";
+        const profile = profiles[row.queueEntry.player_id];
+        const titleLine = profile ? ui.titleBadge(profile.display_title) : "";
+        const rewardLine = row.queueEntry.reward
+          ? `<span class="reward-badge">${ui.icon("gift")}${ui.esc(row.queueEntry.reward)}</span>`
+          : "";
+        return `
+          <div class="lb-row${isMe ? " me" : ""}">
+            ${ui.rankBadge(rank)}
+            <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}${titleLine}${rewardLine}
+              <span style="color:var(--ink-dim);font-size:11px;"> · 第${row.floor}層 · ${row.queueEntry.wins}勝${row.queueEntry.losses}敗</span>
+            </span>
+            <span class="lb-score">${row.score}</span>
+          </div>`;
+      })
+      .join("");
+
+    app.innerHTML = `
+      ${emptyMsg("這場活動已經結束了，以下是最終排行榜。", "flag")}
+      ${bioHtml}
+      <div style="margin-top:10px;">${rows || emptyMsg("還沒有人排隊過。", "users")}</div>`;
   }
 
   async function refreshAll() {
@@ -183,11 +251,25 @@
         </div>
         <div class="cc-ult"><b>大招 · ${ui.esc(info.ultName)}</b><br/>${ui.esc(info.ultDesc)}</div>
       </div>
-      <div style="text-align:right;margin:-10px 0 14px;">
+      <div style="text-align:right;margin:-10px 0 14px;display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn ghost small" id="show-leaderboard-btn">${ui.icon("list-ordered")}目前排行榜</button>
         <button class="btn ghost small" id="reroll-btn">${ui.icon("refresh-cw")}重選職業</button>
-      </div>`;
+      </div>
+      <div id="inline-leaderboard"></div>`;
 
-    if (inQueue) {
+    if (trainingActive()) {
+      const endsAt = ev.rules.trainingEndsAt;
+      const remainMin = endsAt ? Math.max(0, Math.ceil((new Date(endsAt).getTime() - Date.now()) / 60000)) : null;
+      html += `
+        <div class="career-queue-box">
+          ${ui.icon("hourglass")}
+          <p style="margin:10px 0 4px;font-weight:700;">訓練期進行中${remainMin != null ? `，還剩約 ${remainMin} 分鐘` : ""}</p>
+          <p style="font-size:11.5px;color:var(--ink-dim);">PVP 對戰要等訓練期結束才會開放，先去爬塔練功、加點、拚裝備吧!</p>
+          <div style="margin-top:14px;">
+            <a class="btn" href="tower.html?event=${eventId}">${ui.icon("mountain")}前往爬塔</a>
+          </div>
+        </div>`;
+    } else if (inQueue) {
       const waitedSec = Math.max(0, Math.round((Date.now() - new Date(queueEntry.last_matched_at).getTime()) / 1000));
       html += `
         <div class="career-queue-box">
@@ -214,6 +296,41 @@
 
     app.innerHTML = html;
 
+    const lbBtn = document.getElementById("show-leaderboard-btn");
+    if (lbBtn) {
+      lbBtn.onclick = async () => {
+        const box = document.getElementById("inline-leaderboard");
+        if (box.dataset.shown === "1") {
+          box.innerHTML = "";
+          box.dataset.shown = "0";
+          lbBtn.innerHTML = ui.icon("list-ordered") + "目前排行榜";
+          return;
+        }
+        box.innerHTML = emptyMsg("載入中...", "loader-circle");
+        try {
+          const standings = await db.computeCareerStandings(eventId);
+          box.innerHTML = standings.length
+            ? standings
+                .map((row, idx) => {
+                  const isMe = row.queueEntry.player_id === myId;
+                  const name = (row.queueEntry.player && row.queueEntry.player.name) || "?";
+                  return `<div class="lb-row${isMe ? " me" : ""}">
+                    ${ui.rankBadge(idx + 1)}
+                    <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}
+                      <span style="color:var(--ink-dim);font-size:11px;"> · 第${row.floor}層 · ${row.queueEntry.wins}勝${row.queueEntry.losses}敗</span>
+                    </span>
+                    <span class="lb-score">${row.score}</span>
+                  </div>`;
+                })
+                .join("")
+            : emptyMsg("還沒有人排隊過。", "users");
+          box.dataset.shown = "1";
+          lbBtn.innerHTML = ui.icon("chevron-up") + "收起排行榜";
+        } catch (e) {
+          box.innerHTML = emptyMsg("排行榜載入失敗", "triangle-alert");
+        }
+      };
+    }
     const rerollBtn = document.getElementById("reroll-btn");
     if (rerollBtn) {
       rerollBtn.onclick = async () => {

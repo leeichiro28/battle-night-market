@@ -787,6 +787,9 @@ create table if not exists career_pvp_queue (
   current_score int not null default 0,
   wins int not null default 0,
   losses int not null default 0,
+  win_streak int not null default 0,     -- 目前連勝數，輸一場歸零(企劃書第九節「連勝加成」)
+  final_rank int,                         -- 活動結束結算時填入(見 finish_career_match/closeCareerEvent)
+  reward text,
   last_matched_at timestamptz default now(),
   created_at timestamptz default now(),
   unique(event_id, player_id)
@@ -794,7 +797,6 @@ create table if not exists career_pvp_queue (
 alter table career_pvp_queue enable row level security;
 drop policy if exists "anon all career_pvp_queue" on career_pvp_queue;
 create policy "anon all career_pvp_queue" on career_pvp_queue for all using (true) with check (true);
-
 -- PVP 對戰場次。獨立於 matches 表之外，state 的欄位結構(hp1/hp2/atk1.../m1/m2/log)自己一套，
 -- 不會跟骰子/五手勢的 state 混在一起。initialized 是給「配對成功後才把雙方完整戰鬥數值寫進 state」
 -- 這一步用的旗標(見 assets/career.js initializeCareerMatch)，兩個分頁同時偵測到新場次也只有一個
@@ -872,8 +874,8 @@ begin
 end;
 $$;
 
--- 一場 PVP 打完呼叫:贏家 +10 分、輸家 +2 分(企劃書第九節)，各自 wins/losses 累計，
--- 然後兩人的佇列狀態都退回 waiting、last_matched_at 更新成現在，可以馬上排下一場繼續測試引擎。
+-- 一場 PVP 打完呼叫:贏家 +10 分再疊加連勝加成(每連勝+2分，最高再+10分封頂)、輸家 +2 分且連勝歸零
+-- (企劃書第九節)，然後兩人的佇列狀態都退回 waiting、last_matched_at 更新成現在，可以馬上排下一場。
 -- 用 status='matched' 當條件鎖，兩個分頁同時判定同一場結束也只有一次會真的加到分。
 create or replace function finish_career_match(p_match_id uuid, p_winner_id uuid, p_loser_id uuid)
 returns void
@@ -881,6 +883,8 @@ language plpgsql
 as $$
 declare
   m record;
+  winner_streak int;
+  streak_bonus int;
 begin
   select * into m from career_matches where id = p_match_id and status = 'active';
   if m is null then
@@ -889,15 +893,51 @@ begin
 
   update career_matches set status = 'done', winner_id = p_winner_id where id = p_match_id;
 
+  select win_streak + 1 into winner_streak from career_pvp_queue where event_id = m.event_id and player_id = p_winner_id;
+  streak_bonus := least(coalesce(winner_streak, 1) * 2, 10);
+
   update career_pvp_queue
-  set status = 'waiting', current_score = current_score + 10, wins = wins + 1, last_matched_at = now()
+  set status = 'waiting',
+      current_score = current_score + 10 + streak_bonus,
+      wins = wins + 1,
+      win_streak = coalesce(winner_streak, 1),
+      last_matched_at = now()
   where event_id = m.event_id and player_id = p_winner_id;
 
   update career_pvp_queue
-  set status = 'waiting', current_score = current_score + 2, losses = losses + 1, last_matched_at = now()
+  set status = 'waiting', current_score = current_score + 2, losses = losses + 1, win_streak = 0, last_matched_at = now()
   where event_id = m.event_id and player_id = p_loser_id;
 end;
 $$;
+
+-- ============================================
+-- 職業養成對決 Phase 2:爬塔骨架(企劃書第十二、十三節)
+-- ============================================
+
+-- 每個玩家在這場活動裡的爬塔進度。跟 career_builds(選的最終職業)是分開的兩張表——
+-- 職業是 Phase1 就定案的「你是誰」，這張表是「你爬塔爬得怎麼樣」，Phase3 把訓練期/對戰期接起來
+-- 之後，PVP 的戰鬥數值才會改成讀這張表(職業基礎值 + stat_alloc + equipment)而不是 Phase1
+-- 那個寫死的 CareerData.computeStats()。
+create table if not exists career_progress (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid references events(id) on delete cascade,
+  player_id uuid references players(id) on delete cascade,
+  floor int not null default 0,          -- 已清到第幾層(0=還沒清過任何一層)
+  level int not null default 1,
+  exp int not null default 0,
+  coins int not null default 0,
+  stat_points int not null default 0,    -- 還沒花的自由數值點
+  stat_alloc jsonb not null default '{"atk":0,"def":0,"spd":0,"hp":0,"luck":0}'::jsonb,
+  equipment jsonb not null default '{"weapon":null,"armor":null,"accessory":null}'::jsonb,
+  train_ready_at timestamptz not null default now(),
+  auto_farm_floor int,                    -- 目前開著自動掛機的樓層,null=沒開
+  auto_farm_last_at timestamptz not null default now(),
+  created_at timestamptz default now(),
+  unique(event_id, player_id)
+);
+alter table career_progress enable row level security;
+drop policy if exists "anon all career_progress" on career_progress;
+create policy "anon all career_progress" on career_progress for all using (true) with check (true);
 
 -- ============================================
 -- Realtime(Database Publications):以下這段可以整份跟著上面一起貼到 SQL Editor 執行，
@@ -912,7 +952,7 @@ begin
     'events', 'event_participants', 'matches', 'match_bets',
     'auction_participants', 'auction_lots', 'auction_bids',
     'auction_tasks', 'auction_task_answers', 'auction_price_guesses',
-    'career_pvp_queue', 'career_matches'
+    'career_pvp_queue', 'career_matches', 'career_progress'
   ]
   loop
     if not exists (
