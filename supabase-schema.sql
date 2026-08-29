@@ -932,12 +932,49 @@ create table if not exists career_progress (
   train_ready_at timestamptz not null default now(),
   auto_farm_floor int,                    -- 目前開著自動掛機的樓層,null=沒開
   auto_farm_last_at timestamptz not null default now(),
+  auto_farm_last_result jsonb,            -- 最近一次背景自動戰鬥的結果,給畫面顯示「掛機真的有在動」用
+  pending_event jsonb,                    -- 觸發了需要玩家二選一的事件(神秘寶箱/路過商人/轉職邀請)，
+                                           -- 存在這裡等玩家選完才清空(見 career-events.js)
+  stat_points_bought int not null default 0, -- 商店買過幾次「直接加1點數值」，價格會越買越貴
+  legendary_purchased boolean not null default false, -- 傳說裝備整場限購1件(商店買或抽獎機中都算)
   created_at timestamptz default now(),
   unique(event_id, player_id)
 );
 alter table career_progress enable row level security;
 drop policy if exists "anon all career_progress" on career_progress;
 create policy "anon all career_progress" on career_progress for all using (true) with check (true);
+-- 如果是舊版本已經跑過一次上面的 create table(那時候還沒有這個欄位)，這行補上去，
+-- 已經是新版本、欄位本來就存在的話這行不會出錯也不會做任何事。
+alter table career_progress add column if not exists auto_farm_last_result jsonb;
+alter table career_progress add column if not exists pending_event jsonb;
+alter table career_progress add column if not exists stat_points_bought int not null default 0;
+alter table career_progress add column if not exists legendary_purchased boolean not null default false;
+
+-- 買戰功勳章:扣幣 + 加排行分數，兩個表要一起改，包在同一個交易裡才不會出現
+-- 「幣扣了但分沒加到」或反過來的半吊子狀態。用 for update 鎖住那一列，
+-- 兩個分頁同時搶著買也不會用到同一份舊的coins數字算兩次。
+create or replace function buy_career_medal(p_event_id uuid, p_player_id uuid, p_price int, p_score_bonus int)
+returns void
+language plpgsql
+as $$
+declare
+  prog record;
+begin
+  select * into prog from career_progress where event_id = p_event_id and player_id = p_player_id for update;
+  if prog is null then
+    raise exception '找不到爬塔進度，請先進爬塔頁面';
+  end if;
+  if prog.coins < p_price then
+    raise exception '幣不夠';
+  end if;
+
+  update career_progress set coins = coins - p_price where id = prog.id;
+
+  insert into career_pvp_queue(event_id, player_id, current_score)
+  values (p_event_id, p_player_id, p_score_bonus)
+  on conflict (event_id, player_id) do update set current_score = career_pvp_queue.current_score + p_score_bonus;
+end;
+$$;
 
 -- ============================================
 -- Realtime(Database Publications):以下這段可以整份跟著上面一起貼到 SQL Editor 執行，

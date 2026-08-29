@@ -1,9 +1,12 @@
-// 職業養成對決 · 頁面控制(Phase1:驗證引擎版)
+// 職業養成對決 · 頁面控制(PVP對戰頁面)
 //
-// 三種畫面狀態,依序判斷:
-//   1. 還沒選職業 -> renderBuildPicker()
-//   2. 選好了但沒在對戰中 -> renderLobby()(佇列/等待/測試機器人)
-//   3. 配對成功 -> renderBattle()(PVP 對戰畫面)
+// 兩種畫面狀態:
+//   1. 沒在對戰中 -> renderLobby()(職業狀態/佇列/測試機器人/排行榜)
+//   2. 配對成功 -> renderBattle()(PVP 對戰畫面)
+//
+// 職業建置(career_builds)一進來就自動是「見習學徒」(db.getOrCreateCareerBuild)，
+// 真正選路線轉職是在 tower.html 練到 CareerData.TRANSFER_LEVEL 等級之後才做的事，
+// 這支檔案不再負責選職業。
 //
 // 配對推進(match_career_players)、初始化戰鬥數值(initializeCareerMatch)、回合結算
 // (CareerEngine.resolveRound)都是「誰的分頁先偵測到就誰做」，資料庫那端的條件寫入
@@ -165,75 +168,18 @@
       submittedThisRound = false;
       clearInterval(roundTimer);
     }
-    myBuild = await db.getMyCareerBuild(eventId, myId);
-    if (!myBuild) {
-      renderBuildPicker();
-      return;
-    }
+    myBuild = await db.getOrCreateCareerBuild(eventId, myId);
     await renderLobby();
-  }
-
-  // ---------------- 畫面 1:選職業 ----------------
-  function renderBuildPicker() {
-    const tree = CareerData.CAREER_TREE;
-    let html = `
-      <div class="empty" style="text-align:left;flex-direction:column;align-items:flex-start;padding:0 0 16px;">
-        <p style="font-size:12.5px;color:var(--ink-dim);line-height:1.7;margin:0;">
-          Phase1 驗證版:先直接選一整條路線來測試戰鬥引擎(等於同時定案 tier1+tier2 兩層技能點+最終職業)。
-          正式版會在爬塔過程中一層一層點技能樹。選定後可以再回來這頁重選，直到你真的上場對戰為止。
-        </p>
-      </div>`;
-    Object.keys(tree).forEach((pathKey) => {
-      const path = tree[pathKey];
-      html += `<div class="career-path-block">
-        <div class="career-path-title">${ui.icon(path.icon)}${ui.esc(path.label)}</div>
-        <div class="career-class-grid">`;
-      Object.keys(path.lines).forEach((lineKey) => {
-        const line = path.lines[lineKey];
-        const cls = line.final;
-        const stats = CareerData.computeStats(cls.key);
-        html += `
-          <div class="career-class-card" data-class="${cls.key}" data-path="${pathKey}">
-            <div class="cc-head">${ui.icon(cls.icon)}${ui.esc(cls.name)}</div>
-            <div class="cc-desc">
-              ${ui.esc(line.tier1.name)}:${ui.esc(line.tier1.desc)}<br/>
-              ${ui.esc(line.tier2.name)}:${ui.esc(line.tier2.desc)}
-            </div>
-            <div class="cc-stats">
-              <span class="cc-stat">攻${stats.atk}</span>
-              <span class="cc-stat">防${stats.def}</span>
-              <span class="cc-stat">速${stats.spd}</span>
-              <span class="cc-stat">HP${stats.hp}</span>
-              <span class="cc-stat">幸運${stats.luck}</span>
-            </div>
-            <div class="cc-ult"><b>大招 · ${ui.esc(cls.ultName)}</b><br/>${ui.esc(cls.ultDesc)}</div>
-          </div>`;
-      });
-      html += `</div></div>`;
-    });
-    app.innerHTML = html;
-    app.querySelectorAll(".career-class-card").forEach((card) => {
-      card.onclick = async () => {
-        const key = card.dataset.class;
-        const pathKey = card.dataset.path;
-        const info = CareerData.CLASS_INFO[key];
-        app.querySelectorAll(".career-class-card").forEach((c) => (c.style.pointerEvents = "none"));
-        card.style.opacity = "0.6";
-        try {
-          await db.saveCareerBuild(eventId, myId, { path: pathKey, finalClass: key, skillKeys: info.skillKeys });
-          await refreshAll();
-        } catch (e) {
-          await ui.alert("選擇職業失敗:" + (e.message || "未知錯誤"), { title: "操作失敗", tone: "danger" });
-          await refreshAll();
-        }
-      };
-    });
   }
 
   // ---------------- 畫面 2:佇列/等待 ----------------
   async function renderLobby() {
     const info = CareerData.CLASS_INFO[myBuild.final_class];
-    const stats = CareerData.computeStats(myBuild.final_class);
+    const progress = await db.getCareerProgressFor(eventId, myId).catch(() => null);
+    const stats = progress
+      ? CareerData.applyProgress(myBuild.final_class, progress.stat_alloc, progress.equipment)
+      : CareerData.computeStats(myBuild.final_class);
+    const isNovice = myBuild.final_class === "novice";
     const queueEntry = await db.getMyCareerQueueEntry(eventId, myId);
     const inQueue = queueEntry && queueEntry.status === "waiting";
 
@@ -251,9 +197,13 @@
         </div>
         <div class="cc-ult"><b>大招 · ${ui.esc(info.ultName)}</b><br/>${ui.esc(info.ultDesc)}</div>
       </div>
+      ${
+        isNovice
+          ? `<div class="empty" style="text-align:left;font-size:11.5px;margin:-8px 0 14px;">${ui.icon("info")}你還沒轉職，PVP數值會比較弱。去爬塔練到 Lv.${CareerData.TRANSFER_LEVEL} 就能轉職成正式職業。</div>`
+          : ""
+      }
       <div style="text-align:right;margin:-10px 0 14px;display:flex;justify-content:flex-end;gap:8px;">
         <button class="btn ghost small" id="show-leaderboard-btn">${ui.icon("list-ordered")}目前排行榜</button>
-        <button class="btn ghost small" id="reroll-btn">${ui.icon("refresh-cw")}重選職業</button>
       </div>
       <div id="inline-leaderboard"></div>`;
 
@@ -329,17 +279,6 @@
         } catch (e) {
           box.innerHTML = emptyMsg("排行榜載入失敗", "triangle-alert");
         }
-      };
-    }
-    const rerollBtn = document.getElementById("reroll-btn");
-    if (rerollBtn) {
-      rerollBtn.onclick = async () => {
-        if (inQueue) {
-          await ui.alert("配對中不能重選職業，請先等這一場配對完成。", { title: "無法重選" });
-          return;
-        }
-        myBuild = null;
-        renderBuildPicker();
       };
     }
     const joinBtn = document.getElementById("join-queue-btn");

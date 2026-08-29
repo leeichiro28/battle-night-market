@@ -64,10 +64,11 @@ function eventRow(ev) {
   const div = document.createElement("div");
   div.className = "card event-card";
   const deadlinePassed = ev.registration_deadline && new Date() > new Date(ev.registration_deadline);
-  // 夜市拍賣、職業養成對決都是完全獨立的遊戲類型、沒有賽程/晉級，不走 lobby.html，直接進各自的頁面
+  // 夜市拍賣、職業養成對決都是完全獨立的遊戲類型、沒有賽程/晉級，不走 lobby.html，直接進各自的頁面。
+  // 職業養成對決先進爬塔頁面(訓練期在那邊進行)，PVP對戰頁面裡有明顯的按鈕可以再切過去。
   const isAuction = ev.game_type === "auction";
   const isCareer = ev.game_type === "career";
-  const playPage = isAuction ? "auction.html" : isCareer ? "career.html" : "lobby.html";
+  const playPage = isAuction ? "auction.html" : isCareer ? "tower.html" : "lobby.html";
   div.innerHTML = `
     <div class="meta">
       <h3>${ui.esc(ev.name)}</h3>

@@ -60,6 +60,7 @@ window.CareerEngine = (function () {
     if (isUlt) {
       if (attackerClass === "warrior") dmgMult = 2; // 怒吼衝鋒:本回合傷害x2
       else if (attackerClass === "mage") ignoreDefRatio = 1; // 魔力爆發:無視防禦
+      else if (attackerClass === "novice") dmgMult = CD.CLASS_EFFECTS.novice.ultDamageMult || 1.3; // 拼盡全力:還沒轉職，大招比較弱
       // assassin(暗殺)、archer(連環箭)的大招效果在呼叫端另外處理(必爆/多打一次)
     }
 
@@ -157,7 +158,7 @@ window.CareerEngine = (function () {
       const defHpNow = side === 1 ? hp2 : hp1;
       const hpRatio = defHpNow / defMaxHp;
 
-      const wantsUlt = m && m.action === "ult" && !used && ["warrior", "assassin", "mage", "archer"].includes(cls);
+      const wantsUlt = m && m.action === "ult" && !used && ["warrior", "assassin", "mage", "archer", "novice"].includes(cls);
 
       // 弓箭手「連環箭」獨立處理:整個攻擊流程多跑一次(不是傷害加成),
       // 第二次攻擊前要重新確認對方是不是已經被第一次打死了

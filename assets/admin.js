@@ -1,4 +1,4 @@
-const GAME_PAGE = { dice: "dice.html", rps5: "rps5.html", auction: "auction.html", career: "career.html" };
+const GAME_PAGE = { dice: "dice.html", rps5: "rps5.html", auction: "auction.html", career: "tower.html" };
 
 // 後台勾選用的進階規則說明(圖示與名稱共用 ui.RULE，這裡只補上說明文字)
 const RULE_ROWS = [

@@ -93,7 +93,27 @@ window.CareerData = (function () {
     assassin: { statBonus: { luck: 5 }, lethalRhythmMax: 0.3 },
     mage: { statBonus: {}, skillDmgBonus: 2 },
     healer: { statBonus: {}, healBonus: 2, regenPerRound: 1 },
+    novice: { statBonus: {}, ultDamageMult: 1.3 },
   };
+
+  // 每個人一開始都是「見習學徒」，還沒轉職，數值就是最單純的基礎值，大招也只是威力比較弱的
+  // 「拼盡全力」(傷害x1.3，比 6 個正式職業的大招都弱)。轉職前不用選路線，PVP也打得動，
+  // 只是比較吃虧——這樣就算訓練期結束前沒空爬塔轉職，也不會卡住打不了對戰。
+  CLASS_INFO.novice = {
+    path: "novice",
+    pathLabel: "見習",
+    lineKey: "novice",
+    name: "見習學徒",
+    icon: "user",
+    ultName: "拼盡全力",
+    ultDesc: "這回合傷害 x1.3(還沒轉職，大招比較弱)",
+    tier1: null,
+    tier2: null,
+    skillKeys: [],
+  };
+
+  // 到這個等級之後，爬塔頁面才會出現「轉職」的選項(企劃書:「有初始職業，到特定等級才轉職」)
+  const TRANSFER_LEVEL = 5;
 
   function computeStats(finalClassKey) {
     const info = CLASS_INFO[finalClassKey];
@@ -114,8 +134,11 @@ window.CareerData = (function () {
     return Math.min(0.95, c);
   }
 
+  // listClasses() 給「轉職挑選最終職業」用，不包含 novice(那不是可以選的目標，是起點)
   function listClasses() {
-    return Object.keys(CLASS_INFO).map((key) => ({ key, ...CLASS_INFO[key] }));
+    return Object.keys(CLASS_INFO)
+      .filter((key) => key !== "novice")
+      .map((key) => ({ key, ...CLASS_INFO[key] }));
   }
 
   // Phase2:職業基礎值 + 自由數值點分配 + 裝備加成,算出目前實際戰鬥數值。
@@ -150,6 +173,7 @@ window.CareerData = (function () {
     CAREER_TREE,
     CLASS_INFO,
     CLASS_EFFECTS,
+    TRANSFER_LEVEL,
     computeStats,
     applyProgress,
     critChance,
