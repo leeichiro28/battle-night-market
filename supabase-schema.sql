@@ -937,6 +937,8 @@ create table if not exists career_progress (
                                            -- 存在這裡等玩家選完才清空(見 career-events.js)
   stat_points_bought int not null default 0, -- 商店買過幾次「直接加1點數值」，價格會越買越貴
   legendary_purchased boolean not null default false, -- 傳說裝備整場限購1件(商店買或抽獎機中都算)
+  fragments int not null default 0, -- (已被背包系統取代，保留欄位不刪避免破壞舊資料，新邏輯不再使用)
+  inventory jsonb not null default '[]'::jsonb, -- 背包:撿到/買到但還沒穿上的裝備，每件都有自己的 id
   created_at timestamptz default now(),
   unique(event_id, player_id)
 );
@@ -949,6 +951,21 @@ alter table career_progress add column if not exists auto_farm_last_result jsonb
 alter table career_progress add column if not exists pending_event jsonb;
 alter table career_progress add column if not exists stat_points_bought int not null default 0;
 alter table career_progress add column if not exists legendary_purchased boolean not null default false;
+alter table career_progress add column if not exists fragments int not null default 0;
+alter table career_progress add column if not exists inventory jsonb not null default '[]'::jsonb;
+
+-- 全服事件廣播:誰抽到傳說裝備、誰爬完所有樓層之類的大事，讓整場活動的人都看得到，
+-- 不用另外做訂閱/推播機制，前端用 onTableChange 訂閱 + 讀最近幾筆就好。
+create table if not exists career_broadcasts (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid references events(id) on delete cascade,
+  icon text not null default 'megaphone',
+  message text not null,
+  created_at timestamptz default now()
+);
+alter table career_broadcasts enable row level security;
+drop policy if exists "anon all career_broadcasts" on career_broadcasts;
+create policy "anon all career_broadcasts" on career_broadcasts for all using (true) with check (true);
 
 -- 買戰功勳章:扣幣 + 加排行分數，兩個表要一起改，包在同一個交易裡才不會出現
 -- 「幣扣了但分沒加到」或反過來的半吊子狀態。用 for update 鎖住那一列，
@@ -989,7 +1006,7 @@ begin
     'events', 'event_participants', 'matches', 'match_bets',
     'auction_participants', 'auction_lots', 'auction_bids',
     'auction_tasks', 'auction_task_answers', 'auction_price_guesses',
-    'career_pvp_queue', 'career_matches', 'career_progress'
+    'career_pvp_queue', 'career_matches', 'career_progress', 'career_broadcasts'
   ]
   loop
     if not exists (

@@ -94,11 +94,17 @@ window.CareerData = (function () {
     mage: { statBonus: {}, skillDmgBonus: 2 },
     healer: { statBonus: {}, healBonus: 2, regenPerRound: 1 },
     novice: { statBonus: {}, ultDamageMult: 1.3 },
+    novice_strength: { statBonus: { atk: 1, hp: 2 }, ultDamageMult: 1.35 },
+    novice_agility: { statBonus: { spd: 1, luck: 1 }, ultDamageMult: 1.35 },
+    novice_magic: { statBonus: { atk: 1 }, ultDamageMult: 1.35 },
   };
 
-  // 每個人一開始都是「見習學徒」，還沒轉職，數值就是最單純的基礎值，大招也只是威力比較弱的
-  // 「拼盡全力」(傷害x1.3，比 6 個正式職業的大招都弱)。轉職前不用選路線，PVP也打得動，
-  // 只是比較吃虧——這樣就算訓練期結束前沒空爬塔轉職，也不會卡住打不了對戰。
+  // 三段式轉職(企劃書):
+  //   Lv1~4  見習學徒，還沒選路，數值最單純，PVP也打得動只是比較吃虧
+  //   Lv5    選一個「系」(力量/敏捷/魔法三選一) -> 變成該系的學徒，數值/大招都比 Lv1 好一點，
+  //          但還沒定案最終職業
+  //   Lv15   在 Lv5 選的那個系裡面，選一條線 -> 正式轉職成 6 個最終職業之一(戰士/守衛/...)
+  // Lv5 選了力量系，Lv15 就只能在「戰士/守衛」裡面選，不能臨時跳去選敏捷系或魔法系的職業。
   CLASS_INFO.novice = {
     path: "novice",
     pathLabel: "見習",
@@ -106,14 +112,50 @@ window.CareerData = (function () {
     name: "見習學徒",
     icon: "user",
     ultName: "拼盡全力",
-    ultDesc: "這回合傷害 x1.3(還沒轉職，大招比較弱)",
+    ultDesc: "這回合傷害 x1.3(還沒選路，大招比較弱)",
+    tier1: null,
+    tier2: null,
+    skillKeys: [],
+  };
+  CLASS_INFO.novice_strength = {
+    path: "strength",
+    pathLabel: "力量系(未定final)",
+    lineKey: "novice",
+    name: "力量系學徒",
+    icon: "dumbbell",
+    ultName: "力量爆發",
+    ultDesc: "這回合傷害 x1.35(還沒轉正式職業，大招比較弱)",
+    tier1: null,
+    tier2: null,
+    skillKeys: [],
+  };
+  CLASS_INFO.novice_agility = {
+    path: "agility",
+    pathLabel: "敏捷系(未定final)",
+    lineKey: "novice",
+    name: "敏捷系學徒",
+    icon: "wind",
+    ultName: "疾風連擊",
+    ultDesc: "這回合傷害 x1.35(還沒轉正式職業，大招比較弱)",
+    tier1: null,
+    tier2: null,
+    skillKeys: [],
+  };
+  CLASS_INFO.novice_magic = {
+    path: "magic",
+    pathLabel: "魔法系(未定final)",
+    lineKey: "novice",
+    name: "魔法系學徒",
+    icon: "sparkles",
+    ultName: "魔力乍現",
+    ultDesc: "這回合傷害 x1.35(還沒轉正式職業，大招比較弱)",
     tier1: null,
     tier2: null,
     skillKeys: [],
   };
 
-  // 到這個等級之後，爬塔頁面才會出現「轉職」的選項(企劃書:「有初始職業，到特定等級才轉職」)
-  const TRANSFER_LEVEL = 5;
+  const TRANSFER_LEVEL_PATH = 5; // 到這個等級可以選一個系(力量/敏捷/魔法)
+  const TRANSFER_LEVEL_FINAL = 15; // 到這個等級可以在選好的系裡定案最終職業
 
   function computeStats(finalClassKey) {
     const info = CLASS_INFO[finalClassKey];
@@ -134,10 +176,13 @@ window.CareerData = (function () {
     return Math.min(0.95, c);
   }
 
-  // listClasses() 給「轉職挑選最終職業」用，不包含 novice(那不是可以選的目標，是起點)
-  function listClasses() {
+  // listClasses() 給「Lv15定案最終職業」用，不包含 novice 系列(那些是還沒定案的過渡狀態，
+  // 不是可以選的目標)。可傳 pathKey 只列出某一系底下的兩個職業(Lv5選了哪一系，Lv15就只能
+  // 在那系裡選)。
+  function listClasses(pathKey) {
     return Object.keys(CLASS_INFO)
-      .filter((key) => key !== "novice")
+      .filter((key) => !key.startsWith("novice"))
+      .filter((key) => !pathKey || CLASS_INFO[key].path === pathKey)
       .map((key) => ({ key, ...CLASS_INFO[key] }));
   }
 
@@ -173,7 +218,8 @@ window.CareerData = (function () {
     CAREER_TREE,
     CLASS_INFO,
     CLASS_EFFECTS,
-    TRANSFER_LEVEL,
+    TRANSFER_LEVEL_PATH,
+    TRANSFER_LEVEL_FINAL,
     computeStats,
     applyProgress,
     critChance,

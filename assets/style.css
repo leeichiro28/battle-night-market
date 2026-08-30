@@ -2005,3 +2005,25 @@ input,select,textarea{max-width:100%;min-width:0;}
 
 .career-queue-box{text-align:center;padding:22px 10px;}
 .career-queue-box .ico{color:var(--gold);}
+
+/* ===== career/tower 商店清單列(跟 .lb-row 同樣的橫向列表節奏) ===== */
+.shop-section-title{font-size:11.5px;color:var(--ink-dim);margin:0 0 6px;font-weight:700;}
+.shop-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line);}
+.shop-row:last-child{border-bottom:none;}
+.shop-row-name{flex:1;min-width:0;font-size:13px;font-weight:600;overflow-wrap:anywhere;}
+.shop-row-desc{display:block;font-size:11px;font-weight:400;color:var(--ink-dim);margin-top:2px;}
+.shop-row .btn{flex-shrink:0;white-space:nowrap;}
+@media (max-width:480px){
+  .shop-row{flex-wrap:wrap;}
+  .shop-row-name{flex:1 1 100%;order:2;}
+  .shop-row .btn{order:3;margin-left:auto;}
+}
+
+/* career.html / tower.html 頁面上方的來回連結，跟 .footer-nav 同樣的樸素箭頭連結樣式，
+   不要做成實心按鈕(之前做成 .btn 太搶眼，改成跟「回活動首頁」同一種調性) */
+.page-nav-link{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:13px;color:var(--ink-dim);text-decoration:none;
+  margin-bottom:14px;
+}
+.page-nav-link:hover{color:var(--ink);}

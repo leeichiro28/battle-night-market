@@ -1,7 +1,14 @@
-// 職業養成對決 · 爬塔頁面控制(Phase2:爬塔骨架)
+// 職業養成對決 · 爬塔頁面控制
 //
-// 畫面規格照企劃書第十三節「爬塔畫面UI規格」:頂部職業/等級/樓層/幣、經驗條、HP條、
-// 三顆行動按鈕(特訓/挑戰樓層/練功掛機)、戰報區。
+// 畫面是文件式分頁(跟後台/夜市拍賣商品清單同一套 .folder-tabs/.folder-tab-card)：
+// 「爬塔」「商店」「合成」「背包」，合成/背包目前是敬請期待的預留分頁，之後有東西了
+// 直接在 render() 裡加一個 case 就好，不用動分頁切換的架構。
+//
+// 轉職是兩段式(企劃書):
+//   Lv1~4  見習學徒，還沒選路
+//   Lv5    選一個系(力量/敏捷/魔法) -> 該系學徒，數值/大招都比 Lv1 好一點，但還沒定final
+//   Lv15   在 Lv5 選的那個系裡面選一條線 -> 正式轉職成 6 個最終職業之一，選了就不能再改
+// Lv5 選了力量系，Lv15 就只能在戰士/守衛裡選，不能臨時跳去別系。
 //
 // 簡化說明:每次挑戰樓層都是「重新滿血開打」，不會把上一場受的傷帶到下一場——企劃書只寫了
 // 「打輸留在原樓層,馬上可以再試」，沒有規範持續HP要怎麼恢復/陣亡懲罰，所以先用最單純的
@@ -12,14 +19,23 @@
   const eventId = params.get("event");
   const app = document.getElementById("tower-app");
 
+  const TABS = [
+    { key: "tower", icon: "mountain", label: "爬塔" },
+    { key: "shop", icon: "store", label: "商店" },
+    { key: "synthesis", icon: "flask-conical", label: "合成" },
+    { key: "backpack", icon: "backpack", label: "背包" },
+  ];
+
   let ev = null;
   let myId = null;
   let myBuild = null;
   let progress = null;
   let lastBattle = null; // { won, log, floorDef, coinGain, expGain, leveledUp, drop }
-  let lastEvent = null; // { eventDef, text, drop } — instant事件(算命攤/扒手/機關/貴人/抽獎機)的結果
+  let lastEvent = null; // { eventDef, text, drop } — instant事件/商店購買結果
+  let broadcasts = [];
+  let highlight = null; // { icon, title, text } — 傳說裝備/爬完樓層之類的精彩時刻，顯示大卡片
   let busy = false;
-  let shopOpen = false;
+  let activeTab = "tower";
   let scanTimer = null;
   let unsubProgress = null;
   let refreshQueued = false;
@@ -63,10 +79,15 @@
     }
 
     myBuild = await db.getOrCreateCareerBuild(eventId, myId);
+    broadcasts = await db.listCareerBroadcasts(eventId).catch(() => []);
 
     await loadAndRender();
 
     unsubProgress = db.onTableChange("career_progress", `event_id=eq.${eventId}`, scheduleRefresh);
+    let unsubBroadcasts = db.onTableChange("career_broadcasts", `event_id=eq.${eventId}`, async () => {
+      broadcasts = await db.listCareerBroadcasts(eventId).catch(() => broadcasts);
+      render();
+    });
     // 任何開著這頁的分頁都幫忙推進所有人的自動掛機(同一個原則:誰在場誰就幫忙推進)
     scanTimer = setInterval(async () => {
       try {
@@ -82,16 +103,26 @@
     setInterval(() => {
       if (!busy) render(); // 每秒重繪一次冷卻倒數文字，不用等資料庫事件
     }, 1000);
+
+    window.addEventListener("beforeunload", () => {
+      if (unsubBroadcasts) unsubBroadcasts();
+    });
   }
 
-  function trainingClosed() {
-    return ev && ev.rules && ev.rules.careerPhase === "battle";
+  // 活動的「相」放在 events.rules.careerPhase(跟 dice 規則、auction 設定同一個 jsonb 欄位)：
+  //   還沒設定過(undefined) -> 主辦人還沒按「開始訓練期」，爬塔動作全部鎖住
+  //   'training' -> 訓練期進行中，爬塔開放
+  //   'battle'   -> 訓練期結束，爬塔鎖住，PVP開放
+  function getCareerPhase() {
+    return (ev && ev.rules && ev.rules.careerPhase) || "not_started";
   }
 
   async function loadAndRender() {
     progress = await db.getOrCreateCareerProgress(eventId, myId);
     render();
   }
+
+  // ---------------- 共用小元件 ----------------
 
   function statBarRow(label, curText, ratio, kind) {
     const lowCls = kind === "hp" && ratio <= 0.4 ? " low" : "";
@@ -102,44 +133,84 @@
       </div>`;
   }
 
+  function rarityTag(rarity) {
+    if (!rarity) return "";
+    return `<span class="tier-tag ${rarity}">${ui.icon(CareerFloors.RARITY_ICON[rarity], { size: "12px" })}${CareerFloors.RARITY_LABEL[rarity]}</span>`;
+  }
+
   function equipSummary(equipment) {
     const labels = { weapon: "武器", armor: "防具", accessory: "飾品" };
     return Object.keys(labels)
       .map((slot) => {
         const item = equipment[slot];
-        return `<span class="cc-stat">${labels[slot]}:${item ? ui.esc(item.name) + (item.rarity === "rare" ? " ★稀有" : "") : "(無)"}</span>`;
+        return `<span class="cc-stat">${labels[slot]}:${item ? ui.esc(item.name) : "(無)"}${item && item.rarity !== "common" ? rarityTag(item.rarity) : ""}</span>`;
       })
       .join("");
   }
 
-  function renderTransferPicker() {
+  // ---------------- 分頁籤列 ----------------
+
+  function renderTabsBar() {
+    return `
+      <div class="folder-tabs" id="tower-tabs">
+        ${TABS.map(
+          (t) => `<div class="folder-tab${activeTab === t.key ? " active" : ""}" data-tab="${t.key}">${ui.icon(t.icon)}${ui.esc(t.label)}</div>`
+        ).join("")}
+      </div>`;
+  }
+
+  // ---------------- 分頁1:爬塔 ----------------
+
+  function hourglassHint(text) {
+    return `<div class="empty" style="margin:10px 0;font-size:12px;">${ui.icon("hourglass")}${ui.esc(text)}</div>`;
+  }
+
+  function renderPathPicker() {
     const tree = CareerData.CAREER_TREE;
     let html = `
       <div style="background:var(--panel2);border:2px solid var(--gold);border-radius:var(--radius);padding:14px;margin:12px 0;">
         <p style="margin:0 0 10px;font-weight:700;color:var(--gold);display:flex;align-items:center;gap:6px;">
-          ${ui.icon("sparkles")}可以轉職了!選一條路，定案你的最終職業(轉職後就不能再改)
-        </p>`;
+          ${ui.icon("sparkles")}可以選系了!力量/敏捷/魔法選一個(選了這系，以後最終職業只能在這系裡選,不能臨時跳去別系)
+        </p>
+        <div class="career-class-grid">`;
     Object.keys(tree).forEach((pathKey) => {
       const path = tree[pathKey];
-      html += `<div class="career-path-block">
-        <div class="career-path-title">${ui.icon(path.icon)}${ui.esc(path.label)}</div>
-        <div class="career-class-grid">`;
-      Object.keys(path.lines).forEach((lineKey) => {
-        const line = path.lines[lineKey];
-        const cls = line.final;
-        html += `
-          <div class="career-class-card" data-class="${cls.key}" data-path="${pathKey}">
-            <div class="cc-head">${ui.icon(cls.icon)}${ui.esc(cls.name)}</div>
-            <div class="cc-desc">
-              ${ui.esc(line.tier1.name)}:${ui.esc(line.tier1.desc)}<br/>
-              ${ui.esc(line.tier2.name)}:${ui.esc(line.tier2.desc)}
-            </div>
-            <div class="cc-ult"><b>大招 · ${ui.esc(cls.ultName)}</b><br/>${ui.esc(cls.ultDesc)}</div>
-          </div>`;
-      });
-      html += `</div></div>`;
+      const finalNames = Object.keys(path.lines)
+        .map((lk) => path.lines[lk].final.name)
+        .join(" / ");
+      html += `
+        <div class="career-class-card" data-path-pick="${pathKey}">
+          <div class="cc-head">${ui.icon(path.icon)}${ui.esc(path.label)}</div>
+          <div class="cc-desc">最終可以走向:${ui.esc(finalNames)}(Lv.${CareerData.TRANSFER_LEVEL_FINAL} 才會決定是哪一個)</div>
+        </div>`;
     });
-    html += `</div>`;
+    html += `</div></div>`;
+    return html;
+  }
+
+  function renderFinalPicker(pathKey) {
+    const path = CareerData.CAREER_TREE[pathKey];
+    if (!path) return "";
+    let html = `
+      <div style="background:var(--panel2);border:2px solid var(--gold);border-radius:var(--radius);padding:14px;margin:12px 0;">
+        <p style="margin:0 0 10px;font-weight:700;color:var(--gold);display:flex;align-items:center;gap:6px;">
+          ${ui.icon("sparkles")}可以定案最終職業了!在${ui.esc(path.label)}裡選一條線(轉職後就不能再改)
+        </p>
+        <div class="career-class-grid">`;
+    Object.keys(path.lines).forEach((lineKey) => {
+      const line = path.lines[lineKey];
+      const cls = line.final;
+      html += `
+        <div class="career-class-card" data-class="${cls.key}" data-path="${pathKey}">
+          <div class="cc-head">${ui.icon(cls.icon)}${ui.esc(cls.name)}</div>
+          <div class="cc-desc">
+            ${ui.esc(line.tier1.name)}:${ui.esc(line.tier1.desc)}<br/>
+            ${ui.esc(line.tier2.name)}:${ui.esc(line.tier2.desc)}
+          </div>
+          <div class="cc-ult"><b>大招 · ${ui.esc(cls.ultName)}</b><br/>${ui.esc(cls.ultDesc)}</div>
+        </div>`;
+    });
+    html += `</div></div>`;
     return html;
   }
 
@@ -155,60 +226,6 @@
         ${ui.icon(r.won ? "check" : "x")}${r.won ? `第${r.floor}層掛機戰鬥獲勝，+${r.coinGain}幣 +${r.expGain}經驗` : `第${r.floor}層掛機戰鬥落敗，沒有獎勵`}
         (${secAgo}秒前 · 下一場約${nextInSec}秒後)
       </p>`;
-  }
-
-  function renderShopPanel(locked) {
-    const CF = CareerFloors;
-    const statPrice = CF.statPointPrice(progress.stat_points_bought);
-    const weaponTable = CF.WEAPON_TABLE[myBuild.final_class] || CF.WEAPON_TABLE.novice;
-
-    function equipRow(slot, label, table) {
-      const [min, max] = CF.EQUIPMENT_PRICE_RANGE.normal;
-      const [rmin, rmax] = CF.EQUIPMENT_PRICE_RANGE.rare;
-      const [lmin, lmax] = CF.EQUIPMENT_PRICE_RANGE.legendary;
-      const legendaryDisabled = locked || progress.legendary_purchased;
-      return `
-        <div style="margin-bottom:10px;">
-          <p style="font-size:11.5px;color:var(--ink-dim);margin:0 0 4px;">${label}</p>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            <button class="btn small" data-buy-equip="${slot}:normal" ${locked ? "disabled" : ""}>
-              ${ui.esc(table.normal.name)}(${CF.describeItem(table.normal)})・${min}~${max}幣
-            </button>
-            <button class="btn small" data-buy-equip="${slot}:rare" ${locked ? "disabled" : ""}>
-              ${ui.esc(table.rare.name)}(${CF.describeItem(table.rare)})・${rmin}~${rmax}幣
-            </button>
-            <button class="btn career-ult-btn small" data-buy-equip="${slot}:legendary" ${legendaryDisabled ? "disabled" : ""}>
-              ${ui.esc(table.legendary.name)}(${CF.describeItem(table.legendary)})・${lmin}~${lmax}幣${progress.legendary_purchased ? "(已購買)" : ""}
-            </button>
-          </div>
-        </div>`;
-    }
-
-    return `
-      <div style="background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius);padding:14px;margin:12px 0;">
-        <p style="margin:0 0 4px;font-size:11px;color:var(--ink-dim);">價格會有一點浮動；傳說裝備整場只能買 1 件(商店買或抽獎機中都算)。</p>
-        <div style="margin:12px 0;">
-          <button class="btn small" id="buy-statpoint-btn" ${locked ? "disabled" : ""}>
-            ${ui.icon("sparkles")}花 ${statPrice} 幣買 1 點自由數值點(下一次會更貴)
-          </button>
-        </div>
-        ${equipRow("weapon", `武器(${ui.esc(CareerData.CLASS_INFO[myBuild.final_class].name)}專屬)`, weaponTable)}
-        ${equipRow("armor", "防具", CF.EQUIPMENT_TABLE.armor)}
-        ${equipRow("accessory", "飾品", CF.EQUIPMENT_TABLE.accessory)}
-        <div style="margin:12px 0;">
-          <button class="btn small" id="buy-gacha-btn" ${locked ? "disabled" : ""}>
-            ${ui.icon("dices")}夜市抽獎機・${CF.GACHA_PRICE}幣/抽
-          </button>
-        </div>
-        <div>
-          <p style="font-size:11.5px;color:var(--ink-dim);margin:0 0 4px;">戰功勳章(純加排行分，不影響戰鬥數值)</p>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            ${CF.MEDAL_TIERS.map(
-              (t) => `<button class="btn ghost small" data-buy-medal="${t.key}" ${locked ? "disabled" : ""}>${ui.esc(t.name)}+${t.scoreBonus}分・${t.price}幣</button>`
-            ).join("")}
-          </div>
-        </div>
-      </div>`;
   }
 
   function renderPendingEventCard(pending) {
@@ -240,53 +257,26 @@
       </div>`;
   }
 
-  function render() {
-    if (!progress) return;
-    const info = CareerData.CLASS_INFO[myBuild.final_class];
-    const stats = CareerData.applyProgress(myBuild.final_class, progress.stat_alloc, progress.equipment);
-    const expNeed = CareerFloors.expToNextLevel(progress.level);
-    const trainCooldownMs = new Date(progress.train_ready_at).getTime() - Date.now();
-    const locked = trainingClosed();
-    const hasPendingEvent = !!progress.pending_event;
-    const canTrain = trainCooldownMs <= 0 && !locked && !hasPendingEvent;
-    const nextFloor = progress.floor + 1;
-    const nextFloorDef = CareerFloors.getFloor(nextFloor);
-    const isAutoFarming = !!progress.auto_farm_floor;
-
+  function renderTowerTab(ctx) {
+    const { locked, hasPendingEvent, canTrain, trainCooldownMs, nextFloor, nextFloorDef, isAutoFarming } = ctx;
     let html = "";
-    if (locked) {
-      html += `<div class="empty" style="margin-bottom:14px;">${ui.icon("flag")}訓練期已經結束，爬塔功能關閉了，你目前的加點跟裝備就是這場PVP要用的數值，前往下面的PVP對戰吧!</div>`;
-    }
-    html += `
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
-        <div style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;">
-          ${ui.icon(info.icon)}${ui.esc(info.name)} Lv.${progress.level}
-        </div>
-        <div style="display:flex;gap:16px;align-items:center;font-size:13px;">
-          <span style="color:var(--ink-dim);">第 ${progress.floor} 層</span>
-          <span style="color:var(--gold);font-weight:700;display:inline-flex;align-items:center;gap:4px;">${ui.icon("coins")}${progress.coins}</span>
-        </div>
-      </div>
-      ${statBarRow("經驗值", `${progress.exp} / ${expNeed}`, progress.exp / expNeed, "exp")}
-      ${statBarRow("HP(上限)", `${stats.hp} / ${stats.maxHp}`, 1, "hp")}
-      <div class="cc-stats" style="margin:10px 0 4px;">
-        <span class="cc-stat">攻${stats.atk}</span>
-        <span class="cc-stat">防${stats.def}</span>
-        <span class="cc-stat">速${stats.spd}</span>
-        <span class="cc-stat">幸運${stats.luck}</span>
-        ${equipSummary(progress.equipment)}
-      </div>`;
 
-    if (hasPendingEvent) {
-      html += renderPendingEventCard(progress.pending_event);
-    }
+    if (hasPendingEvent) html += renderPendingEventCard(progress.pending_event);
 
-    const eligibleForTransfer = myBuild.final_class === "novice" && progress.level >= CareerData.TRANSFER_LEVEL;
-    if (myBuild.final_class === "novice" && !eligibleForTransfer) {
-      html += `<div class="empty" style="margin:10px 0;font-size:12px;">${ui.icon("hourglass")}Lv.${CareerData.TRANSFER_LEVEL} 就可以轉職成正式職業了，繼續練功吧(目前 Lv.${progress.level})</div>`;
-    }
-    if (eligibleForTransfer && !locked) {
-      html += renderTransferPicker();
+    const cls = myBuild.final_class;
+    const isBaseNovice = cls === "novice";
+    const isPathNovice = cls.startsWith("novice_");
+
+    if (isBaseNovice && progress.level < CareerData.TRANSFER_LEVEL_PATH) {
+      html += hourglassHint(`Lv.${CareerData.TRANSFER_LEVEL_PATH} 就可以選一個系了，繼續練功吧(目前 Lv.${progress.level})`);
+    } else if (isBaseNovice && !locked) {
+      html += renderPathPicker();
+    } else if (isPathNovice && progress.level < CareerData.TRANSFER_LEVEL_FINAL) {
+      html += hourglassHint(
+        `Lv.${CareerData.TRANSFER_LEVEL_FINAL} 就可以在${CareerData.CLASS_INFO[cls].pathLabel}定案最終職業了，繼續練功吧(目前 Lv.${progress.level})`
+      );
+    } else if (isPathNovice && !locked) {
+      html += renderFinalPicker(myBuild.path);
     }
 
     if (progress.stat_points > 0 && !locked) {
@@ -318,17 +308,7 @@
         </button>
       </div>`;
 
-    if (isAutoFarming) {
-      html += autoFarmStatusHtml();
-    }
-
-    html += `
-      <div style="margin-top:10px;">
-        <button class="btn ghost small" id="toggle-shop-btn">${ui.icon("store")}${shopOpen ? "收起商店" : "打開商店(花幣買數值點/裝備/勳章)"}</button>
-      </div>`;
-    if (shopOpen) {
-      html += renderShopPanel(locked || hasPendingEvent);
-    }
+    if (isAutoFarming) html += autoFarmStatusHtml();
 
     if (progress.floor > 0 && !locked) {
       const chips = [];
@@ -337,9 +317,7 @@
         <div style="margin-top:10px;">
           <p style="font-size:11px;color:var(--ink-dim);margin:0 0 6px;">已清樓層，可以重新挑戰穩定 farm:</p>
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            ${chips
-              .map((f) => `<button class="btn ghost small" data-retry-floor="${f}">第${f}層</button>`)
-              .join("")}
+            ${chips.map((f) => `<button class="btn ghost small" data-retry-floor="${f}">第${f}層</button>`).join("")}
           </div>
         </div>`;
     }
@@ -366,7 +344,7 @@
             b.won
               ? `<p style="font-size:12px;color:var(--ink-dim);margin:0 0 6px;">
                   +${b.coinGain} 幣 · +${b.expGain} 經驗${b.leveledUp ? ` · 升到 Lv.${b.newLevel}! 獲得 2 數值點` : ""}
-                  ${b.drop ? ` · 掉落並穿上「${ui.esc(b.drop.name)}」${b.drop.rarity === "rare" ? "★稀有" : ""}` : ""}
+                  ${b.drop ? ` · 掉落「${ui.esc(b.drop.name)}」${rarityTag(b.drop.rarity)}放進背包了` : ""}
                 </p>`
               : `<p style="font-size:12px;color:var(--ink-dim);margin:0 0 6px;">留在原樓層，沒有損失，可以馬上再試一次。</p>`
           }
@@ -380,101 +358,280 @@
             .reverse()
             .map((line) => `<div>${ui.esc(line)}</div>`)
             .join("")
-        : `<div style="color:var(--ink-dim);">還沒有任何戰報，按下面的按鈕開始爬塔吧</div>`
+        : `<div style="color:var(--ink-dim);">還沒有任何戰報，按上面的按鈕開始爬塔吧</div>`
     }</div>`;
+
+    return html;
+  }
+
+  // ---------------- 分頁2:商店 ----------------
+
+  function renderShopTab(locked) {
+    const CF = CareerFloors;
+    const statPrice = CF.statPointPrice(progress.stat_points_bought);
+    const weaponTable = CF.WEAPON_TABLE[myBuild.final_class] || CF.WEAPON_TABLE.novice;
+
+    function equipRow(slot, label, table) {
+      const rows = CF.RARITIES.map((rarity) => {
+        const [min, max] = CF.EQUIPMENT_PRICE_RANGE[rarity];
+        const item = table[rarity];
+        const isLegendary = rarity === "legendary";
+        const disabled = locked || (isLegendary && progress.legendary_purchased);
+        return `
+          <div class="shop-row">
+            ${rarityTag(rarity)}
+            <div class="shop-row-name">${ui.esc(item.name)}<span class="shop-row-desc">${CF.describeItem(item)}</span></div>
+            <button class="btn small" data-buy-equip="${slot}:${rarity}" ${disabled ? "disabled" : ""}>
+              ${min}~${max}幣${isLegendary && progress.legendary_purchased ? "(已購買)" : ""}
+            </button>
+          </div>`;
+      }).join("");
+      return `
+        <div style="margin-bottom:14px;">
+          <p class="shop-section-title">${label}</p>
+          ${rows}
+        </div>`;
+    }
+
+    return `
+      <p style="margin:0 0 12px;font-size:11px;color:var(--ink-dim);">價格會有一點浮動；傳說裝備整場只能買 1 件(商店買或抽獎機中都算)。</p>
+
+      <div class="shop-row" style="margin-bottom:14px;">
+        ${ui.icon("sparkles")}
+        <div class="shop-row-name">自由數值點<span class="shop-row-desc">下一次會更貴</span></div>
+        <button class="btn small" id="buy-statpoint-btn" ${locked ? "disabled" : ""}>花 ${statPrice} 幣買 1 點</button>
+      </div>
+
+      ${equipRow("weapon", `武器(${ui.esc(CareerData.CLASS_INFO[myBuild.final_class].name)}專屬)`, weaponTable)}
+      ${equipRow("armor", "防具", CF.EQUIPMENT_TABLE.armor)}
+      ${equipRow("accessory", "飾品", CF.EQUIPMENT_TABLE.accessory)}
+
+      <div style="margin-bottom:14px;">
+        <p class="shop-section-title">夜市抽獎機</p>
+        <div class="shop-row">
+          ${ui.icon("dices")}
+          <div class="shop-row-name">隨機獎池<span class="shop-row-desc">小獎幣/數值點/稀有裝備/史詩裝備/極小機率傳說</span></div>
+          <button class="btn small" id="buy-gacha-btn" ${locked ? "disabled" : ""}>${CF.GACHA_PRICE}幣/抽</button>
+        </div>
+      </div>
+
+      <div>
+        <p class="shop-section-title">戰功勳章(純加排行分，不影響戰鬥數值)</p>
+        ${CF.MEDAL_TIERS.map(
+          (t) => `
+          <div class="shop-row">
+            ${ui.icon("medal")}
+            <div class="shop-row-name">${ui.esc(t.name)}<span class="shop-row-desc">排行分 +${t.scoreBonus}</span></div>
+            <button class="btn ghost small" data-buy-medal="${t.key}" ${locked ? "disabled" : ""}>${t.price}幣</button>
+          </div>`
+        ).join("")}
+      </div>`;
+  }
+
+  // ---------------- 分頁3:合成 ----------------
+
+  function slotLabel(slot) {
+    return { weapon: "武器", armor: "防具", accessory: "飾品" }[slot];
+  }
+
+  // 背包裡同一部位+同稀有度的東西通通長得一樣(武器是綁職業的，同職業同稀有度只有一款；
+  // 防具/飾品本來就每個稀有度只有一款)，所以用 slot:rarity 分組、顯示一列+數量就夠，
+  // 不用把10件一模一樣的東西列10行。
+  function groupInventory() {
+    const groups = {};
+    (progress.inventory || []).forEach((item) => {
+      const key = `${item.slot}:${item.rarity}`;
+      if (!groups[key]) groups[key] = { ...item, count: 0, ids: [] };
+      groups[key].count += 1;
+      groups[key].ids.push(item.id);
+    });
+    return groups;
+  }
+
+  function renderSynthesisTab(locked) {
+    const CF = CareerFloors;
+    const groups = groupInventory();
+    const rows = [];
+    ["weapon", "armor", "accessory"].forEach((slot) => {
+      ["common", "rare"].forEach((rarity) => {
+        const key = `${slot}:${rarity}`;
+        const g = groups[key];
+        const count = g ? g.count : 0;
+        const nextRarity = CF.SYNTHESIS_PATH[rarity];
+        const need = CF.SYNTHESIS_INPUT_COUNT;
+        const canSynthesize = !locked && count >= need;
+        rows.push(`
+          <div class="shop-row">
+            ${rarityTag(rarity)}
+            <div class="shop-row-name">${slotLabel(slot)}<span class="shop-row-desc">目前 ${count} 件 / 需要 ${need} 件，成功會變成${CF.RARITY_LABEL[nextRarity]}(機率${Math.round(CF.SYNTHESIS_SUCCESS_RATE * 100)}%，失敗拿回1件隨機普通裝備)</span></div>
+            <button class="btn small" data-synthesize="${slot}:${rarity}" ${canSynthesize ? "" : "disabled"}>${ui.icon("arrow-big-up")}合成(消耗${need}件)</button>
+          </div>`);
+      });
+    });
+    return `
+      <p style="margin:0 0 12px;font-size:11px;color:var(--ink-dim);">
+        把背包裡同部位、同稀有度的裝備湊滿 3 件就能合成，成功機率固定，成功變成下一個稀有度，
+        失敗只拿回 1 件隨機部位的普通裝備(等於虧了，賭運氣)。只做得到 普通→稀有→史詩，
+        傳說要不要開放合成是「以後可能會做」的事，先保持只能商店/抽獎機拿。
+      </p>
+      ${rows.join("")}`;
+  }
+
+  // ---------------- 分頁4:背包 ----------------
+
+  function renderBackpackTab() {
+    const groups = groupInventory();
+    let html = `<p class="shop-section-title">目前裝備</p>`;
+    ["weapon", "armor", "accessory"].forEach((slot) => {
+      const item = progress.equipment[slot];
+      html += `
+        <div class="shop-row">
+          ${item ? rarityTag(item.rarity) : ui.icon("circle-slash")}
+          <div class="shop-row-name">
+            ${slotLabel(slot)}:${item ? ui.esc(item.name) : "(尚未裝備)"}
+            ${item ? `<span class="shop-row-desc">${CareerFloors.describeItem(item)}</span>` : `<span class="shop-row-desc">去挑戰樓層、開商店或抽獎機都有機會拿到，拿到後要在下面手動穿上</span>`}
+          </div>
+          ${item ? `<button class="btn ghost small" data-unequip="${slot}">${ui.icon("shirt")}卸下</button>` : ""}
+        </div>`;
+    });
+
+    const invRows = Object.keys(groups)
+      .map((key) => {
+        const g = groups[key];
+        return `
+          <div class="shop-row">
+            ${rarityTag(g.rarity)}
+            <div class="shop-row-name">${ui.esc(g.name)}<span class="shop-row-desc">${CareerFloors.describeItem(g)} · 背包裡 ${g.count} 件</span></div>
+            <button class="btn small" data-equip-item="${g.ids[0]}">${ui.icon("shirt")}穿上</button>
+          </div>`;
+      })
+      .join("");
+
+    html += `<p class="shop-section-title" style="margin-top:16px;">背包(${(progress.inventory || []).length} 件)</p>`;
+    html += invRows || `<div class="empty" style="font-size:12px;">${ui.icon("package-open")}背包是空的，去挑戰樓層、開商店或抽獎機拿裝備吧</div>`;
+    return html;
+  }
+
+  // ---------------- 全服事件廣播 ----------------
+
+  function highlightCardHtml() {
+    if (!highlight) return "";
+    return `
+      <div style="text-align:center;padding:20px 16px;margin-bottom:14px;border-radius:var(--radius);border:2px solid var(--gold);background:radial-gradient(circle at 50% 0%, rgba(242,183,5,.15), var(--panel2));">
+        ${ui.icon(highlight.icon, { size: "32px" })}
+        <p style="margin:10px 0 4px;font-family:'Display',sans-serif;font-size:16px;color:var(--gold);letter-spacing:.05em;">${ui.esc(highlight.title)}</p>
+        <p style="margin:0 0 14px;font-size:13px;color:var(--ink);">${ui.esc(highlight.text)}</p>
+        <div style="display:flex;gap:8px;justify-content:center;">
+          <button class="btn small" id="highlight-share-btn">${ui.icon("copy")}複製分享文字</button>
+          <button class="btn ghost small" id="highlight-close-btn">${ui.icon("x")}關閉</button>
+        </div>
+      </div>`;
+  }
+
+  function broadcastTickerHtml() {
+    if (!broadcasts.length) return "";
+    const latest = broadcasts[0];
+    const secAgo = Math.max(0, Math.round((Date.now() - new Date(latest.created_at).getTime()) / 1000));
+    const timeText = secAgo < 60 ? `${secAgo}秒前` : `${Math.round(secAgo / 60)}分鐘前`;
+    return `
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;margin-bottom:12px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);font-size:12px;overflow:hidden;">
+        ${ui.icon(latest.icon || "megaphone")}
+        <span style="flex:1;min-width:0;overflow-wrap:anywhere;">${ui.esc(latest.message)}</span>
+        <span style="color:var(--ink-dim);flex-shrink:0;font-size:10.5px;">${timeText}</span>
+      </div>`;
+  }
+
+  // ---------------- 主 render ----------------
+
+  function render() {
+    if (!progress) return;
+    const info = CareerData.CLASS_INFO[myBuild.final_class];
+    const stats = CareerData.applyProgress(myBuild.final_class, progress.stat_alloc, progress.equipment);
+    const expNeed = CareerFloors.expToNextLevel(progress.level);
+    const trainCooldownMs = new Date(progress.train_ready_at).getTime() - Date.now();
+    const phase = getCareerPhase();
+    const locked = phase !== "training"; // 只有訓練期才能做爬塔動作(還沒開始/已經結束都鎖)
+    const hasPendingEvent = !!progress.pending_event;
+    const canTrain = trainCooldownMs <= 0 && !locked && !hasPendingEvent;
+    const nextFloor = progress.floor + 1;
+    const nextFloorDef = CareerFloors.getFloor(nextFloor);
+    const isAutoFarming = !!progress.auto_farm_floor;
+
+    let html = "";
+    if (locked) {
+      const msg =
+        phase === "not_started"
+          ? "訓練期還沒開始，請等主辦人在後台按下「開始訓練期」，開始之後才能特訓/挑戰樓層/掛機。"
+          : "訓練期已經結束，爬塔功能關閉了，你目前的加點跟裝備就是這場PVP要用的數值，前往上面的PVP對戰吧!";
+      html += `<div class="empty" style="margin-bottom:14px;">${ui.icon(phase === "not_started" ? "hourglass" : "flag")}${ui.esc(msg)}</div>`;
+    }
+
+    html += `
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
+        <div style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;">
+          ${ui.icon(info.icon)}${ui.esc(info.name)} Lv.${progress.level}
+        </div>
+        <div style="display:flex;gap:16px;align-items:center;font-size:13px;">
+          <span style="color:var(--ink-dim);">第 ${progress.floor} 層</span>
+          <span style="color:var(--gold);font-weight:700;display:inline-flex;align-items:center;gap:4px;">${ui.icon("coins")}${progress.coins}</span>
+        </div>
+      </div>
+      ${statBarRow("經驗值", `${progress.exp} / ${expNeed}`, progress.exp / expNeed, "exp")}
+      ${statBarRow("HP(上限)", `${stats.hp} / ${stats.maxHp}`, 1, "hp")}
+      <div class="cc-stats" style="margin:10px 0 4px;">
+        <span class="cc-stat">攻${stats.atk}</span>
+        <span class="cc-stat">防${stats.def}</span>
+        <span class="cc-stat">速${stats.spd}</span>
+        <span class="cc-stat">幸運${stats.luck}</span>
+        ${equipSummary(progress.equipment)}
+      </div>`;
+
+    html += broadcastTickerHtml();
+    html += highlightCardHtml();
+    html += renderTabsBar();
+    html += `<div class="card folder-tab-card" style="margin-top:0;">`;
+    if (activeTab === "tower") {
+      html += renderTowerTab({ locked, hasPendingEvent, canTrain, trainCooldownMs, nextFloor, nextFloorDef, isAutoFarming });
+    } else if (activeTab === "shop") {
+      html += renderShopTab(locked || hasPendingEvent);
+    } else if (activeTab === "synthesis") {
+      html += renderSynthesisTab(locked || hasPendingEvent);
+    } else if (activeTab === "backpack") {
+      html += renderBackpackTab();
+    }
+    html += `</div>`;
 
     app.innerHTML = html;
     bindHandlers();
   }
 
+  // ---------------- 事件綁定 ----------------
+
   function bindHandlers() {
-    const toggleShopBtn = document.getElementById("toggle-shop-btn");
-    if (toggleShopBtn) {
-      toggleShopBtn.onclick = () => {
-        shopOpen = !shopOpen;
+    app.querySelectorAll("[data-tab]").forEach((tab) => {
+      tab.onclick = () => {
+        activeTab = tab.dataset.tab;
         render();
-      };
-    }
-    const buyStatBtn = document.getElementById("buy-statpoint-btn");
-    if (buyStatBtn && !buyStatBtn.disabled) {
-      buyStatBtn.onclick = async () => {
-        if (busy) return;
-        busy = true;
-        try {
-          const result = await db.buyCareerStatPoint(eventId, myId);
-          progress = result.progress;
-          lastEvent = { eventDef: { icon: "sparkles", name: "商店" }, text: `花 ${result.price} 幣買了 1 點自由數值點。` };
-          lastBattle = null;
-          render();
-        } catch (e) {
-          await ui.alert(e.message || "購買失敗", { title: "操作失敗", tone: "danger" });
-          await loadAndRender();
-        } finally {
-          busy = false;
-        }
-      };
-    }
-    app.querySelectorAll("[data-buy-equip]").forEach((btn) => {
-      if (btn.disabled) return;
-      btn.onclick = async () => {
-        if (busy) return;
-        busy = true;
-        try {
-          const [slot, rarity] = btn.dataset.buyEquip.split(":");
-          const result = await db.buyCareerEquipment(eventId, myId, slot, rarity);
-          progress = result.progress;
-          lastEvent = { eventDef: { icon: "shopping-bag", name: "商店" }, text: `花 ${result.price} 幣買下並穿上了「${result.item.name}」。` };
-          lastBattle = null;
-          render();
-        } catch (e) {
-          await ui.alert(e.message || "購買失敗", { title: "操作失敗", tone: "danger" });
-          await loadAndRender();
-        } finally {
-          busy = false;
-        }
-      };
-    });
-    const buyGachaBtn = document.getElementById("buy-gacha-btn");
-    if (buyGachaBtn && !buyGachaBtn.disabled) {
-      buyGachaBtn.onclick = async () => {
-        if (busy) return;
-        busy = true;
-        try {
-          const result = await db.buyCareerGachaPull(eventId, myId);
-          progress = result.progress;
-          lastEvent = { eventDef: { icon: "dices", name: "夜市抽獎機" }, text: result.text };
-          lastBattle = null;
-          render();
-        } catch (e) {
-          await ui.alert(e.message || "抽獎失敗", { title: "操作失敗", tone: "danger" });
-          await loadAndRender();
-        } finally {
-          busy = false;
-        }
-      };
-    }
-    app.querySelectorAll("[data-buy-medal]").forEach((btn) => {
-      if (btn.disabled) return;
-      btn.onclick = async () => {
-        if (busy) return;
-        busy = true;
-        try {
-          const result = await db.buyCareerMedal(eventId, myId, btn.dataset.buyMedal);
-          progress = result.progress;
-          lastEvent = { eventDef: { icon: "medal", name: "戰功勳章" }, text: `花 ${result.tier.price} 幣買了「${result.tier.name}」，排行分 +${result.tier.scoreBonus}。` };
-          lastBattle = null;
-          render();
-        } catch (e) {
-          await ui.alert(e.message || "購買失敗", { title: "操作失敗", tone: "danger" });
-          await loadAndRender();
-        } finally {
-          busy = false;
-        }
       };
     });
 
-    app.querySelectorAll("[data-event-choice]").forEach((btn) => {
-      btn.onclick = () => resolveEventChoice(btn.dataset.eventChoice);
+    app.querySelectorAll("[data-path-pick]").forEach((card) => {
+      card.onclick = async () => {
+        if (busy) return;
+        busy = true;
+        const pathKey = card.dataset.pathPick;
+        app.querySelectorAll("[data-path-pick]").forEach((c) => (c.style.pointerEvents = "none"));
+        card.style.opacity = "0.6";
+        try {
+          myBuild = await db.saveCareerBuild(eventId, myId, { path: pathKey, finalClass: `novice_${pathKey}`, skillKeys: [] });
+          render();
+        } catch (e) {
+          await ui.alert(e.message || "選系失敗", { title: "操作失敗", tone: "danger" });
+          render();
+        } finally {
+          busy = false;
+        }
+      };
     });
 
     app.querySelectorAll(".career-class-card[data-class]").forEach((card) => {
@@ -560,6 +717,178 @@
         }
       };
     });
+
+    app.querySelectorAll("[data-event-choice]").forEach((btn) => {
+      btn.onclick = () => resolveEventChoice(btn.dataset.eventChoice);
+    });
+
+    const buyStatBtn = document.getElementById("buy-statpoint-btn");
+    if (buyStatBtn && !buyStatBtn.disabled) {
+      buyStatBtn.onclick = async () => {
+        if (busy) return;
+        busy = true;
+        try {
+          const result = await db.buyCareerStatPoint(eventId, myId);
+          progress = result.progress;
+          lastEvent = { eventDef: { icon: "sparkles", name: "商店" }, text: `花 ${result.price} 幣買了 1 點自由數值點。` };
+          lastBattle = null;
+          activeTab = "tower";
+          render();
+        } catch (e) {
+          await ui.alert(e.message || "購買失敗", { title: "操作失敗", tone: "danger" });
+          await loadAndRender();
+        } finally {
+          busy = false;
+        }
+      };
+    }
+    app.querySelectorAll("[data-buy-equip]").forEach((btn) => {
+      if (btn.disabled) return;
+      btn.onclick = async () => {
+        if (busy) return;
+        busy = true;
+        try {
+          const [slot, rarity] = btn.dataset.buyEquip.split(":");
+          const result = await db.buyCareerEquipment(eventId, myId, slot, rarity);
+          progress = result.progress;
+          lastEvent = { eventDef: { icon: "shopping-bag", name: "商店" }, text: `花 ${result.price} 幣買下「${result.item.name}」，放進背包了，去「背包」分頁穿上。` };
+          lastBattle = null;
+          if (rarity === "legendary") {
+            highlight = { icon: "crown", title: "傳說降臨!", text: `你在商店買到了傳說裝備「${result.item.name}」!` };
+          }
+          activeTab = "tower";
+          render();
+        } catch (e) {
+          await ui.alert(e.message || "購買失敗", { title: "操作失敗", tone: "danger" });
+          await loadAndRender();
+        } finally {
+          busy = false;
+        }
+      };
+    });
+    const buyGachaBtn = document.getElementById("buy-gacha-btn");
+    if (buyGachaBtn && !buyGachaBtn.disabled) {
+      buyGachaBtn.onclick = async () => {
+        if (busy) return;
+        busy = true;
+        try {
+          const result = await db.buyCareerGachaPull(eventId, myId);
+          progress = result.progress;
+          lastEvent = { eventDef: { icon: "dices", name: "夜市抽獎機" }, text: result.text };
+          lastBattle = null;
+          if (result.drop && result.drop.rarity === "legendary") {
+            highlight = { icon: "crown", title: "頭獎!", text: `抽獎機給了你傳說裝備「${result.drop.name}」!` };
+          }
+          activeTab = "tower";
+          render();
+        } catch (e) {
+          await ui.alert(e.message || "抽獎失敗", { title: "操作失敗", tone: "danger" });
+          await loadAndRender();
+        } finally {
+          busy = false;
+        }
+      };
+    }
+    app.querySelectorAll("[data-buy-medal]").forEach((btn) => {
+      if (btn.disabled) return;
+      btn.onclick = async () => {
+        if (busy) return;
+        busy = true;
+        try {
+          const result = await db.buyCareerMedal(eventId, myId, btn.dataset.buyMedal);
+          progress = result.progress;
+          lastEvent = { eventDef: { icon: "medal", name: "戰功勳章" }, text: `花 ${result.tier.price} 幣買了「${result.tier.name}」，排行分 +${result.tier.scoreBonus}。` };
+          lastBattle = null;
+          activeTab = "tower";
+          render();
+        } catch (e) {
+          await ui.alert(e.message || "購買失敗", { title: "操作失敗", tone: "danger" });
+          await loadAndRender();
+        } finally {
+          busy = false;
+        }
+      };
+    });
+
+    app.querySelectorAll("[data-synthesize]").forEach((btn) => {
+      if (btn.disabled) return;
+      btn.onclick = async () => {
+        if (busy) return;
+        busy = true;
+        try {
+          const [slot, rarity] = btn.dataset.synthesize.split(":");
+          const result = await db.synthesizeCareerEquipment(eventId, myId, slot, rarity);
+          progress = result.progress;
+          lastEvent = {
+            eventDef: { icon: result.success ? "arrow-big-up" : "circle-x", name: "裝備合成" },
+            text: result.success
+              ? `合成成功!升級成「${result.item.name}」了!`
+              : `合成失敗，只拿回 1 件「${result.item.name}」，運氣不好，再試一次吧。`,
+          };
+          lastBattle = null;
+          activeTab = "tower";
+          render();
+        } catch (e) {
+          await ui.alert(e.message || "合成失敗", { title: "操作失敗", tone: "danger" });
+          await loadAndRender();
+        } finally {
+          busy = false;
+        }
+      };
+    });
+
+    app.querySelectorAll("[data-equip-item]").forEach((btn) => {
+      btn.onclick = async () => {
+        if (busy) return;
+        busy = true;
+        try {
+          const result = await db.equipCareerItem(eventId, myId, btn.dataset.equipItem);
+          progress = result.progress;
+          render();
+        } catch (e) {
+          await ui.alert(e.message || "穿上失敗", { title: "操作失敗", tone: "danger" });
+          await loadAndRender();
+        } finally {
+          busy = false;
+        }
+      };
+    });
+    app.querySelectorAll("[data-unequip]").forEach((btn) => {
+      btn.onclick = async () => {
+        if (busy) return;
+        busy = true;
+        try {
+          const result = await db.unequipCareerItem(eventId, myId, btn.dataset.unequip);
+          progress = result.progress;
+          render();
+        } catch (e) {
+          await ui.alert(e.message || "卸下失敗", { title: "操作失敗", tone: "danger" });
+          await loadAndRender();
+        } finally {
+          busy = false;
+        }
+      };
+    });
+
+    const highlightCloseBtn = document.getElementById("highlight-close-btn");
+    if (highlightCloseBtn) {
+      highlightCloseBtn.onclick = () => {
+        highlight = null;
+        render();
+      };
+    }
+    const highlightShareBtn = document.getElementById("highlight-share-btn");
+    if (highlightShareBtn) {
+      highlightShareBtn.onclick = async () => {
+        const text = `${highlight.title} ${highlight.text}(擂台夜市 · ${ev.name})`;
+        try {
+          await navigator.clipboard.writeText(text);
+          highlightShareBtn.innerHTML = ui.icon("check") + "已複製!";
+        } catch (e) {
+          await ui.alert("複製失敗，請手動選取文字複製。", { title: "複製失敗" });
+        }
+      };
+    }
   }
 
   async function doChallenge(floorNumber) {
@@ -588,6 +917,9 @@
       } else {
         lastEvent = null;
         lastBattle = result;
+        if (result.topFloorCleared) {
+          highlight = { icon: "mountain", title: "爬塔完賽!", text: `你爬完了目前開放的所有樓層(第${result.floorDef.floor}層)!` };
+        }
       }
       render();
     } catch (e) {

@@ -5,7 +5,8 @@
 //   2. 配對成功 -> renderBattle()(PVP 對戰畫面)
 //
 // 職業建置(career_builds)一進來就自動是「見習學徒」(db.getOrCreateCareerBuild)，
-// 真正選路線轉職是在 tower.html 練到 CareerData.TRANSFER_LEVEL 等級之後才做的事，
+// 真正選路線轉職是在 tower.html 練到 CareerData.TRANSFER_LEVEL_PATH/TRANSFER_LEVEL_FINAL
+// 等級之後才做的事，
 // 這支檔案不再負責選職業。
 //
 // 配對推進(match_career_players)、初始化戰鬥數值(initializeCareerMatch)、回合結算
@@ -29,6 +30,7 @@
   let unsubQueue = null;
   let unsubMatches = null;
   let refreshQueued = false;
+  let broadcasts = [];
 
   function emptyMsg(text, icon) {
     return `<div class="empty">${ui.icon(icon || "info")}${ui.esc(text)}</div>`;
@@ -72,10 +74,15 @@
       return;
     }
 
+    broadcasts = await db.listCareerBroadcasts(eventId).catch(() => []);
     await refreshAll();
 
     unsubQueue = db.onTableChange("career_pvp_queue", `event_id=eq.${eventId}`, scheduleRefresh);
     unsubMatches = db.onTableChange("career_matches", `event_id=eq.${eventId}`, scheduleRefresh);
+    db.onTableChange("career_broadcasts", `event_id=eq.${eventId}`, async () => {
+      broadcasts = await db.listCareerBroadcasts(eventId).catch(() => broadcasts);
+      if (!activeMatch) scheduleRefresh();
+    });
     // 任何開著這頁的分頁都幫忙推進配對、也幫忙檢查訓練期時間到了沒(誰先掃到都一樣，
     // match_career_players/maybeAdvanceCareerPhase 本身都是安全可以重複呼叫的)
     scanTimer = setInterval(async () => {
@@ -92,8 +99,13 @@
     }, 3000);
   }
 
-  function trainingActive() {
-    return ev && ev.rules && ev.rules.careerPhase === "training";
+  // 跟 tower.js 同一套三態判斷:沒設定過 -> 活動還沒開始; 'training' -> 訓練期中(PVP鎖住，
+  // 去爬塔); 'battle' -> PVP開放。
+  function getCareerPhase() {
+    return (ev && ev.rules && ev.rules.careerPhase) || "not_started";
+  }
+  function pvpAllowed() {
+    return getCareerPhase() === "battle";
   }
 
   // ---------------- 活動已結束:排行榜 + 賽後小傳 ----------------
@@ -179,11 +191,23 @@
     const stats = progress
       ? CareerData.applyProgress(myBuild.final_class, progress.stat_alloc, progress.equipment)
       : CareerData.computeStats(myBuild.final_class);
-    const isNovice = myBuild.final_class === "novice";
+    const isNovice = myBuild.final_class === "novice" || myBuild.final_class.startsWith("novice_");
     const queueEntry = await db.getMyCareerQueueEntry(eventId, myId);
     const inQueue = queueEntry && queueEntry.status === "waiting";
 
-    let html = `
+    let html = "";
+    if (broadcasts.length) {
+      const latest = broadcasts[0];
+      const secAgo = Math.max(0, Math.round((Date.now() - new Date(latest.created_at).getTime()) / 1000));
+      const timeText = secAgo < 60 ? `${secAgo}秒前` : `${Math.round(secAgo / 60)}分鐘前`;
+      html += `
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;margin-bottom:14px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);font-size:12px;overflow:hidden;">
+          ${ui.icon(latest.icon || "megaphone")}
+          <span style="flex:1;min-width:0;overflow-wrap:anywhere;">${ui.esc(latest.message)}</span>
+          <span style="color:var(--ink-dim);flex-shrink:0;font-size:10.5px;">${timeText}</span>
+        </div>`;
+    }
+    html += `
       <div class="career-class-card selected" style="cursor:default;margin-bottom:16px;">
         <div class="cc-head">${ui.icon(info.icon)}${ui.esc(info.name)}
           <span style="margin-left:auto;font-size:11px;color:var(--ink-dim);font-weight:400;">${ui.esc(info.pathLabel)}</span>
@@ -199,7 +223,7 @@
       </div>
       ${
         isNovice
-          ? `<div class="empty" style="text-align:left;font-size:11.5px;margin:-8px 0 14px;">${ui.icon("info")}你還沒轉職，PVP數值會比較弱。去爬塔練到 Lv.${CareerData.TRANSFER_LEVEL} 就能轉職成正式職業。</div>`
+          ? `<div class="empty" style="text-align:left;font-size:11.5px;margin:-8px 0 14px;">${ui.icon("info")}你還沒轉職完成，PVP數值會比較弱。去爬塔練到 Lv.${CareerData.TRANSFER_LEVEL_PATH} 選一個系，練到 Lv.${CareerData.TRANSFER_LEVEL_FINAL} 定案最終職業。</div>`
           : ""
       }
       <div style="text-align:right;margin:-10px 0 14px;display:flex;justify-content:flex-end;gap:8px;">
@@ -207,17 +231,23 @@
       </div>
       <div id="inline-leaderboard"></div>`;
 
-    if (trainingActive()) {
-      const endsAt = ev.rules.trainingEndsAt;
+    const phase = getCareerPhase();
+    if (!pvpAllowed()) {
+      const endsAt = ev.rules && ev.rules.trainingEndsAt;
       const remainMin = endsAt ? Math.max(0, Math.ceil((new Date(endsAt).getTime() - Date.now()) / 60000)) : null;
+      const notStarted = phase === "not_started";
       html += `
         <div class="career-queue-box">
           ${ui.icon("hourglass")}
-          <p style="margin:10px 0 4px;font-weight:700;">訓練期進行中${remainMin != null ? `，還剩約 ${remainMin} 分鐘` : ""}</p>
-          <p style="font-size:11.5px;color:var(--ink-dim);">PVP 對戰要等訓練期結束才會開放，先去爬塔練功、加點、拚裝備吧!</p>
-          <div style="margin-top:14px;">
-            <a class="btn" href="tower.html?event=${eventId}">${ui.icon("mountain")}前往爬塔</a>
-          </div>
+          <p style="margin:10px 0 4px;font-weight:700;">${notStarted ? "活動還沒開始" : `訓練期進行中${remainMin != null ? `，還剩約 ${remainMin} 分鐘` : ""}`}</p>
+          <p style="font-size:11.5px;color:var(--ink-dim);">${
+            notStarted ? "請等主辦人在後台按下「開始訓練期」。" : "PVP 對戰要等訓練期結束才會開放，先去爬塔練功、加點、拚裝備吧!"
+          }</p>
+          ${
+            notStarted
+              ? ""
+              : `<div style="margin-top:14px;"><a class="btn" href="tower.html?event=${eventId}">${ui.icon("mountain")}前往爬塔</a></div>`
+          }
         </div>`;
     } else if (inQueue) {
       const waitedSec = Math.max(0, Math.round((Date.now() - new Date(queueEntry.last_matched_at).getTime()) / 1000));
@@ -379,6 +409,16 @@
         const loserId = winnerId === match.player1_id ? match.player2_id : match.player1_id;
         await db.updateCareerMatchState(match.id, { state: newState });
         await db.finishCareerMatch(match.id, winnerId, loserId);
+        // 連勝3場以上順手廣播一下，讓大家知道場上有人在連勝
+        try {
+          const winnerQueue = await db.getMyCareerQueueEntry(eventId, winnerId);
+          if (winnerQueue && winnerQueue.win_streak >= 3) {
+            const winnerName = winnerId === match.player1_id ? match.p1?.name : match.p2?.name;
+            await db.broadcastCareerEvent(eventId, "flame", `🔥 ${winnerName || "神秘玩家"} 在PVP擂台連勝 ${winnerQueue.win_streak} 場!`);
+          }
+        } catch (e) {
+          console.error(e);
+        }
       } else {
         await db.updateCareerMatchState(match.id, { state: newState });
       }
