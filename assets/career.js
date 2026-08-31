@@ -213,7 +213,7 @@
           <span style="margin-left:auto;font-size:11px;color:var(--ink-dim);font-weight:400;">${ui.esc(info.pathLabel)}</span>
         </div>
         <div class="cc-stats">
-          <span class="cc-stat">攻${stats.atk}</span>
+          ${info.path === "magic" ? `<span class="cc-stat">魔攻${stats.matk}</span>` : `<span class="cc-stat">攻${stats.atk}</span>`}
           <span class="cc-stat">防${stats.def}</span>
           <span class="cc-stat">速${stats.spd}</span>
           <span class="cc-stat">HP${stats.hp}</span>
@@ -241,13 +241,8 @@
           ${ui.icon("hourglass")}
           <p style="margin:10px 0 4px;font-weight:700;">${notStarted ? "活動還沒開始" : `訓練期進行中${remainMin != null ? `，還剩約 ${remainMin} 分鐘` : ""}`}</p>
           <p style="font-size:11.5px;color:var(--ink-dim);">${
-            notStarted ? "請等主辦人在後台按下「開始訓練期」。" : "PVP 對戰要等訓練期結束才會開放，先去爬塔練功、加點、拚裝備吧!"
+            notStarted ? "請等主辦人在後台按下「開始訓練期」。" : "PVP 對戰要等訓練期結束才會開放，先去爬塔練功、加點、拚裝備吧!(上面有「前往爬塔」的連結)"
           }</p>
-          ${
-            notStarted
-              ? ""
-              : `<div style="margin-top:14px;"><a class="btn" href="tower.html?event=${eventId}">${ui.icon("mountain")}前往爬塔</a></div>`
-          }
         </div>`;
     } else if (inQueue) {
       const waitedSec = Math.max(0, Math.round((Date.now() - new Date(queueEntry.last_matched_at).getTime()) / 1000));
@@ -564,6 +559,19 @@
     clearInterval(scanTimer);
     clearInterval(roundTimer);
   });
+
+  function bindRuleModal() {
+    const fabBtn = document.getElementById("rule-fab-btn");
+    const modal = document.getElementById("rule-modal");
+    const closeBtn = document.getElementById("rule-close-btn");
+    if (!fabBtn || !modal) return;
+    fabBtn.onclick = () => {
+      document.getElementById("rule-content").innerHTML = CareerRules.html();
+      modal.classList.add("show");
+    };
+    if (closeBtn) closeBtn.onclick = () => modal.classList.remove("show");
+  }
+  bindRuleModal();
 
   init();
 })();

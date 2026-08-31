@@ -1969,8 +1969,12 @@ input,select,textarea{max-width:100%;min-width:0;}
 .career-class-card .cc-desc{font-size:11.5px;color:var(--ink-dim);line-height:1.6;overflow-wrap:anywhere;}
 .career-class-card .cc-ult{font-size:11.5px;color:var(--ink);margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);}
 .career-class-card .cc-ult b{color:var(--gold);}
-.career-class-card .cc-stats{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
-.career-class-card .cc-stat{
+/* cc-stats/cc-stat 原本只在 .career-class-card 裡面才會套用 flex+gap，但 tower.js/career.js 的
+   頭部摘要列(職業/等級旁邊那排攻防速幸運標籤)是直接把 .cc-stats 放在頁面上、不在卡片裡，
+   套不到上面那條規則，才會全部黏在一起沒有間隔——拿掉 scope 讓它任何地方都吃得到樣式。 */
+.cc-stats{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+.cc-stat{
+  display:inline-flex;align-items:center;gap:3px;
   font-size:10.5px;font-family:'Space Mono',monospace;color:var(--ink-dim);
   background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:2px 6px;
 }

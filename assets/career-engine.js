@@ -35,12 +35,14 @@ window.CareerEngine = (function () {
       def1: p1.stats.def,
       spd1: p1.stats.spd,
       luck1: p1.stats.luck,
+      matk1: p1.stats.matk || 0,
       maxhp1: p1.stats.maxHp,
       hp1: p1.stats.maxHp,
       atk2: p2.stats.atk,
       def2: p2.stats.def,
       spd2: p2.stats.spd,
       luck2: p2.stats.luck,
+      matk2: p2.stats.matk || 0,
       maxhp2: p2.stats.maxHp,
       hp2: p2.stats.maxHp,
       ultUsed1: false,
@@ -66,8 +68,10 @@ window.CareerEngine = (function () {
       // assassin(暗殺)、archer(連環箭)的大招效果在呼叫端另外處理(必爆/多打一次)
     }
 
-    let dmg = baseDamage(atkStats.atk, defStats.def, ignoreDefRatio);
-    if (attackerClass === "mage" && isUlt) dmg += CD.CLASS_EFFECTS.mage.skillDmgBonus || 0;
+    // 魔法系(法師/巫醫/還沒轉職的魔法系學徒)一律用魔攻算傷害，不是共用攻擊力
+    const info = CD.CLASS_INFO[attackerClass];
+    const primaryAtk = info && info.path === "magic" ? atkStats.matk : atkStats.atk;
+    let dmg = baseDamage(primaryAtk, defStats.def, ignoreDefRatio);
     dmg *= dmgMult;
 
     let crit = false;
@@ -102,8 +106,8 @@ window.CareerEngine = (function () {
     let skip1 = false; // 這回合不出手攻擊(守衛防禦型大招 / 巫醫治療型大招)
     let skip2 = false;
 
-    const stats1 = { atk: s.atk1, def: s.def1, spd: s.spd1, luck: s.luck1 };
-    const stats2 = { atk: s.atk2, def: s.def2, spd: s.spd2, luck: s.luck2 };
+    const stats1 = { atk: s.atk1, def: s.def1, spd: s.spd1, luck: s.luck1, matk: s.matk1 || 0 };
+    const stats2 = { atk: s.atk2, def: s.def2, spd: s.spd2, luck: s.luck2, matk: s.matk2 || 0 };
 
     // ---- 位置3:全免疫型大招(守衛) + 平行分支:治療型大招(巫醫)。兩者都不是攻擊動作,先處理。
     function handleNonAttackUlt(side) {
@@ -124,7 +128,8 @@ window.CareerEngine = (function () {
         events.push({ side, type: "ult_shield", text: `${side === 1 ? "你" : "對方"}使出「銅牆鐵壁」,這回合幾乎不受傷!` });
       } else if (cls === "healer") {
         const maxHp = side === 1 ? s.maxhp1 : s.maxhp2;
-        const heal = Math.round(maxHp * 0.5) + (CD.CLASS_EFFECTS.healer.healBonus || 0);
+        const matk = side === 1 ? s.matk1 : s.matk2;
+        const heal = Math.round(maxHp * 0.5) + (CD.CLASS_EFFECTS.healer.healBonus || 0) + Math.round((matk || 0) * 1.5);
         if (side === 1) {
           hp1 = Math.min(s.maxhp1, hp1 + heal);
           ultUsed1 = true;

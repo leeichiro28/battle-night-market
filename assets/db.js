@@ -2371,7 +2371,7 @@ const db = (function () {
   const CAREER_AUTO_FARM_EFFICIENCY = 0.7; // 掛機效率打七折(企劃書第五、八節)
 
   function _emptyStatAlloc() {
-    return { atk: 0, def: 0, spd: 0, hp: 0, luck: 0 };
+    return { atk: 0, def: 0, spd: 0, hp: 0, luck: 0, matk: 0 };
   }
 
   // 等級曲線用 career-floors.js 的 expToNextLevel，在本地把 exp 疊代扣光算出最終等級，
@@ -2804,7 +2804,7 @@ const db = (function () {
     if (roll < 0.55) {
       const coinGain = 10 + Math.floor(Math.random() * 21);
       patch.coins += coinGain;
-      text = `小獎!退還一些零錢，淨賺 ${coinGain - price} 幣。`;
+      text = `小獎!退回了 ${coinGain} 幣(這一抽扣掉抽獎費用後還是虧了 ${price - coinGain} 幣，純安慰獎)。`;
     } else if (roll < 0.75) {
       patch.stat_points = progress.stat_points + 1;
       text = `中獎!拿到 1 點自由數值點。`;

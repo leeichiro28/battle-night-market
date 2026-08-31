@@ -19,6 +19,7 @@ window.CareerFloors = (function () {
     const spd = Math.round(2 + n * 0.35);
     const hp = Math.round((14 + n * 3) * growth);
     const luck = Math.floor(n * 0.2);
+    const matk = atk; // 怪物的魔攻直接跟攻擊力同步，樓層資料不用另外調兩條成長曲線
 
     const coinBase = 5 + Math.floor(n * 0.3);
     const expBase = 8 + Math.floor(n * 0.6);
@@ -28,7 +29,7 @@ window.CareerFloors = (function () {
       name: isMiniBoss ? `${nameBase}王(${n}層關主)` : nameBase,
       isMiniBoss,
       classKey,
-      stats: { atk, def, spd, hp, luck, maxHp: hp },
+      stats: { atk, def, spd, hp, luck, matk, maxHp: hp },
       coinReward: isMiniBoss ? coinBase * 2 : coinBase,
       expReward: isMiniBoss ? Math.round(expBase * 1.8) : expBase,
       // 掉落機率跟稀有度用一致的四級系統(跟夜市拍賣商品清單同一套 common/rare/epic/legendary)：
@@ -81,16 +82,16 @@ window.CareerFloors = (function () {
       legendary: { name: "都市傳說開山刀王", rarity: "legendary", statKey: "atk", statValue: 5 },
     },
     mage: {
-      common: { name: "棉花糖魔杖", rarity: "common", statKey: "atk", statValue: 1 },
-      rare: { name: "老闆特調法杖", rarity: "rare", statKey: "atk", statValue: 3 },
-      epic: { name: "限量版老闆秘藏法杖", rarity: "epic", statKey: "atk", statValue: 4 },
-      legendary: { name: "老闆傳承三代的鎮店法杖", rarity: "legendary", statKey: "atk", statValue: 5 },
+      common: { name: "棉花糖魔杖", rarity: "common", statKey: "matk", statValue: 1 },
+      rare: { name: "老闆特調法杖", rarity: "rare", statKey: "matk", statValue: 3 },
+      epic: { name: "限量版老闆秘藏法杖", rarity: "epic", statKey: "matk", statValue: 4 },
+      legendary: { name: "老闆傳承三代的鎮店法杖", rarity: "legendary", statKey: "matk", statValue: 5 },
     },
     healer: {
-      common: { name: "藥燉排骨勺", rarity: "common", statKey: "atk", statValue: 1 },
-      rare: { name: "回春糖葫蘆杖", rarity: "rare", statKey: "atk", statValue: 3 },
-      epic: { name: "限量版糖葫蘆聖杖", rarity: "epic", statKey: "atk", statValue: 4 },
-      legendary: { name: "回春大師的傳說糖葫蘆", rarity: "legendary", statKey: "atk", statValue: 5 },
+      common: { name: "藥燉排骨勺", rarity: "common", statKey: "matk", statValue: 1 },
+      rare: { name: "回春糖葫蘆杖", rarity: "rare", statKey: "matk", statValue: 3 },
+      epic: { name: "限量版糖葫蘆聖杖", rarity: "epic", statKey: "matk", statValue: 4 },
+      legendary: { name: "回春大師的傳說糖葫蘆", rarity: "legendary", statKey: "matk", statValue: 5 },
     },
   };
   const EQUIPMENT_TABLE = {
@@ -111,7 +112,7 @@ window.CareerFloors = (function () {
   const RARITIES = ["common", "rare", "epic", "legendary"];
   const RARITY_LABEL = { common: "普通", rare: "稀有", epic: "史詩", legendary: "傳說" };
   const RARITY_ICON = { common: "package", rare: "gem", epic: "flame", legendary: "crown" };
-  const STAT_LABEL = { atk: "攻擊", def: "防禦", spd: "速度", luck: "幸運", hp: "HP" };
+  const STAT_LABEL = { atk: "攻擊", def: "防禦", spd: "速度", luck: "幸運", hp: "HP", matk: "魔攻" };
 
   // 給裝備一句白話的加成說明，商店列表跟之後的背包介面都能直接用這個，不用另外存一份文字。
   function describeItem(item) {
@@ -168,6 +169,16 @@ window.CareerFloors = (function () {
   }
 
   const GACHA_PRICE = 50;
+  // 顯示用的機率表，要跟 db.js 的 buyCareerGachaPull 那幾個 roll < X 的實際判斷式維持一致，
+  // 改機率的話兩邊都要一起改(這裡只是給「抽獎機」分頁顯示機率表用，不是實際判定邏輯)。
+  const GACHA_POOL = [
+    { label: "小獎(退回一些幣)", chance: 0.55 },
+    { label: "自由數值點 x1", chance: 0.2 },
+    { label: "普通裝備", chance: 0.1 },
+    { label: "稀有裝備", chance: 0.12 },
+    { label: "史詩裝備", chance: 0.025 },
+    { label: "傳說裝備(整場限量)", chance: 0.005 },
+  ];
 
   // 裝備合成:同部位、同稀有度的裝備湊滿3件就能嘗試合成，成功機率固定，
   // 成功拿到下一個稀有度的裝備、失敗拿回1件隨機部位的普通裝備(等於虧了，賭運氣)。
@@ -202,6 +213,7 @@ window.CareerFloors = (function () {
     EQUIPMENT_PRICE_RANGE,
     equipmentPrice,
     GACHA_PRICE,
+    GACHA_POOL,
     MEDAL_TIERS,
     SYNTHESIS_PATH,
     SYNTHESIS_INPUT_COUNT,

@@ -927,7 +927,7 @@ create table if not exists career_progress (
   exp int not null default 0,
   coins int not null default 0,
   stat_points int not null default 0,    -- 還沒花的自由數值點
-  stat_alloc jsonb not null default '{"atk":0,"def":0,"spd":0,"hp":0,"luck":0}'::jsonb,
+  stat_alloc jsonb not null default '{"atk":0,"def":0,"spd":0,"hp":0,"luck":0,"matk":0}'::jsonb,
   equipment jsonb not null default '{"weapon":null,"armor":null,"accessory":null}'::jsonb,
   train_ready_at timestamptz not null default now(),
   auto_farm_floor int,                    -- 目前開著自動掛機的樓層,null=沒開

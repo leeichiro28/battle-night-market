@@ -28,6 +28,15 @@
     </div>
   </div>
 
+  <button class="btn ghost rule-fab" id="rule-fab-btn"><i data-lucide="book-open" class="ico"></i><span class="fab-label">規則說明</span></button>
+  <div class="modal-overlay" id="rule-modal">
+    <div class="modal-card">
+      <h3>職業養成對決規則</h3>
+      <div id="rule-content"></div>
+      <button class="btn ghost block" id="rule-close-btn" style="margin-top:14px;">關閉</button>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/lucide@1.27.0/dist/umd/lucide.min.js"></script>
   <script src="assets/supabase-config.js"></script>
@@ -39,6 +48,7 @@
   <script src="assets/career-floors.js"></script>
   <script src="assets/career-events.js"></script>
   <script src="assets/career-pve.js"></script>
+  <script src="assets/career-rules.js"></script>
   <script src="assets/tower.js"></script>
 </body>
 </html>

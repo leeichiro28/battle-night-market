@@ -22,6 +22,7 @@
   const TABS = [
     { key: "tower", icon: "mountain", label: "爬塔" },
     { key: "shop", icon: "store", label: "商店" },
+    { key: "gacha", icon: "dices", label: "抽獎機" },
     { key: "synthesis", icon: "flask-conical", label: "合成" },
     { key: "backpack", icon: "backpack", label: "背包" },
   ];
@@ -31,7 +32,9 @@
   let myBuild = null;
   let progress = null;
   let lastBattle = null; // { won, log, floorDef, coinGain, expGain, leveledUp, drop }
-  let lastEvent = null; // { eventDef, text, drop } — instant事件/商店購買結果
+  let lastEvent = null; // { eventDef, text, drop } — instant事件/商店購買結果(顯示在爬塔分頁)
+  let lastGachaResult = null; // 抽獎結果(顯示在抽獎機分頁，不會跳走)
+  let lastSynthesisResult = null; // 合成結果(顯示在合成分頁，不會跳走)
   let broadcasts = [];
   let highlight = null; // { icon, title, text } — 傳說裝備/爬完樓層之類的精彩時刻，顯示大卡片
   let busy = false;
@@ -280,13 +283,14 @@
     }
 
     if (progress.stat_points > 0 && !locked) {
+      const isMagic = CareerData.CLASS_INFO[cls].path === "magic";
       html += `
         <div style="background:var(--panel2);border:1px solid var(--gold-d);border-radius:var(--radius);padding:12px;margin:12px 0;">
           <p style="margin:0 0 8px;font-size:12.5px;color:var(--gold);font-weight:700;">
             ${ui.icon("sparkles")}你有 ${progress.stat_points} 點自由數值點可以分配!
           </p>
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            <button class="btn small" data-alloc="atk">攻擊+1</button>
+            ${isMagic ? `<button class="btn small" data-alloc="matk">魔攻+1</button>` : `<button class="btn small" data-alloc="atk">攻擊+1</button>`}
             <button class="btn small" data-alloc="def">防禦+1</button>
             <button class="btn small" data-alloc="spd">速度+1</button>
             <button class="btn small" data-alloc="hp">HP+3</button>
@@ -406,15 +410,6 @@
       ${equipRow("armor", "防具", CF.EQUIPMENT_TABLE.armor)}
       ${equipRow("accessory", "飾品", CF.EQUIPMENT_TABLE.accessory)}
 
-      <div style="margin-bottom:14px;">
-        <p class="shop-section-title">夜市抽獎機</p>
-        <div class="shop-row">
-          ${ui.icon("dices")}
-          <div class="shop-row-name">隨機獎池<span class="shop-row-desc">小獎幣/數值點/稀有裝備/史詩裝備/極小機率傳說</span></div>
-          <button class="btn small" id="buy-gacha-btn" ${locked ? "disabled" : ""}>${CF.GACHA_PRICE}幣/抽</button>
-        </div>
-      </div>
-
       <div>
         <p class="shop-section-title">戰功勳章(純加排行分，不影響戰鬥數值)</p>
         ${CF.MEDAL_TIERS.map(
@@ -425,7 +420,42 @@
             <button class="btn ghost small" data-buy-medal="${t.key}" ${locked ? "disabled" : ""}>${t.price}幣</button>
           </div>`
         ).join("")}
-      </div>`;
+      </div>
+      <p style="margin:12px 0 0;font-size:11px;color:var(--ink-dim);text-align:center;">想抽獎嗎?抽獎機獨立在隔壁「抽獎機」分頁。</p>`;
+  }
+
+  // ---------------- 分頁3:抽獎機 ----------------
+
+  function renderGachaTab(locked) {
+    const CF = CareerFloors;
+    const poolRows = CF.GACHA_POOL.map(
+      (p) => `
+        <div class="shop-row">
+          <span style="flex-shrink:0;font-weight:700;color:var(--gold);width:44px;">${Math.round(p.chance * 1000) / 10}%</span>
+          <div class="shop-row-name">${ui.esc(p.label)}</div>
+        </div>`
+    ).join("");
+
+    let resultHtml = "";
+    if (lastGachaResult) {
+      resultHtml = `
+        <div style="margin-top:16px;padding:12px;border-radius:var(--radius);border:1px solid var(--gold-d);background:var(--panel2);text-align:center;">
+          ${ui.icon("dices")}
+          <p style="margin:6px 0 0;font-size:12.5px;color:var(--ink);">${ui.esc(lastGachaResult.text)}</p>
+        </div>`;
+    }
+
+    return `
+      <div style="text-align:center;">
+        ${ui.icon("dices", { size: "32px" })}
+        <p style="margin:10px 0 4px;font-weight:700;font-size:15px;">夜市抽獎機</p>
+        <p style="margin:0 0 16px;font-size:11.5px;color:var(--ink-dim);">${CF.GACHA_PRICE} 幣抽一次，機率如下:</p>
+      </div>
+      ${poolRows}
+      <div style="text-align:center;margin-top:16px;">
+        <button class="btn" id="buy-gacha-btn" ${locked ? "disabled" : ""}>${ui.icon("dices")}抽一次(${CF.GACHA_PRICE}幣)</button>
+      </div>
+      ${resultHtml}`;
   }
 
   // ---------------- 分頁3:合成 ----------------
@@ -451,30 +481,45 @@
   function renderSynthesisTab(locked) {
     const CF = CareerFloors;
     const groups = groupInventory();
-    const rows = [];
+    const need = CF.SYNTHESIS_INPUT_COUNT;
+    const options = [];
     ["weapon", "armor", "accessory"].forEach((slot) => {
       ["common", "rare"].forEach((rarity) => {
-        const key = `${slot}:${rarity}`;
-        const g = groups[key];
-        const count = g ? g.count : 0;
+        const count = (groups[`${slot}:${rarity}`] || { count: 0 }).count;
         const nextRarity = CF.SYNTHESIS_PATH[rarity];
-        const need = CF.SYNTHESIS_INPUT_COUNT;
-        const canSynthesize = !locked && count >= need;
-        rows.push(`
-          <div class="shop-row">
-            ${rarityTag(rarity)}
-            <div class="shop-row-name">${slotLabel(slot)}<span class="shop-row-desc">目前 ${count} 件 / 需要 ${need} 件，成功會變成${CF.RARITY_LABEL[nextRarity]}(機率${Math.round(CF.SYNTHESIS_SUCCESS_RATE * 100)}%，失敗拿回1件隨機普通裝備)</span></div>
-            <button class="btn small" data-synthesize="${slot}:${rarity}" ${canSynthesize ? "" : "disabled"}>${ui.icon("arrow-big-up")}合成(消耗${need}件)</button>
-          </div>`);
+        options.push(
+          `<option value="${slot}:${rarity}">${slotLabel(slot)} · ${CF.RARITY_LABEL[rarity]}(你有${count}件) → ${CF.RARITY_LABEL[nextRarity]}</option>`
+        );
       });
     });
+
+    let resultHtml = "";
+    if (lastSynthesisResult) {
+      const r = lastSynthesisResult;
+      resultHtml = `
+        <div style="margin-top:16px;padding:12px;border-radius:var(--radius);border:1px solid ${r.success ? "var(--gold-d)" : "var(--line)"};background:var(--panel2);text-align:center;">
+          ${ui.icon(r.success ? "arrow-big-up" : "circle-x")}
+          <p style="margin:6px 0 0;font-size:12.5px;color:${r.success ? "var(--gold)" : "var(--ink)"};">${ui.esc(r.text)}</p>
+        </div>`;
+    }
+
     return `
-      <p style="margin:0 0 12px;font-size:11px;color:var(--ink-dim);">
-        把背包裡同部位、同稀有度的裝備湊滿 3 件就能合成，成功機率固定，成功變成下一個稀有度，
-        失敗只拿回 1 件隨機部位的普通裝備(等於虧了，賭運氣)。只做得到 普通→稀有→史詩，
-        傳說要不要開放合成是「以後可能會做」的事，先保持只能商店/抽獎機拿。
-      </p>
-      ${rows.join("")}`;
+      <div style="text-align:center;">
+        ${ui.icon("flask-conical", { size: "32px" })}
+        <p style="margin:10px 0 4px;font-weight:700;font-size:15px;">裝備合成</p>
+        <p style="margin:0 0 16px;font-size:11.5px;color:var(--ink-dim);line-height:1.7;">
+          同部位、同稀有度的裝備湊滿 ${need} 件就能合成一次。<br/>
+          成功機率 ${Math.round(CF.SYNTHESIS_SUCCESS_RATE * 100)}%，成功變成下一個稀有度；<br/>
+          失敗只拿回 1 件隨機部位的普通裝備(等於虧了，賭運氣)。
+        </p>
+        <select id="synthesis-select" style="max-width:320px;width:100%;">
+          ${options.join("")}
+        </select>
+        <div style="margin-top:14px;">
+          <button class="btn" id="synthesize-btn" ${locked ? "disabled" : ""}>${ui.icon("arrow-big-up")}合成(消耗${need}件)</button>
+        </div>
+        ${resultHtml}
+      </div>`;
   }
 
   // ---------------- 分頁4:背包 ----------------
@@ -579,7 +624,7 @@
       ${statBarRow("經驗值", `${progress.exp} / ${expNeed}`, progress.exp / expNeed, "exp")}
       ${statBarRow("HP(上限)", `${stats.hp} / ${stats.maxHp}`, 1, "hp")}
       <div class="cc-stats" style="margin:10px 0 4px;">
-        <span class="cc-stat">攻${stats.atk}</span>
+        ${info.path === "magic" ? `<span class="cc-stat">魔攻${stats.matk}</span>` : `<span class="cc-stat">攻${stats.atk}</span>`}
         <span class="cc-stat">防${stats.def}</span>
         <span class="cc-stat">速${stats.spd}</span>
         <span class="cc-stat">幸運${stats.luck}</span>
@@ -594,6 +639,8 @@
       html += renderTowerTab({ locked, hasPendingEvent, canTrain, trainCooldownMs, nextFloor, nextFloorDef, isAutoFarming });
     } else if (activeTab === "shop") {
       html += renderShopTab(locked || hasPendingEvent);
+    } else if (activeTab === "gacha") {
+      html += renderGachaTab(locked || hasPendingEvent);
     } else if (activeTab === "synthesis") {
       html += renderSynthesisTab(locked || hasPendingEvent);
     } else if (activeTab === "backpack") {
@@ -774,12 +821,10 @@
         try {
           const result = await db.buyCareerGachaPull(eventId, myId);
           progress = result.progress;
-          lastEvent = { eventDef: { icon: "dices", name: "夜市抽獎機" }, text: result.text };
-          lastBattle = null;
+          lastGachaResult = result;
           if (result.drop && result.drop.rarity === "legendary") {
             highlight = { icon: "crown", title: "頭獎!", text: `抽獎機給了你傳說裝備「${result.drop.name}」!` };
           }
-          activeTab = "tower";
           render();
         } catch (e) {
           await ui.alert(e.message || "抽獎失敗", { title: "操作失敗", tone: "danger" });
@@ -810,23 +855,20 @@
       };
     });
 
-    app.querySelectorAll("[data-synthesize]").forEach((btn) => {
-      if (btn.disabled) return;
-      btn.onclick = async () => {
+    const synthesizeBtn = document.getElementById("synthesize-btn");
+    if (synthesizeBtn && !synthesizeBtn.disabled) {
+      synthesizeBtn.onclick = async () => {
         if (busy) return;
         busy = true;
         try {
-          const [slot, rarity] = btn.dataset.synthesize.split(":");
+          const select = document.getElementById("synthesis-select");
+          const [slot, rarity] = select.value.split(":");
           const result = await db.synthesizeCareerEquipment(eventId, myId, slot, rarity);
           progress = result.progress;
-          lastEvent = {
-            eventDef: { icon: result.success ? "arrow-big-up" : "circle-x", name: "裝備合成" },
-            text: result.success
-              ? `合成成功!升級成「${result.item.name}」了!`
-              : `合成失敗，只拿回 1 件「${result.item.name}」，運氣不好，再試一次吧。`,
+          lastSynthesisResult = {
+            success: result.success,
+            text: result.success ? `合成成功!升級成「${result.item.name}」了!` : `合成失敗，只拿回 1 件「${result.item.name}」，運氣不好，再試一次吧。`,
           };
-          lastBattle = null;
-          activeTab = "tower";
           render();
         } catch (e) {
           await ui.alert(e.message || "合成失敗", { title: "操作失敗", tone: "danger" });
@@ -835,7 +877,7 @@
           busy = false;
         }
       };
-    });
+    }
 
     app.querySelectorAll("[data-equip-item]").forEach((btn) => {
       btn.onclick = async () => {
@@ -951,6 +993,19 @@
     if (unsubProgress) unsubProgress();
     clearInterval(scanTimer);
   });
+
+  function bindRuleModal() {
+    const fabBtn = document.getElementById("rule-fab-btn");
+    const modal = document.getElementById("rule-modal");
+    const closeBtn = document.getElementById("rule-close-btn");
+    if (!fabBtn || !modal) return;
+    fabBtn.onclick = () => {
+      document.getElementById("rule-content").innerHTML = CareerRules.html();
+      modal.classList.add("show");
+    };
+    if (closeBtn) closeBtn.onclick = () => modal.classList.remove("show");
+  }
+  bindRuleModal();
 
   init();
 })();

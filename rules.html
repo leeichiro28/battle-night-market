@@ -461,18 +461,94 @@
       </div>
     </div>
 
+    <div class="game-group" data-group="career">
+      <button type="button" class="game-toggle">
+        <i data-lucide="swords" class="ico"></i>
+        <span class="game-toggle-label">職業養成對決</span>
+        <span class="game-toggle-count">6 個小節</span>
+        <i data-lucide="chevron-down" class="ico chev"></i>
+      </button>
+      <div class="game-body" hidden>
+
+        <div class="game-section">
+          <h4><i data-lucide="user" class="ico"></i> 職業與轉職(兩段式)</h4>
+          <p style="color:var(--ink-dim);line-height:1.9;">
+          一開始每個人都是 <b style="color:var(--ink);">見習學徒</b>，數值最單純，PVP也打得動只是比較吃虧。<br/><br/>
+          <b style="color:var(--gold);">Lv.5</b>:可以選一個系——<b style="color:var(--ink);">力量系 / 敏捷系 / 魔法系</b>三選一，變成該系學徒，數值/大招都比純見習好一點，但還沒定案最終職業。<br/><br/>
+          <b style="color:var(--gold);">Lv.15</b>:在 Lv.5 選的那個系裡面選一條線，正式轉職成最終職業，<b style="color:var(--red);">選了就不能再改</b>:<br/><br/>
+          &nbsp;&nbsp;• 力量系 → <b style="color:var(--ink);">戰士</b>(攻擊路線，大招怒吼衝鋒傷害x2)或 <b style="color:var(--ink);">守衛</b>(防禦路線，大招銅牆鐵壁本回合幾乎不受傷)<br/>
+          &nbsp;&nbsp;• 敏捷系 → <b style="color:var(--ink);">弓箭手</b>(大招連環箭連續攻擊2次)或 <b style="color:var(--ink);">刺客</b>(大招暗殺，對方HP過半以下必定爆擊)<br/>
+          &nbsp;&nbsp;• 魔法系 → <b style="color:var(--ink);">法師</b>(靠<b style="color:var(--epic);">魔攻</b>而不是攻擊力打人，大招魔力爆發無視防禦)或 <b style="color:var(--ink);">巫醫</b>(也是靠魔攻，大招完全治癒回一半HP)<br/><br/>
+          Lv.5 選了力量系，Lv.15 就只能在戰士/守衛裡選，不能臨時跳去別系。法師、巫醫是唯二用<b style="color:var(--epic);">魔攻</b>(而不是攻擊力)計算傷害/治療量的職業，武器、加點都要點魔攻才有用，物理系加了也沒用，反之亦然。
+          </p>
+        </div>
+
+        <div class="game-section">
+          <h4><i data-lucide="mountain" class="ico"></i> 訓練期:爬塔</h4>
+          <p style="color:var(--ink-dim);line-height:1.9;">
+          活動開始要等主辦人在後台按下「開始訓練期」(預設60分鐘倒數)才會開放，時間到自動切到對戰期，主辦人也可以提前手動結束。<br/><br/>
+          爬塔頁面有三個核心動作:<br/><br/>
+          <b style="color:var(--ink);"><i data-lucide="hand-coins" class="ico"></i> 特訓</b>:每90秒可領一次，穩定的基礎收入(幣+少量經驗)，不用打怪也能慢慢升級。<br/><br/>
+          <b style="color:var(--ink);"><i data-lucide="swords" class="ico"></i> 挑戰樓層</b>:沒有冷卻，AI對手直接算完整場戰鬥(不用像PVP等對方回合)。打贏才推進樓層拿獎勵，打輸留在原樓層、不扣任何東西，可以馬上重試。已經清過的樓層也能回頭重新挑戰，用來穩定刷幣/經驗。每次挑戰都是<b style="color:var(--ink);">重新滿血開打</b>，不會把上一場的傷帶到下一場。<br/><br/>
+          <b style="color:var(--ink);"><i data-lucide="repeat" class="ico"></i> 練功掛機</b>:只有已經清過的樓層才能開，系統背景自動幫你反覆挑戰，效率打七折，換取不用一直盯著操作。<br/><br/>
+          每滿10層會遇到小關主，數值比較高但獎勵也更好，保底掉稀有以上的裝備。
+          </p>
+        </div>
+
+        <div class="game-section">
+          <h4><i data-lucide="sparkles" class="ico"></i> 爬塔事件</h4>
+          <p style="color:var(--ink-dim);line-height:1.9;">
+          挑戰樓層時有 25% 機率不是打怪、是穿插一個隨機事件:<br/><br/>
+          <b style="color:var(--ink);">立即生效</b>:算命攤(臨時加值)、神秘人切磋(練習賽，輸了不扣東西)、扒手出沒(損失一點幣)、彈珠台機關(下次特訓多等10秒)、貴人相助(送1點自由數值點，很稀有)、夜市抽獎機(免費抽一次)。<br/><br/>
+          <b style="color:var(--ink);">需要選擇</b>:神秘寶箱(當場開穩拿小獎，或帶回去賭一把可能更好也可能更差)、路過商人(限時特價，買或不買)、轉職邀請(付幣把已經點過的數值點收回來重分配)——這種事件會先卡住，要先做選擇才能繼續其他爬塔動作。
+          </p>
+        </div>
+
+        <div class="game-section">
+          <h4><i data-lucide="store" class="ico"></i> 商店 / 抽獎機 / 合成 / 背包</h4>
+          <p style="color:var(--ink-dim);line-height:1.9;">
+          裝備分四個稀有度:<span class="tier-tag common">普通</span> <span class="tier-tag rare">稀有</span> <span class="tier-tag epic">史詩</span> <span class="tier-tag legendary">傳說</span>，武器是分職業的(每個職業武器造型/加成都不一樣)，防具/飾品共用。<b style="color:var(--gold);">傳說裝備整場限購1件</b>(商店買、抽獎機中、合成都算同一個名額)。<br/><br/>
+          <b style="color:var(--ink);">商店</b>:直接花幣加數值點(買一次漲一次價)、買指定稀有度的裝備、買戰功勳章(純加排行分，不影響戰鬥數值，給不想拚戰鬥的人)。<br/><br/>
+          <b style="color:var(--ink);">抽獎機</b>:固定幣數抽一次，機率表:小獎(幣)55%、自由數值點20%、普通裝備10%、稀有裝備12%、史詩裝備2.5%、傳說裝備0.5%。<br/><br/>
+          <b style="color:var(--ink);">合成</b>:背包裡同部位、同稀有度的裝備湊滿3件可以合成一次，固定機率成功變成下一個稀有度(普通→稀有→史詩)，失敗只拿回1件隨機部位的普通裝備。<br/><br/>
+          <b style="color:var(--ink);">背包</b>:所有撿到/買到的裝備都先進背包，不會自動穿上，要自己決定穿哪一件、卸下哪一件。
+          </p>
+        </div>
+
+        <div class="game-section">
+          <h4><i data-lucide="flame" class="ico"></i> 對戰期:PVP</h4>
+          <p style="color:var(--ink-dim);line-height:1.9;">
+          訓練期結束、切到對戰期後，爬塔功能關閉，PVP開放。配對是<b style="color:var(--ink);">先進先配</b>的持續配對池，不是賽程淘汰制——打完一場立刻退回佇列，馬上可以排下一場，落單的人就等下一個人加入。<br/><br/>
+          每回合雙方各選<b style="color:var(--ink);">普通攻擊</b>或<b style="color:var(--ink);">大招</b>(每場限用一次)，速度高的先手，同速隨機決定。普通攻擊傷害 = max(1, 攻擊力 − 防禦力/2) + 隨機浮動(1~3)，爆擊機率 = 5% + 幸運力x2%，爆擊傷害x1.5。30秒沒動作會自動幫你出普通攻擊。<br/><br/>
+          你的PVP數值就是訓練期爬塔練出來的(基礎值 + 加點 + 裝備)，只要去過爬塔頁面一次，數值就會自動套用，沒去過的人用最陽春的基礎值應戰。
+          </p>
+        </div>
+
+        <div class="game-section">
+          <h4><i data-lucide="trophy" class="ico"></i> 積分與排行</h4>
+          <p style="color:var(--ink-dim);line-height:1.9;">
+          最終積分 = PVP戰績分 + 爬塔高度加成。PVP贏一場 +10 分，連勝加成每連勝+2分(封頂+10)，輸一場 +2 分、連勝歸零;爬塔每爬10層 +5 分。活動結束依總分排行、套用主辦人設定的獎勵。<br/><br/>
+          積分第一名會拿到「夜市擂台之王」稱號，爬完目前開放的所有樓層會拿到「爬塔霸主」稱號，抽到/買到傳說裝備、爬完全部樓層、PVP連勝3場以上都會觸發全服廣播，讓整場活動的人都看得到。
+          </p>
+        </div>
+
+      </div>
+    </div>
+
     <div class="card">
       <h3><i data-lucide="hourglass" class="ico"></i> 沒有進場、掛機了怎麼辦</h3>
       <p style="color:var(--ink-dim);line-height:1.9;">
       場次一開打，系統會給雙方時間進場:<br/><br/>
       <b style="color:var(--ink);">只有一方沒進場</b>:超過 1 分鐘，系統會開始自動幫他出普通招式(不會用防禦骰、加注、大招等技能)，讓對戰可以繼續進行，不會平白判他棄權。他隨時進場都能接手繼續玩。<br/><br/>
       <b style="color:var(--ink);">雙方都沒進場</b>:超過 3 分鐘，系統會判定其中一方直接晉級，畫面會用明顯的大字公告「雙方掛機，已自動棄權」，幾秒後自動帶所有人(玩家跟觀眾)回到等候室，不會卡在對戰畫面不知道發生什麼事。<br/><br/>
-      這些巡邏機制不需要對戰畫面本身開著才會生效，只要有人開著等候室或後台頁面，就會持續運作，確保整場活動不會被單一場對戰卡死。
+      這些巡邏機制不需要對戰畫面本身開著才會生效，只要有人開著等候室或後台頁面，就會持續運作，確保整場活動不會被單一場對戰卡死。<br/><br/>
+      <b style="color:var(--ink);">職業養成對決的PVP</b>另外是「先進先配」的持續配對池，30秒沒動作會自動幫你出普通攻擊，不會有人一直卡住場次不放。
       </p>
     </div>
 
     <div class="footer-nav"><a href="index.html"><i data-lucide="arrow-left" class="ico"></i>回活動列表</a></div>
   </div>
+
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/lucide@1.27.0/dist/umd/lucide.min.js"></script>

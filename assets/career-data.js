@@ -6,7 +6,9 @@
 // 塔爬上線、技能點變成真的可以一點一點拿之後，career.js 的建置流程再改成兩層分開選，
 // 這份資料表本身不用大改。
 window.CareerData = (function () {
-  const BASE_STATS = { atk: 3, def: 2, spd: 3, hp: 20, luck: 0 };
+  // matk(魔攻/魔力):魔法系(法師/巫醫)專用的傷害數值，物理系職業用不到、平常也不會顯示。
+  // 加了這個之後法師才是「靠魔攻打」而不是共用攻擊力，武器/加點/裝備都會分開算。
+  const BASE_STATS = { atk: 3, def: 2, spd: 3, hp: 20, luck: 0, matk: 2 };
 
   // 5% 基礎爆擊 + 幸運力 x2%(企劃書第七節)
   const BASE_CRIT = 0.05;
@@ -91,12 +93,12 @@ window.CareerData = (function () {
     guardian: { statBonus: { hp: 3 }, counterChance: 0.15 },
     archer: { statBonus: { spd: 2 }, extraHitChance: 0.2 },
     assassin: { statBonus: { luck: 5 }, lethalRhythmMax: 0.3 },
-    mage: { statBonus: {}, skillDmgBonus: 2 },
-    healer: { statBonus: {}, healBonus: 2, regenPerRound: 1 },
+    mage: { statBonus: { matk: 3 } },
+    healer: { statBonus: { matk: 2 }, healBonus: 2, regenPerRound: 1 },
     novice: { statBonus: {}, ultDamageMult: 1.3 },
     novice_strength: { statBonus: { atk: 1, hp: 2 }, ultDamageMult: 1.35 },
     novice_agility: { statBonus: { spd: 1, luck: 1 }, ultDamageMult: 1.35 },
-    novice_magic: { statBonus: { atk: 1 }, ultDamageMult: 1.35 },
+    novice_magic: { statBonus: { matk: 2 }, ultDamageMult: 1.35 },
   };
 
   // 三段式轉職(企劃書):
@@ -197,6 +199,7 @@ window.CareerData = (function () {
     out.def += alloc.def || 0;
     out.spd += alloc.spd || 0;
     out.luck += alloc.luck || 0;
+    out.matk += alloc.matk || 0;
     out.hp += (alloc.hp || 0) * 3;
     if (equipment) {
       ["weapon", "armor", "accessory"].forEach((slot) => {
