@@ -111,8 +111,19 @@ window.CareerFloors = (function () {
   const SLOTS = ["weapon", "armor", "accessory"];
   const RARITIES = ["common", "rare", "epic", "legendary"];
   const RARITY_LABEL = { common: "普通", rare: "稀有", epic: "史詩", legendary: "傳說" };
+  // 裝備等級限制:稀有度是「用商店/抽獎機買的東西」的等級門檻(這些不是從特定樓層掉的，
+  // 沒有樓層可以參考，所以還是照稀有度分)。從樓層掉的裝備改成照「第幾層掉的」算等級門檻
+  // (見 floorReqLevel)，這樣以後樓層開放到21層、30層...不用回頭改這張表，門檻會自動跟著長。
+  const RARITY_REQ_LEVEL = { common: 1, rare: 5, epic: 15, legendary: 20 };
   const RARITY_ICON = { common: "package", rare: "gem", epic: "flame", legendary: "crown" };
-  const STAT_LABEL = { atk: "攻擊", def: "防禦", spd: "速度", luck: "幸運", hp: "HP", matk: "魔攻" };
+  const STAT_LABEL = { atk: "攻擊", def: "防禦", spd: "速度", luck: "幸運", hp: "HP", matk: "魔攻", mp: "MP" };
+
+  // 樓層掉落裝備的等級門檻:1~10層都要Lv.5才穿得動(貼著Lv5轉職那個里程碑，太早期沒必要卡)，
+  // 11層以後門檻直接等於樓層數(11層掉的要Lv.11、20層掉的要Lv.20，以此類推，樓層開放到幾層
+  // 這條公式就自動算到幾級，不用像稀有度那張表一樣手動維護)。
+  function floorReqLevel(floorNumber) {
+    return Math.max(5, floorNumber);
+  }
 
   // 給裝備一句白話的加成說明，商店列表跟之後的背包介面都能直接用這個，不用另外存一份文字。
   function describeItem(item) {
@@ -124,7 +135,8 @@ window.CareerFloors = (function () {
   }
 
   // classKey:要掉武器的話，武器款式要照這位玩家目前的職業給(轉職前拿到的是見習武器，
-  // 轉職後打出來的才會是對應職業的武器)。
+  // 轉職後打出來的才會是對應職業的武器)。掉出來的東西會帶著 reqLevel(這層樓算出來的等級門檻)，
+  // 跟稀有度是分開的兩件事——史詩不代表一定要Lv15，要看是幾層掉的。
   function rollDrop(floorDef, classKey) {
     if (Math.random() > floorDef.dropChance) return null;
     const slot = SLOTS[Math.floor(Math.random() * SLOTS.length)];
@@ -138,11 +150,8 @@ window.CareerFloors = (function () {
         break;
       }
     }
-    if (slot === "weapon") {
-      const table = WEAPON_TABLE[classKey] || WEAPON_TABLE.novice;
-      return { slot, ...table[rarity] };
-    }
-    return { slot, ...EQUIPMENT_TABLE[slot][rarity] };
+    const base = slot === "weapon" ? (WEAPON_TABLE[classKey] || WEAPON_TABLE.novice)[rarity] : EQUIPMENT_TABLE[slot][rarity];
+    return { slot, ...base, reqLevel: floorReqLevel(floorDef.floor) };
   }
 
   // 等級曲線:越後面需要越多經驗值(企劃書第三節)
@@ -180,6 +189,12 @@ window.CareerFloors = (function () {
     { label: "傳說裝備(整場限量)", chance: 0.005 },
   ];
 
+  // 藥水:恢復藥水補HP、魔力藥水補MP，都是消耗品，用掉一瓶少一瓶。
+  const POTIONS = {
+    hp: { name: "恢復藥水", price: 30, healRatio: 0.4, icon: "flask-round" },
+    mp: { name: "魔力藥水", price: 25, healRatio: 0.5, icon: "flask-conical" },
+  };
+
   // 裝備合成:同部位、同稀有度的裝備湊滿3件就能嘗試合成，成功機率固定，
   // 成功拿到下一個稀有度的裝備、失敗拿回1件隨機部位的普通裝備(等於虧了，賭運氣)。
   // 只做得到 普通->稀有->史詩，傳說要另外開放合成的話，以後把 SYNTHESIS_PATH.epic 補上就好，
@@ -203,6 +218,8 @@ window.CareerFloors = (function () {
     SLOTS,
     RARITIES,
     RARITY_LABEL,
+    RARITY_REQ_LEVEL,
+    floorReqLevel,
     RARITY_ICON,
     STAT_LABEL,
     describeItem,
@@ -214,6 +231,7 @@ window.CareerFloors = (function () {
     equipmentPrice,
     GACHA_PRICE,
     GACHA_POOL,
+    POTIONS,
     MEDAL_TIERS,
     SYNTHESIS_PATH,
     SYNTHESIS_INPUT_COUNT,

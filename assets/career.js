@@ -374,7 +374,7 @@
     const oppSlot = mySlot === 1 ? 2 : 1;
     const state = match.state || {};
     if (state[`m${oppSlot}`]) return;
-    const canUlt = !state[`ultUsed${oppSlot}`];
+    const canUlt = (state[`mp${oppSlot}`] || 0) >= (CareerData.ULT_MANA_COST || 0);
     const action = canUlt && Math.random() < 0.35 ? "ult" : "attack";
     try {
       await db.submitCareerMove(match.id, oppSlot, { action });
@@ -444,9 +444,13 @@
     const oppHp = mySlot === 1 ? s.hp2 : s.hp1;
     const myMaxHp = mySlot === 1 ? s.maxhp1 : s.maxhp2;
     const oppMaxHp = mySlot === 1 ? s.maxhp2 : s.maxhp1;
+    const myMp = (mySlot === 1 ? s.mp1 : s.mp2) || 0;
+    const oppMp = (mySlot === 1 ? s.mp2 : s.mp1) || 0;
+    const myMaxMp = (mySlot === 1 ? s.maxmp1 : s.maxmp2) || 0;
+    const oppMaxMp = (mySlot === 1 ? s.maxmp2 : s.maxmp1) || 0;
     const mySpd = mySlot === 1 ? s.spd1 : s.spd2;
     const oppSpd = mySlot === 1 ? s.spd2 : s.spd1;
-    const myUltUsed = mySlot === 1 ? s.ultUsed1 : s.ultUsed2;
+    const ultAffordable = myMp >= (CareerData.ULT_MANA_COST || 0);
     const myInfo = CareerData.CLASS_INFO[myClass];
     const oppInfo = CareerData.CLASS_INFO[oppClass];
     const isDone = match.status === "done";
@@ -465,12 +469,14 @@
           <div class="cs-name">${ui.icon(myInfo.icon)}${ui.esc(myName || "你")}</div>
           <div class="cs-sub">${ui.esc(myInfo.name)} · 速度 ${mySpd}</div>
           ${statBarHtml("HP", myHp, myMaxHp, "hp")}
+          ${statBarHtml("MP", myMp, myMaxMp, "mp")}
         </div>
         <div class="career-vs-mid">VS</div>
         <div class="career-side right">
           <div class="cs-name">${ui.esc(oppName || "對手")}${ui.icon(oppInfo.icon)}</div>
           <div class="cs-sub">${ui.esc(oppInfo.name)} · 速度 ${oppSpd}</div>
           ${statBarHtml("HP", oppHp, oppMaxHp, "hp")}
+          ${statBarHtml("MP", oppMp, oppMaxMp, "mp")}
         </div>
       </div>`;
 
@@ -488,8 +494,8 @@
       html += `
         <div class="career-action-row">
           <button class="btn" id="atk-btn" ${iActed ? "disabled" : ""}>${ui.icon("sword")}普通攻擊</button>
-          <button class="btn career-ult-btn" id="ult-btn" ${iActed || myUltUsed ? "disabled" : ""}>
-            ${ui.icon("flame")}${ui.esc(myInfo.ultName)}${myUltUsed ? "(已使用)" : ""}
+          <button class="btn career-ult-btn" id="ult-btn" ${iActed || !ultAffordable ? "disabled" : ""}>
+            ${ui.icon("flame")}${ui.esc(myInfo.ultName)}(${CareerData.ULT_MANA_COST || 0}魔力)${!ultAffordable ? "(魔力不足)" : ""}
           </button>
         </div>
         <p id="round-status" style="text-align:center;font-size:11.5px;color:var(--ink-dim);margin:10px 0 0;">

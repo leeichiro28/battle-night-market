@@ -8,7 +8,11 @@
 window.CareerData = (function () {
   // matk(魔攻/魔力):魔法系(法師/巫醫)專用的傷害數值，物理系職業用不到、平常也不會顯示。
   // 加了這個之後法師才是「靠魔攻打」而不是共用攻擊力，武器/加點/裝備都會分開算。
-  const BASE_STATS = { atk: 3, def: 2, spd: 3, hp: 20, luck: 0, matk: 2 };
+  // mp(魔力值):任何職業都有，不是魔法系專屬——大招要花魔力才能用(見 career-engine.js)，
+  // 魔力不夠就只能普通攻擊，回合結束會回一點魔力，也可以用魔力藥水補。
+  const BASE_STATS = { atk: 3, def: 2, spd: 3, hp: 20, luck: 0, matk: 2, mp: 10 };
+  const ULT_MANA_COST = 6; // 大招固定花費(先不分職業，簡單版)
+  const MANA_REGEN_PER_ROUND = 2;
 
   // 5% 基礎爆擊 + 幸運力 x2%(企劃書第七節)
   const BASE_CRIT = 0.05;
@@ -159,6 +163,27 @@ window.CareerData = (function () {
   const TRANSFER_LEVEL_PATH = 5; // 到這個等級可以選一個系(力量/敏捷/魔法)
   const TRANSFER_LEVEL_FINAL = 15; // 到這個等級可以在選好的系裡定案最終職業
 
+  // 轉職要有感覺:每次轉職都直接送一筆固定的數值加點(疊加進 stat_alloc，永久生效，
+  // 跟被動的 CLASS_EFFECTS.statBonus 是兩件事)，職業不同送的數值也不同，對應角色定位。
+  // Lv15 定案最終職業送的比 Lv5 選系送的多，畢竟是真正的職業成形。
+  const PATH_TRANSFER_BONUS = {
+    strength: { atk: 2, hp: 1 },
+    agility: { spd: 2, luck: 1 },
+    magic: { matk: 2, mp: 1 },
+  };
+  const FINAL_TRANSFER_BONUS = {
+    warrior: { atk: 3 },
+    guardian: { def: 2, hp: 1 },
+    archer: { spd: 3 },
+    assassin: { luck: 3 },
+    mage: { matk: 3 },
+    healer: { matk: 2, mp: 1 },
+  };
+
+  // Lv5 選系那一刻，除了轉職加點之外，順便送一份新手禮包(藥水)，讓玩家一開始就有點
+  // 應急資源，不用馬上就要煩惱HP/MP見底怎麼辦。
+  const STARTER_PACK_POTIONS = { hp: 2, mp: 1 };
+
   function computeStats(finalClassKey) {
     const info = CLASS_INFO[finalClassKey];
     const effects = CLASS_EFFECTS[finalClassKey];
@@ -167,7 +192,7 @@ window.CareerData = (function () {
     Object.keys(effects.statBonus || {}).forEach((k) => {
       stats[k] = (stats[k] || 0) + effects.statBonus[k];
     });
-    return { ...stats, maxHp: stats.hp };
+    return { ...stats, maxHp: stats.hp, maxMp: stats.mp };
   }
 
   function critChance(stats, hpRatio, finalClassKey) {
@@ -201,6 +226,7 @@ window.CareerData = (function () {
     out.luck += alloc.luck || 0;
     out.matk += alloc.matk || 0;
     out.hp += (alloc.hp || 0) * 3;
+    out.mp += (alloc.mp || 0) * 2;
     if (equipment) {
       ["weapon", "armor", "accessory"].forEach((slot) => {
         const item = equipment[slot];
@@ -210,6 +236,7 @@ window.CareerData = (function () {
       });
     }
     out.maxHp = out.hp;
+    out.maxMp = out.mp;
     return out;
   }
 
@@ -223,6 +250,11 @@ window.CareerData = (function () {
     CLASS_EFFECTS,
     TRANSFER_LEVEL_PATH,
     TRANSFER_LEVEL_FINAL,
+    PATH_TRANSFER_BONUS,
+    FINAL_TRANSFER_BONUS,
+    STARTER_PACK_POTIONS,
+    ULT_MANA_COST,
+    MANA_REGEN_PER_ROUND,
     computeStats,
     applyProgress,
     critChance,

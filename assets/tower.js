@@ -35,6 +35,9 @@
   let lastEvent = null; // { eventDef, text, drop } — instant事件/商店購買結果(顯示在爬塔分頁)
   let lastGachaResult = null; // 抽獎結果(顯示在抽獎機分頁，不會跳走)
   let lastSynthesisResult = null; // 合成結果(顯示在合成分頁，不會跳走)
+  let bossSubmitted = false; // 王戰:這回合是否已經送出動作
+  let bossSeenRound = null;
+  let bossRoundTimer = null;
   let broadcasts = [];
   let highlight = null; // { icon, title, text } — 傳說裝備/爬完樓層之類的精彩時刻，顯示大卡片
   let busy = false;
@@ -104,7 +107,15 @@
     }, 8000);
 
     setInterval(() => {
-      if (!busy) render(); // 每秒重繪一次冷卻倒數文字，不用等資料庫事件
+      // 每秒重繪一次冷卻倒數文字，不用等資料庫事件——但如果玩家正在跟 <select>/<input>
+      // 互動(例如合成分頁的下拉選單開著)，這時候整頁重繪會把瀏覽器原生的下拉選單元素
+      // 整個換掉，選單會被強制收合、選不到東西，所以互動中的時候先跳過這一次重繪。
+      // 王戰進行中也跳過:王戰自己有一顆獨立的每秒倒數計時器(startBossRoundTimer)，
+      // 如果這裡也每秒整頁重繪，會把那顆計時器重新啟動、永遠倒數不完。
+      const activeTag = document.activeElement && document.activeElement.tagName;
+      const interacting = activeTag === "SELECT" || activeTag === "INPUT" || activeTag === "TEXTAREA";
+      const inBossBattle = progress && progress.active_boss_battle;
+      if (!busy && !interacting && !inBossBattle) render();
     }, 1000);
 
     window.addEventListener("beforeunload", () => {
@@ -132,13 +143,28 @@
     return `
       <div class="stat-bar-row">
         <div class="stat-bar-label"><span>${ui.esc(label)}</span><span>${curText}</span></div>
-        <div class="stat-bar ${kind === "hp" ? "hp" : ""}"><div class="stat-bar-fill ${kind}${lowCls}" style="width:${Math.max(0, Math.min(1, ratio)) * 100}%;"></div></div>
+        <div class="stat-bar ${kind === "hp" || kind === "mp" ? kind : ""}"><div class="stat-bar-fill ${kind}${lowCls}" style="width:${Math.max(0, Math.min(1, ratio)) * 100}%;"></div></div>
       </div>`;
   }
 
   function rarityTag(rarity) {
     if (!rarity) return "";
     return `<span class="tier-tag ${rarity}">${ui.icon(CareerFloors.RARITY_ICON[rarity], { size: "12px" })}${CareerFloors.RARITY_LABEL[rarity]}</span>`;
+  }
+
+  function potionQuickBarHtml(disabled) {
+    const potions = progress.potions || { hp: 0, mp: 0 };
+    if (!potions.hp && !potions.mp) return "";
+    const CF = CareerFloors;
+    let html = `<div style="display:flex;gap:8px;margin:6px 0 10px;flex-wrap:wrap;">`;
+    if (potions.hp > 0) {
+      html += `<button class="btn ghost small" data-use-potion="hp" ${disabled ? "disabled" : ""}>${ui.icon(CF.POTIONS.hp.icon)}喝${ui.esc(CF.POTIONS.hp.name)}(x${potions.hp})</button>`;
+    }
+    if (potions.mp > 0) {
+      html += `<button class="btn ghost small" data-use-potion="mp" ${disabled ? "disabled" : ""}>${ui.icon(CF.POTIONS.mp.icon)}喝${ui.esc(CF.POTIONS.mp.name)}(x${potions.mp})</button>`;
+    }
+    html += `</div>`;
+    return html;
   }
 
   function equipSummary(equipment) {
@@ -260,7 +286,61 @@
       </div>`;
   }
 
+  function renderBossBattleUi() {
+    const active = progress.active_boss_battle;
+    const s = active.state;
+    const floorDef = CareerFloors.getFloor(active.floor) || { name: "關主" };
+    const myInfo = CareerData.CLASS_INFO[s.class1];
+    const monsterInfo = CareerData.CLASS_INFO[s.class2];
+    const ultAffordable = (s.mp1 || 0) >= (CareerData.ULT_MANA_COST || 0);
+
+    if (s.round !== bossSeenRound) {
+      bossSeenRound = s.round;
+      bossSubmitted = false;
+    }
+    if (s.m1) bossSubmitted = true;
+
+    let html = `
+      <div class="empty" style="margin-bottom:14px;">${ui.icon("swords")}王戰進行中:${ui.esc(floorDef.name)}(第${active.floor}層)</div>
+      <div class="career-vs-row">
+        <div class="career-side">
+          <div class="cs-name">${ui.icon(myInfo.icon)}${ui.esc(myInfo.name)}</div>
+          <div class="cs-sub">速度 ${s.spd1}</div>
+          ${statBarRow("HP", `${s.hp1} / ${s.maxhp1}`, s.hp1 / s.maxhp1, "hp")}
+          ${statBarRow("MP", `${s.mp1} / ${s.maxmp1}`, s.maxmp1 > 0 ? s.mp1 / s.maxmp1 : 0, "mp")}
+        </div>
+        <div class="career-vs-mid">VS</div>
+        <div class="career-side right">
+          <div class="cs-name">${ui.esc(floorDef.name)}${ui.icon(monsterInfo.icon)}</div>
+          <div class="cs-sub">速度 ${s.spd2}</div>
+          ${statBarRow("HP", `${s.hp2} / ${s.maxhp2}`, s.hp2 / s.maxhp2, "hp")}
+          ${statBarRow("MP", `${s.mp2} / ${s.maxmp2}`, s.maxmp2 > 0 ? s.mp2 / s.maxmp2 : 0, "mp")}
+        </div>
+      </div>
+      <div class="career-action-row">
+        <button class="btn" id="boss-atk-btn" ${bossSubmitted ? "disabled" : ""}>${ui.icon("sword")}普通攻擊</button>
+        <button class="btn career-ult-btn" id="boss-ult-btn" ${bossSubmitted || !ultAffordable ? "disabled" : ""}>
+          ${ui.icon("flame")}${ui.esc(myInfo.ultName)}(${CareerData.ULT_MANA_COST || 0}魔力)${!ultAffordable ? "(魔力不足)" : ""}
+        </button>
+      </div>
+      <p style="text-align:center;font-size:11.5px;color:var(--ink-dim);margin:10px 0 0;">
+        ${bossSubmitted ? "已送出這回合的動作，結算中..." : `第 ${s.round} 回合，剩餘 <span id="boss-round-timer">30</span> 秒`}
+      </p>
+      <div style="text-align:center;margin-top:10px;">
+        <button class="btn ghost small" id="boss-retreat-btn">${ui.icon("flag")}撤退(保留目前HP/MP，不算輸)</button>
+      </div>
+      <div class="log-panel career-log-panel" style="margin-top:12px;">${
+        (s.log || [])
+          .slice()
+          .reverse()
+          .map((line) => `<div>${ui.esc(line)}</div>`)
+          .join("") || `<div style="color:var(--ink-dim);">還沒有任何回合紀錄</div>`
+      }</div>`;
+    return html;
+  }
+
   function renderTowerTab(ctx) {
+    if (progress.active_boss_battle) return renderBossBattleUi();
     const { locked, hasPendingEvent, canTrain, trainCooldownMs, nextFloor, nextFloorDef, isAutoFarming } = ctx;
     let html = "";
 
@@ -349,8 +429,9 @@
               ? `<p style="font-size:12px;color:var(--ink-dim);margin:0 0 6px;">
                   +${b.coinGain} 幣 · +${b.expGain} 經驗${b.leveledUp ? ` · 升到 Lv.${b.newLevel}! 獲得 2 數值點` : ""}
                   ${b.drop ? ` · 掉落「${ui.esc(b.drop.name)}」${rarityTag(b.drop.rarity)}放進背包了` : ""}
+                  <br/>剩餘 HP ${effHp}/${stats.maxHp}，MP ${effMp}/${stats.maxMp}
                 </p>`
-              : `<p style="font-size:12px;color:var(--ink-dim);margin:0 0 6px;">留在原樓層，沒有損失，可以馬上再試一次。</p>`
+              : `<p style="font-size:12px;color:var(--ink-dim);margin:0 0 6px;">留在原樓層，沒有拿到獎勵，可以馬上再試一次。<br/>剩餘 HP ${effHp}/${stats.maxHp}，MP ${effMp}/${stats.maxMp}${effHp <= 0 ? "，HP 已經見底了，先去喝藥水或休息" : ""}</p>`
           }
         </div>`;
     }
@@ -381,10 +462,11 @@
         const item = table[rarity];
         const isLegendary = rarity === "legendary";
         const disabled = locked || (isLegendary && progress.legendary_purchased);
+        const reqLevel = CF.RARITY_REQ_LEVEL[rarity] || 1;
         return `
           <div class="shop-row">
             ${rarityTag(rarity)}
-            <div class="shop-row-name">${ui.esc(item.name)}<span class="shop-row-desc">${CF.describeItem(item)}</span></div>
+            <div class="shop-row-name">${ui.esc(item.name)}<span class="shop-row-desc">${CF.describeItem(item)}${reqLevel > 1 ? ` · 要 Lv.${reqLevel} 才穿得動` : ""}</span></div>
             <button class="btn small" data-buy-equip="${slot}:${rarity}" ${disabled ? "disabled" : ""}>
               ${min}~${max}幣${isLegendary && progress.legendary_purchased ? "(已購買)" : ""}
             </button>
@@ -404,6 +486,20 @@
         ${ui.icon("sparkles")}
         <div class="shop-row-name">自由數值點<span class="shop-row-desc">下一次會更貴</span></div>
         <button class="btn small" id="buy-statpoint-btn" ${locked ? "disabled" : ""}>花 ${statPrice} 幣買 1 點</button>
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <p class="shop-section-title">藥水(消耗品，喝掉才生效)</p>
+        <div class="shop-row">
+          ${ui.icon(CF.POTIONS.hp.icon)}
+          <div class="shop-row-name">${ui.esc(CF.POTIONS.hp.name)}<span class="shop-row-desc">恢復 ${Math.round(CF.POTIONS.hp.healRatio * 100)}% HP上限 · 目前 ${(progress.potions && progress.potions.hp) || 0} 瓶</span></div>
+          <button class="btn small" data-buy-potion="hp" ${locked ? "disabled" : ""}>${CF.POTIONS.hp.price}幣</button>
+        </div>
+        <div class="shop-row">
+          ${ui.icon(CF.POTIONS.mp.icon)}
+          <div class="shop-row-name">${ui.esc(CF.POTIONS.mp.name)}<span class="shop-row-desc">恢復 ${Math.round(CF.POTIONS.mp.healRatio * 100)}% MP上限 · 目前 ${(progress.potions && progress.potions.mp) || 0} 瓶</span></div>
+          <button class="btn small" data-buy-potion="mp" ${locked ? "disabled" : ""}>${CF.POTIONS.mp.price}幣</button>
+        </div>
       </div>
 
       ${equipRow("weapon", `武器(${ui.esc(CareerData.CLASS_INFO[myBuild.final_class].name)}專屬)`, weaponTable)}
@@ -467,13 +563,28 @@
   // 背包裡同一部位+同稀有度的東西通通長得一樣(武器是綁職業的，同職業同稀有度只有一款；
   // 防具/飾品本來就每個稀有度只有一款)，所以用 slot:rarity 分組、顯示一列+數量就夠，
   // 不用把10件一模一樣的東西列10行。
+  function _itemReqLevel(item) {
+    return item.reqLevel != null ? item.reqLevel : CareerFloors.RARITY_REQ_LEVEL[item.rarity] || 1;
+  }
+
   function groupInventory() {
     const groups = {};
     (progress.inventory || []).forEach((item) => {
       const key = `${item.slot}:${item.rarity}`;
-      if (!groups[key]) groups[key] = { ...item, count: 0, ids: [] };
+      const reqLevel = _itemReqLevel(item);
+      if (!groups[key]) groups[key] = { ...item, count: 0, ids: [], minReq: reqLevel, maxReq: reqLevel };
       groups[key].count += 1;
       groups[key].ids.push(item.id);
+      groups[key].minReq = Math.min(groups[key].minReq, reqLevel);
+      groups[key].maxReq = Math.max(groups[key].maxReq, reqLevel);
+    });
+    // 每組把等級門檻最低的排最前面，穿裝時預設挑最容易穿的那件(equip用 ids[0])
+    Object.values(groups).forEach((g) => {
+      g.ids.sort((a, b) => {
+        const itemA = (progress.inventory || []).find((it) => it.id === a);
+        const itemB = (progress.inventory || []).find((it) => it.id === b);
+        return _itemReqLevel(itemA) - _itemReqLevel(itemB);
+      });
     });
     return groups;
   }
@@ -543,11 +654,14 @@
     const invRows = Object.keys(groups)
       .map((key) => {
         const g = groups[key];
+        const reqLevel = g.minReq; // 挑最容易穿的那件當代表(equip按鈕預設也是穿它)
+        const reqLevelText = g.minReq === g.maxReq ? `Lv.${g.minReq}` : `Lv.${g.minReq}~${g.maxReq}`;
+        const canWear = progress.level >= reqLevel;
         return `
           <div class="shop-row">
             ${rarityTag(g.rarity)}
-            <div class="shop-row-name">${ui.esc(g.name)}<span class="shop-row-desc">${CareerFloors.describeItem(g)} · 背包裡 ${g.count} 件</span></div>
-            <button class="btn small" data-equip-item="${g.ids[0]}">${ui.icon("shirt")}穿上</button>
+            <div class="shop-row-name">${ui.esc(g.name)}<span class="shop-row-desc">${CareerFloors.describeItem(g)} · 背包裡 ${g.count} 件 · 需要 ${reqLevelText}</span></div>
+            <button class="btn small" data-equip-item="${g.ids[0]}" ${canWear ? "" : "disabled"}>${ui.icon("shirt")}${canWear ? "穿上" : `Lv.${reqLevel}才能穿`}</button>
           </div>`;
       })
       .join("");
@@ -592,6 +706,11 @@
     if (!progress) return;
     const info = CareerData.CLASS_INFO[myBuild.final_class];
     const stats = CareerData.applyProgress(myBuild.final_class, progress.stat_alloc, progress.equipment);
+    // 王戰進行中的話，頂部這條HP/MP要顯示戰鬥當下的即時數值(active_boss_battle.state)，
+    // 不是還沒結算的persisted current_hp/current_mp，不然畫面上會同時出現兩個對不上的HP。
+    const liveBossState = progress.active_boss_battle && progress.active_boss_battle.state;
+    const effHp = liveBossState ? liveBossState.hp1 : progress.current_hp != null ? Math.max(0, Math.min(progress.current_hp, stats.maxHp)) : stats.maxHp;
+    const effMp = liveBossState ? liveBossState.mp1 : progress.current_mp != null ? Math.max(0, Math.min(progress.current_mp, stats.maxMp)) : stats.maxMp;
     const expNeed = CareerFloors.expToNextLevel(progress.level);
     const trainCooldownMs = new Date(progress.train_ready_at).getTime() - Date.now();
     const phase = getCareerPhase();
@@ -622,7 +741,9 @@
         </div>
       </div>
       ${statBarRow("經驗值", `${progress.exp} / ${expNeed}`, progress.exp / expNeed, "exp")}
-      ${statBarRow("HP(上限)", `${stats.hp} / ${stats.maxHp}`, 1, "hp")}
+      ${statBarRow("HP", `${effHp} / ${stats.maxHp}`, effHp / stats.maxHp, "hp")}
+      ${statBarRow("MP", `${effMp} / ${stats.maxMp}`, stats.maxMp > 0 ? effMp / stats.maxMp : 0, "mp")}
+      ${potionQuickBarHtml(locked || hasPendingEvent || !!progress.active_boss_battle)}
       <div class="cc-stats" style="margin:10px 0 4px;">
         ${info.path === "magic" ? `<span class="cc-stat">魔攻${stats.matk}</span>` : `<span class="cc-stat">攻${stats.atk}</span>`}
         <span class="cc-stat">防${stats.def}</span>
@@ -655,6 +776,58 @@
   // ---------------- 事件綁定 ----------------
 
   function bindHandlers() {
+    const bossAtkBtn = document.getElementById("boss-atk-btn");
+    if (bossAtkBtn && !bossAtkBtn.disabled) bossAtkBtn.onclick = () => submitBossMove("attack");
+    const bossUltBtn = document.getElementById("boss-ult-btn");
+    if (bossUltBtn && !bossUltBtn.disabled) bossUltBtn.onclick = () => submitBossMove("ult");
+    const bossRetreatBtn = document.getElementById("boss-retreat-btn");
+    if (bossRetreatBtn) {
+      bossRetreatBtn.onclick = async () => {
+        const ok = await ui.confirm("確定要撤退嗎?保留目前的HP/MP，不算輸也不算贏，這場王戰結束。", { title: "撤退" });
+        if (!ok) return;
+        if (busy) return;
+        busy = true;
+        try {
+          const result = await db.retreatCareerBossBattle(eventId, myId);
+          progress = result.progress;
+          bossSeenRound = null;
+          bossSubmitted = false;
+          clearInterval(bossRoundTimer);
+          render();
+        } catch (e) {
+          await ui.alert(e.message || "撤退失敗", { title: "操作失敗", tone: "danger" });
+          await loadAndRender();
+        } finally {
+          busy = false;
+        }
+      };
+    }
+    if (document.getElementById("boss-round-timer")) startBossRoundTimer();
+
+    app.querySelectorAll("[data-use-potion]").forEach((btn) => {
+      if (btn.disabled) return;
+      btn.onclick = async () => {
+        if (busy) return;
+        busy = true;
+        try {
+          const result = await db.useCareerPotion(eventId, myId, btn.dataset.usePotion);
+          progress = result.progress;
+          lastEvent = {
+            eventDef: { icon: result.potionDef.icon, name: result.potionDef.name },
+            text: `喝下${result.potionDef.name}，恢復了 ${result.healed} 點${btn.dataset.usePotion === "hp" ? "HP" : "MP"}。`,
+          };
+          lastBattle = null;
+          activeTab = "tower";
+          render();
+        } catch (e) {
+          await ui.alert(e.message || "使用失敗", { title: "操作失敗", tone: "danger" });
+          await loadAndRender();
+        } finally {
+          busy = false;
+        }
+      };
+    });
+
     app.querySelectorAll("[data-tab]").forEach((tab) => {
       tab.onclick = () => {
         activeTab = tab.dataset.tab;
@@ -670,7 +843,15 @@
         app.querySelectorAll("[data-path-pick]").forEach((c) => (c.style.pointerEvents = "none"));
         card.style.opacity = "0.6";
         try {
-          myBuild = await db.saveCareerBuild(eventId, myId, { path: pathKey, finalClass: `novice_${pathKey}`, skillKeys: [] });
+          const result = await db.transferCareerPath(eventId, myId, pathKey);
+          myBuild = result.build;
+          progress = result.progress;
+          const bonusText = Object.keys(result.bonus)
+            .map((k) => `${CareerFloors.STAT_LABEL[k] || k}+${k === "hp" ? result.bonus[k] * 3 : k === "mp" ? result.bonus[k] * 2 : result.bonus[k]}`)
+            .join("、");
+          const packText = result.starterPack ? `，還送了 ${result.starterPack.hp || 0} 瓶恢復藥水、${result.starterPack.mp || 0} 瓶魔力藥水` : "";
+          highlight = { icon: CareerData.CAREER_TREE[pathKey].icon, title: "轉職成功!", text: `數值提升:${bonusText}${packText}!` };
+          activeTab = "tower";
           render();
         } catch (e) {
           await ui.alert(e.message || "選系失敗", { title: "操作失敗", tone: "danger" });
@@ -691,7 +872,14 @@
         app.querySelectorAll(".career-class-card[data-class]").forEach((c) => (c.style.pointerEvents = "none"));
         card.style.opacity = "0.6";
         try {
-          myBuild = await db.saveCareerBuild(eventId, myId, { path: pathKey, finalClass: key, skillKeys: info.skillKeys });
+          const result = await db.transferCareerFinalClass(eventId, myId, key, pathKey, info.skillKeys);
+          myBuild = result.build;
+          progress = result.progress;
+          const bonusText = Object.keys(result.bonus)
+            .map((k) => `${CareerFloors.STAT_LABEL[k] || k}+${k === "hp" ? result.bonus[k] * 3 : k === "mp" ? result.bonus[k] * 2 : result.bonus[k]}`)
+            .join("、");
+          highlight = { icon: info.icon, title: `轉職成${info.name}!`, text: `數值提升:${bonusText}!從今以後你就是${info.name}了。` };
+          activeTab = "tower";
           render();
         } catch (e) {
           await ui.alert(e.message || "轉職失敗", { title: "操作失敗", tone: "danger" });
@@ -767,6 +955,26 @@
 
     app.querySelectorAll("[data-event-choice]").forEach((btn) => {
       btn.onclick = () => resolveEventChoice(btn.dataset.eventChoice);
+    });
+
+    app.querySelectorAll("[data-buy-potion]").forEach((btn) => {
+      if (btn.disabled) return;
+      btn.onclick = async () => {
+        if (busy) return;
+        busy = true;
+        try {
+          const result = await db.buyCareerPotion(eventId, myId, btn.dataset.buyPotion);
+          progress = result.progress;
+          lastEvent = { eventDef: { icon: result.potionDef.icon, name: "商店" }, text: `花 ${result.potionDef.price} 幣買了 1 瓶${result.potionDef.name}。` };
+          lastBattle = null;
+          render();
+        } catch (e) {
+          await ui.alert(e.message || "購買失敗", { title: "操作失敗", tone: "danger" });
+          await loadAndRender();
+        } finally {
+          busy = false;
+        }
+      };
     });
 
     const buyStatBtn = document.getElementById("buy-statpoint-btn");
@@ -880,6 +1088,7 @@
     }
 
     app.querySelectorAll("[data-equip-item]").forEach((btn) => {
+      if (btn.disabled) return;
       btn.onclick = async () => {
         if (busy) return;
         busy = true;
@@ -933,6 +1142,61 @@
     }
   }
 
+  async function submitBossMove(action) {
+    if (bossSubmitted) return;
+    bossSubmitted = true;
+    clearInterval(bossRoundTimer);
+    const atkBtn = document.getElementById("boss-atk-btn");
+    const ultBtn = document.getElementById("boss-ult-btn");
+    if (atkBtn) atkBtn.disabled = true;
+    if (ultBtn) ultBtn.disabled = true;
+    try {
+      const result = await db.submitCareerBossMove(eventId, myId, action);
+      progress = result.progress;
+      if (result.done) {
+        bossSeenRound = null;
+        bossSubmitted = false;
+        if (result.won) {
+          lastBattle = { ...result, log: result.log };
+          if (result.topFloorCleared) {
+            highlight = { icon: "mountain", title: "爬塔完賽!", text: `你爬完了目前開放的所有樓層(第${result.floorDef.floor}層)!` };
+          } else {
+            highlight = { icon: "swords", title: "王戰勝利!", text: `打贏了第${result.floorDef.floor}層的關主「${result.floorDef.name}」!` };
+          }
+        } else {
+          lastBattle = { won: false, log: result.log, floorDef: result.floorDef };
+        }
+      }
+      render();
+    } catch (e) {
+      bossSubmitted = false;
+      await ui.alert(e.message || "出招失敗", { title: "操作失敗", tone: "danger" });
+      await loadAndRender();
+    } finally {
+      busy = false;
+    }
+  }
+
+  function startBossRoundTimer() {
+    clearInterval(bossRoundTimer);
+    if (bossSubmitted) return;
+    let remain = 30;
+    const label = document.getElementById("boss-round-timer");
+    if (label) label.textContent = String(remain);
+    bossRoundTimer = setInterval(() => {
+      remain -= 1;
+      const el = document.getElementById("boss-round-timer");
+      if (el) el.textContent = String(Math.max(0, remain));
+      if (remain <= 0) {
+        clearInterval(bossRoundTimer);
+        if (!bossSubmitted) {
+          busy = true;
+          submitBossMove("attack");
+        }
+      }
+    }, 1000);
+  }
+
   async function doChallenge(floorNumber) {
     if (busy) return;
     busy = true;
@@ -944,7 +1208,13 @@
     try {
       const result = await db.challengeCareerFloor(eventId, myId, floorNumber);
       progress = result.progress || progress;
-      if (result.pending) {
+      if (result.bossBattle) {
+        // 王戰開打，畫面切到即時對戰UI(見 renderBossBattleUi())，不是戰報
+        bossSeenRound = null;
+        bossSubmitted = false;
+        lastBattle = null;
+        lastEvent = null;
+      } else if (result.pending) {
         // 觸發了神秘寶箱/路過商人/轉職邀請，要玩家先做選擇，畫面上會出現選項卡(見 render())
         lastBattle = null;
         lastEvent = null;

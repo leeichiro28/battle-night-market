@@ -2180,6 +2180,46 @@ const db = (function () {
     return data;
   }
 
+  // Lv5 選系:除了定案 career_builds.path/final_class(novice_xxx)之外，順便送一筆永久加點
+  // (跟被動的 CLASS_EFFECTS.statBonus是兩件事，這是「轉職那一刻」的獎勵，讓轉職有感覺)，
+  // 還有一份新手藥水禮包。
+  async function transferCareerPath(eventId, playerId, pathKey) {
+    const progress = await getOrCreateCareerProgress(eventId, playerId);
+    const bonus = window.CareerData.PATH_TRANSFER_BONUS[pathKey] || {};
+    const alloc = { ...progress.stat_alloc };
+    Object.keys(bonus).forEach((k) => (alloc[k] = (alloc[k] || 0) + bonus[k]));
+    const pack = window.CareerData.STARTER_PACK_POTIONS || {};
+    const potions = { hp: (progress.potions.hp || 0) + (pack.hp || 0), mp: (progress.potions.mp || 0) + (pack.mp || 0) };
+
+    const build = await saveCareerBuild(eventId, playerId, { path: pathKey, finalClass: `novice_${pathKey}`, skillKeys: [] });
+    const { data: updatedProgress, error } = await client
+      .from("career_progress")
+      .update({ stat_alloc: alloc, potions })
+      .eq("id", progress.id)
+      .select()
+      .single();
+    if (error) throw error;
+    return { build, progress: updatedProgress, bonus, starterPack: pack };
+  }
+
+  // Lv15 定案最終職業:一樣送一筆永久加點(比 Lv5 那次多，畢竟是真正職業成形的時刻)。
+  async function transferCareerFinalClass(eventId, playerId, finalClass, pathKey, skillKeys) {
+    const progress = await getOrCreateCareerProgress(eventId, playerId);
+    const bonus = window.CareerData.FINAL_TRANSFER_BONUS[finalClass] || {};
+    const alloc = { ...progress.stat_alloc };
+    Object.keys(bonus).forEach((k) => (alloc[k] = (alloc[k] || 0) + bonus[k]));
+
+    const build = await saveCareerBuild(eventId, playerId, { path: pathKey, finalClass, skillKeys });
+    const { data: updatedProgress, error } = await client
+      .from("career_progress")
+      .update({ stat_alloc: alloc })
+      .eq("id", progress.id)
+      .select()
+      .single();
+    if (error) throw error;
+    return { build, progress: updatedProgress, bonus };
+  }
+
   async function getCareerBuildFor(eventId, playerId) {
     const { data, error } = await client
       .from("career_builds")
@@ -2371,7 +2411,7 @@ const db = (function () {
   const CAREER_AUTO_FARM_EFFICIENCY = 0.7; // 掛機效率打七折(企劃書第五、八節)
 
   function _emptyStatAlloc() {
-    return { atk: 0, def: 0, spd: 0, hp: 0, luck: 0, matk: 0 };
+    return { atk: 0, def: 0, spd: 0, hp: 0, luck: 0, matk: 0, mp: 0 };
   }
 
   // 等級曲線用 career-floors.js 的 expToNextLevel，在本地把 exp 疊代扣光算出最終等級，
@@ -2492,7 +2532,7 @@ const db = (function () {
 
   // instant 類型事件的效果，純算數、不需要玩家做選擇。回傳 { text, patch }，
   // patch 是要疊加寫進 career_progress 的欄位。
-  function _resolveInstantEvent(eventDef, progress) {
+  function _resolveInstantEvent(eventDef, progress, stats) {
     switch (eventDef.key) {
       case "fortune": {
         const statKeys = ["atk", "def", "spd", "luck"];
@@ -2527,9 +2567,78 @@ const db = (function () {
         }
         return { text: null, patch: {}, rollRareDrop: true }; // 大獎:外層另外處理裝備掉落
       }
+      case "healing": {
+        const { hp: curHp, mp: curMp } = _effectiveHpMp(progress, stats);
+        const healHp = Math.round(stats.maxHp * 0.3);
+        const healMp = Math.round(stats.maxMp * 0.3);
+        const newHp = Math.min(stats.maxHp, curHp + healHp);
+        const newMp = Math.min(stats.maxMp, curMp + healMp);
+        return {
+          text: `路邊小吃攤補了個貨，回復了 ${newHp - curHp} 點HP、${newMp - curMp} 點MP。`,
+          patch: { current_hp: newHp, current_mp: newMp },
+        };
+      }
       default:
         return null;
     }
+  }
+
+  // 讀 progress 目前的持續HP/MP，clamp 在目前(加點+裝備後)的HP/MP上限內——
+  // 上限可能因為加點/換裝變動，current_hp 沒变但换算成比例其实會跟著变。
+  // current_hp/current_mp 是 null 表示還沒受過傷，視為滿血滿魔。
+  function _effectiveHpMp(progress, stats) {
+    const hp = progress.current_hp != null ? Math.max(0, Math.min(progress.current_hp, stats.maxHp)) : stats.maxHp;
+    const mp = progress.current_mp != null ? Math.max(0, Math.min(progress.current_mp, stats.maxMp)) : stats.maxMp;
+    return { hp, mp };
+  }
+
+  // 打贏一層樓的獎勵結算(推進樓層、加幣加經驗、掉裝備、頂樓廣播)，樓層戰(即時模擬)
+  // 跟王戰(手動即時對戰打贏)共用同一套，不用寫兩次。
+  async function _applyFloorWinRewards(eventId, playerId, progress, build, floorDef, floorNumber, endHp, endMp) {
+    const leveled = _applyExpGain(progress, floorDef.expReward);
+    const isAdvance = floorNumber === progress.floor + 1;
+    const drop = window.CareerFloors.rollDrop(floorDef, build.final_class);
+    const inventory = _addToInventory(progress.inventory, drop);
+    const isTopFloor = isAdvance && floorNumber === window.CareerFloors.FLOORS.length;
+
+    const { data: updated, error } = await client
+      .from("career_progress")
+      .update({
+        floor: isAdvance ? floorNumber : progress.floor,
+        coins: progress.coins + floorDef.coinReward,
+        exp: leveled.exp,
+        level: leveled.level,
+        stat_points: leveled.stat_points,
+        inventory,
+        current_hp: endHp,
+        current_mp: endMp,
+        active_boss_battle: null,
+      })
+      .eq("id", progress.id)
+      .select()
+      .single();
+    if (error) throw error;
+
+    if (isTopFloor) {
+      const name = await _playerName(playerId);
+      await broadcastCareerEvent(eventId, "mountain", `🏔️ ${name} 爬完了目前開放的所有樓層(第${floorNumber}層)!`);
+    }
+    if (floorDef.isMiniBoss) {
+      const name = await _playerName(playerId);
+      await broadcastCareerEvent(eventId, "swords", `⚔️ ${name} 打贏了第${floorNumber}層的關主「${floorDef.name}」!`);
+    }
+
+    return {
+      won: true,
+      floorDef,
+      coinGain: floorDef.coinReward,
+      expGain: floorDef.expReward,
+      leveledUp: leveled.leveledUp,
+      newLevel: leveled.newLevel,
+      drop,
+      topFloorCleared: isTopFloor,
+      progress: updated,
+    };
   }
 
   async function challengeCareerFloor(eventId, playerId, floorNumber) {
@@ -2539,9 +2648,32 @@ const db = (function () {
     ]);
     if (!build) throw new Error("請先選好職業再挑戰樓層");
     if (progress.pending_event) throw new Error("有一個夜市事件還沒處理完，請先選擇要怎麼應對");
+    if (progress.active_boss_battle) throw new Error("還有一場王戰在進行中，先打完再繼續");
     if (floorNumber > progress.floor + 1) throw new Error("還沒清到這一層，請先按順序往上爬");
     const floorDef = window.CareerFloors.getFloor(floorNumber);
     if (!floorDef) throw new Error("找不到這一層的資料");
+
+    const playerStatsForHp = window.CareerData.applyProgress(build.final_class, progress.stat_alloc, progress.equipment);
+    const { hp: startHp, mp: startMp } = _effectiveHpMp(progress, playerStatsForHp);
+    if (startHp <= 0) throw new Error("HP 已經歸零了，先去休息、喝藥水或等恢復事件再來挑戰");
+
+    // 關主樓層(每滿10層):要玩家自己手動選攻擊/大招即時打，不是AI直接算完整場，
+    // 也不會穿插隨機事件(關主戰就是關主戰，不會被事件打斷)。
+    if (floorDef.isMiniBoss) {
+      const state = window.CareerEngine.initialMatchState(
+        { classKey: build.final_class, stats: playerStatsForHp },
+        { classKey: floorDef.classKey, stats: floorDef.stats },
+        { hp1: startHp, mp1: startMp }
+      );
+      const { data: updated, error } = await client
+        .from("career_progress")
+        .update({ active_boss_battle: { floor: floorNumber, state } })
+        .eq("id", progress.id)
+        .select()
+        .single();
+      if (error) throw error;
+      return { bossBattle: true, done: false, floorDef, state, progress: updated };
+    }
 
     // 25%機率不是真的打怪，是穿插一個爬塔事件(企劃書第六節)
     if (Math.random() < window.CareerEvents.EVENT_TRIGGER_CHANCE) {
@@ -2569,7 +2701,7 @@ const db = (function () {
       }
 
       if (eventDef.key === "sparring") {
-        // 神秘人切磋:練習賽，用跟目前樓層差不多強度的假想對手，贏有獎勵、輸不扣任何東西
+        // 神秘人切磋:練習賽，滿血滿魔開打(不動用/不消耗持續HP、MP)，贏有獎勵、輸不扣任何東西
         const playerStats = window.CareerData.applyProgress(build.final_class, progress.stat_alloc, progress.equipment);
         const opponentClass = window.CareerFloors.CLASS_KEYS[Math.floor(Math.random() * window.CareerFloors.CLASS_KEYS.length)];
         const battle = window.CareerPve.simulateFloorBattle(
@@ -2592,13 +2724,17 @@ const db = (function () {
         return { event: true, eventDef, sparring: true, won: true, log: battle.log, coinGain, expGain, leveledUp: leveled.leveledUp, newLevel: leveled.newLevel, progress: updated };
       }
 
-      // 其餘 instant 事件:算命攤/扒手/機關/貴人/抽獎機
-      const resolved = _resolveInstantEvent(eventDef, progress);
+      // 其餘 instant 事件:算命攤/扒手/機關/貴人/抽獎機/補血
+      const resolved = _resolveInstantEvent(eventDef, progress, playerStatsForHp);
       let patch = (resolved && resolved.patch) || {};
       let text = resolved && resolved.text;
       let drop = null;
       if (resolved && resolved.rollRareDrop) {
-        drop = { slot: "weapon", ...(window.CareerFloors.WEAPON_TABLE[build.final_class] || window.CareerFloors.WEAPON_TABLE.novice).rare };
+        drop = {
+          slot: "weapon",
+          ...(window.CareerFloors.WEAPON_TABLE[build.final_class] || window.CareerFloors.WEAPON_TABLE.novice).rare,
+          reqLevel: window.CareerFloors.floorReqLevel(floorNumber),
+        };
         patch.inventory = _addToInventory(progress.inventory, drop);
         text = `大獎!抽中「${drop.name}」★稀有，放進背包了!`;
       }
@@ -2608,56 +2744,85 @@ const db = (function () {
     }
 
     const playerStats = window.CareerData.applyProgress(build.final_class, progress.stat_alloc, progress.equipment);
+    const { hp: battleStartHp, mp: battleStartMp } = _effectiveHpMp(progress, playerStats);
     const battle = window.CareerPve.simulateFloorBattle(
       { classKey: build.final_class, stats: playerStats },
-      { classKey: floorDef.classKey, stats: floorDef.stats }
+      { classKey: floorDef.classKey, stats: floorDef.stats },
+      { startHp: battleStartHp, startMp: battleStartMp }
     );
+    // 不管輸贏，這一戰打完HP/MP剩多少都要存回去(爬塔的HP/MP是持續的，不會每場重置)
+    const hpMpPatch = { current_hp: battle.endHp, current_mp: battle.endMp };
 
     if (!battle.won) {
-      return { won: false, log: battle.log, progress, floorDef };
+      const { data: updated, error } = await client.from("career_progress").update(hpMpPatch).eq("id", progress.id).select().single();
+      if (error) throw error;
+      return { won: false, log: battle.log, progress: updated, floorDef };
     }
 
-    const leveled = _applyExpGain(progress, floorDef.expReward);
-    const isAdvance = floorNumber === progress.floor + 1;
-    const drop = window.CareerFloors.rollDrop(floorDef, build.final_class);
-    const inventory = _addToInventory(progress.inventory, drop);
-    const isTopFloor = isAdvance && floorNumber === window.CareerFloors.FLOORS.length;
+    const result = await _applyFloorWinRewards(eventId, playerId, progress, build, floorDef, floorNumber, battle.endHp, battle.endMp);
+    return { ...result, log: battle.log };
+  }
+
+  // 神秘寶箱/路過商人/轉職邀請 這三個 choice 事件，玩家選好之後呼叫這個生效。
+  // 王戰:玩家選 attack/ult，怪物那邊用跟一般爬塔AI同一套規則自動決定，兩邊動作湊齊就
+  // 直接算這一回合(不用像PVP等對方回合，因為怪物不是真人，不用等)。沒分出勝負就把
+  // 進行中的狀態存回 active_boss_battle，分出勝負就結算獎勵、清空 active_boss_battle。
+  async function submitCareerBossMove(eventId, playerId, action) {
+    const [progress, build] = await Promise.all([
+      getOrCreateCareerProgress(eventId, playerId),
+      getCareerBuildFor(eventId, playerId),
+    ]);
+    const active = progress.active_boss_battle;
+    if (!active) throw new Error("目前沒有進行中的王戰");
+    const floorDef = window.CareerFloors.getFloor(active.floor);
+    if (!floorDef) throw new Error("找不到這一層的資料");
+
+    const state = { ...active.state, m1: { action } };
+    state.m2 = window.CareerPve.decideAction(state, 2);
+    const { state: newState } = window.CareerEngine.resolveRound(state);
+
+    if (newState.hp1 <= 0 || newState.hp2 <= 0) {
+      const won = newState.hp2 <= 0 && newState.hp1 > 0;
+      if (!won) {
+        const { data: updated, error } = await client
+          .from("career_progress")
+          .update({ current_hp: newState.hp1, current_mp: newState.mp1, active_boss_battle: null })
+          .eq("id", progress.id)
+          .select()
+          .single();
+        if (error) throw error;
+        return { bossBattle: true, done: true, won: false, log: newState.log, floorDef, progress: updated };
+      }
+      const result = await _applyFloorWinRewards(eventId, playerId, progress, build, floorDef, active.floor, newState.hp1, newState.mp1);
+      return { bossBattle: true, done: true, ...result, log: newState.log };
+    }
 
     const { data: updated, error } = await client
       .from("career_progress")
-      .update({
-        floor: isAdvance ? floorNumber : progress.floor,
-        coins: progress.coins + floorDef.coinReward,
-        exp: leveled.exp,
-        level: leveled.level,
-        stat_points: leveled.stat_points,
-        inventory,
-      })
+      .update({ active_boss_battle: { floor: active.floor, state: newState } })
       .eq("id", progress.id)
       .select()
       .single();
     if (error) throw error;
-
-    if (isTopFloor) {
-      const name = await _playerName(playerId);
-      await broadcastCareerEvent(eventId, "mountain", `🏔️ ${name} 爬完了目前開放的所有樓層(第${floorNumber}層)!`);
-    }
-
-    return {
-      won: true,
-      log: battle.log,
-      floorDef,
-      coinGain: floorDef.coinReward,
-      expGain: floorDef.expReward,
-      leveledUp: leveled.leveledUp,
-      newLevel: leveled.newLevel,
-      drop,
-      topFloorCleared: isTopFloor,
-      progress: updated,
-    };
+    return { bossBattle: true, done: false, floorDef, state: newState, progress: updated };
   }
 
-  // 神秘寶箱/路過商人/轉職邀請 這三個 choice 事件，玩家選好之後呼叫這個生效。
+  // 撤退:放棄目前的王戰，不算輸也沒有懲罰，HP/MP保留目前打到剩多少(誠實地不會偷偷幫你補血)。
+  async function retreatCareerBossBattle(eventId, playerId) {
+    const progress = await getOrCreateCareerProgress(eventId, playerId);
+    const active = progress.active_boss_battle;
+    if (!active) throw new Error("目前沒有進行中的王戰");
+    const { data: updated, error } = await client
+      .from("career_progress")
+      .update({ current_hp: active.state.hp1, current_mp: active.state.mp1, active_boss_battle: null })
+      .eq("id", progress.id)
+      .select()
+      .single();
+    if (error) throw error;
+    return { progress: updated };
+  }
+
+
   async function resolveCareerEvent(eventId, playerId, choiceKey) {
     const progress = await getOrCreateCareerProgress(eventId, playerId);
     const pending = progress.pending_event;
@@ -2866,6 +3031,10 @@ const db = (function () {
     const progress = await getOrCreateCareerProgress(eventId, playerId);
     const item = (progress.inventory || []).find((it) => it.id === itemId);
     if (!item) throw new Error("找不到這件裝備，可能已經被用掉了");
+    const reqLevel = item.reqLevel != null ? item.reqLevel : window.CareerFloors.RARITY_REQ_LEVEL[item.rarity] || 1;
+    if (progress.level < reqLevel) {
+      throw new Error(`要 Lv.${reqLevel} 才穿得動「${item.name}」(${window.CareerFloors.RARITY_LABEL[item.rarity]})，你現在 Lv.${progress.level}`);
+    }
     const prevEquipped = progress.equipment[item.slot];
     let inventory = (progress.inventory || []).filter((it) => it.id !== itemId);
     if (prevEquipped) inventory = _addToInventory(inventory, prevEquipped);
@@ -2960,18 +3129,72 @@ const db = (function () {
     return updated[0];
   }
 
-  // 開關練功掛機。floorNumber=null 表示關閉；開啟時樓層必須是已經清過的(<=目前floor)。
-  // 單純算「這一次掛機戰鬥」的結果，不寫資料庫，讓 toggleCareerAutoFarm(開啟當下馬上打一場)
-  // 跟 processCareerAutoFarmTicks(背景定期推進)共用同一段邏輯，兩邊都不用各寫一次。
+  // 買藥水(商店用)。type: 'hp' | 'mp'。
+  async function buyCareerPotion(eventId, playerId, type) {
+    const potionDef = window.CareerFloors.POTIONS[type];
+    if (!potionDef) throw new Error("找不到這種藥水");
+    const progress = await getOrCreateCareerProgress(eventId, playerId);
+    if (progress.coins < potionDef.price) throw new Error(`幣不夠，${potionDef.name}要 ${potionDef.price} 幣`);
+    const potions = { ...progress.potions, [type]: (progress.potions[type] || 0) + 1 };
+    const { data: updated, error } = await client
+      .from("career_progress")
+      .update({ coins: progress.coins - potionDef.price, potions })
+      .eq("id", progress.id)
+      .eq("coins", progress.coins)
+      .select();
+    if (error) throw error;
+    if (!updated || !updated.length) throw new Error("手慢了，請再按一次");
+    return { potionDef, progress: updated[0] };
+  }
+
+  // 喝藥水。type: 'hp' | 'mp'。恢復量是目前(加點+裝備後)上限的一個比例，喝掉就少一瓶。
+  async function useCareerPotion(eventId, playerId, type) {
+    const potionDef = window.CareerFloors.POTIONS[type];
+    if (!potionDef) throw new Error("找不到這種藥水");
+    const [progress, build] = await Promise.all([
+      getOrCreateCareerProgress(eventId, playerId),
+      getCareerBuildFor(eventId, playerId),
+    ]);
+    if (!progress.potions[type] || progress.potions[type] <= 0) throw new Error(`沒有${potionDef.name}了`);
+    if (!build) throw new Error("請先選好職業");
+    const stats = window.CareerData.applyProgress(build.final_class, progress.stat_alloc, progress.equipment);
+    const { hp: curHp, mp: curMp } = _effectiveHpMp(progress, stats);
+    const patch = { potions: { ...progress.potions, [type]: progress.potions[type] - 1 } };
+    let healed = 0;
+    if (type === "hp") {
+      const newHp = Math.min(stats.maxHp, curHp + Math.round(stats.maxHp * potionDef.healRatio));
+      healed = newHp - curHp;
+      patch.current_hp = newHp;
+    } else {
+      const newMp = Math.min(stats.maxMp, curMp + Math.round(stats.maxMp * potionDef.healRatio));
+      healed = newMp - curMp;
+      patch.current_mp = newMp;
+    }
+    const { data: updated, error } = await client.from("career_progress").update(patch).eq("id", progress.id).select().single();
+    if (error) throw error;
+    return { potionDef, healed, progress: updated };
+  }
+
   function _simulateFarmTick(progress, build, floorDef) {
     const playerStats = window.CareerData.applyProgress(build.final_class, progress.stat_alloc, progress.equipment);
+    const { hp: startHp, mp: startMp } = _effectiveHpMp(progress, playerStats);
+    if (startHp <= 0) {
+      // HP見底了，掛機自動暫停這一次(不模擬戰鬥)，等玩家自己回來喝藥水/休息
+      return {
+        auto_farm_last_at: new Date().toISOString(),
+        auto_farm_last_result: { won: false, floor: floorDef.floor, at: new Date().toISOString(), coinGain: 0, expGain: 0, hpEmpty: true },
+      };
+    }
     const battle = window.CareerPve.simulateFloorBattle(
       { classKey: build.final_class, stats: playerStats },
-      { classKey: floorDef.classKey, stats: floorDef.stats }
+      { classKey: floorDef.classKey, stats: floorDef.stats },
+      { startHp, startMp }
     );
     const patch = {
       auto_farm_last_at: new Date().toISOString(),
       auto_farm_last_result: { won: battle.won, floor: floorDef.floor, at: new Date().toISOString(), coinGain: 0, expGain: 0 },
+      current_hp: battle.endHp,
+      current_mp: battle.endMp,
     };
     if (battle.won) {
       const coinGain = Math.round(floorDef.coinReward * CAREER_AUTO_FARM_EFFICIENCY);
@@ -3278,6 +3501,8 @@ const db = (function () {
     saveCareerBuild,
     getCareerBuildFor,
     getOrCreateCareerBuild,
+    transferCareerPath,
+    transferCareerFinalClass,
     getMyCareerQueueEntry,
     joinCareerQueue,
     listCareerQueue,
@@ -3292,6 +3517,8 @@ const db = (function () {
     getOrCreateCareerProgress,
     trainForCareerCoins,
     challengeCareerFloor,
+    submitCareerBossMove,
+    retreatCareerBossBattle,
     resolveCareerEvent,
     buyCareerStatPoint,
     buyCareerEquipment,
@@ -3303,6 +3530,8 @@ const db = (function () {
     broadcastCareerEvent,
     listCareerBroadcasts,
     allocateCareerStatPoint,
+    buyCareerPotion,
+    useCareerPotion,
     toggleCareerAutoFarm,
     processCareerAutoFarmTicks,
     getCareerProgressFor,

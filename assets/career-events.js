@@ -30,6 +30,8 @@ window.CareerEvents = (function () {
       desc: "遇到一位樂於助人的路人(很稀有)" },
     { key: "gacha", icon: "dices", name: "夜市抽獎機", type: "instant", weight: 15,
       desc: "路過的抽獎機好像卡幣了，免費讓你抽一次" },
+    { key: "healing", icon: "heart-pulse", name: "路邊小吃攤", type: "instant", weight: 16,
+      desc: "香噴噴的路邊攤，吃一輪順便回一下血跟魔力" },
   ];
 
   const EVENT_TRIGGER_CHANCE = 0.25; // 挑戰樓層時,25%機率變事件、75%正常打怪

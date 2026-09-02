@@ -1983,10 +1983,11 @@ input,select,textarea{max-width:100%;min-width:0;}
 .stat-bar-row{margin-bottom:8px;}
 .stat-bar-label{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-dim);margin-bottom:3px;}
 .stat-bar{background:var(--bg);border:1px solid var(--line);border-radius:20px;overflow:hidden;height:8px;}
-.stat-bar.hp{height:12px;}
+.stat-bar.hp,.stat-bar.mp{height:12px;}
 .stat-bar-fill{height:100%;background:var(--green);transition:width .3s ease;}
 .stat-bar-fill.hp{background:var(--green);}
 .stat-bar-fill.hp.low{background:var(--red);}
+.stat-bar-fill.mp{background:#3D8FA6;}
 .stat-bar-fill.exp{background:var(--gold);}
 
 /* PVP 對戰畫面:左右對稱 + 中間 VS，沿用 .vs-row 的 grid 置中邏輯 */
