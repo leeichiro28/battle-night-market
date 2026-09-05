@@ -26,8 +26,9 @@ window.CareerEngine = (function () {
     return Math.max(1, atk - effDef / 2) + randFloat();
   }
 
-  // p1/p2: { classKey, stats }。opts 可以帶 hp1/hp2/mp1/mp2 覆蓋起始值(爬塔用持續HP/MP，
-  // 不帶的話(PVP預設)就是滿HP滿MP開打)。
+  // p1/p2: { classKey, stats, skillUnlocked }。opts 可以帶 hp1/hp2/mp1/mp2 覆蓋起始值(爬塔用
+  // 持續HP/MP，不帶的話(PVP預設)就是滿HP滿MP開打)。skillUnlocked 是有沒有花技能點解鎖「戰技」，
+  // 野怪不用帶(當作 false，AI只會用攻擊/大招，不會用戰技)。
   function initialMatchState(p1, p2, opts) {
     opts = opts || {};
     return {
@@ -35,6 +36,8 @@ window.CareerEngine = (function () {
       log: [],
       class1: p1.classKey,
       class2: p2.classKey,
+      skillUnlocked1: !!p1.skillUnlocked,
+      skillUnlocked2: !!p2.skillUnlocked,
       atk1: p1.stats.atk,
       def1: p1.stats.def,
       spd1: p1.stats.spd,
@@ -60,10 +63,13 @@ window.CareerEngine = (function () {
 
   // 對某一側算一次攻擊(普通攻擊 或 大招裡屬於「攻擊型」的那幾種:戰士/刺客/法師/弓箭手)
   // 回傳 { dmg, crit }，defenderImmune 為 true 時傷害直接打 9 折減免(守衛銅牆鐵壁)
-  function computeAttackHit(atkStats, defStats, attackerClass, isUlt, hpRatio, defenderImmune) {
+  // actionType: 'attack' | 'ult' | 'skill'
+  function computeAttackHit(atkStats, defStats, attackerClass, actionType, hpRatio, defenderImmune) {
     const eff = CD.CLASS_EFFECTS[attackerClass];
     let ignoreDefRatio = eff.ignoreDefRatio || 0; // 戰士線「破防打法」被動,普通攻擊也吃得到
     let dmgMult = 1;
+    const isUlt = actionType === "ult";
+    const isSkill = actionType === "skill";
 
     if (isUlt) {
       if (attackerClass === "warrior") dmgMult = 2; // 怒吼衝鋒:本回合傷害x2
@@ -72,6 +78,8 @@ window.CareerEngine = (function () {
         dmgMult = CD.CLASS_EFFECTS[attackerClass].ultDamageMult; // 見習系列(還沒轉正職):大招比較弱的簡易乘倍
       }
       // assassin(暗殺)、archer(連環箭)的大招效果在呼叫端另外處理(必爆/多打一次)
+    } else if (isSkill) {
+      dmgMult = CD.SKILL_DMG_MULT || 1.4; // 戰技:固定倍率，沒有大招那些特殊效果，單純比普攻強一點
     }
 
     // 魔法系(法師/巫醫/還沒轉職的魔法系學徒)一律用魔攻算傷害，不是共用攻擊力
@@ -121,9 +129,15 @@ window.CareerEngine = (function () {
       const mp = side === 1 ? mp1 : mp2;
       return m && m.action === "ult" && mp >= CD.ULT_MANA_COST;
     }
-    function spendMana(side) {
-      if (side === 1) mp1 = Math.max(0, mp1 - CD.ULT_MANA_COST);
-      else mp2 = Math.max(0, mp2 - CD.ULT_MANA_COST);
+    function canSkill(side) {
+      const m = side === 1 ? m1 : m2;
+      const mp = side === 1 ? mp1 : mp2;
+      const unlocked = side === 1 ? s.skillUnlocked1 : s.skillUnlocked2;
+      return m && m.action === "skill" && unlocked && mp >= CD.SKILL_MANA_COST;
+    }
+    function spendMana(side, amount) {
+      if (side === 1) mp1 = Math.max(0, mp1 - amount);
+      else mp2 = Math.max(0, mp2 - amount);
     }
 
     // ---- 位置3:全免疫型大招(守衛) + 平行分支:治療型大招(巫醫)。兩者都不是攻擊動作,先處理。
@@ -131,7 +145,7 @@ window.CareerEngine = (function () {
       const cls = side === 1 ? s.class1 : s.class2;
       if (!canUlt(side)) return;
       if (cls === "guardian") {
-        spendMana(side);
+        spendMana(side, CD.ULT_MANA_COST);
         if (side === 1) {
           immune1 = true;
           skip1 = true;
@@ -141,7 +155,7 @@ window.CareerEngine = (function () {
         }
         events.push({ side, type: "ult_shield", text: `${side === 1 ? "你" : "對方"}使出「銅牆鐵壁」,這回合幾乎不受傷!` });
       } else if (cls === "healer") {
-        spendMana(side);
+        spendMana(side, CD.ULT_MANA_COST);
         const maxHp = side === 1 ? s.maxhp1 : s.maxhp2;
         const matk = side === 1 ? s.matk1 : s.matk2;
         const heal = Math.round(maxHp * 0.5) + (CD.CLASS_EFFECTS.healer.healBonus || 0) + Math.round((matk || 0) * 1.5);
@@ -175,20 +189,25 @@ window.CareerEngine = (function () {
       const defMaxHp = side === 1 ? s.maxhp2 : s.maxhp1;
 
       const wantsUlt = canUlt(side) && (["warrior", "assassin", "mage", "archer"].includes(cls) || cls.startsWith("novice"));
+      const wantsSkill = !wantsUlt && canSkill(side);
+      const actionType = wantsUlt ? "ult" : wantsSkill ? "skill" : "attack";
 
       // 弓箭手「連環箭」獨立處理:整個攻擊流程多跑一次(不是傷害加成),
       // 第二次攻擊前要重新確認對方是不是已經被第一次打死了
       const hits = wantsUlt && cls === "archer" ? 2 : 1;
       if (wantsUlt) {
-        spendMana(side);
+        spendMana(side, CD.ULT_MANA_COST);
         events.push({ side, type: "ult_attack", text: `${side === 1 ? "你" : "對方"}使出「${CD.CLASS_INFO[cls].ultName}」!` });
+      } else if (wantsSkill) {
+        spendMana(side, CD.SKILL_MANA_COST);
+        events.push({ side, type: "skill_attack", text: `${side === 1 ? "你" : "對方"}使出戰技「${CD.SKILL_NAME[cls] || "戰技"}」!` });
       }
 
       for (let i = 0; i < hits; i++) {
         const curDefHp = side === 1 ? hp2 : hp1;
         if (curDefHp <= 0) break;
         const curHpRatio = curDefHp / defMaxHp;
-        const { dmg, crit } = computeAttackHit(atkStats, defStats, cls, wantsUlt, curHpRatio, defenderImmune);
+        const { dmg, crit } = computeAttackHit(atkStats, defStats, cls, actionType, curHpRatio, defenderImmune);
         if (side === 1) hp2 = Math.max(0, hp2 - dmg);
         else hp1 = Math.max(0, hp1 - dmg);
 
@@ -201,11 +220,11 @@ window.CareerEngine = (function () {
           text: `${side === 1 ? "你" : "對方"}${crit ? "爆擊" : ""}造成 ${dmg} 點傷害!`,
         });
 
-        // 敏捷系「連射訓練」被動:普通攻擊(非大招)才有機會觸發追加一擊,跟連環箭是兩回事
-        if (!wantsUlt && cls === "archer" && Math.random() < (CD.CLASS_EFFECTS.archer.extraHitChance || 0)) {
+        // 敏捷系「連射訓練」被動:普通攻擊(非大招/戰技)才有機會觸發追加一擊,跟連環箭是兩回事
+        if (actionType === "attack" && cls === "archer" && Math.random() < (CD.CLASS_EFFECTS.archer.extraHitChance || 0)) {
           const curDefHp2 = side === 1 ? hp2 : hp1;
           if (curDefHp2 > 0) {
-            const extra = computeAttackHit(atkStats, defStats, cls, false, curDefHp2 / defMaxHp, defenderImmune);
+            const extra = computeAttackHit(atkStats, defStats, cls, "attack", curDefHp2 / defMaxHp, defenderImmune);
             if (side === 1) hp2 = Math.max(0, hp2 - extra.dmg);
             else hp1 = Math.max(0, hp1 - extra.dmg);
             events.push({ side, type: "extra_hit", dmg: extra.dmg, text: `${side === 1 ? "你" : "對方"}的連射訓練觸發,追加造成 ${extra.dmg} 點傷害!` });
@@ -215,7 +234,7 @@ window.CareerEngine = (function () {
 
       // 力量系「反擊姿態」被動:守衛被普通攻擊命中時,15% 機率反傷(用剛剛造成的傷害量反打回去)
       const defenderClass = side === 1 ? s.class2 : s.class1;
-      if (!wantsUlt && defenderClass === "guardian" && !defenderImmune) {
+      if (actionType === "attack" && defenderClass === "guardian" && !defenderImmune) {
         const lastEvent = events[events.length - 1];
         if (lastEvent && lastEvent.type === "attack" && lastEvent.dmg > 0 && Math.random() < (CD.CLASS_EFFECTS.guardian.counterChance || 0)) {
           const counterDmg = lastEvent.dmg;

@@ -451,6 +451,8 @@
     const mySpd = mySlot === 1 ? s.spd1 : s.spd2;
     const oppSpd = mySlot === 1 ? s.spd2 : s.spd1;
     const ultAffordable = myMp >= (CareerData.ULT_MANA_COST || 0);
+    const mySkillUnlocked = !!(mySlot === 1 ? s.skillUnlocked1 : s.skillUnlocked2);
+    const skillAffordable = mySkillUnlocked && myMp >= (CareerData.SKILL_MANA_COST || 0);
     const myInfo = CareerData.CLASS_INFO[myClass];
     const oppInfo = CareerData.CLASS_INFO[oppClass];
     const isDone = match.status === "done";
@@ -492,9 +494,16 @@
     } else {
       const iActed = submittedThisRound;
       html += `
-        <div class="career-action-row">
-          <button class="btn" id="atk-btn" ${iActed ? "disabled" : ""}>${ui.icon("sword")}普通攻擊</button>
-          <button class="btn career-ult-btn" id="ult-btn" ${iActed || !ultAffordable ? "disabled" : ""}>
+        <div class="career-action-row" style="flex-wrap:wrap;">
+          <button class="btn" id="atk-btn" style="flex:1 1 28%;" ${iActed ? "disabled" : ""}>${ui.icon("sword")}普通攻擊</button>
+          ${
+            mySkillUnlocked
+              ? `<button class="btn ghost" id="skill-btn" style="flex:1 1 28%;" ${iActed || !skillAffordable ? "disabled" : ""}>
+                  ${ui.icon("wand-sparkles")}${ui.esc(CareerData.SKILL_NAME[myClass] || "戰技")}(${CareerData.SKILL_MANA_COST || 0}魔力)
+                </button>`
+              : ""
+          }
+          <button class="btn career-ult-btn" id="ult-btn" style="flex:1 1 28%;" ${iActed || !ultAffordable ? "disabled" : ""}>
             ${ui.icon("flame")}${ui.esc(myInfo.ultName)}(${CareerData.ULT_MANA_COST || 0}魔力)${!ultAffordable ? "(魔力不足)" : ""}
           </button>
         </div>
@@ -517,8 +526,10 @@
     if (!isDone) {
       const atkBtn = document.getElementById("atk-btn");
       const ultBtn = document.getElementById("ult-btn");
+      const skillBtn = document.getElementById("skill-btn");
       if (atkBtn) atkBtn.onclick = () => submitMyMove(match, "attack");
       if (ultBtn) ultBtn.onclick = () => submitMyMove(match, "ult");
+      if (skillBtn) skillBtn.onclick = () => submitMyMove(match, "skill");
       startRoundTimer(match);
     }
   }
@@ -529,8 +540,10 @@
     clearInterval(roundTimer);
     const atkBtn = document.getElementById("atk-btn");
     const ultBtn = document.getElementById("ult-btn");
+    const skillBtn = document.getElementById("skill-btn");
     if (atkBtn) atkBtn.disabled = true;
     if (ultBtn) ultBtn.disabled = true;
+    if (skillBtn) skillBtn.disabled = true;
     try {
       await db.submitCareerMove(match.id, mySlot, { action });
       await refreshAll();

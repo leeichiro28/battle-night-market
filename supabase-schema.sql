@@ -946,6 +946,8 @@ create table if not exists career_progress (
   active_boss_battle jsonb, -- 王戰(小關主)進行中的回合狀態，null表示目前沒有王戰在打。
                              -- 王戰是玩家自己一個人跟AI野怪即時互動(選攻擊/大招)，不像PVP要等
                              -- 對方回合，所以不需要另外開一張表，狀態直接存在自己的進度列就好。
+  skill_points int not null default 0, -- 還沒花的技能點(每升一級送1點，跟自由數值點是分開的資源)
+  unlocked_skill boolean not null default false, -- 有沒有花1技能點解鎖「戰技」(見 career-data.js SKILL_MANA_COST)
   created_at timestamptz default now(),
   unique(event_id, player_id)
 );
@@ -964,6 +966,8 @@ alter table career_progress add column if not exists current_hp int;
 alter table career_progress add column if not exists current_mp int;
 alter table career_progress add column if not exists potions jsonb not null default '{"hp":0,"mp":0}'::jsonb;
 alter table career_progress add column if not exists active_boss_battle jsonb;
+alter table career_progress add column if not exists skill_points int not null default 0;
+alter table career_progress add column if not exists unlocked_skill boolean not null default false;
 
 -- 全服事件廣播:誰抽到傳說裝備、誰爬完所有樓層之類的大事，讓整場活動的人都看得到，
 -- 不用另外做訂閱/推播機制，前端用 onTableChange 訂閱 + 讀最近幾筆就好。

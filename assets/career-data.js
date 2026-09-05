@@ -160,6 +160,29 @@ window.CareerData = (function () {
     skillKeys: [],
   };
 
+  // 技能樹 v1:每個職業(含見習系列)都有一招「戰技」，比大招便宜(魔力3點 vs 大招6點)、
+  // 效果也比較單純(固定倍率的攻擊，沒有大招那些特殊效果:不會無視防禦、不會必爆、不會多打一次)。
+  // 要花1技能點解鎖才能用(見 unlocked_skill)，技能點是每升一級送1點，跟自由數值點是分開的資源。
+  // 守衛/巫醫平常沒有主動輸出手段(大招是防禦/治療型，不會攻擊)，解鎖戰技之後才多一個「打人」的選項，
+  // build多樣性主要就是靠這個。
+  const SKILL_MANA_COST = 3;
+  const SKILL_DMG_MULT = 1.4;
+  const SKILL_NAME = {
+    warrior: "連擊",
+    guardian: "盾擊",
+    archer: "精準射擊",
+    assassin: "突刺",
+    mage: "魔彈",
+    healer: "聖光斬",
+    novice: "猛力一擊",
+    novice_strength: "猛力一擊",
+    novice_agility: "猛力一擊",
+    novice_magic: "猛力一擊",
+  };
+  function skillDesc() {
+    return `花 ${SKILL_MANA_COST} 魔力，造成 x${SKILL_DMG_MULT} 傷害的攻擊(比大招便宜、效果單純)`;
+  }
+
   const TRANSFER_LEVEL_PATH = 5; // 到這個等級可以選一個系(力量/敏捷/魔法)
   const TRANSFER_LEVEL_FINAL = 15; // 到這個等級可以在選好的系裡定案最終職業
 
@@ -255,6 +278,10 @@ window.CareerData = (function () {
     STARTER_PACK_POTIONS,
     ULT_MANA_COST,
     MANA_REGEN_PER_ROUND,
+    SKILL_MANA_COST,
+    SKILL_DMG_MULT,
+    SKILL_NAME,
+    skillDesc,
     computeStats,
     applyProgress,
     critChance,

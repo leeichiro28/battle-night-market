@@ -2341,8 +2341,8 @@ const db = (function () {
       ? window.CareerData.applyProgress(build2.final_class, progress2.stat_alloc, progress2.equipment)
       : window.CareerData.computeStats(build2.final_class);
     const initState = window.CareerEngine.initialMatchState(
-      { classKey: build1.final_class, stats: stats1 },
-      { classKey: build2.final_class, stats: stats2 }
+      { classKey: build1.final_class, stats: stats1, skillUnlocked: progress1 ? progress1.unlocked_skill : false },
+      { classKey: build2.final_class, stats: stats2, skillUnlocked: progress2 ? progress2.unlocked_skill : false }
     );
     const { data, error } = await client
       .from("career_matches")
@@ -2420,14 +2420,16 @@ const db = (function () {
     let exp = progress.exp + expGain;
     let level = progress.level;
     let statPoints = progress.stat_points;
+    let skillPoints = progress.skill_points || 0;
     let leveledUp = false;
     while (exp >= window.CareerFloors.expToNextLevel(level)) {
       exp -= window.CareerFloors.expToNextLevel(level);
       level += 1;
-      statPoints += 2; // 每升一級送2自由數值點(企劃書第三節；技能點目前沒有可花的地方，Phase2先不發)
+      statPoints += 2; // 每升一級送2自由數值點(企劃書第三節)
+      skillPoints += 1; // 每升一級也送1技能點，拿來解鎖「戰技」(見 unlockCareerSkill)
       leveledUp = true;
     }
-    return { exp, level, stat_points: statPoints, leveledUp, newLevel: level };
+    return { exp, level, stat_points: statPoints, skill_points: skillPoints, leveledUp, newLevel: level };
   }
 
   async function getOrCreateCareerProgress(eventId, playerId) {
@@ -2483,6 +2485,7 @@ const db = (function () {
         exp: leveled.exp,
         level: leveled.level,
         stat_points: leveled.stat_points,
+        skill_points: leveled.skill_points,
         train_ready_at: nextReady,
       })
       .eq("id", progress.id)
@@ -2616,6 +2619,7 @@ const db = (function () {
         exp: leveled.exp,
         level: leveled.level,
         stat_points: leveled.stat_points,
+        skill_points: leveled.skill_points,
         inventory,
         current_hp: endHp,
         current_mp: endMp,
@@ -2668,7 +2672,7 @@ const db = (function () {
     // 也不會穿插隨機事件(關主戰就是關主戰，不會被事件打斷)。
     if (floorDef.isMiniBoss) {
       const state = window.CareerEngine.initialMatchState(
-        { classKey: build.final_class, stats: playerStatsForHp },
+        { classKey: build.final_class, stats: playerStatsForHp, skillUnlocked: progress.unlocked_skill },
         { classKey: floorDef.classKey, stats: floorDef.stats },
         { hp1: startHp, mp1: startMp }
       );
@@ -2712,7 +2716,7 @@ const db = (function () {
         const playerStats = window.CareerData.applyProgress(build.final_class, progress.stat_alloc, progress.equipment);
         const opponentClass = window.CareerFloors.CLASS_KEYS[Math.floor(Math.random() * window.CareerFloors.CLASS_KEYS.length)];
         const battle = window.CareerPve.simulateFloorBattle(
-          { classKey: build.final_class, stats: playerStats },
+          { classKey: build.final_class, stats: playerStats, skillUnlocked: progress.unlocked_skill },
           { classKey: opponentClass, stats: floorDef.stats }
         );
         if (!battle.won) {
@@ -2723,7 +2727,7 @@ const db = (function () {
         const leveled = _applyExpGain(progress, expGain);
         const { data: updated, error } = await client
           .from("career_progress")
-          .update({ coins: progress.coins + coinGain, exp: leveled.exp, level: leveled.level, stat_points: leveled.stat_points })
+          .update({ coins: progress.coins + coinGain, exp: leveled.exp, level: leveled.level, stat_points: leveled.stat_points, skill_points: leveled.skill_points })
           .eq("id", progress.id)
           .select()
           .single();
@@ -2754,7 +2758,7 @@ const db = (function () {
     const { hp: battleStartHpRaw, mp: battleStartMp } = _effectiveHpMp(progress, playerStats);
     const battleStartHp = _respawnHpIfNeeded(battleStartHpRaw, playerStats.maxHp);
     const battle = window.CareerPve.simulateFloorBattle(
-      { classKey: build.final_class, stats: playerStats },
+      { classKey: build.final_class, stats: playerStats, skillUnlocked: progress.unlocked_skill },
       { classKey: floorDef.classKey, stats: floorDef.stats },
       { startHp: battleStartHp, startMp: battleStartMp }
     );
@@ -3137,6 +3141,23 @@ const db = (function () {
     return updated[0];
   }
 
+  // 花1技能點解鎖「戰技」——只要有轉正職(final_class不是novice系列)就能解鎖，
+  // 見習系列也有戰技名稱可以顯示，但實際上正職才有意義去解鎖(見習還在練，不急著花點)。
+  async function unlockCareerSkill(eventId, playerId) {
+    const progress = await getOrCreateCareerProgress(eventId, playerId);
+    if (progress.unlocked_skill) throw new Error("戰技已經解鎖過了");
+    if (progress.skill_points <= 0) throw new Error("沒有可以花的技能點了");
+    const { data: updated, error } = await client
+      .from("career_progress")
+      .update({ skill_points: progress.skill_points - 1, unlocked_skill: true })
+      .eq("id", progress.id)
+      .eq("skill_points", progress.skill_points)
+      .select();
+    if (error) throw error;
+    if (!updated || !updated.length) throw new Error("手慢了，請再按一次");
+    return updated[0];
+  }
+
   // 買藥水(商店用)。type: 'hp' | 'mp'。
   async function buyCareerPotion(eventId, playerId, type) {
     const potionDef = window.CareerFloors.POTIONS[type];
@@ -3188,7 +3209,7 @@ const db = (function () {
     const { hp: startHpRaw, mp: startMp } = _effectiveHpMp(progress, playerStats);
     const startHp = _respawnHpIfNeeded(startHpRaw, playerStats.maxHp);
     const battle = window.CareerPve.simulateFloorBattle(
-      { classKey: build.final_class, stats: playerStats },
+      { classKey: build.final_class, stats: playerStats, skillUnlocked: progress.unlocked_skill },
       { classKey: floorDef.classKey, stats: floorDef.stats },
       { startHp, startMp }
     );
@@ -3206,6 +3227,7 @@ const db = (function () {
       patch.exp = leveled.exp;
       patch.level = leveled.level;
       patch.stat_points = leveled.stat_points;
+      patch.skill_points = leveled.skill_points;
       patch.auto_farm_last_result.coinGain = coinGain;
       patch.auto_farm_last_result.expGain = expGain;
     }
@@ -3532,6 +3554,7 @@ const db = (function () {
     broadcastCareerEvent,
     listCareerBroadcasts,
     allocateCareerStatPoint,
+    unlockCareerSkill,
     buyCareerPotion,
     useCareerPotion,
     toggleCareerAutoFarm,

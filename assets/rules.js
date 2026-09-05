@@ -96,3 +96,22 @@
   });
   renderTier("common");
 })();
+
+// 職業養成對決:樓層怪物/掉落表(來源：assets/career-floors.js，資料是算出來的不是手key的，
+// 樓層公式改了這裡自動跟著變，不用回來同步維護兩份)
+(function () {
+  const el = document.getElementById("career-floor-table");
+  if (!el || !window.CareerFloors) return;
+  function rarityText(weights) {
+    return Object.keys(weights)
+      .map((k) => `${CareerFloors.RARITY_LABEL[k]}${Math.round(weights[k] * 100)}%`)
+      .join(" / ");
+  }
+  el.innerHTML = CareerFloors.FLOORS.map(
+    (f) => `
+    <div class="shop-row">
+      <span style="flex-shrink:0;font-weight:700;width:56px;${f.isMiniBoss ? "color:var(--gold);" : ""}">第${f.floor}層</span>
+      <div class="shop-row-name">${ui.esc(f.name)}<span class="shop-row-desc">HP${f.stats.hp} · 攻${f.stats.atk} · 防${f.stats.def} · 贏了+${f.coinReward}幣 +${f.expReward}經驗 · 掉落機率${Math.round(f.dropChance * 100)}%(${rarityText(f.dropRarityWeights)})</span></div>
+    </div>`
+  ).join("");
+})();

@@ -293,6 +293,7 @@
     const myInfo = CareerData.CLASS_INFO[s.class1];
     const monsterInfo = CareerData.CLASS_INFO[s.class2];
     const ultAffordable = (s.mp1 || 0) >= (CareerData.ULT_MANA_COST || 0);
+    const skillAffordable = s.skillUnlocked1 && (s.mp1 || 0) >= (CareerData.SKILL_MANA_COST || 0);
 
     if (s.round !== bossSeenRound) {
       bossSeenRound = s.round;
@@ -317,9 +318,16 @@
           ${statBarRow("MP", `${s.mp2} / ${s.maxmp2}`, s.maxmp2 > 0 ? s.mp2 / s.maxmp2 : 0, "mp")}
         </div>
       </div>
-      <div class="career-action-row">
-        <button class="btn" id="boss-atk-btn" ${bossSubmitted ? "disabled" : ""}>${ui.icon("sword")}普通攻擊</button>
-        <button class="btn career-ult-btn" id="boss-ult-btn" ${bossSubmitted || !ultAffordable ? "disabled" : ""}>
+      <div class="career-action-row" style="flex-wrap:wrap;">
+        <button class="btn" id="boss-atk-btn" style="flex:1 1 28%;" ${bossSubmitted ? "disabled" : ""}>${ui.icon("sword")}普通攻擊</button>
+        ${
+          s.skillUnlocked1
+            ? `<button class="btn ghost" id="boss-skill-btn" style="flex:1 1 28%;" ${bossSubmitted || !skillAffordable ? "disabled" : ""}>
+                ${ui.icon("wand-sparkles")}${ui.esc(CareerData.SKILL_NAME[s.class1] || "戰技")}(${CareerData.SKILL_MANA_COST || 0}魔力)
+              </button>`
+            : ""
+        }
+        <button class="btn career-ult-btn" id="boss-ult-btn" style="flex:1 1 28%;" ${bossSubmitted || !ultAffordable ? "disabled" : ""}>
           ${ui.icon("flame")}${ui.esc(myInfo.ultName)}(${CareerData.ULT_MANA_COST || 0}魔力)${!ultAffordable ? "(魔力不足)" : ""}
         </button>
       </div>
@@ -376,6 +384,18 @@
             <button class="btn small" data-alloc="hp">HP+3</button>
             <button class="btn small" data-alloc="luck">幸運+1</button>
           </div>
+        </div>`;
+    }
+
+    if (progress.skill_points > 0 && !progress.unlocked_skill && !locked) {
+      const skillName = CareerData.SKILL_NAME[cls] || "戰技";
+      html += `
+        <div style="background:var(--panel2);border:1px solid var(--gold-d);border-radius:var(--radius);padding:12px;margin:12px 0;">
+          <p style="margin:0 0 8px;font-size:12.5px;color:var(--gold);font-weight:700;">
+            ${ui.icon("wand-sparkles")}你有 ${progress.skill_points} 點技能點!花1點解鎖戰技「${ui.esc(skillName)}」
+          </p>
+          <p style="margin:0 0 8px;font-size:11px;color:var(--ink-dim);">${ui.esc(CareerData.skillDesc())}。對戰/王戰裡多一個選項，比大招便宜、效果單純，守衛/巫醫解鎖後終於有主動輸出手段了。</p>
+          <button class="btn small" id="unlock-skill-btn">${ui.icon("wand-sparkles")}解鎖戰技(消耗1技能點)</button>
         </div>`;
     }
 
@@ -780,6 +800,8 @@
     if (bossAtkBtn && !bossAtkBtn.disabled) bossAtkBtn.onclick = () => submitBossMove("attack");
     const bossUltBtn = document.getElementById("boss-ult-btn");
     if (bossUltBtn && !bossUltBtn.disabled) bossUltBtn.onclick = () => submitBossMove("ult");
+    const bossSkillBtn = document.getElementById("boss-skill-btn");
+    if (bossSkillBtn && !bossSkillBtn.disabled) bossSkillBtn.onclick = () => submitBossMove("skill");
     const bossRetreatBtn = document.getElementById("boss-retreat-btn");
     if (bossRetreatBtn) {
       bossRetreatBtn.onclick = async () => {
@@ -952,6 +974,26 @@
         }
       };
     });
+
+    const unlockSkillBtn = document.getElementById("unlock-skill-btn");
+    if (unlockSkillBtn) {
+      unlockSkillBtn.onclick = async () => {
+        if (busy) return;
+        busy = true;
+        unlockSkillBtn.disabled = true;
+        try {
+          progress = await db.unlockCareerSkill(eventId, myId);
+          const skillName = CareerData.SKILL_NAME[myBuild.final_class] || "戰技";
+          highlight = { icon: "wand-sparkles", title: "戰技解鎖!", text: `解鎖了「${skillName}」，對戰時多一個選項了。` };
+          render();
+        } catch (e) {
+          await ui.alert(e.message || "解鎖失敗", { title: "操作失敗", tone: "danger" });
+          await loadAndRender();
+        } finally {
+          busy = false;
+        }
+      };
+    }
 
     app.querySelectorAll("[data-event-choice]").forEach((btn) => {
       btn.onclick = () => resolveEventChoice(btn.dataset.eventChoice);
@@ -1148,8 +1190,10 @@
     clearInterval(bossRoundTimer);
     const atkBtn = document.getElementById("boss-atk-btn");
     const ultBtn = document.getElementById("boss-ult-btn");
+    const skillBtn = document.getElementById("boss-skill-btn");
     if (atkBtn) atkBtn.disabled = true;
     if (ultBtn) ultBtn.disabled = true;
+    if (skillBtn) skillBtn.disabled = true;
     try {
       const result = await db.submitCareerBossMove(eventId, myId, action);
       progress = result.progress;

@@ -465,7 +465,7 @@
       <button type="button" class="game-toggle">
         <i data-lucide="swords" class="ico"></i>
         <span class="game-toggle-label">職業養成對決</span>
-        <span class="game-toggle-count">6 個小節</span>
+        <span class="game-toggle-count">7 個小節</span>
         <i data-lucide="chevron-down" class="ico chev"></i>
       </button>
       <div class="game-body" hidden>
@@ -532,6 +532,14 @@
           </p>
         </div>
 
+        <div class="game-section">
+          <h4><i data-lucide="skull" class="ico"></i> 樓層怪物與掉落表</h4>
+          <p style="color:var(--ink-dim);line-height:1.9;margin:0 0 10px;">
+          目前開放 20 層，每滿 10 層是小關主(要手動即時對戰，其餘樓層AI直接算完整場)。掉落機率是「打贏這一層」的前提下才會判定，普通樓層只掉得到普通/稀有，小關主保底稀有以上。裝備等級門檻是「第幾層掉的」決定(見上面商店那節)，不是看稀有度。
+          </p>
+          <div id="career-floor-table"></div>
+        </div>
+
       </div>
     </div>
 
@@ -557,6 +565,8 @@
   <script src="assets/ui.js"></script>
   <script src="assets/header.js"></script>
   <script src="assets/auction-catalog.js"></script>
+  <script src="assets/career-data.js"></script>
+  <script src="assets/career-floors.js"></script>
   <script src="assets/rules.js"></script>
 </body>
 </html>
