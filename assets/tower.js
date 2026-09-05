@@ -431,7 +431,7 @@
                   ${b.drop ? ` · 掉落「${ui.esc(b.drop.name)}」${rarityTag(b.drop.rarity)}放進背包了` : ""}
                   <br/>剩餘 HP ${effHp}/${stats.maxHp}，MP ${effMp}/${stats.maxMp}
                 </p>`
-              : `<p style="font-size:12px;color:var(--ink-dim);margin:0 0 6px;">留在原樓層，沒有拿到獎勵，可以馬上再試一次。<br/>剩餘 HP ${effHp}/${stats.maxHp}，MP ${effMp}/${stats.maxMp}${effHp <= 0 ? "，HP 已經見底了，先去喝藥水或休息" : ""}</p>`
+              : `<p style="font-size:12px;color:var(--ink-dim);margin:0 0 6px;">留在原樓層，沒有拿到獎勵，可以馬上再試一次。<br/>剩餘 HP ${effHp}/${stats.maxHp}，MP ${effMp}/${stats.maxMp}${effHp <= Math.round(stats.maxHp * 0.35) ? "，HP剩不多了，先喝藥水或休息一下比較保險" : ""}</p>`
           }
         </div>`;
     }

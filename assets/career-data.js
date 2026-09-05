@@ -10,7 +10,7 @@ window.CareerData = (function () {
   // 加了這個之後法師才是「靠魔攻打」而不是共用攻擊力，武器/加點/裝備都會分開算。
   // mp(魔力值):任何職業都有，不是魔法系專屬——大招要花魔力才能用(見 career-engine.js)，
   // 魔力不夠就只能普通攻擊，回合結束會回一點魔力，也可以用魔力藥水補。
-  const BASE_STATS = { atk: 3, def: 2, spd: 3, hp: 20, luck: 0, matk: 2, mp: 10 };
+  const BASE_STATS = { atk: 3, def: 2, spd: 3, hp: 100, luck: 0, matk: 2, mp: 10 };
   const ULT_MANA_COST = 6; // 大招固定花費(先不分職業，簡單版)
   const MANA_REGEN_PER_ROUND = 2;
 

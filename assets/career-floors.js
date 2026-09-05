@@ -7,17 +7,26 @@
 window.CareerFloors = (function () {
   const CD = window.CareerData;
   const CLASS_KEYS = ["warrior", "guardian", "archer", "assassin", "mage", "healer"];
-  const MONSTER_NAMES = ["烤香腸小惡魔", "彈珠台幽靈", "撈金魚精"];
+  // 怪物名稱池，照樓層深度分兩批(前段夜市攤位系、後段比較兇一點)，讓低樓層跟高樓層的
+  // 怪物名字風格有點區別，不會整場都遇到同一套。
+  const MONSTER_NAMES_EARLY = ["烤香腸小惡魔", "彈珠台幽靈", "撈金魚精", "臭豆腐妖", "套圈圈小鬼", "棉花糖史萊姆"];
+  const MONSTER_NAMES_LATE = ["夜市顧攤老怪", "鹽酥雞修羅", "麻辣鴨血鬼", "算命攤占卜靈", "夾娃娃機守護者", "炒泡麵劍豪"];
+  function monsterNameFor(n) {
+    const pool = n <= 10 ? MONSTER_NAMES_EARLY : MONSTER_NAMES_LATE;
+    return pool[n % pool.length];
+  }
 
   function buildFloor(n) {
     const isMiniBoss = n % 10 === 0; // 每滿10層是小關主(企劃書第五節「關主樓層」)
-    const nameBase = MONSTER_NAMES[n % MONSTER_NAMES.length];
+    const nameBase = monsterNameFor(n);
     const classKey = CLASS_KEYS[n % CLASS_KEYS.length];
     const growth = isMiniBoss ? 1.3 : 1;
     const atk = Math.round((2 + n * 0.5) * growth);
     const def = Math.round((1 + n * 0.4) * growth);
     const spd = Math.round(2 + n * 0.35);
-    const hp = Math.round((14 + n * 3) * growth);
+    // 怪物HP要跟著玩家基礎HP(CareerData.BASE_STATS.hp)的量級走，不然玩家血量調高之後
+    // 怪物血量沒跟著調，戰鬥會變得太快就結束(反過來變成怪物秒死，不是原本要修的那個方向)。
+    const hp = Math.round((14 + n * 3) * growth * 5);
     const luck = Math.floor(n * 0.2);
     const matk = atk; // 怪物的魔攻直接跟攻擊力同步，樓層資料不用另外調兩條成長曲線
 

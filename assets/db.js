@@ -2592,6 +2592,13 @@ const db = (function () {
     return { hp, mp };
   }
 
+  // 死掉不會卡住玩家:HP見底就自動復活、保留三成HP，馬上可以再挑戰，不用被迫先去買藥水/
+  // 等事件才能繼續玩。輸的懲罰本來就是「沒有獎勵」，不需要再疊加一個「打不開下一場」的硬牆。
+  function _respawnHpIfNeeded(hp, maxHp) {
+    if (hp > 0) return hp;
+    return Math.max(1, Math.round(maxHp * 0.3));
+  }
+
   // 打贏一層樓的獎勵結算(推進樓層、加幣加經驗、掉裝備、頂樓廣播)，樓層戰(即時模擬)
   // 跟王戰(手動即時對戰打贏)共用同一套，不用寫兩次。
   async function _applyFloorWinRewards(eventId, playerId, progress, build, floorDef, floorNumber, endHp, endMp) {
@@ -2654,8 +2661,8 @@ const db = (function () {
     if (!floorDef) throw new Error("找不到這一層的資料");
 
     const playerStatsForHp = window.CareerData.applyProgress(build.final_class, progress.stat_alloc, progress.equipment);
-    const { hp: startHp, mp: startMp } = _effectiveHpMp(progress, playerStatsForHp);
-    if (startHp <= 0) throw new Error("HP 已經歸零了，先去休息、喝藥水或等恢復事件再來挑戰");
+    const { hp: startHpRaw, mp: startMp } = _effectiveHpMp(progress, playerStatsForHp);
+    const startHp = _respawnHpIfNeeded(startHpRaw, playerStatsForHp.maxHp);
 
     // 關主樓層(每滿10層):要玩家自己手動選攻擊/大招即時打，不是AI直接算完整場，
     // 也不會穿插隨機事件(關主戰就是關主戰，不會被事件打斷)。
@@ -2744,14 +2751,15 @@ const db = (function () {
     }
 
     const playerStats = window.CareerData.applyProgress(build.final_class, progress.stat_alloc, progress.equipment);
-    const { hp: battleStartHp, mp: battleStartMp } = _effectiveHpMp(progress, playerStats);
+    const { hp: battleStartHpRaw, mp: battleStartMp } = _effectiveHpMp(progress, playerStats);
+    const battleStartHp = _respawnHpIfNeeded(battleStartHpRaw, playerStats.maxHp);
     const battle = window.CareerPve.simulateFloorBattle(
       { classKey: build.final_class, stats: playerStats },
       { classKey: floorDef.classKey, stats: floorDef.stats },
       { startHp: battleStartHp, startMp: battleStartMp }
     );
     // 不管輸贏，這一戰打完HP/MP剩多少都要存回去(爬塔的HP/MP是持續的，不會每場重置)
-    const hpMpPatch = { current_hp: battle.endHp, current_mp: battle.endMp };
+    const hpMpPatch = { current_hp: _respawnHpIfNeeded(battle.endHp, playerStats.maxHp), current_mp: battle.endMp };
 
     if (!battle.won) {
       const { data: updated, error } = await client.from("career_progress").update(hpMpPatch).eq("id", progress.id).select().single();
@@ -2786,7 +2794,7 @@ const db = (function () {
       if (!won) {
         const { data: updated, error } = await client
           .from("career_progress")
-          .update({ current_hp: newState.hp1, current_mp: newState.mp1, active_boss_battle: null })
+          .update({ current_hp: _respawnHpIfNeeded(newState.hp1, newState.maxhp1), current_mp: newState.mp1, active_boss_battle: null })
           .eq("id", progress.id)
           .select()
           .single();
@@ -3177,14 +3185,8 @@ const db = (function () {
 
   function _simulateFarmTick(progress, build, floorDef) {
     const playerStats = window.CareerData.applyProgress(build.final_class, progress.stat_alloc, progress.equipment);
-    const { hp: startHp, mp: startMp } = _effectiveHpMp(progress, playerStats);
-    if (startHp <= 0) {
-      // HP見底了，掛機自動暫停這一次(不模擬戰鬥)，等玩家自己回來喝藥水/休息
-      return {
-        auto_farm_last_at: new Date().toISOString(),
-        auto_farm_last_result: { won: false, floor: floorDef.floor, at: new Date().toISOString(), coinGain: 0, expGain: 0, hpEmpty: true },
-      };
-    }
+    const { hp: startHpRaw, mp: startMp } = _effectiveHpMp(progress, playerStats);
+    const startHp = _respawnHpIfNeeded(startHpRaw, playerStats.maxHp);
     const battle = window.CareerPve.simulateFloorBattle(
       { classKey: build.final_class, stats: playerStats },
       { classKey: floorDef.classKey, stats: floorDef.stats },
