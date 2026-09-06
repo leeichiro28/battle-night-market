@@ -105,13 +105,24 @@
   function rarityText(weights) {
     return Object.keys(weights)
       .map((k) => `${CareerFloors.RARITY_LABEL[k]}${Math.round(weights[k] * 100)}%`)
-      .join(" / ");
+      .join("、");
   }
-  el.innerHTML = CareerFloors.FLOORS.map(
+  const rows = CareerFloors.FLOORS.map(
     (f) => `
-    <div class="shop-row">
-      <span style="flex-shrink:0;font-weight:700;width:56px;${f.isMiniBoss ? "color:var(--gold);" : ""}">第${f.floor}層</span>
-      <div class="shop-row-name">${ui.esc(f.name)}<span class="shop-row-desc">HP${f.stats.hp} · 攻${f.stats.atk} · 防${f.stats.def} · 贏了+${f.coinReward}幣 +${f.expReward}經驗 · 掉落機率${Math.round(f.dropChance * 100)}%(${rarityText(f.dropRarityWeights)})</span></div>
-    </div>`
+      <tr${f.isMiniBoss ? ' style="background:rgba(242,183,5,.06);"' : ""}>
+        <td>${f.isMiniBoss ? `<b style="color:var(--gold);">第${f.floor}層(關主)</b>` : `第${f.floor}層`}</td>
+        <td>${ui.esc(f.name)}</td>
+        <td>${f.stats.hp}</td>
+        <td>${f.stats.atk} / ${f.stats.def}</td>
+        <td>+${f.coinReward}幣 · +${f.expReward}經驗</td>
+        <td>${Math.round(f.dropChance * 100)}%(${rarityText(f.dropRarityWeights)})</td>
+      </tr>`
   ).join("");
+  el.innerHTML = `
+    <div class="rule-table-wrap">
+      <table class="rule-table">
+        <thead><tr><th>樓層</th><th>怪物</th><th>HP</th><th>攻/防</th><th>贏了獎勵</th><th>掉落機率(稀有度)</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
 })();

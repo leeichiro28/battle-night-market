@@ -26,7 +26,9 @@ window.CareerFloors = (function () {
     const spd = Math.round(2 + n * 0.35);
     // 怪物HP要跟著玩家基礎HP(CareerData.BASE_STATS.hp)的量級走，不然玩家血量調高之後
     // 怪物血量沒跟著調，戰鬥會變得太快就結束(反過來變成怪物秒死，不是原本要修的那個方向)。
-    const hp = Math.round((14 + n * 3) * growth * 5);
+    // 玩家基礎HP從20調到100是為了不要感覺被一拳打死，但玩家自己的攻擊力沒有跟著調高，
+    // 所以怪物HP不能跟著等比例放大，不然變成打不死人(這是上一版本調過頭的地方，這裡調回來)。
+    const hp = Math.round((14 + n * 3) * growth);
     const luck = Math.floor(n * 0.2);
     const matk = atk; // 怪物的魔攻直接跟攻擊力同步，樓層資料不用另外調兩條成長曲線
 

@@ -39,6 +39,7 @@
   let bossSeenRound = null;
   let bossRoundTimer = null;
   let broadcasts = [];
+  let standings = []; // 目前排行榜，顯示在頁面最下面，每次背景掃描順便刷新一次
   let highlight = null; // { icon, title, text } — 傳說裝備/爬完樓層之類的精彩時刻，顯示大卡片
   let busy = false;
   let activeTab = "tower";
@@ -86,6 +87,7 @@
 
     myBuild = await db.getOrCreateCareerBuild(eventId, myId);
     broadcasts = await db.listCareerBroadcasts(eventId).catch(() => []);
+    standings = await db.computeCareerStandings(eventId).catch(() => []);
 
     await loadAndRender();
 
@@ -100,6 +102,7 @@
         await db.processCareerAutoFarmTicks(eventId);
         const advanced = await db.maybeAdvanceCareerPhase(eventId);
         if (advanced) ev = await db.getEventSafe(eventId); // 訓練期剛好在這個tick結束，重新讀一次活動拿到最新的 rules
+        standings = await db.computeCareerStandings(eventId).catch(() => standings);
         scheduleRefresh();
       } catch (e) {
         console.error(e);
@@ -350,6 +353,11 @@
   function renderTowerTab(ctx) {
     if (progress.active_boss_battle) return renderBossBattleUi();
     const { locked, hasPendingEvent, canTrain, trainCooldownMs, nextFloor, nextFloorDef, isAutoFarming } = ctx;
+    // 戰報要顯示戰鬥後剩餘的HP/MP，這兩個數字在主 render() 裡已經算過一次，但那邊的區域變數
+    // 沒辦法被這支獨立的函式讀到(不是巢狀函式，沒有共用closure)，這裡重新算一次同樣的東西。
+    const battleStats = CareerData.applyProgress(myBuild.final_class, progress.stat_alloc, progress.equipment);
+    const effHp = progress.current_hp != null ? Math.max(0, Math.min(progress.current_hp, battleStats.maxHp)) : battleStats.maxHp;
+    const effMp = progress.current_mp != null ? Math.max(0, Math.min(progress.current_mp, battleStats.maxMp)) : battleStats.maxMp;
     let html = "";
 
     if (hasPendingEvent) html += renderPendingEventCard(progress.pending_event);
@@ -449,9 +457,9 @@
               ? `<p style="font-size:12px;color:var(--ink-dim);margin:0 0 6px;">
                   +${b.coinGain} 幣 · +${b.expGain} 經驗${b.leveledUp ? ` · 升到 Lv.${b.newLevel}! 獲得 2 數值點` : ""}
                   ${b.drop ? ` · 掉落「${ui.esc(b.drop.name)}」${rarityTag(b.drop.rarity)}放進背包了` : ""}
-                  <br/>剩餘 HP ${effHp}/${stats.maxHp}，MP ${effMp}/${stats.maxMp}
+                  <br/>剩餘 HP ${effHp}/${battleStats.maxHp}，MP ${effMp}/${battleStats.maxMp}
                 </p>`
-              : `<p style="font-size:12px;color:var(--ink-dim);margin:0 0 6px;">留在原樓層，沒有拿到獎勵，可以馬上再試一次。<br/>剩餘 HP ${effHp}/${stats.maxHp}，MP ${effMp}/${stats.maxMp}${effHp <= Math.round(stats.maxHp * 0.35) ? "，HP剩不多了，先喝藥水或休息一下比較保險" : ""}</p>`
+              : `<p style="font-size:12px;color:var(--ink-dim);margin:0 0 6px;">留在原樓層，沒有拿到獎勵，可以馬上再試一次。<br/>剩餘 HP ${effHp}/${battleStats.maxHp}，MP ${effMp}/${battleStats.maxMp}${effHp <= Math.round(battleStats.maxHp * 0.35) ? "，HP剩不多了，先喝藥水或休息一下比較保險" : ""}</p>`
           }
         </div>`;
     }
@@ -720,6 +728,30 @@
       </div>`;
   }
 
+  function renderLeaderboardSection() {
+    if (!standings.length) return "";
+    const rows = standings
+      .slice(0, 10)
+      .map((row, idx) => {
+        const isMe = row.queueEntry.player_id === myId;
+        const name = (row.queueEntry.player && row.queueEntry.player.name) || "?";
+        return `
+          <div class="lb-row${isMe ? " me" : ""}">
+            ${ui.rankBadge(idx + 1)}
+            <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}
+              <span style="color:var(--ink-dim);font-size:11px;"> · 第${row.floor}層 · ${row.queueEntry.wins}勝${row.queueEntry.losses}敗</span>
+            </span>
+            <span class="lb-score">${row.score}</span>
+          </div>`;
+      })
+      .join("");
+    return `
+      <div class="card" style="margin-top:16px;">
+        <h3>${ui.icon("list-ordered")}目前排行榜</h3>
+        ${rows}
+      </div>`;
+  }
+
   // ---------------- 主 render ----------------
 
   function render() {
@@ -788,6 +820,8 @@
       html += renderBackpackTab();
     }
     html += `</div>`;
+
+    html += renderLeaderboardSection();
 
     app.innerHTML = html;
     bindHandlers();
