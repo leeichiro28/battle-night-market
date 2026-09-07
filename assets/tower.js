@@ -24,6 +24,7 @@
     { key: "shop", icon: "store", label: "商店" },
     { key: "gacha", icon: "dices", label: "抽獎機" },
     { key: "synthesis", icon: "flask-conical", label: "合成" },
+    { key: "skilltree", icon: "wand-sparkles", label: "技能樹" },
     { key: "backpack", icon: "backpack", label: "背包" },
   ];
 
@@ -396,15 +397,7 @@
     }
 
     if (progress.skill_points > 0 && !progress.unlocked_skill && !locked) {
-      const skillName = CareerData.SKILL_NAME[cls] || "戰技";
-      html += `
-        <div style="background:var(--panel2);border:1px solid var(--gold-d);border-radius:var(--radius);padding:12px;margin:12px 0;">
-          <p style="margin:0 0 8px;font-size:12.5px;color:var(--gold);font-weight:700;">
-            ${ui.icon("wand-sparkles")}你有 ${progress.skill_points} 點技能點!花1點解鎖戰技「${ui.esc(skillName)}」
-          </p>
-          <p style="margin:0 0 8px;font-size:11px;color:var(--ink-dim);">${ui.esc(CareerData.skillDesc())}。對戰/王戰裡多一個選項，比大招便宜、效果單純，守衛/巫醫解鎖後終於有主動輸出手段了。</p>
-          <button class="btn small" id="unlock-skill-btn">${ui.icon("wand-sparkles")}解鎖戰技(消耗1技能點)</button>
-        </div>`;
+      html += `<div class="empty" style="margin:10px 0;font-size:12px;">${ui.icon("wand-sparkles")}你有 ${progress.skill_points} 點技能點可以花，去「技能樹」分頁解鎖戰技!</div>`;
     }
 
     html += `
@@ -661,6 +654,63 @@
       </div>`;
   }
 
+  // ---------------- 分頁:技能樹 ----------------
+
+  function renderSkillTreeTab(locked) {
+    const cls = myBuild.final_class;
+    const info = CareerData.CLASS_INFO[cls];
+    const skillName = CareerData.SKILL_NAME[cls] || "戰技";
+    const isNoviceStage = cls === "novice" || cls.startsWith("novice_");
+
+    const skillStatus = progress.unlocked_skill ? "learned" : progress.skill_points > 0 ? "available" : "locked";
+    const nodes = [
+      { name: "普通攻擊", desc: "基礎攻擊，不用學，隨時可用", status: "learned", icon: "sword" },
+      { name: skillName, desc: CareerData.skillDesc(), status: skillStatus, icon: "wand-sparkles" },
+      { name: info.ultName, desc: info.ultDesc, status: "learned", icon: "flame" },
+    ];
+    const statusLabel = { learned: "已學會", available: "可解鎖", locked: "未解鎖" };
+    const statusColor = { learned: "var(--green)", available: "var(--gold)", locked: "var(--ink-dim)" };
+
+    function nodeCard(node) {
+      return `
+        <div style="flex:1;min-width:130px;background:var(--panel2);border:1px solid ${node.status === "available" ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:12px;text-align:center;">
+          ${ui.icon(node.icon, { size: "24px" })}
+          <p style="margin:8px 0 2px;font-weight:700;font-size:13px;">${ui.esc(node.name)}</p>
+          <p style="margin:0 0 6px;font-size:11px;color:var(--ink-dim);min-height:30px;">${ui.esc(node.desc)}</p>
+          <span style="font-size:10.5px;color:${statusColor[node.status]};font-weight:700;">${statusLabel[node.status]}</span>
+        </div>`;
+    }
+
+    let html = `
+      <div style="text-align:center;margin-bottom:14px;">
+        ${ui.icon("wand-sparkles", { size: "28px" })}
+        <p style="margin:8px 0 2px;font-weight:700;font-size:15px;">${ui.esc(info.name)}的技能樹</p>
+        <p style="margin:0;font-size:11.5px;color:var(--ink-dim);">目前有 ${progress.skill_points} 點技能點可以花(每升1級送1點)</p>
+      </div>
+      <div style="display:flex;gap:10px;align-items:stretch;flex-wrap:wrap;justify-content:center;">
+        ${nodeCard(nodes[0])}
+        <div style="align-self:center;color:var(--ink-dim);">${ui.icon("arrow-right")}</div>
+        ${nodeCard(nodes[1])}
+        <div style="align-self:center;color:var(--ink-dim);">${ui.icon("arrow-right")}</div>
+        ${nodeCard(nodes[2])}
+      </div>`;
+
+    if (!progress.unlocked_skill) {
+      const canUnlock = progress.skill_points > 0 && !locked;
+      html += `
+        <div style="text-align:center;margin-top:16px;">
+          <button class="btn" id="unlock-skill-btn" ${canUnlock ? "" : "disabled"}>${ui.icon("wand-sparkles")}解鎖「${ui.esc(skillName)}」(消耗1技能點)</button>
+        </div>`;
+    } else {
+      html += `<div class="empty" style="margin-top:16px;">${ui.icon("check")}「${ui.esc(skillName)}」已經解鎖，對戰/王戰畫面會多一個按鈕。</div>`;
+    }
+
+    if (isNoviceStage) {
+      html += `<p style="text-align:center;margin-top:12px;font-size:11px;color:var(--ink-dim);">還沒轉職完成，這裡顯示的是「${ui.esc(info.name)}」現在這個階段的技能，轉職後會自動換成正式職業的技能內容。</p>`;
+    }
+    return html;
+  }
+
   // ---------------- 分頁4:背包 ----------------
 
   function renderBackpackTab() {
@@ -816,6 +866,8 @@
       html += renderGachaTab(locked || hasPendingEvent);
     } else if (activeTab === "synthesis") {
       html += renderSynthesisTab(locked || hasPendingEvent);
+    } else if (activeTab === "skilltree") {
+      html += renderSkillTreeTab(locked || hasPendingEvent);
     } else if (activeTab === "backpack") {
       html += renderBackpackTab();
     }
