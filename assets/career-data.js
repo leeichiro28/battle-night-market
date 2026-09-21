@@ -237,7 +237,7 @@ window.CareerData = (function () {
   }
 
   // Phase2:職業基礎值 + 自由數值點分配 + 裝備加成,算出目前實際戰鬥數值。
-  // 1點數值點 = 攻擊+1/防禦+1/速度+1/HP+3/幸運+1(企劃書第三節)
+  // 1點數值點 = 攻擊+1/防禦+1/速度+1/HP+10/魔力+2/幸運+1
   function applyProgress(finalClassKey, statAlloc, equipment) {
     const base = computeStats(finalClassKey);
     if (!base) return null;
@@ -248,7 +248,7 @@ window.CareerData = (function () {
     out.spd += alloc.spd || 0;
     out.luck += alloc.luck || 0;
     out.matk += alloc.matk || 0;
-    out.hp += (alloc.hp || 0) * 3;
+    out.hp += (alloc.hp || 0) * 10;
     out.mp += (alloc.mp || 0) * 2;
     if (equipment) {
       ["weapon", "armor", "accessory"].forEach((slot) => {

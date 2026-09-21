@@ -3350,19 +3350,31 @@ const db = (function () {
 
   // 最終積分 = PVP戰績分(含連勝加成，已經算在 current_score 裡) + 爬塔高度加成(每爬10層+5分)
   // (企劃書第九節；戰功勳章分目前還沒有可以買的商店，先跳過，等 Phase4 商店上線再併進來)
+  // 排行榜要列出「所有有在玩的人」，不能只列有排過PVP佇列的人——不然還在爬塔訓練、
+  // 還沒去打過PVP的人會整個從排行榜消失，看起來像沒人參加一樣。改成以 career_progress
+  // (只要碰過爬塔就會有這筆)為準，PVP佇列資料用player_id對應貼上去，沒排過隊的人
+  // 就當作PVP戰績是0，一樣會出現在排行榜上(只是分數只有爬塔加成)。
   async function computeCareerStandings(eventId) {
     const [queueRows, progressRows] = await Promise.all([
       client.from("career_pvp_queue").select("*, player:player_id(name)").eq("event_id", eventId),
-      client.from("career_progress").select("player_id, floor").eq("event_id", eventId),
+      client.from("career_progress").select("player_id, floor, player:player_id(name)").eq("event_id", eventId),
     ]);
     if (queueRows.error) throw queueRows.error;
     if (progressRows.error) throw progressRows.error;
-    const floorByPlayer = {};
-    (progressRows.data || []).forEach((p) => (floorByPlayer[p.player_id] = p.floor));
-    const rows = (queueRows.data || []).map((q) => {
-      const floor = floorByPlayer[q.player_id] || 0;
-      const floorBonus = Math.floor(floor / 10) * 5;
-      return { queueEntry: q, floor, floorBonus, score: q.current_score + floorBonus };
+    const queueByPlayer = {};
+    (queueRows.data || []).forEach((q) => (queueByPlayer[q.player_id] = q));
+    const rows = (progressRows.data || []).map((p) => {
+      const q = queueByPlayer[p.player_id];
+      const floorBonus = Math.floor((p.floor || 0) / 10) * 5;
+      const queueEntry = q || {
+        player_id: p.player_id,
+        player: p.player,
+        current_score: 0,
+        wins: 0,
+        losses: 0,
+        win_streak: 0,
+      };
+      return { queueEntry, floor: p.floor || 0, floorBonus, score: queueEntry.current_score + floorBonus };
     });
     rows.sort((a, b) => b.score - a.score);
     return rows;
@@ -3375,10 +3387,20 @@ const db = (function () {
     for (let i = 0; i < standings.length; i++) {
       const rank = i + 1;
       const row = standings[i];
-      await client
-        .from("career_pvp_queue")
-        .update({ final_rank: rank, reward: row.queueEntry.reward || rewardForRank(ev, rank) })
-        .eq("id", row.queueEntry.id);
+      const reward = row.queueEntry.reward || rewardForRank(ev, rank);
+      if (row.queueEntry.id) {
+        await client.from("career_pvp_queue").update({ final_rank: rank, reward }).eq("id", row.queueEntry.id);
+      } else {
+        // 這個人從頭到尾沒排過PVP佇列(只有爬塔紀錄)，原本沒有career_pvp_queue這筆資料，
+        // 結算的時候補一筆進去，這樣他一樣能拿到名次/獎勵，不會因為沒打PVP就被漏掉。
+        await client.from("career_pvp_queue").insert({
+          event_id: eventId,
+          player_id: row.queueEntry.player_id,
+          current_score: row.queueEntry.current_score,
+          final_rank: rank,
+          reward,
+        });
+      }
     }
     await setEventStatus(eventId, "closed");
     await awardCareerTitles(eventId, standings);

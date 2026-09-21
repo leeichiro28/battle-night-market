@@ -31,6 +31,9 @@
   let unsubMatches = null;
   let refreshQueued = false;
   let broadcasts = [];
+  let leaderboardOpen = false; // 排行榜展開狀態要放在模組變數，不能只存在DOM(dataset)上——
+  // 佇列/廣播的即時更新會觸發整頁重繪，DOM上的狀態每次都會被砍掉重來，導致排行榜自己收合
+  let leaderboardStandings = [];
 
   function emptyMsg(text, icon) {
     return `<div class="empty">${ui.icon(icon || "info")}${ui.esc(text)}</div>`;
@@ -181,6 +184,9 @@
       clearInterval(roundTimer);
     }
     myBuild = await db.getOrCreateCareerBuild(eventId, myId);
+    if (leaderboardOpen) {
+      leaderboardStandings = await db.computeCareerStandings(eventId).catch(() => leaderboardStandings);
+    }
     await renderLobby();
   }
 
@@ -227,9 +233,9 @@
           : ""
       }
       <div style="text-align:right;margin:-10px 0 14px;display:flex;justify-content:flex-end;gap:8px;">
-        <button class="btn ghost small" id="show-leaderboard-btn">${ui.icon("list-ordered")}目前排行榜</button>
+        <button class="btn ghost small" id="show-leaderboard-btn">${ui.icon(leaderboardOpen ? "chevron-up" : "list-ordered")}${leaderboardOpen ? "收起排行榜" : "目前排行榜"}</button>
       </div>
-      <div id="inline-leaderboard"></div>`;
+      <div id="inline-leaderboard">${leaderboardOpen ? renderLeaderboardRows() : ""}</div>`;
 
     const phase = getCareerPhase();
     if (!pvpAllowed()) {
@@ -274,36 +280,19 @@
     const lbBtn = document.getElementById("show-leaderboard-btn");
     if (lbBtn) {
       lbBtn.onclick = async () => {
-        const box = document.getElementById("inline-leaderboard");
-        if (box.dataset.shown === "1") {
-          box.innerHTML = "";
-          box.dataset.shown = "0";
-          lbBtn.innerHTML = ui.icon("list-ordered") + "目前排行榜";
+        if (leaderboardOpen) {
+          leaderboardOpen = false;
+          renderLobby();
           return;
         }
-        box.innerHTML = emptyMsg("載入中...", "loader-circle");
+        leaderboardOpen = true;
+        lbBtn.disabled = true;
         try {
-          const standings = await db.computeCareerStandings(eventId);
-          box.innerHTML = standings.length
-            ? standings
-                .map((row, idx) => {
-                  const isMe = row.queueEntry.player_id === myId;
-                  const name = (row.queueEntry.player && row.queueEntry.player.name) || "?";
-                  return `<div class="lb-row${isMe ? " me" : ""}">
-                    ${ui.rankBadge(idx + 1)}
-                    <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}
-                      <span style="color:var(--ink-dim);font-size:11px;"> · 第${row.floor}層 · ${row.queueEntry.wins}勝${row.queueEntry.losses}敗</span>
-                    </span>
-                    <span class="lb-score">${row.score}</span>
-                  </div>`;
-                })
-                .join("")
-            : emptyMsg("還沒有人排隊過。", "users");
-          box.dataset.shown = "1";
-          lbBtn.innerHTML = ui.icon("chevron-up") + "收起排行榜";
+          leaderboardStandings = await db.computeCareerStandings(eventId);
         } catch (e) {
-          box.innerHTML = emptyMsg("排行榜載入失敗", "triangle-alert");
+          leaderboardStandings = null; // null 表示載入失敗，跟「載入成功但沒人」分開
         }
+        renderLobby();
       };
     }
     const joinBtn = document.getElementById("join-queue-btn");
@@ -422,6 +411,24 @@
     } finally {
       resolving = false;
     }
+  }
+
+  function renderLeaderboardRows() {
+    if (leaderboardStandings === null) return emptyMsg("排行榜載入失敗，再點一次試試", "triangle-alert");
+    if (!leaderboardStandings.length) return emptyMsg("還沒有人參加。", "users");
+    return leaderboardStandings
+      .map((row, idx) => {
+        const isMe = row.queueEntry.player_id === myId;
+        const name = (row.queueEntry.player && row.queueEntry.player.name) || "?";
+        return `<div class="lb-row${isMe ? " me" : ""}">
+          ${ui.rankBadge(idx + 1)}
+          <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}
+            <span style="color:var(--ink-dim);font-size:11px;"> · 第${row.floor}層 · ${row.queueEntry.wins}勝${row.queueEntry.losses}敗</span>
+          </span>
+          <span class="lb-score">${row.score}</span>
+        </div>`;
+      })
+      .join("");
   }
 
   function statBarHtml(label, cur, max, kind) {

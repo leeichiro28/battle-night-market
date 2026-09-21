@@ -390,7 +390,8 @@
             ${isMagic ? `<button class="btn small" data-alloc="matk">魔攻+1</button>` : `<button class="btn small" data-alloc="atk">攻擊+1</button>`}
             <button class="btn small" data-alloc="def">防禦+1</button>
             <button class="btn small" data-alloc="spd">速度+1</button>
-            <button class="btn small" data-alloc="hp">HP+3</button>
+            <button class="btn small" data-alloc="hp">HP+10</button>
+            <button class="btn small" data-alloc="mp">MP+2</button>
             <button class="btn small" data-alloc="luck">幸運+1</button>
           </div>
         </div>`;
@@ -955,7 +956,7 @@
           myBuild = result.build;
           progress = result.progress;
           const bonusText = Object.keys(result.bonus)
-            .map((k) => `${CareerFloors.STAT_LABEL[k] || k}+${k === "hp" ? result.bonus[k] * 3 : k === "mp" ? result.bonus[k] * 2 : result.bonus[k]}`)
+            .map((k) => `${CareerFloors.STAT_LABEL[k] || k}+${k === "hp" ? result.bonus[k] * 10 : k === "mp" ? result.bonus[k] * 2 : result.bonus[k]}`)
             .join("、");
           const packText = result.starterPack ? `，還送了 ${result.starterPack.hp || 0} 瓶恢復藥水、${result.starterPack.mp || 0} 瓶魔力藥水` : "";
           highlight = { icon: CareerData.CAREER_TREE[pathKey].icon, title: "轉職成功!", text: `數值提升:${bonusText}${packText}!` };
@@ -984,7 +985,7 @@
           myBuild = result.build;
           progress = result.progress;
           const bonusText = Object.keys(result.bonus)
-            .map((k) => `${CareerFloors.STAT_LABEL[k] || k}+${k === "hp" ? result.bonus[k] * 3 : k === "mp" ? result.bonus[k] * 2 : result.bonus[k]}`)
+            .map((k) => `${CareerFloors.STAT_LABEL[k] || k}+${k === "hp" ? result.bonus[k] * 10 : k === "mp" ? result.bonus[k] * 2 : result.bonus[k]}`)
             .join("、");
           highlight = { icon: info.icon, title: `轉職成${info.name}!`, text: `數值提升:${bonusText}!從今以後你就是${info.name}了。` };
           activeTab = "tower";
