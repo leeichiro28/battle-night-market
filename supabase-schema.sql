@@ -947,7 +947,8 @@ create table if not exists career_progress (
                              -- 王戰是玩家自己一個人跟AI野怪即時互動(選攻擊/大招)，不像PVP要等
                              -- 對方回合，所以不需要另外開一張表，狀態直接存在自己的進度列就好。
   skill_points int not null default 0, -- 還沒花的技能點(每升一級送1點，跟自由數值點是分開的資源)
-  unlocked_skill boolean not null default false, -- 有沒有花1技能點解鎖「戰技」(見 career-data.js SKILL_MANA_COST)
+  unlocked_skill boolean not null default false, -- (第22點更新後不再使用，改用 career_player_skills 的永久等級；
+                                                   -- 欄位保留不刪，避免破壞舊資料/舊的 select *)
   created_at timestamptz default now(),
   unique(event_id, player_id)
 );
@@ -968,6 +969,40 @@ alter table career_progress add column if not exists potions jsonb not null defa
 alter table career_progress add column if not exists active_boss_battle jsonb;
 alter table career_progress add column if not exists skill_points int not null default 0;
 alter table career_progress add column if not exists unlocked_skill boolean not null default false;
+
+-- ============================================
+-- 職業養成對決 第22點更新:技能／被動等級，永久繼承
+-- ============================================
+-- 跟 career_progress 不一樣的地方:這張表只綁 player_id，「不綁 event_id」。
+-- career_progress 每開一場新活動就會重新 insert 一筆(等級/經驗/自由數值點都從頭來)，
+-- 但這張表不會——同一個玩家不管參加第幾場活動、第幾個賽季，skill_key 的 level 都是
+-- 同一筆資料、繼續往上疊加，符合企劃書「技能與被動都可以升級，而且永久繼承」的要求。
+-- skill_key 目前有:
+--   "active_skill" -- 戰技等級(取代舊的 career_progress.unlocked_skill 布林值)
+--   "crit_boost"   -- 暴擊被動(暴擊精研)
+--   "exp_boost"    -- 經驗被動(博學被動)
+--   "idle_cd"      -- 掛機CD被動(勤奮掛機)
+--   "coin_boost"   -- 金幣被動(財運被動)
+--   "mana_regen"   -- 魔力回復被動(魔力充沛)
+--   "crit_dmg_boost" -- 暴擊傷害被動(爆擊強化)
+--   "drop_luck"    -- 裝備掉落被動(鑑定之眼)
+--   "ult_cost"     -- 大招魔力消耗被動(大招精修)
+--   "class_mastery:<classKey>" -- 職業限定被動(只有轉職成該職業才能點，例如 "class_mastery:warrior")
+-- 對照表跟每級數值放在 assets/career-data.js 的 PASSIVE_DEFS / SKILL_LEVEL_DMG_MULT，
+-- 之後要開放 Lv.4、Lv.5，只要改那份資料表的上限，這張表的資料不用動、也不會被重置。
+create table if not exists career_player_skills (
+  id uuid primary key default gen_random_uuid(),
+  player_id uuid not null references players(id) on delete cascade,
+  skill_key text not null,
+  level int not null default 1,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique(player_id, skill_key)
+);
+alter table career_player_skills enable row level security;
+drop policy if exists "anon all career_player_skills" on career_player_skills;
+create policy "anon all career_player_skills" on career_player_skills for all using (true) with check (true);
+
 
 -- 全服事件廣播:誰抽到傳說裝備、誰爬完所有樓層之類的大事，讓整場活動的人都看得到，
 -- 不用另外做訂閱/推播機制，前端用 onTableChange 訂閱 + 讀最近幾筆就好。

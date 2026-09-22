@@ -2183,23 +2183,32 @@ const db = (function () {
   // Lv5 選系:除了定案 career_builds.path/final_class(novice_xxx)之外，順便送一筆永久加點
   // (跟被動的 CLASS_EFFECTS.statBonus是兩件事，這是「轉職那一刻」的獎勵，讓轉職有感覺)，
   // 還有一份新手藥水禮包。
+  // 技能樹 v2 Phase 2:Lv.1~4 不核發技能點(見 _applyExpGain)，這裡選系的那一刻一次補發
+  // 「目前等級 × 每級技能點數」，同時等於是「技能樹正式解鎖」的那個時間點——UI只會在還沒選過
+  // 系(final_class==="novice")的時候才顯示選系卡片，所以正常流程下這個函式一個玩家只會呼叫
+  // 到一次；這裡再多一層 guard 防手快連點兩下或直接打API重複領技能點。
   async function transferCareerPath(eventId, playerId, pathKey) {
+    const existingBuild = await getCareerBuildFor(eventId, playerId);
+    if (existingBuild && existingBuild.final_class !== "novice") throw new Error("已經選過系了，不能重複選(重複點技能點的漏洞已擋掉)");
+
     const progress = await getOrCreateCareerProgress(eventId, playerId);
     const bonus = window.CareerData.PATH_TRANSFER_BONUS[pathKey] || {};
     const alloc = { ...progress.stat_alloc };
     Object.keys(bonus).forEach((k) => (alloc[k] = (alloc[k] || 0) + bonus[k]));
     const pack = window.CareerData.STARTER_PACK_POTIONS || {};
     const potions = { hp: (progress.potions.hp || 0) + (pack.hp || 0), mp: (progress.potions.mp || 0) + (pack.mp || 0) };
+    const skillPointGrant = progress.level * (window.CareerData.SKILL_POINTS_PER_LEVEL || 1);
 
     const build = await saveCareerBuild(eventId, playerId, { path: pathKey, finalClass: `novice_${pathKey}`, skillKeys: [] });
     const { data: updatedProgress, error } = await client
       .from("career_progress")
-      .update({ stat_alloc: alloc, potions })
+      .update({ stat_alloc: alloc, potions, skill_points: (progress.skill_points || 0) + skillPointGrant })
       .eq("id", progress.id)
+      .eq("skill_points", progress.skill_points) // 樂觀鎖，跟花點函式同一套寫法，避免跟同時間的其他更新互相蓋掉
       .select()
       .single();
     if (error) throw error;
-    return { build, progress: updatedProgress, bonus, starterPack: pack };
+    return { build, progress: updatedProgress, bonus, starterPack: pack, skillPointGrant };
   }
 
   // Lv15 定案最終職業:一樣送一筆永久加點(比 Lv5 那次多，畢竟是真正職業成形的時刻)。
@@ -2330,9 +2339,11 @@ const db = (function () {
     // Phase3 銜接:玩家只要去爬過塔(有 career_progress 這筆資料)，PVP 數值就改用
     // 「職業基礎值 + 加點 + 裝備」算，沒去爬過塔的人(或還沒接訓練期的舊測試活動)就還是
     // 用 Phase1 那個固定基礎值，兩種情況都能正常開打，不會因為對手沒爬過塔就打不成。
-    const [progress1, progress2] = await Promise.all([
+    const [progress1, progress2, skillLevels1, skillLevels2] = await Promise.all([
       getCareerProgressFor(match.event_id, match.player1_id),
       getCareerProgressFor(match.event_id, match.player2_id),
+      getPlayerSkillLevels(match.player1_id),
+      getPlayerSkillLevels(match.player2_id),
     ]);
     const stats1 = progress1
       ? window.CareerData.applyProgress(build1.final_class, progress1.stat_alloc, progress1.equipment)
@@ -2341,8 +2352,8 @@ const db = (function () {
       ? window.CareerData.applyProgress(build2.final_class, progress2.stat_alloc, progress2.equipment)
       : window.CareerData.computeStats(build2.final_class);
     const initState = window.CareerEngine.initialMatchState(
-      { classKey: build1.final_class, stats: stats1, skillUnlocked: progress1 ? progress1.unlocked_skill : false },
-      { classKey: build2.final_class, stats: stats2, skillUnlocked: progress2 ? progress2.unlocked_skill : false }
+      _engineSide(build1.final_class, stats1, skillLevels1),
+      _engineSide(build2.final_class, stats2, skillLevels2)
     );
     const { data, error } = await client
       .from("career_matches")
@@ -2414,19 +2425,116 @@ const db = (function () {
     return { atk: 0, def: 0, spd: 0, hp: 0, luck: 0, matk: 0, mp: 0 };
   }
 
+  // ---------- 第22點更新:技能／被動等級，永久繼承(只綁 player_id，不綁 event_id) ----------
+  // "active_skill" = 戰技等級(取代原本的 unlocked_skill 布林值)，其餘 key 是
+  // CareerData.PASSIVE_DEFS 裡的被動(crit_boost / exp_boost / idle_cd)。沒有那筆資料 = Lv.0。
+  async function getPlayerSkillLevels(playerId) {
+    const { data, error } = await client.from("career_player_skills").select("skill_key, level").eq("player_id", playerId);
+    if (error) throw error;
+    const map = {};
+    (data || []).forEach((row) => {
+      map[row.skill_key] = row.level;
+    });
+    return map;
+  }
+
+  // 把某個 player 的永久技能等級組成戰鬥引擎要的 { classKey, stats, skillLevel, critBonus } 形狀
+  // 技能樹 v2 Phase 2:Lv.1~4(base novice,還沒選系)這場活動裡不能用「戰技」，就算這個玩家
+  // 之前某場活動已經把戰技練到 Lv.2/Lv.3 也一樣——那個等級沒有不見(還在 career_player_skills)，
+  // 只是要等這場活動也選了系(final_class 變成 novice_xxx 以上)才會重新生效，維持
+  // 「Lv.1~4 只有普攻跟拼盡全力」這個承諾，不會因為回鍋玩家帶著舊進度就被繞過去。
+  function _engineSide(classKey, stats, skillLevels) {
+    const levels = skillLevels || {};
+    const treeUnlocked = classKey !== "novice";
+    return {
+      classKey,
+      stats,
+      skillLevel: treeUnlocked ? levels.active_skill || 0 : 0,
+      critBonus: window.CareerData.passiveValue("crit_boost", levels.crit_boost || 0),
+      critDmgBonus: window.CareerData.passiveValue("crit_dmg_boost", levels.crit_dmg_boost || 0),
+      manaRegenBonus: window.CareerData.passiveValue("mana_regen", levels.mana_regen || 0),
+      ultCostReduce: window.CareerData.passiveValue("ult_cost", levels.ult_cost || 0),
+      mastery: window.CareerData.classMasteryBonus(classKey, levels["class_mastery:" + classKey] || 0),
+    };
+  }
+
+  // 「財運被動」(coin_boost)算出來的金幣加成倍率，例如 Lv.2 是 1.08。skillLevels 沒帶到就是 1(沒加成)。
+  function _coinMult(skillLevels) {
+    return 1 + window.CareerData.passiveValue("coin_boost", (skillLevels && skillLevels.coin_boost) || 0);
+  }
+  // 同上，經驗加成倍率(exp_boost)，抽成小工具是因為好幾個賺經驗的地方都要用到。
+  function _expMult(skillLevels) {
+    return 1 + window.CareerData.passiveValue("exp_boost", (skillLevels && skillLevels.exp_boost) || 0);
+  }
+
+  // 花 1 點本場活動的技能點，把某個技能/被動的「永久等級」+1(最高 CareerData.MAX_SKILL_LEVEL)。
+  // 技能點本身(career_progress.skill_points)還是跟以前一樣每場活動重新用等級賺，但花出去之後
+  // 升上去的等級寫進 career_player_skills，不綁 event_id，所以下一場活動、下一個賽季都還在，
+  // 不會歸零(企劃書第22點更新)。
+  // skillKey 除了 "active_skill" 跟 PASSIVE_DEFS 裡的通用被動之外，也接受 "class_mastery:<classKey>"
+  // 這種職業限定被動(第22點更新第二段)，但只能點「目前這個活動」的最終職業，不能點別的職業，
+  // 避免用之前玩過的職業偷偷囤等級(等級本身是永久的，只是「能不能點」要看現在的職業)。
+  async function upgradePlayerSkill(eventId, playerId, skillKey) {
+    const isActiveSkill = skillKey === "active_skill";
+    const masteryClassKey = skillKey.startsWith("class_mastery:") ? skillKey.slice("class_mastery:".length) : null;
+    if (!isActiveSkill && !masteryClassKey && !window.CareerData.PASSIVE_DEFS[skillKey]) throw new Error("不認識的技能/被動");
+    if (masteryClassKey && !window.CareerData.CLASS_MASTERY_DEFS[masteryClassKey]) throw new Error("不認識的職業被動");
+
+    const progress = await getOrCreateCareerProgress(eventId, playerId);
+    if (masteryClassKey) {
+      const build = await getCareerBuildFor(eventId, playerId);
+      if (!build || build.final_class !== masteryClassKey) throw new Error("要先轉職成這個職業才能升級它的職業被動");
+    }
+    if (progress.skill_points <= 0) throw new Error("沒有可以花的技能點了");
+    const levels = await getPlayerSkillLevels(playerId);
+    const curLevel = levels[skillKey] || 0;
+    if (curLevel >= window.CareerData.MAX_SKILL_LEVEL) throw new Error("這個技能/被動已經是目前開放的最高等級了");
+
+    // 先扣本場活動的技能點,用樂觀鎖擋手快連點兩下(跟其他花點函式同一套寫法)
+    const { data: spent, error: spendErr } = await client
+      .from("career_progress")
+      .update({ skill_points: progress.skill_points - 1 })
+      .eq("id", progress.id)
+      .eq("skill_points", progress.skill_points)
+      .select();
+    if (spendErr) throw spendErr;
+    if (!spent || !spent.length) throw new Error("手慢了，請再按一次");
+
+    const { data: upserted, error: upErr } = await client
+      .from("career_player_skills")
+      .upsert(
+        { player_id: playerId, skill_key: skillKey, level: curLevel + 1, updated_at: new Date().toISOString() },
+        { onConflict: "player_id,skill_key" }
+      )
+      .select()
+      .single();
+    if (upErr) {
+      // 永久等級沒寫成功,把剛剛扣掉的技能點退還回去,避免點數憑空消失
+      await client.from("career_progress").update({ skill_points: progress.skill_points }).eq("id", progress.id);
+      throw upErr;
+    }
+    return { progress: spent[0], skillKey, level: upserted.level };
+  }
+
   // 等級曲線用 career-floors.js 的 expToNextLevel，在本地把 exp 疊代扣光算出最終等級，
   // 一次特訓/一場戰鬥要連跳好幾級也能一次算完。
-  function _applyExpGain(progress, expGain) {
-    let exp = progress.exp + expGain;
+  // expMult:「博學被動」(exp_boost)算出來的經驗加成倍率，例如 Lv.2 是 1.08。不帶就是沒有這個被動。
+  // 技能樹 v2 Phase 2:Lv.1~4 升級不送技能點(那時候技能樹還沒解鎖，送了也沒地方花)，
+  // Lv.5 那次的技能點是靠 transferCareerPath 選系時一次補發，不是靠這裡的逐級累加；
+  // 所以這裡要跳過「升到 <= TRANSFER_LEVEL_PATH 的那幾級」，從 Lv.6 開始才恢復逐級送1點。
+  function _applyExpGain(progress, expGain, expMult) {
+    let exp = progress.exp + Math.round(expGain * (expMult || 1));
     let level = progress.level;
     let statPoints = progress.stat_points;
     let skillPoints = progress.skill_points || 0;
     let leveledUp = false;
+    const transferLevel = (window.CareerData && window.CareerData.TRANSFER_LEVEL_PATH) || 5;
+    const perLevel = (window.CareerData && window.CareerData.SKILL_POINTS_PER_LEVEL) || 1;
     while (exp >= window.CareerFloors.expToNextLevel(level)) {
       exp -= window.CareerFloors.expToNextLevel(level);
       level += 1;
-      statPoints += 2; // 每升一級送2自由數值點(企劃書第三節)
-      skillPoints += 1; // 每升一級也送1技能點，拿來解鎖「戰技」(見 unlockCareerSkill)
+      statPoints += 2; // 每升一級送2自由數值點(企劃書第三節，見習期也有，跟技能點不一樣)
+      if (level > transferLevel) skillPoints += perLevel; // 升到 Lv.6 以上才逐級送技能點
       leveledUp = true;
     }
     return { exp, level, stat_points: statPoints, skill_points: skillPoints, leveledUp, newLevel: level };
@@ -2470,14 +2578,21 @@ const db = (function () {
   // 特訓領幣:跟拍賣「打工」同一套機制，用 train_ready_at<=now 當樂觀鎖，
   // 同一秒連點兩次也只會成功一次。
   async function trainForCareerCoins(eventId, playerId) {
-    const progress = await getOrCreateCareerProgress(eventId, playerId);
+    const [progress, skillLevels] = await Promise.all([getOrCreateCareerProgress(eventId, playerId), getPlayerSkillLevels(playerId)]);
     if (new Date(progress.train_ready_at).getTime() > Date.now()) {
       throw new Error("還在冷卻中");
     }
-    const coinGain = CAREER_TRAIN_COIN_MIN + Math.floor(Math.random() * (CAREER_TRAIN_COIN_MAX - CAREER_TRAIN_COIN_MIN + 1));
-    const expGain = CAREER_TRAIN_EXP_MIN + Math.floor(Math.random() * (CAREER_TRAIN_EXP_MAX - CAREER_TRAIN_EXP_MIN + 1));
+    const coinGain = Math.round(
+      (CAREER_TRAIN_COIN_MIN + Math.floor(Math.random() * (CAREER_TRAIN_COIN_MAX - CAREER_TRAIN_COIN_MIN + 1))) * _coinMult(skillLevels)
+    );
+    const expGain = Math.round(
+      (CAREER_TRAIN_EXP_MIN + Math.floor(Math.random() * (CAREER_TRAIN_EXP_MAX - CAREER_TRAIN_EXP_MIN + 1))) * _expMult(skillLevels)
+    );
     const leveled = _applyExpGain(progress, expGain);
-    const nextReady = new Date(Date.now() + CAREER_TRAIN_COOLDOWN_SEC * 1000).toISOString();
+    // 「勤奮掛機」被動(idle_cd):縮短特訓冷卻時間，最低留10秒，不讓它被縮到0秒
+    const cdReduceSec = window.CareerData.passiveValue("idle_cd", skillLevels.idle_cd || 0);
+    const effectiveCooldownSec = Math.max(10, CAREER_TRAIN_COOLDOWN_SEC - cdReduceSec);
+    const nextReady = new Date(Date.now() + effectiveCooldownSec * 1000).toISOString();
     const { data: updated, error } = await client
       .from("career_progress")
       .update({
@@ -2604,10 +2719,13 @@ const db = (function () {
 
   // 打贏一層樓的獎勵結算(推進樓層、加幣加經驗、掉裝備、頂樓廣播)，樓層戰(即時模擬)
   // 跟王戰(手動即時對戰打贏)共用同一套，不用寫兩次。
-  async function _applyFloorWinRewards(eventId, playerId, progress, build, floorDef, floorNumber, endHp, endMp) {
-    const leveled = _applyExpGain(progress, floorDef.expReward);
+  // skillLevels 帶進來是為了算「博學被動」(exp_boost)/「財運被動」(coin_boost)的加成，不帶就當作沒有這兩個被動。
+  async function _applyFloorWinRewards(eventId, playerId, progress, build, floorDef, floorNumber, endHp, endMp, skillLevels) {
+    const expGain = Math.round(floorDef.expReward * _expMult(skillLevels));
+    const leveled = _applyExpGain(progress, expGain);
+    const coinGain = Math.round(floorDef.coinReward * _coinMult(skillLevels));
     const isAdvance = floorNumber === progress.floor + 1;
-    const drop = window.CareerFloors.rollDrop(floorDef, build.final_class);
+    const drop = window.CareerFloors.rollDrop(floorDef, build.final_class, window.CareerData.passiveValue("drop_luck", (skillLevels && skillLevels.drop_luck) || 0));
     const inventory = _addToInventory(progress.inventory, drop);
     const isTopFloor = isAdvance && floorNumber === window.CareerFloors.FLOORS.length;
 
@@ -2615,7 +2733,7 @@ const db = (function () {
       .from("career_progress")
       .update({
         floor: isAdvance ? floorNumber : progress.floor,
-        coins: progress.coins + floorDef.coinReward,
+        coins: progress.coins + coinGain,
         exp: leveled.exp,
         level: leveled.level,
         stat_points: leveled.stat_points,
@@ -2642,8 +2760,8 @@ const db = (function () {
     return {
       won: true,
       floorDef,
-      coinGain: floorDef.coinReward,
-      expGain: floorDef.expReward,
+      coinGain,
+      expGain,
       leveledUp: leveled.leveledUp,
       newLevel: leveled.newLevel,
       drop,
@@ -2653,9 +2771,10 @@ const db = (function () {
   }
 
   async function challengeCareerFloor(eventId, playerId, floorNumber) {
-    const [progress, build] = await Promise.all([
+    const [progress, build, skillLevels] = await Promise.all([
       getOrCreateCareerProgress(eventId, playerId),
       getCareerBuildFor(eventId, playerId),
+      getPlayerSkillLevels(playerId),
     ]);
     if (!build) throw new Error("請先選好職業再挑戰樓層");
     if (progress.pending_event) throw new Error("有一個夜市事件還沒處理完，請先選擇要怎麼應對");
@@ -2672,7 +2791,7 @@ const db = (function () {
     // 也不會穿插隨機事件(關主戰就是關主戰，不會被事件打斷)。
     if (floorDef.isMiniBoss) {
       const state = window.CareerEngine.initialMatchState(
-        { classKey: build.final_class, stats: playerStatsForHp, skillUnlocked: progress.unlocked_skill },
+        _engineSide(build.final_class, playerStatsForHp, skillLevels),
         { classKey: floorDef.classKey, stats: floorDef.stats },
         { hp1: startHp, mp1: startMp }
       );
@@ -2716,14 +2835,14 @@ const db = (function () {
         const playerStats = window.CareerData.applyProgress(build.final_class, progress.stat_alloc, progress.equipment);
         const opponentClass = window.CareerFloors.CLASS_KEYS[Math.floor(Math.random() * window.CareerFloors.CLASS_KEYS.length)];
         const battle = window.CareerPve.simulateFloorBattle(
-          { classKey: build.final_class, stats: playerStats, skillUnlocked: progress.unlocked_skill },
+          _engineSide(build.final_class, playerStats, skillLevels),
           { classKey: opponentClass, stats: floorDef.stats }
         );
         if (!battle.won) {
           return { event: true, eventDef, sparring: true, won: false, log: battle.log, progress };
         }
-        const coinGain = Math.round(floorDef.coinReward * 0.8);
-        const expGain = Math.round(floorDef.expReward * 0.8);
+        const coinGain = Math.round(floorDef.coinReward * 0.8 * _coinMult(skillLevels));
+        const expGain = Math.round(floorDef.expReward * 0.8 * _expMult(skillLevels));
         const leveled = _applyExpGain(progress, expGain);
         const { data: updated, error } = await client
           .from("career_progress")
@@ -2758,7 +2877,7 @@ const db = (function () {
     const { hp: battleStartHpRaw, mp: battleStartMp } = _effectiveHpMp(progress, playerStats);
     const battleStartHp = _respawnHpIfNeeded(battleStartHpRaw, playerStats.maxHp);
     const battle = window.CareerPve.simulateFloorBattle(
-      { classKey: build.final_class, stats: playerStats, skillUnlocked: progress.unlocked_skill },
+      _engineSide(build.final_class, playerStats, skillLevels),
       { classKey: floorDef.classKey, stats: floorDef.stats },
       { startHp: battleStartHp, startMp: battleStartMp }
     );
@@ -2771,7 +2890,7 @@ const db = (function () {
       return { won: false, log: battle.log, progress: updated, floorDef };
     }
 
-    const result = await _applyFloorWinRewards(eventId, playerId, progress, build, floorDef, floorNumber, battle.endHp, battle.endMp);
+    const result = await _applyFloorWinRewards(eventId, playerId, progress, build, floorDef, floorNumber, battle.endHp, battle.endMp, skillLevels);
     return { ...result, log: battle.log };
   }
 
@@ -2780,9 +2899,10 @@ const db = (function () {
   // 直接算這一回合(不用像PVP等對方回合，因為怪物不是真人，不用等)。沒分出勝負就把
   // 進行中的狀態存回 active_boss_battle，分出勝負就結算獎勵、清空 active_boss_battle。
   async function submitCareerBossMove(eventId, playerId, action) {
-    const [progress, build] = await Promise.all([
+    const [progress, build, skillLevels] = await Promise.all([
       getOrCreateCareerProgress(eventId, playerId),
       getCareerBuildFor(eventId, playerId),
+      getPlayerSkillLevels(playerId),
     ]);
     const active = progress.active_boss_battle;
     if (!active) throw new Error("目前沒有進行中的王戰");
@@ -2805,7 +2925,7 @@ const db = (function () {
         if (error) throw error;
         return { bossBattle: true, done: true, won: false, log: newState.log, floorDef, progress: updated };
       }
-      const result = await _applyFloorWinRewards(eventId, playerId, progress, build, floorDef, active.floor, newState.hp1, newState.mp1);
+      const result = await _applyFloorWinRewards(eventId, playerId, progress, build, floorDef, active.floor, newState.hp1, newState.mp1, skillLevels);
       return { bossBattle: true, done: true, ...result, log: newState.log };
     }
 
@@ -3141,21 +3261,13 @@ const db = (function () {
     return updated[0];
   }
 
-  // 花1技能點解鎖「戰技」——只要有轉正職(final_class不是novice系列)就能解鎖，
-  // 見習系列也有戰技名稱可以顯示，但實際上正職才有意義去解鎖(見習還在練，不急著花點)。
+  // 花1技能點把「戰技」永久等級+1(第22點更新:不再是解鎖/沒解鎖的布林值，是 Lv.1~Lv.3，
+  // 而且是永久的，見 upgradePlayerSkill)。只要有轉正職(final_class不是novice系列)就能點，
+  // 見習系列也有戰技名稱可以顯示，但實際上正職才有意義去點(見習還在練，不急著花點)。
+  // 保留這個函式名稱是為了不用動舊的呼叫端，回傳值維持跟以前一樣的「更新後 career_progress」形狀。
   async function unlockCareerSkill(eventId, playerId) {
-    const progress = await getOrCreateCareerProgress(eventId, playerId);
-    if (progress.unlocked_skill) throw new Error("戰技已經解鎖過了");
-    if (progress.skill_points <= 0) throw new Error("沒有可以花的技能點了");
-    const { data: updated, error } = await client
-      .from("career_progress")
-      .update({ skill_points: progress.skill_points - 1, unlocked_skill: true })
-      .eq("id", progress.id)
-      .eq("skill_points", progress.skill_points)
-      .select();
-    if (error) throw error;
-    if (!updated || !updated.length) throw new Error("手慢了，請再按一次");
-    return updated[0];
+    const result = await upgradePlayerSkill(eventId, playerId, "active_skill");
+    return result.progress;
   }
 
   // 買藥水(商店用)。type: 'hp' | 'mp'。
@@ -3204,12 +3316,12 @@ const db = (function () {
     return { potionDef, healed, progress: updated };
   }
 
-  function _simulateFarmTick(progress, build, floorDef) {
+  function _simulateFarmTick(progress, build, floorDef, skillLevels) {
     const playerStats = window.CareerData.applyProgress(build.final_class, progress.stat_alloc, progress.equipment);
     const { hp: startHpRaw, mp: startMp } = _effectiveHpMp(progress, playerStats);
     const startHp = _respawnHpIfNeeded(startHpRaw, playerStats.maxHp);
     const battle = window.CareerPve.simulateFloorBattle(
-      { classKey: build.final_class, stats: playerStats, skillUnlocked: progress.unlocked_skill },
+      _engineSide(build.final_class, playerStats, skillLevels),
       { classKey: floorDef.classKey, stats: floorDef.stats },
       { startHp, startMp }
     );
@@ -3220,8 +3332,8 @@ const db = (function () {
       current_mp: battle.endMp,
     };
     if (battle.won) {
-      const coinGain = Math.round(floorDef.coinReward * CAREER_AUTO_FARM_EFFICIENCY);
-      const expGain = Math.round(floorDef.expReward * CAREER_AUTO_FARM_EFFICIENCY);
+      const coinGain = Math.round(floorDef.coinReward * CAREER_AUTO_FARM_EFFICIENCY * _coinMult(skillLevels));
+      const expGain = Math.round(floorDef.expReward * CAREER_AUTO_FARM_EFFICIENCY * _expMult(skillLevels));
       const leveled = _applyExpGain(progress, expGain);
       patch.coins = progress.coins + coinGain;
       patch.exp = leveled.exp;
@@ -3246,7 +3358,8 @@ const db = (function () {
       const build = await getCareerBuildFor(eventId, playerId);
       const floorDef = window.CareerFloors.getFloor(floorNumber);
       if (build && floorDef) {
-        patch = { ...patch, ..._simulateFarmTick(progress, build, floorDef) };
+        const skillLevels = await getPlayerSkillLevels(playerId);
+        patch = { ...patch, ..._simulateFarmTick(progress, build, floorDef, skillLevels) };
       }
     } else {
       patch.auto_farm_last_result = null;
@@ -3282,7 +3395,8 @@ const db = (function () {
         if (!build) continue;
         const floorDef = window.CareerFloors.getFloor(progress.auto_farm_floor);
         if (!floorDef) continue;
-        const patch = _simulateFarmTick(progress, build, floorDef);
+        const skillLevels = await getPlayerSkillLevels(progress.player_id);
+        const patch = _simulateFarmTick(progress, build, floorDef, skillLevels);
         const { data: updated, error: updErr } = await client
           .from("career_progress")
           .update(patch)
@@ -3577,6 +3691,8 @@ const db = (function () {
     listCareerBroadcasts,
     allocateCareerStatPoint,
     unlockCareerSkill,
+    getPlayerSkillLevels,
+    upgradePlayerSkill,
     buyCareerPotion,
     useCareerPotion,
     toggleCareerAutoFarm,

@@ -32,6 +32,7 @@
   let myId = null;
   let myBuild = null;
   let progress = null;
+  let skillLevels = {}; // 第22點更新:永久技能/被動等級(只綁player_id，跨活動/跨賽季都不會重置)
   let lastBattle = null; // { won, log, floorDef, coinGain, expGain, leveledUp, drop }
   let lastEvent = null; // { eventDef, text, drop } — instant事件/商店購買結果(顯示在爬塔分頁)
   let lastGachaResult = null; // 抽獎結果(顯示在抽獎機分頁，不會跳走)
@@ -137,6 +138,7 @@
 
   async function loadAndRender() {
     progress = await db.getOrCreateCareerProgress(eventId, myId);
+    skillLevels = await db.getPlayerSkillLevels(myId).catch(() => skillLevels || {});
     render();
   }
 
@@ -183,10 +185,20 @@
 
   // ---------------- 分頁籤列 ----------------
 
+  // 技能樹 v2 Phase 2:Lv.1~4(final_class還是"novice"，還沒選系)不顯示「技能樹」分頁，
+  // 那時候只有普攻+拼盡全力，沒有技能可以點，秀出一個空分頁只會讓人疑惑。選系之後
+  // (final_class變成"novice_xxx"或更後面)分頁就會出現。
+  function visibleTabs() {
+    const isBaseNovice = myBuild && myBuild.final_class === "novice";
+    if (!isBaseNovice) return TABS;
+    return TABS.filter((t) => t.key !== "skilltree");
+  }
+
   function renderTabsBar() {
+    const tabs = visibleTabs();
     return `
       <div class="folder-tabs" id="tower-tabs">
-        ${TABS.map(
+        ${tabs.map(
           (t) => `<div class="folder-tab${activeTab === t.key ? " active" : ""}" data-tab="${t.key}">${ui.icon(t.icon)}${ui.esc(t.label)}</div>`
         ).join("")}
       </div>`;
@@ -397,8 +409,8 @@
         </div>`;
     }
 
-    if (progress.skill_points > 0 && !progress.unlocked_skill && !locked) {
-      html += `<div class="empty" style="margin:10px 0;font-size:12px;">${ui.icon("wand-sparkles")}你有 ${progress.skill_points} 點技能點可以花，去「技能樹」分頁解鎖戰技!</div>`;
+    if (progress.skill_points > 0 && !locked) {
+      html += `<div class="empty" style="margin:10px 0;font-size:12px;">${ui.icon("wand-sparkles")}你有 ${progress.skill_points} 點技能點可以花，去「技能樹」分頁升級戰技或被動(永久保留，不會歸零)!</div>`;
     }
 
     html += `
@@ -662,14 +674,21 @@
     const info = CareerData.CLASS_INFO[cls];
     const skillName = CareerData.SKILL_NAME[cls] || "戰技";
     const isNoviceStage = cls === "novice" || cls.startsWith("novice_");
+    const MAX_LV = CareerData.MAX_SKILL_LEVEL;
 
-    const skillStatus = progress.unlocked_skill ? "learned" : progress.skill_points > 0 ? "available" : "locked";
+    const activeLv = skillLevels.active_skill || 0;
+    const activeStatus = activeLv > 0 ? "learned" : progress.skill_points > 0 ? "available" : "locked";
     const nodes = [
       { name: "普通攻擊", desc: "基礎攻擊，不用學，隨時可用", status: "learned", icon: "sword" },
-      { name: skillName, desc: CareerData.skillDesc(), status: skillStatus, icon: "wand-sparkles" },
+      {
+        name: activeLv > 0 ? `${skillName} Lv.${activeLv}` : skillName,
+        desc: `花 ${CareerData.SKILL_MANA_COST} 魔力，造成 x${CareerData.skillDmgMult(activeLv || 1)} 傷害(等級越高倍率越高)`,
+        status: activeStatus,
+        icon: "wand-sparkles",
+      },
       { name: info.ultName, desc: info.ultDesc, status: "learned", icon: "flame" },
     ];
-    const statusLabel = { learned: "已學會", available: "可解鎖", locked: "未解鎖" };
+    const statusLabel = { learned: "已學會", available: "可升級", locked: "未解鎖" };
     const statusColor = { learned: "var(--green)", available: "var(--gold)", locked: "var(--ink-dim)" };
 
     function nodeCard(node) {
@@ -686,7 +705,9 @@
       <div style="text-align:center;margin-bottom:14px;">
         ${ui.icon("wand-sparkles", { size: "28px" })}
         <p style="margin:8px 0 2px;font-weight:700;font-size:15px;">${ui.esc(info.name)}的技能樹</p>
-        <p style="margin:0;font-size:11.5px;color:var(--ink-dim);">目前有 ${progress.skill_points} 點技能點可以花(每升1級送1點)</p>
+        <p style="margin:0;font-size:11.5px;color:var(--ink-dim);">
+          目前有 ${progress.skill_points} 點技能點可以花(每升1級送1點)，升級結果永久保留，換下一場活動、下一個賽季也不會歸零。
+        </p>
       </div>
       <div style="display:flex;gap:10px;align-items:stretch;flex-wrap:wrap;justify-content:center;">
         ${nodeCard(nodes[0])}
@@ -696,20 +717,174 @@
         ${nodeCard(nodes[2])}
       </div>`;
 
-    if (!progress.unlocked_skill) {
-      const canUnlock = progress.skill_points > 0 && !locked;
+    const canSpend = progress.skill_points > 0 && !locked;
+    if (activeLv < MAX_LV) {
+      const label = activeLv > 0 ? `升級「${ui.esc(skillName)}」到 Lv.${activeLv + 1}` : `解鎖「${ui.esc(skillName)}」(Lv.1)`;
       html += `
         <div style="text-align:center;margin-top:16px;">
-          <button class="btn" id="unlock-skill-btn" ${canUnlock ? "" : "disabled"}>${ui.icon("wand-sparkles")}解鎖「${ui.esc(skillName)}」(消耗1技能點)</button>
+          <button class="btn" data-upgrade-skill="active_skill" ${canSpend ? "" : "disabled"}>${ui.icon("wand-sparkles")}${label}(消耗1技能點)</button>
         </div>`;
     } else {
-      html += `<div class="empty" style="margin-top:16px;">${ui.icon("check")}「${ui.esc(skillName)}」已經解鎖，對戰/王戰畫面會多一個按鈕。</div>`;
+      html += `<div class="empty" style="margin-top:16px;">${ui.icon("check")}「${ui.esc(skillName)}」已經是目前開放的最高等級(Lv.${MAX_LV})。</div>`;
     }
 
     if (isNoviceStage) {
       html += `<p style="text-align:center;margin-top:12px;font-size:11px;color:var(--ink-dim);">還沒轉職完成，這裡顯示的是「${ui.esc(info.name)}」現在這個階段的技能，轉職後會自動換成正式職業的技能內容。</p>`;
     }
+
+    // 第22點更新:被動不綁職業，任何人都能點，等級也是永久的
+    html += `
+      <div style="margin-top:20px;padding-top:16px;border-top:1px dashed var(--line);">
+        <p style="text-align:center;margin:0 0 12px;font-weight:700;font-size:14px;">
+          ${ui.icon("sparkles")}永久被動<span style="font-weight:400;color:var(--ink-dim);font-size:11.5px;"> · 跨活動、跨賽季永久繼承</span>
+        </p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;">
+          ${CareerData.PASSIVE_KEYS.map((key) => passiveCard(key, skillLevels[key] || 0, canSpend)).join("")}
+        </div>
+      </div>`;
+
+    // 第22點更新第二段:職業原本就有的固定被動，也做成可升級。只有轉正職才看得到，
+    // 而且只能點「目前這個職業」的，轉職後這裡會自動換成新職業的那一個(舊職業點過的等級不會不見，
+    // 之後轉回去就會接回來)。
+    const masteryDef = CareerData.CLASS_MASTERY_DEFS[cls];
+    if (masteryDef) {
+      const masteryKey = `class_mastery:${cls}`;
+      html += `
+        <div style="margin-top:20px;padding-top:16px;border-top:1px dashed var(--line);">
+          <p style="text-align:center;margin:0 0 12px;font-weight:700;font-size:14px;">
+            ${ui.icon(masteryDef.icon)}${ui.esc(info.name)}職業被動<span style="font-weight:400;color:var(--ink-dim);font-size:11.5px;"> · 只能點目前的職業，但等級永久保留</span>
+          </p>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;">
+            ${classMasteryCard(cls, masteryDef, skillLevels[masteryKey] || 0, canSpend)}
+          </div>
+        </div>`;
+    } else if (isNoviceStage) {
+      html += `<p style="text-align:center;margin-top:12px;font-size:11px;color:var(--ink-dim);">轉職成正式職業後，這裡還會多一個那個職業限定的被動可以升級。</p>`;
+    }
+
+    // 技能樹 v2 Phase 3:樹狀預覽——用 CareerData.SKILL_TREE_NODES 的資料畫出「你是怎麼走到這裡的」，
+    // 純粹是視覺化的路線圖，還沒實際接管遊戲邏輯(選系/選職業還是走原本的流程，
+    // 這裡的節點也還是讀/寫舊的 key，例如 skill1 背後還是 "active_skill")。
+    // 之後 Phase 4/5 才會把「技能2」「大招2」這些新節點真的接進戰鬥引擎。
+    html += renderSkillTreeRoadmap(cls, skillLevels, canSpend);
+
     return html;
+  }
+
+  // 沿著 CareerData.SKILL_TREE_NODES 畫出「選系 -> 選職業 -> 該職業節點群」的路線圖，
+  // 已經走過的路線亮起來，還沒走到的路線用灰色顯示，只是預覽，不能在這裡點選。
+  function renderSkillTreeRoadmap(cls, skillLevels, canSpend) {
+    const CD = CareerData;
+    const build = myBuild;
+    const chosenPath = build && build.path; // "strength" | "agility" | "magic" | "novice"(還沒選)
+    const chosenClass = cls !== "novice" && !cls.startsWith("novice_") ? cls : null; // 只有轉正職才有值
+
+    function branchNode(node, chosen) {
+      const state = chosen ? "learned" : "locked";
+      return `
+        <div style="flex:1;min-width:100px;max-width:150px;background:${chosen ? "var(--panel2)" : "transparent"};border:1px solid ${chosen ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:10px;text-align:center;opacity:${chosen ? "1" : "0.5"};">
+          ${ui.icon(node.icon, { size: "18px" })}
+          <p style="margin:6px 0 0;font-weight:700;font-size:12px;">${ui.esc(node.name)}</p>
+          <span style="font-size:10px;color:${chosen ? "var(--green)" : "var(--ink-dim)"};">${chosen ? "已選擇" : "未選擇"}</span>
+        </div>`;
+    }
+
+    const pathNodes = CD.getSkillTreeRoots().filter((n) => n.type === "branch");
+    let html = `
+      <div style="margin-top:24px;padding-top:16px;border-top:1px dashed var(--line);">
+        <p style="text-align:center;margin:0 0 4px;font-weight:700;font-size:14px;">${ui.icon("git-branch")}轉職路線圖<span style="font-weight:400;color:var(--ink-dim);font-size:11px;"> · 之後轉職會走這種樹狀節點，這裡先讓大家熟悉路線長怎樣</span></p>
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:10px;">
+          ${pathNodes.map((n) => branchNode(n, n.effect.unlocksPathKey === chosenPath)).join(`<div style="align-self:center;color:var(--ink-dim);font-size:11px;">→</div>`)}
+        </div>`;
+
+    if (chosenPath) {
+      const classNodes = CD.getSkillTreeChildren(`path_${chosenPath}`);
+      html += `
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:8px;">
+          ${classNodes.map((n) => branchNode(n, n.effect.unlocksClassKey === chosenClass)).join(`<div style="align-self:center;color:var(--ink-dim);font-size:11px;">→</div>`)}
+        </div>`;
+    }
+
+    if (chosenClass) {
+      const kitNodes = CD.getSkillTreeChildren(`class_${chosenClass}`);
+      const previewCard = (node) => {
+        let stateLabel, stateColor, sub;
+        if (node.type === "active_skill" && node.id.endsWith("_1")) {
+          const lv = skillLevels.active_skill || 0;
+          stateLabel = lv > 0 ? `Lv.${lv}` : "可升級";
+          stateColor = lv > 0 ? "var(--green)" : "var(--gold)";
+          sub = "已經在用(就是上面的技能卡)";
+        } else if (node.type === "ultimate" && node.id.endsWith("_1")) {
+          stateLabel = "使用中";
+          stateColor = "var(--green)";
+          sub = "目前的預設大招";
+        } else if (node.type === "passive") {
+          const lv = skillLevels[`class_mastery:${chosenClass}`] || 0;
+          stateLabel = lv > 0 ? `Lv.${lv}` : "可升級";
+          stateColor = lv > 0 ? "var(--green)" : "var(--gold)";
+          sub = "已經在用(就是上面的職業被動卡)";
+        } else {
+          stateLabel = "敬請期待";
+          stateColor = "var(--ink-dim)";
+          sub = "Phase 4/5 開放後才能實際裝備";
+        }
+        return `
+          <div style="flex:1;min-width:120px;max-width:150px;background:var(--panel2);border:1px dashed var(--line);border-radius:var(--radius);padding:8px;text-align:center;opacity:0.85;">
+            ${ui.icon(node.icon, { size: "16px" })}
+            <p style="margin:4px 0 0;font-weight:700;font-size:11.5px;">${ui.esc(node.name)}</p>
+            <p style="margin:2px 0 0;font-size:9.5px;color:var(--ink-dim);">${ui.esc(sub)}</p>
+            <span style="font-size:9.5px;color:${stateColor};font-weight:700;">${stateLabel}</span>
+          </div>`;
+      };
+      html += `
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:8px;">
+          ${kitNodes.map(previewCard).join("")}
+        </div>`;
+    }
+
+    html += `</div>`;
+    return html;
+  }
+
+  function passiveCard(key, lv, canSpend) {
+    const CD = CareerData;
+    const def = CD.PASSIVE_DEFS[key];
+    const MAX_LV = CD.MAX_SKILL_LEVEL;
+    const atMax = lv >= MAX_LV;
+    const curDesc = lv > 0 ? CD.passiveLevelDesc(key, lv) : "尚未解鎖";
+    const nextDesc = !atMax ? CD.passiveLevelDesc(key, lv + 1) : null;
+    return `
+      <div style="flex:1;min-width:160px;background:var(--panel2);border:1px solid ${!atMax && canSpend ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:12px;text-align:center;">
+        ${ui.icon(def.icon, { size: "22px" })}
+        <p style="margin:8px 0 2px;font-weight:700;font-size:13px;">${ui.esc(def.name)}${lv > 0 ? ` Lv.${lv}` : ""}</p>
+        <p style="margin:0 0 8px;font-size:11px;color:var(--ink-dim);min-height:30px;">${ui.esc(curDesc)}</p>
+        ${
+          atMax
+            ? `<span style="font-size:10.5px;color:var(--green);font-weight:700;">${ui.icon("check", { size: "12px" })}已達最高等級</span>`
+            : `<button class="btn ghost small" data-upgrade-skill="${key}" ${canSpend ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "14px" })}升到 Lv.${lv + 1}(${ui.esc(nextDesc)})</button>`
+        }
+      </div>`;
+  }
+
+  // 跟 passiveCard 幾乎一樣，只是資料來源是 CLASS_MASTERY_DEFS(職業限定被動)而不是 PASSIVE_DEFS
+  function classMasteryCard(classKey, def, lv, canSpend) {
+    const CD = CareerData;
+    const MAX_LV = CD.MAX_SKILL_LEVEL;
+    const atMax = lv >= MAX_LV;
+    const curDesc = lv > 0 ? CD.classMasteryDesc(classKey, lv) : "尚未解鎖";
+    const nextDesc = !atMax ? CD.classMasteryDesc(classKey, lv + 1) : null;
+    const key = `class_mastery:${classKey}`;
+    return `
+      <div style="flex:1;min-width:160px;max-width:260px;background:var(--panel2);border:1px solid ${!atMax && canSpend ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:12px;text-align:center;">
+        ${ui.icon(def.icon, { size: "22px" })}
+        <p style="margin:8px 0 2px;font-weight:700;font-size:13px;">${ui.esc(def.name)}${lv > 0 ? ` Lv.${lv}` : ""}</p>
+        <p style="margin:0 0 8px;font-size:11px;color:var(--ink-dim);min-height:30px;">${ui.esc(curDesc)}</p>
+        ${
+          atMax
+            ? `<span style="font-size:10.5px;color:var(--green);font-weight:700;">${ui.icon("check", { size: "12px" })}已達最高等級</span>`
+            : `<button class="btn ghost small" data-upgrade-skill="${key}" ${canSpend ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "14px" })}升到 Lv.${lv + 1}(${ui.esc(nextDesc)})</button>`
+        }
+      </div>`;
   }
 
   // ---------------- 分頁4:背包 ----------------
@@ -868,7 +1043,13 @@
     } else if (activeTab === "synthesis") {
       html += renderSynthesisTab(locked || hasPendingEvent);
     } else if (activeTab === "skilltree") {
-      html += renderSkillTreeTab(locked || hasPendingEvent);
+      if (myBuild && myBuild.final_class === "novice") {
+        // Phase 2:理論上分頁按鈕已經藏起來了，這裡是防手動改網址/舊分頁殘留state的最後防線
+        activeTab = "tower";
+        html += renderTowerTab({ locked, hasPendingEvent, canTrain, trainCooldownMs, nextFloor, nextFloorDef, isAutoFarming });
+      } else {
+        html += renderSkillTreeTab(locked || hasPendingEvent);
+      }
     } else if (activeTab === "backpack") {
       html += renderBackpackTab();
     }
@@ -1062,25 +1243,34 @@
       };
     });
 
-    const unlockSkillBtn = document.getElementById("unlock-skill-btn");
-    if (unlockSkillBtn) {
-      unlockSkillBtn.onclick = async () => {
+    app.querySelectorAll("[data-upgrade-skill]").forEach((btn) => {
+      btn.onclick = async () => {
         if (busy) return;
+        const skillKey = btn.dataset.upgradeSkill;
         busy = true;
-        unlockSkillBtn.disabled = true;
+        btn.disabled = true;
         try {
-          progress = await db.unlockCareerSkill(eventId, myId);
-          const skillName = CareerData.SKILL_NAME[myBuild.final_class] || "戰技";
-          highlight = { icon: "wand-sparkles", title: "戰技解鎖!", text: `解鎖了「${skillName}」，對戰時多一個選項了。` };
+          const result = await db.upgradePlayerSkill(eventId, myId, skillKey);
+          progress = result.progress;
+          skillLevels = { ...skillLevels, [skillKey]: result.level };
+          const isActive = skillKey === "active_skill";
+          const masteryClassKey = skillKey.startsWith("class_mastery:") ? skillKey.slice("class_mastery:".length) : null;
+          const def = masteryClassKey ? CareerData.CLASS_MASTERY_DEFS[masteryClassKey] : CareerData.PASSIVE_DEFS[skillKey];
+          const label = isActive ? CareerData.SKILL_NAME[myBuild.final_class] || "戰技" : def.name;
+          highlight = {
+            icon: isActive ? "wand-sparkles" : def.icon,
+            title: `「${label}」升到 Lv.${result.level}!`,
+            text: "這個等級會永久保留，之後的活動、下一個賽季都不會重置。",
+          };
           render();
         } catch (e) {
-          await ui.alert(e.message || "解鎖失敗", { title: "操作失敗", tone: "danger" });
+          await ui.alert(e.message || "升級失敗", { title: "操作失敗", tone: "danger" });
           await loadAndRender();
         } finally {
           busy = false;
         }
       };
-    }
+    });
 
     app.querySelectorAll("[data-event-choice]").forEach((btn) => {
       btn.onclick = () => resolveEventChoice(btn.dataset.eventChoice);

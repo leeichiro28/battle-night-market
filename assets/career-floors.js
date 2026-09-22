@@ -148,8 +148,10 @@ window.CareerFloors = (function () {
   // classKey:要掉武器的話，武器款式要照這位玩家目前的職業給(轉職前拿到的是見習武器，
   // 轉職後打出來的才會是對應職業的武器)。掉出來的東西會帶著 reqLevel(這層樓算出來的等級門檻)，
   // 跟稀有度是分開的兩件事——史詩不代表一定要Lv15，要看是幾層掉的。
-  function rollDrop(floorDef, classKey) {
-    if (Math.random() > floorDef.dropChance) return null;
+  // luckBonus:「鑑定之眼」被動算出來的掉落機率加成(0~0.08)，直接加在樓層原本的掉落率上，最高封頂100%
+  function rollDrop(floorDef, classKey, luckBonus) {
+    const dropChance = Math.min(1, floorDef.dropChance + (luckBonus || 0));
+    if (Math.random() > dropChance) return null;
     const slot = SLOTS[Math.floor(Math.random() * SLOTS.length)];
     const weights = floorDef.dropRarityWeights;
     let r = Math.random();
