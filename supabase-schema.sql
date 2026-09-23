@@ -604,8 +604,12 @@ create policy "anon all announcements" on announcements for all using (true) wit
 -- ============================================
 
 -- 開放 events.game_type 多一個 'auction' 選項
-alter table events drop constraint if exists events_game_type_check;
-alter table events add constraint events_game_type_check check (game_type in ('dice','rps5','auction'));
+-- (這個 alter 原本會先把 check 收窄成只到 auction、再往下一段才加寬到 career，但這樣寫在
+-- 「整份腳本可能被重新執行一次」的情境下會炸——如果 events 表裡已經有 game_type='career' 的
+-- 資料(意思是這份腳本早就跑過一次、職業養成活動也真的開過了)，重新執行到這一步時，Postgres
+-- 會拿新的(還不含'career')constraint 去檢查表裡現有資料，'career' 那幾筆就會直接違規噴
+-- 23514。所以這裡不重複下 drop/add，直接讓下面「加寬到 career」那個唯一一次 alter 一次到位，
+-- 涵蓋 auction 跟 career 兩個選項，這份腳本才能放心重複執行。
 
 create table if not exists auction_participants (
   id uuid primary key default gen_random_uuid(),
@@ -751,7 +755,7 @@ create policy "anon all auction_task_answers" on auction_task_answers for all us
 -- 不跟夜市拍賣共用商品/波次結構)——Phase 1:戰鬥引擎驗證
 -- ============================================
 
--- 開放 events.game_type 多一個 'career' 選項
+-- 開放 events.game_type 多一個 'career' 選項(這裡一次把 auction 也加進來，見上面那段註解的說明)
 alter table events drop constraint if exists events_game_type_check;
 alter table events add constraint events_game_type_check check (game_type in ('dice','rps5','auction','career'));
 
@@ -969,6 +973,10 @@ alter table career_progress add column if not exists potions jsonb not null defa
 alter table career_progress add column if not exists active_boss_battle jsonb;
 alter table career_progress add column if not exists skill_points int not null default 0;
 alter table career_progress add column if not exists unlocked_skill boolean not null default false;
+-- 技能樹v2 Phase 4:目前裝備的大招節點id(例如"warrior_ult_2")，NULL表示用該職業的預設大招
+-- (<classKey>_ult_1)。這個不是永久的，只是「這場活動現在配哪個」，換裝備不用花技能點，
+-- 真正的「有沒有解鎖過這個大招」看 career_player_skills 裡有沒有 <classKey>_ult_2 這筆資料。
+alter table career_progress add column if not exists equipped_ult text;
 
 -- ============================================
 -- 職業養成對決 第22點更新:技能／被動等級，永久繼承

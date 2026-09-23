@@ -2352,8 +2352,8 @@ const db = (function () {
       ? window.CareerData.applyProgress(build2.final_class, progress2.stat_alloc, progress2.equipment)
       : window.CareerData.computeStats(build2.final_class);
     const initState = window.CareerEngine.initialMatchState(
-      _engineSide(build1.final_class, stats1, skillLevels1),
-      _engineSide(build2.final_class, stats2, skillLevels2)
+      _engineSide(build1.final_class, stats1, skillLevels1, progress1 && progress1.equipped_ult),
+      _engineSide(build2.final_class, stats2, skillLevels2, progress2 && progress2.equipped_ult)
     );
     const { data, error } = await client
       .from("career_matches")
@@ -2443,19 +2443,42 @@ const db = (function () {
   // 之前某場活動已經把戰技練到 Lv.2/Lv.3 也一樣——那個等級沒有不見(還在 career_player_skills)，
   // 只是要等這場活動也選了系(final_class 變成 novice_xxx 以上)才會重新生效，維持
   // 「Lv.1~4 只有普攻跟拼盡全力」這個承諾，不會因為回鍋玩家帶著舊進度就被繞過去。
-  function _engineSide(classKey, stats, skillLevels) {
+  // equippedUltId:這個玩家目前裝備的大招節點id(來自 career_progress.equipped_ult)，
+  // 技能樹v2 Phase 4新增。novice系列沒有裝備欄，傳什麼都沒差，resolveUltInfo 會自動回退。
+  function _engineSide(classKey, stats, skillLevels, equippedUltId) {
     const levels = skillLevels || {};
     const treeUnlocked = classKey !== "novice";
+    const ultInfo = window.CareerData.resolveUltInfo(classKey, equippedUltId);
     return {
       classKey,
       stats,
       skillLevel: treeUnlocked ? levels.active_skill || 0 : 0,
+      skill2Level: treeUnlocked ? levels[`${classKey}_skill_2`] || 0 : 0,
+      ultEffect: ultInfo.effect,
+      ultName: ultInfo.name,
       critBonus: window.CareerData.passiveValue("crit_boost", levels.crit_boost || 0),
       critDmgBonus: window.CareerData.passiveValue("crit_dmg_boost", levels.crit_dmg_boost || 0),
       manaRegenBonus: window.CareerData.passiveValue("mana_regen", levels.mana_regen || 0),
       ultCostReduce: window.CareerData.passiveValue("ult_cost", levels.ult_cost || 0),
       mastery: window.CareerData.classMasteryBonus(classKey, levels["class_mastery:" + classKey] || 0),
     };
+  }
+
+  // 裝備大招:免費隨時換(第22點更新確認過的規則)，唯一的限制是要先花技能點把那個大招節點
+  // 點到 Lv.1(curLevel>0)才能裝備，預設大招(<classKey>_ult_1)例外，永遠可以裝，不用先點。
+  async function setEquippedUlt(eventId, playerId, ultNodeId) {
+    const build = await getCareerBuildFor(eventId, playerId);
+    if (!build) throw new Error("找不到職業build");
+    const cls = build.final_class;
+    const node = window.CareerData.SKILL_TREE_NODES[ultNodeId];
+    if (!node || node.type !== "ultimate" || node.requires !== `class_${cls}`) throw new Error("這不是你目前職業可以裝備的大招");
+    if (!ultNodeId.endsWith("_ult_1")) {
+      const levels = await getPlayerSkillLevels(playerId);
+      if (!(levels[ultNodeId] > 0)) throw new Error("要先花技能點解鎖這個大招才能裝備");
+    }
+    const { data, error } = await client.from("career_progress").update({ equipped_ult: ultNodeId }).eq("event_id", eventId).eq("player_id", playerId).select().single();
+    if (error) throw error;
+    return data;
   }
 
   // 「財運被動」(coin_boost)算出來的金幣加成倍率，例如 Lv.2 是 1.08。skillLevels 沒帶到就是 1(沒加成)。
@@ -2471,24 +2494,33 @@ const db = (function () {
   // 技能點本身(career_progress.skill_points)還是跟以前一樣每場活動重新用等級賺，但花出去之後
   // 升上去的等級寫進 career_player_skills，不綁 event_id，所以下一場活動、下一個賽季都還在，
   // 不會歸零(企劃書第22點更新)。
-  // skillKey 除了 "active_skill" 跟 PASSIVE_DEFS 裡的通用被動之外，也接受 "class_mastery:<classKey>"
-  // 這種職業限定被動(第22點更新第二段)，但只能點「目前這個活動」的最終職業，不能點別的職業，
-  // 避免用之前玩過的職業偷偷囤等級(等級本身是永久的，只是「能不能點」要看現在的職業)。
+  // skillKey 除了 "active_skill" 跟 PASSIVE_DEFS 裡的通用被動之外，也接受:
+  //   - "class_mastery:<classKey>" 職業限定被動(第22點更新第二段)
+  //   - "<classKey>_skill_2" 技能樹v2 Phase 4新開的技能B(第二主動技能)
+  //   - "<classKey>_ult_2" 技能樹v2 Phase 4新開的大招2(要先點過才能裝備，見 setEquippedUlt)
+  // 後面這三種都只能點「目前這個活動」的最終職業，不能點別的職業，避免用之前玩過的職業偷偷囤等級
+  // (等級本身是永久的，只是「能不能點」要看現在的職業)。
   async function upgradePlayerSkill(eventId, playerId, skillKey) {
     const isActiveSkill = skillKey === "active_skill";
     const masteryClassKey = skillKey.startsWith("class_mastery:") ? skillKey.slice("class_mastery:".length) : null;
-    if (!isActiveSkill && !masteryClassKey && !window.CareerData.PASSIVE_DEFS[skillKey]) throw new Error("不認識的技能/被動");
+    const treeNode = window.CareerData.SKILL_TREE_NODES[skillKey];
+    // 只接受樹上「技能B」跟「大招2」這兩種可以直接花點升級的節點；分支節點(選系/選職業)走
+    // transferCareerPath/transferCareerFinalClass，技能A/職業被動走上面兩個既有分支，不重複收。
+    const treeNodeClassKey = treeNode && (skillKey.endsWith("_skill_2") || skillKey.endsWith("_ult_2")) ? treeNode.requires.replace("class_", "") : null;
+    if (!isActiveSkill && !masteryClassKey && !treeNodeClassKey && !window.CareerData.PASSIVE_DEFS[skillKey]) throw new Error("不認識的技能/被動");
     if (masteryClassKey && !window.CareerData.CLASS_MASTERY_DEFS[masteryClassKey]) throw new Error("不認識的職業被動");
 
+    const requiredClassKey = masteryClassKey || treeNodeClassKey;
     const progress = await getOrCreateCareerProgress(eventId, playerId);
-    if (masteryClassKey) {
+    if (requiredClassKey) {
       const build = await getCareerBuildFor(eventId, playerId);
-      if (!build || build.final_class !== masteryClassKey) throw new Error("要先轉職成這個職業才能升級它的職業被動");
+      if (!build || build.final_class !== requiredClassKey) throw new Error("要先轉職成這個職業才能升級它的職業技能/被動");
     }
     if (progress.skill_points <= 0) throw new Error("沒有可以花的技能點了");
     const levels = await getPlayerSkillLevels(playerId);
     const curLevel = levels[skillKey] || 0;
-    if (curLevel >= window.CareerData.MAX_SKILL_LEVEL) throw new Error("這個技能/被動已經是目前開放的最高等級了");
+    const maxLevel = (treeNode && treeNode.maxLevel) || window.CareerData.MAX_SKILL_LEVEL;
+    if (curLevel >= maxLevel) throw new Error("這個技能/被動已經是目前開放的最高等級了");
 
     // 先扣本場活動的技能點,用樂觀鎖擋手快連點兩下(跟其他花點函式同一套寫法)
     const { data: spent, error: spendErr } = await client
@@ -2791,7 +2823,7 @@ const db = (function () {
     // 也不會穿插隨機事件(關主戰就是關主戰，不會被事件打斷)。
     if (floorDef.isMiniBoss) {
       const state = window.CareerEngine.initialMatchState(
-        _engineSide(build.final_class, playerStatsForHp, skillLevels),
+        _engineSide(build.final_class, playerStatsForHp, skillLevels, progress.equipped_ult),
         { classKey: floorDef.classKey, stats: floorDef.stats },
         { hp1: startHp, mp1: startMp }
       );
@@ -2835,7 +2867,7 @@ const db = (function () {
         const playerStats = window.CareerData.applyProgress(build.final_class, progress.stat_alloc, progress.equipment);
         const opponentClass = window.CareerFloors.CLASS_KEYS[Math.floor(Math.random() * window.CareerFloors.CLASS_KEYS.length)];
         const battle = window.CareerPve.simulateFloorBattle(
-          _engineSide(build.final_class, playerStats, skillLevels),
+          _engineSide(build.final_class, playerStats, skillLevels, progress.equipped_ult),
           { classKey: opponentClass, stats: floorDef.stats }
         );
         if (!battle.won) {
@@ -2877,7 +2909,7 @@ const db = (function () {
     const { hp: battleStartHpRaw, mp: battleStartMp } = _effectiveHpMp(progress, playerStats);
     const battleStartHp = _respawnHpIfNeeded(battleStartHpRaw, playerStats.maxHp);
     const battle = window.CareerPve.simulateFloorBattle(
-      _engineSide(build.final_class, playerStats, skillLevels),
+      _engineSide(build.final_class, playerStats, skillLevels, progress.equipped_ult),
       { classKey: floorDef.classKey, stats: floorDef.stats },
       { startHp: battleStartHp, startMp: battleStartMp }
     );
@@ -3321,7 +3353,7 @@ const db = (function () {
     const { hp: startHpRaw, mp: startMp } = _effectiveHpMp(progress, playerStats);
     const startHp = _respawnHpIfNeeded(startHpRaw, playerStats.maxHp);
     const battle = window.CareerPve.simulateFloorBattle(
-      _engineSide(build.final_class, playerStats, skillLevels),
+      _engineSide(build.final_class, playerStats, skillLevels, progress.equipped_ult),
       { classKey: floorDef.classKey, stats: floorDef.stats },
       { startHp, startMp }
     );
@@ -3693,6 +3725,7 @@ const db = (function () {
     unlockCareerSkill,
     getPlayerSkillLevels,
     upgradePlayerSkill,
+    setEquippedUlt,
     buyCareerPotion,
     useCareerPotion,
     toggleCareerAutoFarm,

@@ -506,7 +506,7 @@ window.CareerData = (function () {
     skill1: { name: "盾擊", icon: "shield", desc: "沿用現有戰技效果" },
     skill2: { name: "嘲諷打擊", icon: "megaphone", desc: "新技能:命中後這回合反擊機率額外提升" },
     ult1: { name: "銅牆鐵壁", icon: "shield", effect: { kind: "immune", dmgReduceRatio: 0.9, skipAttack: true, desc: "沿用現有大招(受到傷害-90%，本回合不出手)" } },
-    ult2: { name: "剛毅反擊", icon: "shield-alert", effect: { kind: "counterStance", dmgReduceRatio: 0.5, guaranteedCounter: true, desc: "新大招:受到傷害-50%，但本回合仍可出手，且必定反擊一次" } },
+    ult2: { name: "剛毅反擊", icon: "shield-alert", effect: { kind: "immune", dmgReduceRatio: 0.5, skipAttack: false, desc: "新大招:受到傷害-50%(比銅牆鐵壁少防)，但本回合仍可正常攻擊，不用跳過" } },
     mastery: { name: "反擊精研", icon: "shield", levels: { 1: 0.05, 2: 0.08, 3: 0.12 }, desc: "沿用現有職業被動(反擊姿態觸發機率提升)" },
   });
   _addClassKit("archer", "class_archer", {
@@ -555,6 +555,30 @@ window.CareerData = (function () {
     return Object.values(SKILL_TREE_NODES).filter((n) => n.requires === null);
   }
 
+  // Phase 4:大招裝備欄要拿到「目前裝備的大招長什麼效果、叫什麼名字」，這裡統一處理:
+  //   - 最終職業(戰士/守衛/...):equippedUltId 有給就用該節點，沒給或給了無效值就退回 <classKey>_ult_1(預設大招)
+  //   - 見習系列(novice/novice_strength/...):沒有裝備欄概念，直接用 CLASS_INFO/CLASS_EFFECTS 包成同樣形狀，
+  //     這樣戰鬥引擎只要認得幾種 kind 就好，不用另外分見習/正職兩套邏輯
+  function resolveUltInfo(classKey, equippedUltId) {
+    if (classKey === "novice" || classKey.startsWith("novice_")) {
+      const mult = (CLASS_EFFECTS[classKey] && CLASS_EFFECTS[classKey].ultDamageMult) || 1.3;
+      return { name: (CLASS_INFO[classKey] && CLASS_INFO[classKey].ultName) || "大招", effect: { kind: "dmgMult", value: mult } };
+    }
+    const defaultId = `${classKey}_ult_1`;
+    const requiresKey = `class_${classKey}`;
+    const equippedNode = equippedUltId ? SKILL_TREE_NODES[equippedUltId] : null;
+    const node = equippedNode && equippedNode.requires === requiresKey ? equippedNode : SKILL_TREE_NODES[defaultId];
+    return node ? { name: node.name, effect: node.effect } : { name: "大招", effect: { kind: "dmgMult", value: 1.3 } };
+  }
+
+  // 技能2(技能樹v2新開的第二個主動技能欄)的顯示名稱，slot=1回傳技能1的名字(跟舊的SKILL_NAME一樣)，
+  // slot=2回傳技能2的名字，找不到就給個保底文字，不會讓畫面壞掉。
+  function skillSlotName(classKey, slot) {
+    if (slot === 1) return SKILL_NAME[classKey] || "戰技";
+    const node = SKILL_TREE_NODES[`${classKey}_skill_2`];
+    return (node && node.name) || "技能2";
+  }
+
   // ---- §6 Migration mapping:舊 skill_key -> 新節點id(Phase 1 只定義對照表，不執行) ----
   // "active_skill" 沒辦法只靠這張表決定要對應到 <classKey>_skill_1 還是 _skill_2，因為舊系統
   // 一個職業只有1個戰技，等於直接對應新系統的「技能1」，新開的「技能2」留給玩家之後重新點。
@@ -600,6 +624,8 @@ window.CareerData = (function () {
     getSkillTreeNode,
     getSkillTreeChildren,
     getSkillTreeRoots,
+    resolveUltInfo,
+    skillSlotName,
     migrationTargetNodeId,
     SKILL_NAME,
     skillDesc,

@@ -460,6 +460,9 @@
     const ultAffordable = myMp >= (CareerData.ULT_MANA_COST || 0);
     const mySkillUnlocked = !!(mySlot === 1 ? s.skillUnlocked1 : s.skillUnlocked2);
     const skillAffordable = mySkillUnlocked && myMp >= (CareerData.SKILL_MANA_COST || 0);
+    const mySkill2Unlocked = !!(mySlot === 1 ? s.skill2Unlocked1 : s.skill2Unlocked2);
+    const skill2Affordable = mySkill2Unlocked && myMp >= (CareerData.SKILL_MANA_COST || 0);
+    const myUltName = (mySlot === 1 ? s.ultName1 : s.ultName2) || null; // Phase 4:大招可能被換成大招2，優先用state裡實際裝備的名字
     const myInfo = CareerData.CLASS_INFO[myClass];
     const oppInfo = CareerData.CLASS_INFO[oppClass];
     const isDone = match.status === "done";
@@ -510,8 +513,15 @@
                 </button>`
               : ""
           }
+          ${
+            mySkill2Unlocked
+              ? `<button class="btn ghost" id="skill2-btn" style="flex:1 1 28%;" ${iActed || !skill2Affordable ? "disabled" : ""}>
+                  ${ui.icon("sparkles")}${ui.esc(CareerData.skillSlotName ? CareerData.skillSlotName(myClass, 2) : "技能B")}(${CareerData.SKILL_MANA_COST || 0}魔力)
+                </button>`
+              : ""
+          }
           <button class="btn career-ult-btn" id="ult-btn" style="flex:1 1 28%;" ${iActed || !ultAffordable ? "disabled" : ""}>
-            ${ui.icon("flame")}${ui.esc(myInfo.ultName)}(${CareerData.ULT_MANA_COST || 0}魔力)${!ultAffordable ? "(魔力不足)" : ""}
+            ${ui.icon("flame")}${ui.esc(myUltName || myInfo.ultName)}(${CareerData.ULT_MANA_COST || 0}魔力)${!ultAffordable ? "(魔力不足)" : ""}
           </button>
         </div>
         <p id="round-status" style="text-align:center;font-size:11.5px;color:var(--ink-dim);margin:10px 0 0;">
@@ -534,9 +544,11 @@
       const atkBtn = document.getElementById("atk-btn");
       const ultBtn = document.getElementById("ult-btn");
       const skillBtn = document.getElementById("skill-btn");
+      const skill2Btn = document.getElementById("skill2-btn");
       if (atkBtn) atkBtn.onclick = () => submitMyMove(match, "attack");
       if (ultBtn) ultBtn.onclick = () => submitMyMove(match, "ult");
-      if (skillBtn) skillBtn.onclick = () => submitMyMove(match, "skill");
+      if (skillBtn) skillBtn.onclick = () => submitMyMove(match, "skill1");
+      if (skill2Btn) skill2Btn.onclick = () => submitMyMove(match, "skill2");
       startRoundTimer(match);
     }
   }
@@ -548,9 +560,11 @@
     const atkBtn = document.getElementById("atk-btn");
     const ultBtn = document.getElementById("ult-btn");
     const skillBtn = document.getElementById("skill-btn");
+    const skill2Btn = document.getElementById("skill2-btn");
     if (atkBtn) atkBtn.disabled = true;
     if (ultBtn) ultBtn.disabled = true;
     if (skillBtn) skillBtn.disabled = true;
+    if (skill2Btn) skill2Btn.disabled = true;
     try {
       await db.submitCareerMove(match.id, mySlot, { action });
       await refreshAll();

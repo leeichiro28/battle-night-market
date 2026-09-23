@@ -13,6 +13,13 @@
 // 大招現在是「花魔力」而不是「整場限用一次」:魔力夠(見 CareerData.ULT_MANA_COST)就能用，
 // 用了就扣魔力，每回合結束雙方各回一點魔力(CareerData.MANA_REGEN_PER_ROUND)，魔力不夠的話
 // 就算選了大招也只會出普通攻擊(伺服器端這裡也會擋一次，不是只靠前端按鈕disable)。
+//
+// 技能樹 v2 Phase 4:大招不再是「這個職業固定就長這樣」，而是「裝備欄裡現在插的是哪一個節點」，
+// 由呼叫端(db.js `_engineSide`)透過 CareerData.resolveUltInfo(classKey, equippedUltId) 算出
+// { name, effect } 傳進來，這裡只認 effect.kind 是哪一種、不管是哪個職業——所以之後要加新職業、
+// 新大招 kind，只要在 career-data.js 加資料，這個檔案幾乎不用動。
+// 同理，主動技能欄從1個(戰技)擴充成2個(技能A/技能B)，兩個是完全平行的兩條資源(各自的等級、
+// 各自的魔力判定)，用 slot 1/2 區分，不是誰比較強誰比較弱。
 window.CareerEngine = (function () {
   const CD = window.CareerData;
 
@@ -26,15 +33,19 @@ window.CareerEngine = (function () {
     return Math.max(1, atk - effDef / 2) + randFloat();
   }
 
-  // p1/p2: { classKey, stats, skillLevel, critBonus }。opts 可以帶 hp1/hp2/mp1/mp2 覆蓋起始值
-  // (爬塔用持續HP/MP，不帶的話(PVP預設)就是滿HP滿MP開打)。
-  // skillLevel 是「戰技」的永久等級(第22點更新:0=沒解鎖，1~3=等級，越高傷害倍率越高，
-  // 見 CareerData.skillDmgMult)，野怪不用帶(當作 0，AI只會用攻擊/大招，不會用戰技)。
-  // critBonus 是「暴擊精研」被動算出來的暴擊率加成(CareerData.passiveValue("crit_boost", 等級))。
+  // p1/p2 形狀(見 db.js `_engineSide`):
+  //   { classKey, stats, skillLevel, skill2Level, ultEffect, ultName, critBonus, critDmgBonus,
+  //     manaRegenBonus, ultCostReduce, mastery }
+  // opts 可以帶 hp1/hp2/mp1/mp2 覆蓋起始值(爬塔用持續HP/MP，不帶的話(PVP預設)就是滿HP滿MP開打)。
+  // skillLevel/skill2Level 是技能A/技能B的永久等級(0=沒解鎖，1~3=等級)，野怪不用帶(當作0)。
+  // ultEffect 是目前裝備的大招效果(第22點更新第22.1段:大招也走「解鎖進池子→裝備」，
+  // 沒帶就沒有大招可用，理論上不會發生，因為每個職業一定至少有預設大招)。
   function initialMatchState(p1, p2, opts) {
     opts = opts || {};
     const skillLevel1 = p1.skillLevel || 0;
     const skillLevel2 = p2.skillLevel || 0;
+    const skill2Level1 = p1.skill2Level || 0;
+    const skill2Level2 = p2.skill2Level || 0;
     return {
       round: 1,
       log: [],
@@ -42,8 +53,16 @@ window.CareerEngine = (function () {
       class2: p2.classKey,
       skillLevel1,
       skillLevel2,
-      skillUnlocked1: skillLevel1 > 0, // 保留舊欄位給畫面判斷「戰技按鈕要不要顯示」用
+      skillUnlocked1: skillLevel1 > 0, // 保留舊欄位給畫面判斷「技能A按鈕要不要顯示」用
       skillUnlocked2: skillLevel2 > 0,
+      skill2Level1,
+      skill2Level2,
+      skill2Unlocked1: skill2Level1 > 0, // 技能B(第二主動技能)按鈕要不要顯示
+      skill2Unlocked2: skill2Level2 > 0,
+      ultEffect1: p1.ultEffect || { kind: "dmgMult", value: 1.3 },
+      ultEffect2: p2.ultEffect || { kind: "dmgMult", value: 1.3 },
+      ultName1: p1.ultName || (CD.CLASS_INFO[p1.classKey] && CD.CLASS_INFO[p1.classKey].ultName) || "大招",
+      ultName2: p2.ultName || (CD.CLASS_INFO[p2.classKey] && CD.CLASS_INFO[p2.classKey].ultName) || "大招",
       critBonus1: p1.critBonus || 0,
       critBonus2: p2.critBonus || 0,
       critDmgBonus1: p1.critDmgBonus || 0, // 「爆擊強化」被動:暴擊傷害倍率額外加成(跟基礎x1.5疊加)
@@ -77,28 +96,45 @@ window.CareerEngine = (function () {
     };
   }
 
-  // 對某一側算一次攻擊(普通攻擊 或 大招裡屬於「攻擊型」的那幾種:戰士/刺客/法師/弓箭手)
-  // 回傳 { dmg, crit }，defenderImmune 為 true 時傷害直接打 9 折減免(守衛銅牆鐵壁)
-  // actionType: 'attack' | 'ult' | 'skill'。skillLevel 是戰技等級(只有 isSkill 時有意義，
-  // 第22點更新:傷害倍率照等級查表，不是固定值)，critBonus 是暴擊精研被動加成，mastery 是這個人
-  // 「職業限定被動」的等級加成(第22點更新第二段，見 CareerData.classMasteryBonus)，沒有就傳 {}。
-  function computeAttackHit(atkStats, defStats, attackerClass, actionType, hpRatio, defenderImmune, skillLevel, critBonus, critDmgBonus, mastery) {
+  // 對某一側算一次攻擊(普通攻擊 / 技能A / 技能B / 大招裡屬於「攻擊型」的那幾種)
+  // 回傳 { dmg, crit }，defenderImmuneRatio > 0 時傷害按比例減免(守衛的兩種大招都是這個機制，
+  // 只是減免比例不同:銅牆鐵壁90%、剛毅反擊50%)。
+  // actionType: 'attack' | 'skill1' | 'skill2' | 'ult'。skillLevel 是這次用的技能等級(只有
+  // isSkill 時有意義)，critBonus/critDmgBonus/mastery 意思跟以前一樣。
+  // ultEffect 只有 actionType==='ult' 時有意義，是目前裝備的大招節點效果(見 initialMatchState 註解)。
+  function computeAttackHit(atkStats, defStats, attackerClass, actionType, hpRatio, defenderImmuneRatio, skillLevel, critBonus, critDmgBonus, mastery, ultEffect) {
     mastery = mastery || {};
     const eff = CD.CLASS_EFFECTS[attackerClass];
     let ignoreDefRatio = (eff.ignoreDefRatio || 0) + (attackerClass === "warrior" ? mastery.ignoreDefRatio || 0 : 0); // 戰士線「破防打法」被動,普通攻擊也吃得到
     let dmgMult = 1;
     const isUlt = actionType === "ult";
-    const isSkill = actionType === "skill";
+    const isSkill = actionType === "skill1" || actionType === "skill2";
+    let extraCrit = 0;
+    let forceCrit = false;
 
     if (isUlt) {
-      if (attackerClass === "warrior") dmgMult = 2; // 怒吼衝鋒:本回合傷害x2
-      else if (attackerClass === "mage") ignoreDefRatio = 1; // 魔力爆發:無視防禦
-      else if (CD.CLASS_EFFECTS[attackerClass] && CD.CLASS_EFFECTS[attackerClass].ultDamageMult) {
-        dmgMult = CD.CLASS_EFFECTS[attackerClass].ultDamageMult; // 見習系列(還沒轉正職):大招比較弱的簡易乘倍
+      const kind = (ultEffect && ultEffect.kind) || "dmgMult";
+      // 這幾種 kind 都是「這次攻擊傷害倍率怎麼算」，immune/heal 不會走到這裡(那兩種在
+      // resolveRound 的 handleNonAttackUlt 處理，根本不會進攻擊流程)
+      if (kind === "dmgMult") {
+        dmgMult = (ultEffect && ultEffect.value) || 1;
+        extraCrit = (ultEffect && ultEffect.extraCrit) || 0; // 例如法師「寒冰新星」順便加暴擊率
+      } else if (kind === "ignoreDef") {
+        dmgMult = 1;
+        ignoreDefRatio = ultEffect && ultEffect.ignoreDefRatio != null ? ultEffect.ignoreDefRatio : 1;
+      } else if (kind === "pierce") {
+        dmgMult = (ultEffect && ultEffect.dmgMult) || 1;
+        ignoreDefRatio = ultEffect && ultEffect.ignoreDefRatio != null ? ultEffect.ignoreDefRatio : ignoreDefRatio;
+      } else if (kind === "lifesteal") {
+        dmgMult = (ultEffect && ultEffect.dmgMult) || 1; // 回血的部分在 resolveRound 處理(這裡只算傷害)
+      } else if (kind === "multiHit") {
+        dmgMult = ultEffect && ultEffect.dmgMultPerHit != null ? ultEffect.dmgMultPerHit : 1; // 每一次的倍率(不是總倍率)
+      } else if (kind === "guaranteedCritBelowHalf") {
+        dmgMult = 1;
+        forceCrit = typeof hpRatio === "number" && hpRatio <= 0.5; // 對方HP過半以下必定爆擊
       }
-      // assassin(暗殺)、archer(連環箭)的大招效果在呼叫端另外處理(必爆/多打一次)
     } else if (isSkill) {
-      dmgMult = CD.skillDmgMult ? CD.skillDmgMult(skillLevel) : CD.SKILL_DMG_MULT || 1.4; // 戰技:等級查表，等級越高倍率越高
+      dmgMult = CD.skillDmgMult ? CD.skillDmgMult(skillLevel) : CD.SKILL_DMG_MULT || 1.4; // 技能A/B:等級查表，等級越高倍率越高，兩個技能用同一張表
     }
 
     // 魔法系(法師/巫醫/還沒轉職的魔法系學徒)一律用魔攻算傷害，不是共用攻擊力
@@ -110,36 +146,39 @@ window.CareerEngine = (function () {
     if (isMagic && attackerClass === "mage") dmg *= 1 + (mastery.magicDmgBonus || 0); // 「法術精研」職業被動:只有正式轉職法師才有
 
     let crit = false;
-    const critC = CD.critChance(atkStats, hpRatio, attackerClass, critBonus, attackerClass === "assassin" ? mastery.lethalRhythmMax : 0);
-    if (isUlt && attackerClass === "assassin" && hpRatio <= 0.5) {
-      crit = true; // 暗殺:對方HP過半以下必定爆擊
+    const critC = CD.critChance(atkStats, hpRatio, attackerClass, (critBonus || 0) + extraCrit, attackerClass === "assassin" ? mastery.lethalRhythmMax : 0);
+    if (forceCrit) {
+      crit = true;
     } else if (critC > 0 && Math.random() < critC) {
       crit = true;
     }
     if (crit) dmg *= CD.CRIT_DMG_MULT + (critDmgBonus || 0);
 
-    if (defenderImmune) dmg *= 0.1; // 銅牆鐵壁:這回合受到的傷害 -90%
+    if (defenderImmuneRatio > 0) dmg *= 1 - defenderImmuneRatio; // 銅牆鐵壁/剛毅反擊:這回合受到的傷害按比例減免
 
     dmg = Math.max(0, Math.round(dmg));
     return { dmg, crit };
   }
 
-  // 主要進入點:雙方都送出這回合的動作(m1/m2 = { action: 'attack' | 'ult' })後呼叫
+  // 主要進入點:雙方都送出這回合的動作(m1/m2 = { action: 'attack'|'skill1'|'skill2'|'ult' })後呼叫
   // 回傳新的 state(round+1、m1/m2 清空、魔力已回一點)以及這回合發生的事件陣列(給畫面播放大字用)
   function resolveRound(state) {
     const s = { ...state };
     const log = [...(s.log || [])];
     const m1 = s.m1 || { action: "attack" };
     const m2 = s.m2 || { action: "attack" };
+    // 舊的行動指令可能還是 "skill"(切版前送出、或還沒重新整理的前端)，一律當成技能A
+    if (m1.action === "skill") m1.action = "skill1";
+    if (m2.action === "skill") m2.action = "skill1";
     const events = [];
 
     let hp1 = s.hp1;
     let hp2 = s.hp2;
     let mp1 = s.mp1 || 0;
     let mp2 = s.mp2 || 0;
-    let immune1 = false;
-    let immune2 = false;
-    let skip1 = false; // 這回合不出手攻擊(守衛防禦型大招 / 巫醫治療型大招)
+    let immuneRatio1 = 0; // >0 表示這回合受到的傷害按比例減免(銅牆鐵壁0.9/剛毅反擊0.5)
+    let immuneRatio2 = 0;
+    let skip1 = false; // 這回合不出手攻擊(守衛「銅牆鐵壁」/巫醫「完全治癒」這種skipAttack:true的大招)
     let skip2 = false;
 
     const stats1 = { atk: s.atk1, def: s.def1, spd: s.spd1, luck: s.luck1, matk: s.matk1 || 0 };
@@ -156,45 +195,58 @@ window.CareerEngine = (function () {
       const mp = side === 1 ? mp1 : mp2;
       return m && m.action === "ult" && mp >= ultCost(side);
     }
-    function canSkill(side) {
+    // slot: 1(技能A，沿用舊的"戰技") | 2(技能B，技能樹v2新開的第二個主動技能)
+    function canSkillSlot(side, slot) {
       const m = side === 1 ? m1 : m2;
+      const lvl = slot === 1 ? (side === 1 ? s.skillLevel1 : s.skillLevel2) : (side === 1 ? s.skill2Level1 : s.skill2Level2);
       const mp = side === 1 ? mp1 : mp2;
-      const lvl = side === 1 ? s.skillLevel1 : s.skillLevel2;
-      return m && m.action === "skill" && lvl > 0 && mp >= CD.SKILL_MANA_COST;
+      return m && m.action === `skill${slot}` && lvl > 0 && mp >= CD.SKILL_MANA_COST;
     }
     function spendMana(side, amount) {
       if (side === 1) mp1 = Math.max(0, mp1 - amount);
       else mp2 = Math.max(0, mp2 - amount);
     }
 
-    // ---- 位置3:全免疫型大招(守衛) + 平行分支:治療型大招(巫醫)。兩者都不是攻擊動作,先處理。
+    // ---- 位置3:非攻擊型大招(immune=全免疫/半免疫型、heal=治療型)。這兩種不是攻擊動作,先處理，
+    // 免疫型如果 skipAttack!==false(預設大招都是)就不出手；skipAttack:false 的(例如守衛「剛毅反擊」)
+    // 只拿防禦加成，這回合照樣輪到 performAttack 出手，只是這次不算大招傷害、就是一次普通攻擊。
     function handleNonAttackUlt(side) {
-      const cls = side === 1 ? s.class1 : s.class2;
       if (!canUlt(side)) return;
-      if (cls === "guardian") {
+      const ultEffect = side === 1 ? s.ultEffect1 : s.ultEffect2;
+      const ultName = side === 1 ? s.ultName1 : s.ultName2;
+      if (!ultEffect) return;
+      if (ultEffect.kind === "immune") {
         spendMana(side, ultCost(side));
+        const ratio = ultEffect.dmgReduceRatio != null ? ultEffect.dmgReduceRatio : 0.9;
+        const willSkip = ultEffect.skipAttack !== false;
         if (side === 1) {
-          immune1 = true;
-          skip1 = true;
+          immuneRatio1 = ratio;
+          if (willSkip) skip1 = true;
         } else {
-          immune2 = true;
-          skip2 = true;
+          immuneRatio2 = ratio;
+          if (willSkip) skip2 = true;
         }
-        events.push({ side, type: "ult_shield", text: `${side === 1 ? "你" : "對方"}使出「銅牆鐵壁」,這回合幾乎不受傷!` });
-      } else if (cls === "healer") {
+        events.push({
+          side,
+          type: "ult_shield",
+          text: `${side === 1 ? "你" : "對方"}使出「${ultName}」,這回合受到的傷害-${Math.round(ratio * 100)}%${willSkip ? ",不出手" : ",但仍可攻擊"}!`,
+        });
+      } else if (ultEffect.kind === "heal") {
         spendMana(side, ultCost(side));
         const maxHp = side === 1 ? s.maxhp1 : s.maxhp2;
         const matk = side === 1 ? s.matk1 : s.matk2;
         const mastery = side === 1 ? s.mastery1 : s.mastery2;
-        const heal = Math.round(maxHp * 0.5) + (CD.CLASS_EFFECTS.healer.healBonus || 0) + (mastery.healBonus || 0) + Math.round((matk || 0) * 1.5);
+        const healRatio = ultEffect.healRatio != null ? ultEffect.healRatio : 0.5;
+        const heal = Math.round(maxHp * healRatio) + (CD.CLASS_EFFECTS.healer.healBonus || 0) + (mastery.healBonus || 0) + Math.round((matk || 0) * 1.5);
+        const willSkip = ultEffect.skipAttack !== false;
         if (side === 1) {
           hp1 = Math.min(s.maxhp1, hp1 + heal);
-          skip1 = true;
+          if (willSkip) skip1 = true;
         } else {
           hp2 = Math.min(s.maxhp2, hp2 + heal);
-          skip2 = true;
+          if (willSkip) skip2 = true;
         }
-        events.push({ side, type: "ult_heal", text: `${side === 1 ? "你" : "對方"}使出「完全治癒」,回復了 ${heal} 點 HP!` });
+        events.push({ side, type: "ult_heal", text: `${side === 1 ? "你" : "對方"}使出「${ultName}」,回復了 ${heal} 點 HP!` });
       }
     }
     handleNonAttackUlt(1);
@@ -206,43 +258,52 @@ window.CareerEngine = (function () {
 
     function performAttack(side) {
       const skip = side === 1 ? skip1 : skip2;
-      if (skip) return; // 這回合選了防禦/治療型大招,不出手攻擊
+      if (skip) return; // 這回合選了會跳過攻擊的大招(銅牆鐵壁/完全治癒這種)
       const defenderHp = side === 1 ? hp2 : hp1;
       if (defenderHp <= 0) return; // 對方已經陣亡,不用再打
 
       const cls = side === 1 ? s.class1 : s.class2;
       const atkStats = side === 1 ? stats1 : stats2;
       const defStats = side === 1 ? stats2 : stats1;
-      const defenderImmune = side === 1 ? immune2 : immune1;
+      const defenderImmuneRatio = side === 1 ? immuneRatio2 : immuneRatio1;
       const defMaxHp = side === 1 ? s.maxhp2 : s.maxhp1;
-      const skillLevel = side === 1 ? s.skillLevel1 : s.skillLevel2;
       const critBonus = side === 1 ? s.critBonus1 : s.critBonus2;
       const critDmgBonus = side === 1 ? s.critDmgBonus1 : s.critDmgBonus2;
       const mastery = side === 1 ? s.mastery1 : s.mastery2;
       const defenderMastery = side === 1 ? s.mastery2 : s.mastery1;
+      const ultEffect = side === 1 ? s.ultEffect1 : s.ultEffect2;
+      const ultName = side === 1 ? s.ultName1 : s.ultName2;
 
-      const wantsUlt = canUlt(side) && (["warrior", "assassin", "mage", "archer"].includes(cls) || cls.startsWith("novice"));
-      const wantsSkill = !wantsUlt && canSkill(side);
-      const actionType = wantsUlt ? "ult" : wantsSkill ? "skill" : "attack";
+      // 這回合是不是真的要用大招當「攻擊型」動作:immune/heal 這兩種非攻擊型大招已經在
+      // handleNonAttackUlt 處理過了(可能已經 spend 過魔力)，這裡不能重複觸發
+      const isNonAttackUltKind = ultEffect && (ultEffect.kind === "immune" || ultEffect.kind === "heal");
+      const wantsUlt = canUlt(side) && ultEffect && !isNonAttackUltKind;
+      const wantsSkill1 = !wantsUlt && canSkillSlot(side, 1);
+      const wantsSkill2 = !wantsUlt && !wantsSkill1 && canSkillSlot(side, 2);
+      const actionType = wantsUlt ? "ult" : wantsSkill1 ? "skill1" : wantsSkill2 ? "skill2" : "attack";
+      const skillLevel = actionType === "skill1" ? (side === 1 ? s.skillLevel1 : s.skillLevel2) : actionType === "skill2" ? (side === 1 ? s.skill2Level1 : s.skill2Level2) : 0;
 
-      // 弓箭手「連環箭」獨立處理:整個攻擊流程多跑一次(不是傷害加成),
-      // 第二次攻擊前要重新確認對方是不是已經被第一次打死了
-      const hits = wantsUlt && cls === "archer" ? 2 : 1;
+      // 大招是「多打幾次」型(弓箭手「連環箭」預設2次、刺客「血影連斬」預設3次)才會跑多次迴圈,
+      // 每次傷害倍率看 ultEffect.dmgMultPerHit(computeAttackHit 裡面會用到)
+      const hits = wantsUlt && ultEffect.kind === "multiHit" ? ultEffect.hits || 1 : 1;
       if (wantsUlt) {
         spendMana(side, ultCost(side));
-        events.push({ side, type: "ult_attack", text: `${side === 1 ? "你" : "對方"}使出「${CD.CLASS_INFO[cls].ultName}」!` });
-      } else if (wantsSkill) {
+        events.push({ side, type: "ult_attack", text: `${side === 1 ? "你" : "對方"}使出「${ultName}」!` });
+      } else if (wantsSkill1 || wantsSkill2) {
         spendMana(side, CD.SKILL_MANA_COST);
-        events.push({ side, type: "skill_attack", text: `${side === 1 ? "你" : "對方"}使出戰技「${CD.SKILL_NAME[cls] || "戰技"}」!` });
+        const skillName = CD.skillSlotName ? CD.skillSlotName(cls, wantsSkill1 ? 1 : 2) : "戰技";
+        events.push({ side, type: "skill_attack", text: `${side === 1 ? "你" : "對方"}使出技能「${skillName}」!` });
       }
 
+      let lastDmg = 0;
       for (let i = 0; i < hits; i++) {
         const curDefHp = side === 1 ? hp2 : hp1;
         if (curDefHp <= 0) break;
         const curHpRatio = curDefHp / defMaxHp;
-        const { dmg, crit } = computeAttackHit(atkStats, defStats, cls, actionType, curHpRatio, defenderImmune, skillLevel, critBonus, critDmgBonus, mastery);
+        const { dmg, crit } = computeAttackHit(atkStats, defStats, cls, actionType, curHpRatio, defenderImmuneRatio, skillLevel, critBonus, critDmgBonus, mastery, ultEffect);
         if (side === 1) hp2 = Math.max(0, hp2 - dmg);
         else hp1 = Math.max(0, hp1 - dmg);
+        lastDmg = dmg;
 
         events.push({
           side,
@@ -253,11 +314,11 @@ window.CareerEngine = (function () {
           text: `${side === 1 ? "你" : "對方"}${crit ? "爆擊" : ""}造成 ${dmg} 點傷害!`,
         });
 
-        // 敏捷系「連射訓練」被動:普通攻擊(非大招/戰技)才有機會觸發追加一擊,跟連環箭是兩回事
+        // 敏捷系「連射訓練」被動:普通攻擊(非大招/技能)才有機會觸發追加一擊,跟連環箭是兩回事
         if (actionType === "attack" && cls === "archer" && Math.random() < (CD.CLASS_EFFECTS.archer.extraHitChance || 0) + (mastery.extraHitChance || 0)) {
           const curDefHp2 = side === 1 ? hp2 : hp1;
           if (curDefHp2 > 0) {
-            const extra = computeAttackHit(atkStats, defStats, cls, "attack", curDefHp2 / defMaxHp, defenderImmune, skillLevel, critBonus, critDmgBonus, mastery);
+            const extra = computeAttackHit(atkStats, defStats, cls, "attack", curDefHp2 / defMaxHp, defenderImmuneRatio, skillLevel, critBonus, critDmgBonus, mastery, null);
             if (side === 1) hp2 = Math.max(0, hp2 - extra.dmg);
             else hp1 = Math.max(0, hp1 - extra.dmg);
             events.push({ side, type: "extra_hit", dmg: extra.dmg, text: `${side === 1 ? "你" : "對方"}的連射訓練觸發,追加造成 ${extra.dmg} 點傷害!` });
@@ -265,9 +326,22 @@ window.CareerEngine = (function () {
         }
       }
 
-      // 力量系「反擊姿態」被動:守衛被普通攻擊命中時,15% 機率反傷(用剛剛造成的傷害量反打回去)
+      // 「血戰怒吼」(戰士大招2):吸血，用剛剛最後一次攻擊造成的傷害去算回血量
+      if (wantsUlt && ultEffect.kind === "lifesteal" && lastDmg > 0) {
+        const lifesteal = Math.round(lastDmg * (ultEffect.lifestealRatio || 0));
+        if (lifesteal > 0) {
+          if (side === 1) hp1 = Math.min(s.maxhp1, hp1 + lifesteal);
+          else hp2 = Math.min(s.maxhp2, hp2 + lifesteal);
+          events.push({ side, type: "lifesteal", dmg: lifesteal, text: `${side === 1 ? "你" : "對方"}吸取了 ${lifesteal} 點HP!` });
+        }
+      }
+
+      // 力量系「反擊姿態」被動:守衛被普通攻擊命中時,15% 機率反傷(用剛剛造成的傷害量反打回去)。
+      // 守衛這回合如果正在用大招防禦(immuneRatio>0，不管是銅牆鐵壁還是剛毅反擊)，這個被動這回合不觸發，
+      // 算是「已經用了大招的防禦效果，反擊姿態這回合讓位」
       const defenderClass = side === 1 ? s.class2 : s.class1;
-      if (actionType === "attack" && defenderClass === "guardian" && !defenderImmune) {
+      const defenderOwnImmuneRatio = side === 1 ? immuneRatio2 : immuneRatio1;
+      if (actionType === "attack" && defenderClass === "guardian" && !(defenderOwnImmuneRatio > 0)) {
         const lastEvent = events[events.length - 1];
         if (lastEvent && lastEvent.type === "attack" && lastEvent.dmg > 0 && Math.random() < (CD.CLASS_EFFECTS.guardian.counterChance || 0) + (defenderMastery.counterChance || 0)) {
           const counterDmg = lastEvent.dmg;

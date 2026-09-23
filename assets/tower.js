@@ -310,6 +310,8 @@
     const monsterInfo = CareerData.CLASS_INFO[s.class2];
     const ultAffordable = (s.mp1 || 0) >= (CareerData.ULT_MANA_COST || 0);
     const skillAffordable = s.skillUnlocked1 && (s.mp1 || 0) >= (CareerData.SKILL_MANA_COST || 0);
+    const skill2Affordable = s.skill2Unlocked1 && (s.mp1 || 0) >= (CareerData.SKILL_MANA_COST || 0);
+    const ultDisplayName = s.ultName1 || myInfo.ultName; // Phase 4:大招可能被換成大招2，用state裡實際裝備的名字，不是職業固定的預設名字
 
     if (s.round !== bossSeenRound) {
       bossSeenRound = s.round;
@@ -343,8 +345,15 @@
               </button>`
             : ""
         }
+        ${
+          s.skill2Unlocked1
+            ? `<button class="btn ghost" id="boss-skill2-btn" style="flex:1 1 28%;" ${bossSubmitted || !skill2Affordable ? "disabled" : ""}>
+                ${ui.icon("sparkles")}${ui.esc(CareerData.skillSlotName ? CareerData.skillSlotName(s.class1, 2) : "技能B")}(${CareerData.SKILL_MANA_COST || 0}魔力)
+              </button>`
+            : ""
+        }
         <button class="btn career-ult-btn" id="boss-ult-btn" style="flex:1 1 28%;" ${bossSubmitted || !ultAffordable ? "disabled" : ""}>
-          ${ui.icon("flame")}${ui.esc(myInfo.ultName)}(${CareerData.ULT_MANA_COST || 0}魔力)${!ultAffordable ? "(魔力不足)" : ""}
+          ${ui.icon("flame")}${ui.esc(ultDisplayName)}(${CareerData.ULT_MANA_COST || 0}魔力)${!ultAffordable ? "(魔力不足)" : ""}
         </button>
       </div>
       <p style="text-align:center;font-size:11.5px;color:var(--ink-dim);margin:10px 0 0;">
@@ -792,7 +801,7 @@
     const pathNodes = CD.getSkillTreeRoots().filter((n) => n.type === "branch");
     let html = `
       <div style="margin-top:24px;padding-top:16px;border-top:1px dashed var(--line);">
-        <p style="text-align:center;margin:0 0 4px;font-weight:700;font-size:14px;">${ui.icon("git-branch")}轉職路線圖<span style="font-weight:400;color:var(--ink-dim);font-size:11px;"> · 之後轉職會走這種樹狀節點，這裡先讓大家熟悉路線長怎樣</span></p>
+        <p style="text-align:center;margin:0 0 4px;font-weight:700;font-size:14px;">${ui.icon("git-branch")}轉職路線圖<span style="font-weight:400;color:var(--ink-dim);font-size:11px;"> · 技能B跟大招2現在可以實際升級/裝備了</span></p>
         <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:10px;">
           ${pathNodes.map((n) => branchNode(n, n.effect.unlocksPathKey === chosenPath)).join(`<div style="align-self:center;color:var(--ink-dim);font-size:11px;">→</div>`)}
         </div>`;
@@ -807,43 +816,74 @@
 
     if (chosenClass) {
       const kitNodes = CD.getSkillTreeChildren(`class_${chosenClass}`);
-      const previewCard = (node) => {
-        let stateLabel, stateColor, sub;
-        if (node.type === "active_skill" && node.id.endsWith("_1")) {
-          const lv = skillLevels.active_skill || 0;
-          stateLabel = lv > 0 ? `Lv.${lv}` : "可升級";
-          stateColor = lv > 0 ? "var(--green)" : "var(--gold)";
-          sub = "已經在用(就是上面的技能卡)";
-        } else if (node.type === "ultimate" && node.id.endsWith("_1")) {
-          stateLabel = "使用中";
-          stateColor = "var(--green)";
-          sub = "目前的預設大招";
-        } else if (node.type === "passive") {
-          const lv = skillLevels[`class_mastery:${chosenClass}`] || 0;
-          stateLabel = lv > 0 ? `Lv.${lv}` : "可升級";
-          stateColor = lv > 0 ? "var(--green)" : "var(--gold)";
-          sub = "已經在用(就是上面的職業被動卡)";
-        } else {
-          stateLabel = "敬請期待";
-          stateColor = "var(--ink-dim)";
-          sub = "Phase 4/5 開放後才能實際裝備";
-        }
-        return `
-          <div style="flex:1;min-width:120px;max-width:150px;background:var(--panel2);border:1px dashed var(--line);border-radius:var(--radius);padding:8px;text-align:center;opacity:0.85;">
-            ${ui.icon(node.icon, { size: "16px" })}
-            <p style="margin:4px 0 0;font-weight:700;font-size:11.5px;">${ui.esc(node.name)}</p>
-            <p style="margin:2px 0 0;font-size:9.5px;color:var(--ink-dim);">${ui.esc(sub)}</p>
-            <span style="font-size:9.5px;color:${stateColor};font-weight:700;">${stateLabel}</span>
-          </div>`;
-      };
+      const equippedUltId = progress.equipped_ult || `${chosenClass}_ult_1`;
       html += `
         <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:8px;">
-          ${kitNodes.map(previewCard).join("")}
+          ${kitNodes.map((node) => skillTreeKitCard(node, chosenClass, skillLevels, canSpend, equippedUltId)).join("")}
         </div>`;
     }
 
     html += `</div>`;
     return html;
+  }
+
+  // class_xxx底下的5個節點(技能A/技能B/大招1/大招2/職業被動)各自要長什麼樣子，
+  // Phase 4:技能B、大招1/2 現在是真的可以升級/裝備了，不再是「敬請期待」佔位卡。
+  function skillTreeKitCard(node, chosenClass, skillLevels, canSpend, equippedUltId) {
+    const CD = CareerData;
+    const MAX_LV = node.maxLevel || CD.MAX_SKILL_LEVEL;
+
+    if (node.type === "active_skill") {
+      const isSlot1 = node.id.endsWith("_1");
+      const key = isSlot1 ? "active_skill" : node.id;
+      const lv = skillLevels[key] || 0;
+      const atMax = lv >= MAX_LV;
+      const sub = isSlot1 ? "技能A(就是上面的技能卡)" : "技能B";
+      return `
+        <div style="flex:1;min-width:130px;max-width:160px;background:var(--panel2);border:1px solid ${!atMax && canSpend ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:10px;text-align:center;">
+          ${ui.icon(node.icon, { size: "18px" })}
+          <p style="margin:6px 0 0;font-weight:700;font-size:12px;">${ui.esc(node.name)}${lv > 0 ? ` Lv.${lv}` : ""}</p>
+          <p style="margin:2px 0 6px;font-size:10px;color:var(--ink-dim);">${ui.esc(sub)}</p>
+          ${
+            atMax
+              ? `<span style="font-size:10px;color:var(--green);font-weight:700;">${ui.icon("check", { size: "12px" })}已達最高等級</span>`
+              : `<button class="btn ghost small" data-upgrade-skill="${key}" ${canSpend ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "13px" })}升到 Lv.${lv + 1}</button>`
+          }
+        </div>`;
+    }
+
+    if (node.type === "ultimate") {
+      const lv = skillLevels[node.id] || 0; // _ult_1 沒有對應的career_player_skills資料，永遠當作"已解鎖"(lv視為1)
+      const isDefault = node.id.endsWith("_1");
+      const unlocked = isDefault || lv > 0;
+      const isEquipped = equippedUltId === node.id;
+      let actionHtml;
+      if (isEquipped) {
+        actionHtml = `<span style="font-size:10px;color:var(--green);font-weight:700;">${ui.icon("check", { size: "12px" })}裝備中</span>`;
+      } else if (unlocked) {
+        actionHtml = `<button class="btn ghost small" data-equip-ult="${node.id}">${ui.icon("refresh-cw", { size: "13px" })}裝備這個(免費隨時換)</button>`;
+      } else {
+        actionHtml = `<button class="btn ghost small" data-upgrade-skill="${node.id}" ${canSpend ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "13px" })}花1點解鎖</button>`;
+      }
+      return `
+        <div style="flex:1;min-width:130px;max-width:170px;background:var(--panel2);border:1px solid ${isEquipped ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:10px;text-align:center;">
+          ${ui.icon(node.icon, { size: "18px" })}
+          <p style="margin:6px 0 0;font-weight:700;font-size:12px;">${ui.esc(node.name)}</p>
+          <p style="margin:2px 0 6px;font-size:9.5px;color:var(--ink-dim);">${ui.esc(node.effect.desc || "")}</p>
+          ${actionHtml}
+        </div>`;
+    }
+
+    // passive(職業被動):跟上面「職業被動」卡片是同一份資料，這裡只是路線圖裡再顯示一次現況
+    const lv = skillLevels[`class_mastery:${chosenClass}`] || 0;
+    const atMax = lv >= (CD.MAX_SKILL_LEVEL || 3);
+    return `
+      <div style="flex:1;min-width:130px;max-width:160px;background:var(--panel2);border:1px dashed var(--line);border-radius:var(--radius);padding:10px;text-align:center;opacity:0.85;">
+        ${ui.icon(node.icon, { size: "18px" })}
+        <p style="margin:6px 0 0;font-weight:700;font-size:12px;">${ui.esc(node.name)}${lv > 0 ? ` Lv.${lv}` : ""}</p>
+        <p style="margin:2px 0 0;font-size:9.5px;color:var(--ink-dim);">已經在用(就是上面的職業被動卡)</p>
+        <span style="font-size:9.5px;color:${lv > 0 ? "var(--green)" : "var(--gold)"};font-weight:700;">${atMax ? "已達最高等級" : lv > 0 ? `Lv.${lv}` : "可升級"}</span>
+      </div>`;
   }
 
   function passiveCard(key, lv, canSpend) {
@@ -1069,7 +1109,9 @@
     const bossUltBtn = document.getElementById("boss-ult-btn");
     if (bossUltBtn && !bossUltBtn.disabled) bossUltBtn.onclick = () => submitBossMove("ult");
     const bossSkillBtn = document.getElementById("boss-skill-btn");
-    if (bossSkillBtn && !bossSkillBtn.disabled) bossSkillBtn.onclick = () => submitBossMove("skill");
+    if (bossSkillBtn && !bossSkillBtn.disabled) bossSkillBtn.onclick = () => submitBossMove("skill1");
+    const bossSkill2Btn = document.getElementById("boss-skill2-btn");
+    if (bossSkill2Btn && !bossSkill2Btn.disabled) bossSkill2Btn.onclick = () => submitBossMove("skill2");
     const bossRetreatBtn = document.getElementById("boss-retreat-btn");
     if (bossRetreatBtn) {
       bossRetreatBtn.onclick = async () => {
@@ -1255,7 +1297,8 @@
           skillLevels = { ...skillLevels, [skillKey]: result.level };
           const isActive = skillKey === "active_skill";
           const masteryClassKey = skillKey.startsWith("class_mastery:") ? skillKey.slice("class_mastery:".length) : null;
-          const def = masteryClassKey ? CareerData.CLASS_MASTERY_DEFS[masteryClassKey] : CareerData.PASSIVE_DEFS[skillKey];
+          const treeNode = CareerData.SKILL_TREE_NODES[skillKey]; // 技能B("<cls>_skill_2")、大招2("<cls>_ult_2")都是查這裡
+          const def = masteryClassKey ? CareerData.CLASS_MASTERY_DEFS[masteryClassKey] : treeNode || CareerData.PASSIVE_DEFS[skillKey];
           const label = isActive ? CareerData.SKILL_NAME[myBuild.final_class] || "戰技" : def.name;
           highlight = {
             icon: isActive ? "wand-sparkles" : def.icon,
@@ -1265,6 +1308,26 @@
           render();
         } catch (e) {
           await ui.alert(e.message || "升級失敗", { title: "操作失敗", tone: "danger" });
+          await loadAndRender();
+        } finally {
+          busy = false;
+        }
+      };
+    });
+
+    app.querySelectorAll("[data-equip-ult]").forEach((btn) => {
+      btn.onclick = async () => {
+        if (busy) return;
+        const ultId = btn.dataset.equipUlt;
+        busy = true;
+        btn.disabled = true;
+        try {
+          progress = await db.setEquippedUlt(eventId, myId, ultId);
+          const node = CareerData.SKILL_TREE_NODES[ultId];
+          highlight = { icon: (node && node.icon) || "flame", title: `大招換成「${node ? node.name : ultId}」了!`, text: "免費隨時換，不用花技能點，也不會影響剛剛升過的等級。" };
+          render();
+        } catch (e) {
+          await ui.alert(e.message || "裝備失敗", { title: "操作失敗", tone: "danger" });
           await loadAndRender();
         } finally {
           busy = false;
@@ -1468,9 +1531,11 @@
     const atkBtn = document.getElementById("boss-atk-btn");
     const ultBtn = document.getElementById("boss-ult-btn");
     const skillBtn = document.getElementById("boss-skill-btn");
+    const skill2Btn = document.getElementById("boss-skill2-btn");
     if (atkBtn) atkBtn.disabled = true;
     if (ultBtn) ultBtn.disabled = true;
     if (skillBtn) skillBtn.disabled = true;
+    if (skill2Btn) skill2Btn.disabled = true;
     try {
       const result = await db.submitCareerBossMove(eventId, myId, action);
       progress = result.progress;
