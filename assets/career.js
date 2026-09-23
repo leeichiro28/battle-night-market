@@ -197,6 +197,8 @@
     const stats = progress
       ? CareerData.applyProgress(myBuild.final_class, progress.stat_alloc, progress.equipment)
       : CareerData.computeStats(myBuild.final_class);
+    // Phase 4:大招可能被換過，這張介紹卡要顯示「目前實際裝備的」大招，不是職業固定的預設值
+    const equippedUltInfo = CareerData.resolveUltInfo(myBuild.final_class, progress && progress.equipped_ult);
     const isNovice = myBuild.final_class === "novice" || myBuild.final_class.startsWith("novice_");
     const queueEntry = await db.getMyCareerQueueEntry(eventId, myId);
     const inQueue = queueEntry && queueEntry.status === "waiting";
@@ -225,7 +227,7 @@
           <span class="cc-stat">HP${stats.hp}</span>
           <span class="cc-stat">幸運${stats.luck}</span>
         </div>
-        <div class="cc-ult"><b>大招 · ${ui.esc(info.ultName)}</b><br/>${ui.esc(info.ultDesc)}</div>
+        <div class="cc-ult"><b>大招 · ${ui.esc(equippedUltInfo.name)}</b><br/>${ui.esc((equippedUltInfo.effect && equippedUltInfo.effect.desc) || info.ultDesc)}</div>
       </div>
       ${
         isNovice
