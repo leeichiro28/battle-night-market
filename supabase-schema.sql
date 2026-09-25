@@ -974,29 +974,43 @@ alter table career_progress add column if not exists active_boss_battle jsonb;
 alter table career_progress add column if not exists skill_points int not null default 0;
 alter table career_progress add column if not exists unlocked_skill boolean not null default false;
 -- 技能樹v2 Phase 4:目前裝備的大招節點id(例如"warrior_ult_2")，NULL表示用該職業的預設大招
--- (<classKey>_ult_1)。這個不是永久的，只是「這場活動現在配哪個」，換裝備不用花技能點，
--- 真正的「有沒有解鎖過這個大招」看 career_player_skills 裡有沒有 <classKey>_ult_2 這筆資料。
+-- (<classKey>_ult_1)。這個不是永久的，只是「這場活動現在配哪個」，換裝備不用花技能點。
 alter table career_progress add column if not exists equipped_ult text;
+-- 技能樹v2第三輪回饋新增:技能A/B也跟大招一樣是「裝備欄」了，不是固定接1號、2號技能——玩家從
+-- 3個技能候選(skill_1/skill_2/skill_3)裡自由選2個分別裝到A、B兩欄。NULL就退回預設值
+-- (equipped_skill_a預設"skill_1"、equipped_skill_b預設"skill_2")，同一個技能不能同時裝在A、B。
+alter table career_progress add column if not exists equipped_skill_a text;
+alter table career_progress add column if not exists equipped_skill_b text;
+-- 2026-09玩家回饋確認:技能A/B、大招1/2「不」永久繼承，是這場活動自己的東西，每開一場新活動
+-- (=新insert一筆career_progress)就會自動歸零重新點。格式是
+-- {"skill_1":0,"skill_2":0,"skill_3":0,"ult_1":1,"ult_2":0} 這種固定key的jsonb，數字是等級(0~3)，
+-- key是節點後綴(跟完整節點id"<classKey>_skill_1"去掉職業前綴後一樣)。ult_1沒點過也當Lv.1
+-- (該職業的預設大招，一開始就能免費用，只是等級比較低)，其他4個沒點過就是Lv.0(根本還不能用)。
+-- 對照表跟每級效果算法放在 assets/career-data.js 的 skillDmgMult() / scaleUltEffect()，
+-- 讀寫邏輯在 assets/db.js 的 _activeSkills() / upgradeActiveSkill() / setEquippedSkill()。
+alter table career_progress add column if not exists active_skills jsonb not null default '{"ult_1":1}'::jsonb;
 
 -- ============================================
--- 職業養成對決 第22點更新:技能／被動等級，永久繼承
+-- 職業養成對決 第22點更新:被動等級，永久繼承
 -- ============================================
 -- 跟 career_progress 不一樣的地方:這張表只綁 player_id，「不綁 event_id」。
--- career_progress 每開一場新活動就會重新 insert 一筆(等級/經驗/自由數值點都從頭來)，
+-- career_progress 每開一場新活動就會重新 insert 一筆(等級/經驗/自由數值點/技能A/B/大招都從頭來)，
 -- 但這張表不會——同一個玩家不管參加第幾場活動、第幾個賽季，skill_key 的 level 都是
--- 同一筆資料、繼續往上疊加，符合企劃書「技能與被動都可以升級，而且永久繼承」的要求。
--- skill_key 目前有:
---   "active_skill" -- 戰技等級(取代舊的 career_progress.unlocked_skill 布林值)
---   "crit_boost"   -- 暴擊被動(暴擊精研)
---   "exp_boost"    -- 經驗被動(博學被動)
---   "idle_cd"      -- 掛機CD被動(勤奮掛機)
---   "coin_boost"   -- 金幣被動(財運被動)
---   "mana_regen"   -- 魔力回復被動(魔力充沛)
---   "crit_dmg_boost" -- 暴擊傷害被動(爆擊強化)
---   "drop_luck"    -- 裝備掉落被動(鑑定之眼)
---   "ult_cost"     -- 大招魔力消耗被動(大招精修)
+-- 同一筆資料、繼續往上疊加。
+-- 2026-09玩家回饋確認後的範圍調整:**只有被動永久繼承，技能/大招不會**(跟第22點更新原本設想的
+-- 「技能與被動都可以升級,而且永久繼承」不一樣，技能A/B、大招1/2 已經改存
+-- career_progress.active_skills，每場活動自己歸零，這張表不會再收 "active_skill"/"<cls>_skill_2"/
+-- "<cls>_ult_2" 這種舊格式的key了；即使資料庫裡還留著改版前寫進去的舊資料，
+-- assets/db.js 的 getPlayerSkillLevels() 也會過濾掉，不會被當成還有效)。
+-- skill_key 現在只剩兩大類:
+--   "<passive_key>" -- PASSIVE_DEFS 裡的通用被動，包含:
+--                      crit_boost(暴擊精研) / exp_boost(博學被動) / idle_cd(勤奮掛機) /
+--                      coin_boost(財運被動) / mana_regen(魔力充沛) / crit_dmg_boost(爆擊強化) /
+--                      drop_luck(鑑定之眼) / ult_cost(大招精修) /
+--                      atk_boost・def_boost・matk_boost・spd_boost・luck_boost・hp_boost・mp_boost
+--                      (2026-09新增的7個「數值精研」被動，固定加值疊在對應的戰鬥數值上)
 --   "class_mastery:<classKey>" -- 職業限定被動(只有轉職成該職業才能點，例如 "class_mastery:warrior")
--- 對照表跟每級數值放在 assets/career-data.js 的 PASSIVE_DEFS / SKILL_LEVEL_DMG_MULT，
+-- 對照表跟每級數值放在 assets/career-data.js 的 PASSIVE_DEFS / CLASS_MASTERY_DEFS，
 -- 之後要開放 Lv.4、Lv.5，只要改那份資料表的上限，這張表的資料不用動、也不會被重置。
 create table if not exists career_player_skills (
   id uuid primary key default gen_random_uuid(),

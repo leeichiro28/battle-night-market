@@ -63,6 +63,12 @@ window.CareerEngine = (function () {
       ultEffect2: p2.ultEffect || { kind: "dmgMult", value: 1.3 },
       ultName1: p1.ultName || (CD.CLASS_INFO[p1.classKey] && CD.CLASS_INFO[p1.classKey].ultName) || "大招",
       ultName2: p2.ultName || (CD.CLASS_INFO[p2.classKey] && CD.CLASS_INFO[p2.classKey].ultName) || "大招",
+      // 技能A/B現在可能裝備任何一個候選技能(不是固定1號2號)，顯示名稱由呼叫端(db.js `_engineSide`)
+      // 從目前裝備的節點算好傳進來；沒帶到就退回舊的 CD.SKILL_NAME(給野怪/沒有裝備欄概念的情況用)
+      skillAName1: p1.skillAName || CD.SKILL_NAME[p1.classKey] || "戰技",
+      skillAName2: p2.skillAName || CD.SKILL_NAME[p2.classKey] || "戰技",
+      skillBName1: p1.skillBName || "技能B",
+      skillBName2: p2.skillBName || "技能B",
       critBonus1: p1.critBonus || 0,
       critBonus2: p2.critBonus || 0,
       critDmgBonus1: p1.critDmgBonus || 0, // 「爆擊強化」被動:暴擊傷害倍率額外加成(跟基礎x1.5疊加)
@@ -120,7 +126,7 @@ window.CareerEngine = (function () {
         dmgMult = (ultEffect && ultEffect.value) || 1;
         extraCrit = (ultEffect && ultEffect.extraCrit) || 0; // 例如法師「寒冰新星」順便加暴擊率
       } else if (kind === "ignoreDef") {
-        dmgMult = 1;
+        dmgMult = ultEffect && ultEffect.value != null ? ultEffect.value : 1; // 無視防禦本身固定100%，升級後這裡會>1(額外傷害倍率)
         ignoreDefRatio = ultEffect && ultEffect.ignoreDefRatio != null ? ultEffect.ignoreDefRatio : 1;
       } else if (kind === "pierce") {
         dmgMult = (ultEffect && ultEffect.dmgMult) || 1;
@@ -152,7 +158,9 @@ window.CareerEngine = (function () {
     } else if (critC > 0 && Math.random() < critC) {
       crit = true;
     }
-    if (crit) dmg *= CD.CRIT_DMG_MULT + (critDmgBonus || 0);
+    // guaranteedCritBelowHalf(暗殺)升級後機率不會變(本來就保證觸發)，改成疊加額外爆擊傷害倍率(ultEffect.critDmgBonus)
+    const ultCritDmgBonus = isUlt && ultEffect && ultEffect.critDmgBonus ? ultEffect.critDmgBonus : 0;
+    if (crit) dmg *= CD.CRIT_DMG_MULT + (critDmgBonus || 0) + ultCritDmgBonus;
 
     if (defenderImmuneRatio > 0) dmg *= 1 - defenderImmuneRatio; // 銅牆鐵壁/剛毅反擊:這回合受到的傷害按比例減免
 
@@ -291,7 +299,7 @@ window.CareerEngine = (function () {
         events.push({ side, type: "ult_attack", text: `${side === 1 ? "你" : "對方"}使出「${ultName}」!` });
       } else if (wantsSkill1 || wantsSkill2) {
         spendMana(side, CD.SKILL_MANA_COST);
-        const skillName = CD.skillSlotName ? CD.skillSlotName(cls, wantsSkill1 ? 1 : 2) : "戰技";
+        const skillName = wantsSkill1 ? (side === 1 ? s.skillAName1 : s.skillAName2) : side === 1 ? s.skillBName1 : s.skillBName2;
         events.push({ side, type: "skill_attack", text: `${side === 1 ? "你" : "對方"}使出技能「${skillName}」!` });
       }
 

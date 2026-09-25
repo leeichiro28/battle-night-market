@@ -2352,8 +2352,8 @@ const db = (function () {
       ? window.CareerData.applyProgress(build2.final_class, progress2.stat_alloc, progress2.equipment)
       : window.CareerData.computeStats(build2.final_class);
     const initState = window.CareerEngine.initialMatchState(
-      _engineSide(build1.final_class, stats1, skillLevels1, progress1 && progress1.equipped_ult),
-      _engineSide(build2.final_class, stats2, skillLevels2, progress2 && progress2.equipped_ult)
+      _engineSide(build1.final_class, stats1, skillLevels1, _activeSkills(progress1), progress1 && progress1.equipped_skill_a, progress1 && progress1.equipped_skill_b, progress1 && progress1.equipped_ult),
+      _engineSide(build2.final_class, stats2, skillLevels2, _activeSkills(progress2), progress2 && progress2.equipped_skill_a, progress2 && progress2.equipped_skill_b, progress2 && progress2.equipped_ult)
     );
     const { data, error } = await client
       .from("career_matches")
@@ -2428,12 +2428,18 @@ const db = (function () {
   // ---------- 第22點更新:技能／被動等級，永久繼承(只綁 player_id，不綁 event_id) ----------
   // "active_skill" = 戰技等級(取代原本的 unlocked_skill 布林值)，其餘 key 是
   // CareerData.PASSIVE_DEFS 裡的被動(crit_boost / exp_boost / idle_cd)。沒有那筆資料 = Lv.0。
+  // 這張表現在只該存「永久被動」(通用被動 + 職業被動)，技能A/B、大招1/2 已經改成
+  // career_progress.active_skills(見 _activeSkills)，不會再有新資料寫進這裡。但保險起見還是
+  // 過濾一次:萬一資料庫裡還留著改版前測試時寫進去的 "active_skill"/"xxx_skill_2"/"xxx_ult_2"
+  // 這種舊格式資料，不能讓它們被當成「永久解鎖」繼續生效，不然等於繞過了這次改成不永久的規則。
   async function getPlayerSkillLevels(playerId) {
     const { data, error } = await client.from("career_player_skills").select("skill_key, level").eq("player_id", playerId);
     if (error) throw error;
     const map = {};
     (data || []).forEach((row) => {
-      map[row.skill_key] = row.level;
+      const key = row.skill_key;
+      const isPassiveKey = window.CareerData.PASSIVE_DEFS[key] || key.startsWith("class_mastery:");
+      if (isPassiveKey) map[key] = row.level;
     });
     return map;
   }
@@ -2443,17 +2449,33 @@ const db = (function () {
   // 之前某場活動已經把戰技練到 Lv.2/Lv.3 也一樣——那個等級沒有不見(還在 career_player_skills)，
   // 只是要等這場活動也選了系(final_class 變成 novice_xxx 以上)才會重新生效，維持
   // 「Lv.1~4 只有普攻跟拼盡全力」這個承諾，不會因為回鍋玩家帶著舊進度就被繞過去。
-  // equippedUltId:這個玩家目前裝備的大招節點id(來自 career_progress.equipped_ult)，
-  // 技能樹v2 Phase 4新增。novice系列沒有裝備欄，傳什麼都沒差，resolveUltInfo 會自動回退。
-  function _engineSide(classKey, stats, skillLevels, equippedUltId) {
+  // skillLevels:永久被動(通用8個+新的7個數值精研+職業被動)的等級，來自 getPlayerSkillLevels(永久表)。
+  // activeSkills:這場活動自己的技能/大招投資等級，key是節點後綴("skill_1"/"skill_2"/"skill_3"/
+  // "ult_1"/"ult_2")，來自 progress.active_skills(不是永久的)，見 _activeSkills()。
+  // equippedSkillA/B:這場活動裝備到技能A/B欄位的是哪個技能節點後綴(來自 progress.equipped_skill_a/b，
+  // 技能樹v2第三輪回饋新增:技能不是固定1、2號，改成從3個候選裡自由選2個裝備)。
+  // equippedUltId:這場活動裝備的大招節點id(完整id，不是後綴)，來自 progress.equipped_ult。
+  function _engineSide(classKey, stats, skillLevels, activeSkills, equippedSkillA, equippedSkillB, equippedUltId) {
     const levels = skillLevels || {};
+    const active = activeSkills || { ult_1: 1 };
     const treeUnlocked = classKey !== "novice";
-    const ultInfo = window.CareerData.resolveUltInfo(classKey, equippedUltId);
+    const boostedStats = window.CareerData.applyStatBoostPassives(stats, levels); // 數值精研被動:固定加值疊上去
+    // 裝備的是大招1還是大招2，決定要吃 active.ult_1 還是 active.ult_2 的等級；大招1沒點過技能點
+    // 的話還是當Lv.1(免費基礎強度)，大招2沒點過就是Lv.0(根本還沒解鎖，理論上不會被裝備到這裡)
+    const isUlt2Equipped = !!(equippedUltId && equippedUltId.endsWith("_ult_2"));
+    const ultLevel = !treeUnlocked ? 1 : isUlt2Equipped ? active.ult_2 || 0 : active.ult_1 || 1;
+    const ultInfo = window.CareerData.resolveUltInfo(classKey, equippedUltId, ultLevel);
+    const slotA = equippedSkillA || "skill_1"; // 沒設定過就用預設的技能1/技能2(舊玩家、剛建立的career_progress)
+    const slotB = equippedSkillB || "skill_2";
+    const nodeA = treeUnlocked ? window.CareerData.SKILL_TREE_NODES[`${classKey}_${slotA}`] : null;
+    const nodeB = treeUnlocked ? window.CareerData.SKILL_TREE_NODES[`${classKey}_${slotB}`] : null;
     return {
       classKey,
-      stats,
-      skillLevel: treeUnlocked ? levels.active_skill || 0 : 0,
-      skill2Level: treeUnlocked ? levels[`${classKey}_skill_2`] || 0 : 0,
+      stats: boostedStats,
+      skillLevel: treeUnlocked ? active[slotA] || 0 : 0,
+      skill2Level: treeUnlocked ? active[slotB] || 0 : 0,
+      skillAName: nodeA ? nodeA.name : undefined, // 沒帶的話 career-engine.js 會退回舊的 CareerData.SKILL_NAME
+      skillBName: nodeB ? nodeB.name : undefined,
       ultEffect: ultInfo.effect,
       ultName: ultInfo.name,
       critBonus: window.CareerData.passiveValue("crit_boost", levels.crit_boost || 0),
@@ -2473,10 +2495,36 @@ const db = (function () {
     const node = window.CareerData.SKILL_TREE_NODES[ultNodeId];
     if (!node || node.type !== "ultimate" || node.requires !== `class_${cls}`) throw new Error("這不是你目前職業可以裝備的大招");
     if (!ultNodeId.endsWith("_ult_1")) {
-      const levels = await getPlayerSkillLevels(playerId);
-      if (!(levels[ultNodeId] > 0)) throw new Error("要先花技能點解鎖這個大招才能裝備");
+      // 大招1(預設)免費隨時裝，大招2要先在「這場活動」花過技能點解鎖過才能裝(技能A/B、大招現在
+      // 是每場活動自己的東西，不是永久的，所以查的是 career_progress.active_skills，不是永久表)
+      const progress = await getOrCreateCareerProgress(eventId, playerId);
+      const activeSkills = _activeSkills(progress);
+      if (!(activeSkills.ult_2 > 0)) throw new Error("要先花技能點解鎖這個大招才能裝備");
     }
     const { data, error } = await client.from("career_progress").update({ equipped_ult: ultNodeId }).eq("event_id", eventId).eq("player_id", playerId).select().single();
+    if (error) throw error;
+    return data;
+  }
+
+  // 裝備技能:跟裝備大招同一套邏輯，免費隨時換，唯一的限制是要先花技能點把那個技能節點
+  // 點到 Lv.1(curLevel>0)才能裝備。slot 是 "a" 或 "b"，nodeSuffix 是節點後綴(例如 "skill_3")。
+  // 技能樹v2第三輪回饋新增:技能A/B不是固定接1號、2號技能，玩家可以從3個候選裡自由選2個裝備。
+  async function setEquippedSkill(eventId, playerId, slot, nodeSuffix) {
+    if (slot !== "a" && slot !== "b") throw new Error("技能欄位只有 a/b 兩種");
+    const build = await getCareerBuildFor(eventId, playerId);
+    if (!build) throw new Error("找不到職業build");
+    const cls = build.final_class;
+    const nodeId = `${cls}_${nodeSuffix}`;
+    const node = window.CareerData.SKILL_TREE_NODES[nodeId];
+    if (!node || node.type !== "active_skill" || node.requires !== `class_${cls}`) throw new Error("這不是你目前職業可以裝備的技能");
+    const progress = await getOrCreateCareerProgress(eventId, playerId);
+    const activeSkills = _activeSkills(progress);
+    if (!(activeSkills[nodeSuffix] > 0)) throw new Error("要先花技能點解鎖這個技能才能裝備");
+    const otherSlotKey = slot === "a" ? "equipped_skill_b" : "equipped_skill_a";
+    const otherSlotValue = slot === "a" ? progress.equipped_skill_b || "skill_2" : progress.equipped_skill_a || "skill_1";
+    if (otherSlotValue === nodeSuffix) throw new Error("這個技能已經裝在另一個欄位了，技能A、技能B不能裝同一個");
+    const column = slot === "a" ? "equipped_skill_a" : "equipped_skill_b";
+    const { data, error } = await client.from("career_progress").update({ [column]: nodeSuffix }).eq("event_id", eventId).eq("player_id", playerId).select().single();
     if (error) throw error;
     return data;
   }
@@ -2500,27 +2548,27 @@ const db = (function () {
   //   - "<classKey>_ult_2" 技能樹v2 Phase 4新開的大招2(要先點過才能裝備，見 setEquippedUlt)
   // 後面這三種都只能點「目前這個活動」的最終職業，不能點別的職業，避免用之前玩過的職業偷偷囤等級
   // (等級本身是永久的，只是「能不能點」要看現在的職業)。
+  // 2026-09玩家回饋確認:只有被動永久繼承，技能A/B跟大招1/2不永久(改用 upgradeActiveSkill，
+  // 存在 career_progress.active_skills，跟著活動歸零)。所以這裡從此只接受兩種:
+  // PASSIVE_DEFS 裡的通用被動、"class_mastery:<classKey>" 職業被動，其他一律拒收。
   async function upgradePlayerSkill(eventId, playerId, skillKey) {
-    const isActiveSkill = skillKey === "active_skill";
     const masteryClassKey = skillKey.startsWith("class_mastery:") ? skillKey.slice("class_mastery:".length) : null;
-    const treeNode = window.CareerData.SKILL_TREE_NODES[skillKey];
-    // 只接受樹上「技能B」跟「大招2」這兩種可以直接花點升級的節點；分支節點(選系/選職業)走
-    // transferCareerPath/transferCareerFinalClass，技能A/職業被動走上面兩個既有分支，不重複收。
-    const treeNodeClassKey = treeNode && (skillKey.endsWith("_skill_2") || skillKey.endsWith("_ult_2")) ? treeNode.requires.replace("class_", "") : null;
-    if (!isActiveSkill && !masteryClassKey && !treeNodeClassKey && !window.CareerData.PASSIVE_DEFS[skillKey]) throw new Error("不認識的技能/被動");
+    if (!masteryClassKey && !window.CareerData.PASSIVE_DEFS[skillKey]) {
+      throw new Error(skillKey === "active_skill" || /_skill_2$|_ult_[12]$/.test(skillKey) ? "技能/大招請用 upgradeActiveSkill，不是這個函式" : "不認識的被動");
+    }
     if (masteryClassKey && !window.CareerData.CLASS_MASTERY_DEFS[masteryClassKey]) throw new Error("不認識的職業被動");
 
-    const requiredClassKey = masteryClassKey || treeNodeClassKey;
+    const requiredClassKey = masteryClassKey;
     const progress = await getOrCreateCareerProgress(eventId, playerId);
     if (requiredClassKey) {
       const build = await getCareerBuildFor(eventId, playerId);
-      if (!build || build.final_class !== requiredClassKey) throw new Error("要先轉職成這個職業才能升級它的職業技能/被動");
+      if (!build || build.final_class !== requiredClassKey) throw new Error("要先轉職成這個職業才能升級它的職業被動");
     }
     if (progress.skill_points <= 0) throw new Error("沒有可以花的技能點了");
     const levels = await getPlayerSkillLevels(playerId);
     const curLevel = levels[skillKey] || 0;
-    const maxLevel = (treeNode && treeNode.maxLevel) || window.CareerData.MAX_SKILL_LEVEL;
-    if (curLevel >= maxLevel) throw new Error("這個技能/被動已經是目前開放的最高等級了");
+    const maxLevel = window.CareerData.MAX_SKILL_LEVEL;
+    if (curLevel >= maxLevel) throw new Error("這個被動已經是目前開放的最高等級了");
 
     // 先扣本場活動的技能點,用樂觀鎖擋手快連點兩下(跟其他花點函式同一套寫法)
     const { data: spent, error: spendErr } = await client
@@ -2605,6 +2653,46 @@ const db = (function () {
       throw error;
     }
     return data;
+  }
+
+  // 技能A/B、大招1/2 現在是「這場活動自己的東西」，不是永久的(2026-09玩家回饋確認:只有被動永久，
+  // 技能/大招每場活動要重新點)。存在 career_progress.active_skills(jsonb)，key固定是
+  // "skill1"/"skill2"/"ult1"/"ult2"，因為已經綁在 event_id 底下了，不用再靠職業前綴區分。
+  // 沒有這個欄位(舊資料/剛建立的career_progress)就當作 { ult1: 1 }：大招1(該職業的預設大招)
+  // 一開始就是Lv.1可以免費用，其他三個(技能A/技能B/大招2)都要花技能點才能解鎖到Lv.1。
+  // 技能A/B、大招1/2 現在是「這場活動自己的東西」，不是永久的(2026-09玩家回饋確認:只有被動永久，
+  // 技能/大招每場活動要重新點)。存在 career_progress.active_skills(jsonb)，key是節點後綴
+  // (跟 CareerData.nodeSuffix 算出來的一樣):"skill_1"/"skill_2"/"skill_3"/"ult_1"/"ult_2"——這是
+  // 「這個技能/大招投資到第幾級」，跟「現在裝備在A欄還是B欄」是兩回事(裝備欄看
+  // progress.equipped_skill_a/b、progress.equipped_ult)。
+  // 沒有這個欄位(舊資料/剛建立的career_progress)就當作 { ult_1: 1 }：大招1(該職業的預設大招)
+  // 一開始就是Lv.1可以免費用，其他都要花技能點才能解鎖到Lv.1。
+  function _activeSkills(progress) {
+    return (progress && progress.active_skills) || { ult_1: 1 };
+  }
+
+  // 花1點本場活動的技能點，把某個技能/大招節點的「這場活動的等級」+1(最高
+  // CareerData.MAX_SKILL_LEVEL)。跟 upgradePlayerSkill 不一樣的地方:這裡完全不碰
+  // career_player_skills(永久表)，只改 career_progress.active_skills，所以下一場活動、
+  // 下一個賽季會自動歸零重新來(因為career_progress本來就是每場活動重新insert一筆)。
+  // nodeSuffix 是節點後綴，例如 "skill_3"、"ult_2"(不是完整節點id，也不是裝備欄位a/b)。
+  async function upgradeActiveSkill(eventId, playerId, nodeSuffix) {
+    if (!["skill_1", "skill_2", "skill_3", "ult_1", "ult_2"].includes(nodeSuffix)) throw new Error("不認識的技能欄位");
+    const progress = await getOrCreateCareerProgress(eventId, playerId);
+    if (progress.skill_points <= 0) throw new Error("沒有可以花的技能點了");
+    const activeSkills = _activeSkills(progress);
+    const curLevel = activeSkills[nodeSuffix] || 0;
+    if (curLevel >= window.CareerData.MAX_SKILL_LEVEL) throw new Error("這個技能/大招已經是目前開放的最高等級了");
+    const nextActiveSkills = { ...activeSkills, [nodeSuffix]: curLevel + 1 };
+    const { data, error } = await client
+      .from("career_progress")
+      .update({ skill_points: progress.skill_points - 1, active_skills: nextActiveSkills })
+      .eq("id", progress.id)
+      .eq("skill_points", progress.skill_points) // 樂觀鎖，跟其他花點函式同一套寫法
+      .select();
+    if (error) throw error;
+    if (!data || !data.length) throw new Error("手慢了，請再按一次");
+    return { progress: data[0], nodeSuffix, level: curLevel + 1 };
   }
 
   // 特訓領幣:跟拍賣「打工」同一套機制，用 train_ready_at<=now 當樂觀鎖，
@@ -2823,7 +2911,7 @@ const db = (function () {
     // 也不會穿插隨機事件(關主戰就是關主戰，不會被事件打斷)。
     if (floorDef.isMiniBoss) {
       const state = window.CareerEngine.initialMatchState(
-        _engineSide(build.final_class, playerStatsForHp, skillLevels, progress.equipped_ult),
+        _engineSide(build.final_class, playerStatsForHp, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult),
         { classKey: floorDef.classKey, stats: floorDef.stats },
         { hp1: startHp, mp1: startMp }
       );
@@ -2867,7 +2955,7 @@ const db = (function () {
         const playerStats = window.CareerData.applyProgress(build.final_class, progress.stat_alloc, progress.equipment);
         const opponentClass = window.CareerFloors.CLASS_KEYS[Math.floor(Math.random() * window.CareerFloors.CLASS_KEYS.length)];
         const battle = window.CareerPve.simulateFloorBattle(
-          _engineSide(build.final_class, playerStats, skillLevels, progress.equipped_ult),
+          _engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult),
           { classKey: opponentClass, stats: floorDef.stats }
         );
         if (!battle.won) {
@@ -2909,7 +2997,7 @@ const db = (function () {
     const { hp: battleStartHpRaw, mp: battleStartMp } = _effectiveHpMp(progress, playerStats);
     const battleStartHp = _respawnHpIfNeeded(battleStartHpRaw, playerStats.maxHp);
     const battle = window.CareerPve.simulateFloorBattle(
-      _engineSide(build.final_class, playerStats, skillLevels, progress.equipped_ult),
+      _engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult),
       { classKey: floorDef.classKey, stats: floorDef.stats },
       { startHp: battleStartHp, startMp: battleStartMp }
     );
@@ -3353,7 +3441,7 @@ const db = (function () {
     const { hp: startHpRaw, mp: startMp } = _effectiveHpMp(progress, playerStats);
     const startHp = _respawnHpIfNeeded(startHpRaw, playerStats.maxHp);
     const battle = window.CareerPve.simulateFloorBattle(
-      _engineSide(build.final_class, playerStats, skillLevels, progress.equipped_ult),
+      _engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult),
       { classKey: floorDef.classKey, stats: floorDef.stats },
       { startHp, startMp }
     );
@@ -3409,7 +3497,13 @@ const db = (function () {
   // 背景推進所有玩家的自動掛機。任何一個開著頁面的分頁(不一定是掛機玩家本人)都能呼叫，
   // 跟夜市拍賣「前景分頁互相支援」同一個原則。用 auto_farm_last_at 當樂觀鎖，
   // 兩個分頁同時想幫同一個人推進也只會有一個成功。
+  // 玩家回饋(2026-09):活動已經結束(closeCareerEvent結算過、status變成"closed")了，掛機還是
+  // 一直在跑——因為這個函式本來只看「有沒有到掛機間隔時間」，沒管活動本身死活。現在先查一次活動
+  // 狀態，活動關了就直接跳過，不會再幫已結束的活動繼續推進掛機(也不會浪費資料庫查詢)。
   async function processCareerAutoFarmTicks(eventId) {
+    const event = await getEventSafe(eventId);
+    if (!event || event.status === "closed") return [];
+
     const cutoff = new Date(Date.now() - CAREER_AUTO_FARM_INTERVAL_SEC * 1000).toISOString();
     const { data: dueRows, error } = await client
       .from("career_progress")
@@ -3549,6 +3643,10 @@ const db = (function () {
       }
     }
     await setEventStatus(eventId, "closed");
+    // 活動結算關閉的同時，把還在掛機的人一次關掉(auto_farm_floor設回null)，這樣UI馬上就會顯示
+    // 「沒有在掛機」，不會讓玩家看到掛機按鈕還亮著、但其實 processCareerAutoFarmTicks 已經因為
+    // 活動狀態變成closed而不會再幫忙推進的那種「看起來還在跑但其實沒用」的怪狀態。
+    await client.from("career_progress").update({ auto_farm_floor: null }).eq("event_id", eventId).not("auto_farm_floor", "is", null);
     await awardCareerTitles(eventId, standings);
     return standings;
   }
@@ -3725,7 +3823,9 @@ const db = (function () {
     unlockCareerSkill,
     getPlayerSkillLevels,
     upgradePlayerSkill,
+    upgradeActiveSkill,
     setEquippedUlt,
+    setEquippedSkill,
     buyCareerPotion,
     useCareerPotion,
     toggleCareerAutoFarm,

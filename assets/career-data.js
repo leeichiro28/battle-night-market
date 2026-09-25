@@ -240,8 +240,36 @@ window.CareerData = (function () {
       format: "flat",
       levels: { 1: 1, 2: 2, 3: 3 }, // 大招消耗 -1 / -2 / -3 魔力(基礎 CareerData.ULT_MANA_COST = 6)
     },
+    // 數值加成被動(2026-09玩家回饋新增):純粹的固定數值提升，任何職業都能點(跟自己用不用得到無關，
+    // 例如戰士點魔攻被動不會有效果，但不影響其他被動照常運作)。統一放在「永久被動」分類，
+    // 不像職業被動那樣要看目前是什麼職業才能點。
+    atk_boost: { name: "臂力精研", icon: "sword", desc: "攻擊力固定提升", format: "flat", levels: { 1: 1, 2: 2, 3: 3 } },
+    def_boost: { name: "體魄精研", icon: "shield", desc: "防禦力固定提升", format: "flat", levels: { 1: 1, 2: 2, 3: 3 } },
+    matk_boost: { name: "魔力精研", icon: "sparkles", desc: "魔攻固定提升", format: "flat", levels: { 1: 1, 2: 2, 3: 3 } },
+    spd_boost: { name: "身法精研", icon: "wind", desc: "速度固定提升", format: "flat", levels: { 1: 1, 2: 2, 3: 3 } },
+    luck_boost: { name: "幸運精研", icon: "clover", desc: "幸運力固定提升(順便小幅加成暴擊率)", format: "flat", levels: { 1: 1, 2: 2, 3: 3 } },
+    hp_boost: { name: "體質精研", icon: "heart", desc: "最大HP固定提升", format: "flat", levels: { 1: 5, 2: 10, 3: 15 } },
+    mp_boost: { name: "魔量精研", icon: "droplets", desc: "最大MP固定提升", format: "flat", levels: { 1: 1, 2: 2, 3: 3 } },
   };
   const PASSIVE_KEYS = Object.keys(PASSIVE_DEFS);
+  const STAT_BOOST_KEYS = { atk_boost: "atk", def_boost: "def", matk_boost: "matk", spd_boost: "spd", luck_boost: "luck", hp_boost: "hp", mp_boost: "mp" };
+
+  // 把「數值精研」這組被動的加成，直接疊加進戰鬥用的stats物件裡(hp/mp要連maxHp/maxMp一起加，
+  // 不然數值加了、血條上限沒變，看起來像沒生效)。skillLevels 沒帶到某個key就當作沒點那個被動。
+  function applyStatBoostPassives(stats, skillLevels) {
+    const levels = skillLevels || {};
+    const out = { ...stats };
+    Object.keys(STAT_BOOST_KEYS).forEach((key) => {
+      const lv = levels[key] || 0;
+      if (!lv) return;
+      const v = passiveValue(key, lv);
+      const statKey = STAT_BOOST_KEYS[key];
+      out[statKey] = (out[statKey] || 0) + v;
+      if (statKey === "hp") out.maxHp = (out.maxHp || 0) + v;
+      if (statKey === "mp") out.maxMp = (out.maxMp || 0) + v;
+    });
+    return out;
+  }
 
   function passiveValue(skillKey, level) {
     const def = PASSIVE_DEFS[skillKey];
@@ -487,17 +515,22 @@ window.CareerData = (function () {
   // ---- 每個最終職業底下:2個主動技能節點 + 2個大招節點(擇一裝備) + 1個職業被動節點 ----
   // dmgMultByLevel 沿用現有 SKILL_LEVEL_DMG_MULT 的級距(1.4/1.55/1.7)，之後平衡再個別微調。
   const DEFAULT_SKILL_DMG = { 1: 1.4, 2: 1.55, 3: 1.7 };
+  // maxLevel也提高到MAX_SKILL_LEVEL了(以前大招固定maxLevel:1，現在大招也能升級，見career-engine.js
+  // 的 scaleUltEffect)。技能C(skill3)是2026-09第二輪回饋新增的:每個職業3個技能候選，
+  // 玩家自由選2個裝備到技能A/B，不是只有固定的1、2號。
   function _addClassKit(classKey, requires, kit) {
     _addNode({ id: `${classKey}_skill_1`, type: "active_skill", requires, unlockCharLevel: 15, cost: 1, maxLevel: 3, name: kit.skill1.name, icon: kit.skill1.icon, effect: { dmgMultByLevel: DEFAULT_SKILL_DMG, manaCost: SKILL_MANA_COST, desc: kit.skill1.desc } });
     _addNode({ id: `${classKey}_skill_2`, type: "active_skill", requires, unlockCharLevel: 15, cost: 1, maxLevel: 3, name: kit.skill2.name, icon: kit.skill2.icon, effect: { dmgMultByLevel: DEFAULT_SKILL_DMG, manaCost: SKILL_MANA_COST, desc: kit.skill2.desc } });
-    _addNode({ id: `${classKey}_ult_1`, type: "ultimate", requires, unlockCharLevel: 15, cost: 1, maxLevel: 1, name: kit.ult1.name, icon: kit.ult1.icon, effect: kit.ult1.effect });
-    _addNode({ id: `${classKey}_ult_2`, type: "ultimate", requires, unlockCharLevel: 15, cost: 1, maxLevel: 1, name: kit.ult2.name, icon: kit.ult2.icon, effect: kit.ult2.effect });
+    _addNode({ id: `${classKey}_skill_3`, type: "active_skill", requires, unlockCharLevel: 15, cost: 1, maxLevel: 3, name: kit.skill3.name, icon: kit.skill3.icon, effect: { dmgMultByLevel: DEFAULT_SKILL_DMG, manaCost: SKILL_MANA_COST, desc: kit.skill3.desc } });
+    _addNode({ id: `${classKey}_ult_1`, type: "ultimate", requires, unlockCharLevel: 15, cost: 1, maxLevel: MAX_SKILL_LEVEL, name: kit.ult1.name, icon: kit.ult1.icon, effect: kit.ult1.effect });
+    _addNode({ id: `${classKey}_ult_2`, type: "ultimate", requires, unlockCharLevel: 15, cost: 1, maxLevel: MAX_SKILL_LEVEL, name: kit.ult2.name, icon: kit.ult2.icon, effect: kit.ult2.effect });
     _addNode({ id: `${classKey}_mastery`, type: "passive", requires, unlockCharLevel: 15, cost: 1, maxLevel: 3, name: kit.mastery.name, icon: kit.mastery.icon, effect: { levels: kit.mastery.levels, desc: kit.mastery.desc } });
   }
 
   _addClassKit("warrior", "class_warrior", {
     skill1: { name: "連擊", icon: "sword", desc: "沿用現有戰技效果" },
     skill2: { name: "破甲斬", icon: "axe", desc: "新技能:比連擊多一點無視防禦比例" },
+    skill3: { name: "旋風斬", icon: "wind", desc: "新技能:不看對方防禦策略，單純追求高爆發" },
     ult1: { name: "怒吼衝鋒", icon: "flame", effect: { kind: "dmgMult", value: 2, desc: "這回合傷害 x2(沿用現有大招)" } },
     ult2: { name: "血戰怒吼", icon: "heart", effect: { kind: "lifesteal", dmgMult: 1.5, lifestealRatio: 0.3, desc: "新大招:傷害 x1.5，並回復造成傷害30%的HP" } },
     mastery: { name: "破防精研", icon: "sword", levels: { 1: 0.05, 2: 0.08, 3: 0.12 }, desc: "沿用現有職業被動(破防打法無視防禦比例提升)" },
@@ -505,6 +538,7 @@ window.CareerData = (function () {
   _addClassKit("guardian", "class_guardian", {
     skill1: { name: "盾擊", icon: "shield", desc: "沿用現有戰技效果" },
     skill2: { name: "嘲諷打擊", icon: "megaphone", desc: "新技能:命中後這回合反擊機率額外提升" },
+    skill3: { name: "格擋反手", icon: "shield-half", desc: "新技能:攻守兼具，兼顧輸出跟自身防禦感" },
     ult1: { name: "銅牆鐵壁", icon: "shield", effect: { kind: "immune", dmgReduceRatio: 0.9, skipAttack: true, desc: "沿用現有大招(受到傷害-90%，本回合不出手)" } },
     ult2: { name: "剛毅反擊", icon: "shield-alert", effect: { kind: "immune", dmgReduceRatio: 0.5, skipAttack: false, desc: "新大招:受到傷害-50%(比銅牆鐵壁少防)，但本回合仍可正常攻擊，不用跳過" } },
     mastery: { name: "反擊精研", icon: "shield", levels: { 1: 0.05, 2: 0.08, 3: 0.12 }, desc: "沿用現有職業被動(反擊姿態觸發機率提升)" },
@@ -512,6 +546,7 @@ window.CareerData = (function () {
   _addClassKit("archer", "class_archer", {
     skill1: { name: "精準射擊", icon: "target", desc: "沿用現有戰技效果" },
     skill2: { name: "毒箭", icon: "flask-conical", desc: "新技能:額外附加小量無視防禦傷害" },
+    skill3: { name: "連珠箭", icon: "target", desc: "新技能:射速快，魔力花費相同但手感更輕快" },
     ult1: { name: "連環箭", icon: "target", effect: { kind: "multiHit", hits: 2, desc: "沿用現有大招(連續攻擊2次)" } },
     ult2: { name: "貫穿射擊", icon: "crosshair", effect: { kind: "pierce", dmgMult: 2.2, ignoreDefRatio: 1, desc: "新大招:單次無視防禦，造成 x2.2 傷害" } },
     mastery: { name: "連射精研", icon: "target", levels: { 1: 0.05, 2: 0.08, 3: 0.12 }, desc: "沿用現有職業被動(連射訓練追加一擊機率提升)" },
@@ -519,6 +554,7 @@ window.CareerData = (function () {
   _addClassKit("assassin", "class_assassin", {
     skill1: { name: "突刺", icon: "sword", desc: "沿用現有戰技效果" },
     skill2: { name: "影襲", icon: "moon", desc: "新技能:對方HP越低，這招傷害越高" },
+    skill3: { name: "暗影步", icon: "wind", desc: "新技能:欺身近打，講求速戰速決" },
     ult1: { name: "暗殺", icon: "crosshair", effect: { kind: "guaranteedCritBelowHalf", desc: "沿用現有大招(對方HP過半以下必爆擊)" } },
     ult2: { name: "血影連斬", icon: "swords", effect: { kind: "multiHit", hits: 3, dmgMultPerHit: 0.6, desc: "新大招:連續攻擊3次，每次傷害x0.6" } },
     mastery: { name: "暗殺精研", icon: "crosshair", levels: { 1: 0.05, 2: 0.08, 3: 0.12 }, desc: "沿用現有職業被動(致命節奏暴擊率上限提升)" },
@@ -526,6 +562,7 @@ window.CareerData = (function () {
   _addClassKit("mage", "class_mage", {
     skill1: { name: "魔彈", icon: "sparkles", desc: "沿用現有戰技效果" },
     skill2: { name: "烈焰波動", icon: "flame", desc: "新技能:魔攻導向，額外附加小量無視防禦傷害" },
+    skill3: { name: "冰霜箭", icon: "snowflake", desc: "新技能:魔攻導向，走精準路線的單體魔法" },
     ult1: { name: "魔力爆發", icon: "flame", effect: { kind: "ignoreDef", ignoreDefRatio: 1, desc: "沿用現有大招(無視防禦，造成大量傷害)" } },
     ult2: { name: "寒冰新星", icon: "snowflake", effect: { kind: "dmgMult", value: 1.8, extraCrit: 0.15, desc: "新大招:傷害 x1.8，且這回合暴擊率額外+15%" } },
     mastery: { name: "法術精研", icon: "sparkles", levels: { 1: 0.05, 2: 0.08, 3: 0.12 }, desc: "沿用現有職業被動(魔法傷害額外提升)" },
@@ -533,6 +570,7 @@ window.CareerData = (function () {
   _addClassKit("healer", "class_healer", {
     skill1: { name: "聖光斬", icon: "heart-pulse", desc: "沿用現有戰技效果" },
     skill2: { name: "祝福打擊", icon: "heart", desc: "新技能:造成傷害的同時，順便回復自己一點HP" },
+    skill3: { name: "淨化打擊", icon: "sparkles", desc: "新技能:魔攻導向，走驅邪路線的單體魔法" },
     ult1: { name: "完全治癒", icon: "heart-pulse", effect: { kind: "heal", healRatio: 0.5, skipAttack: true, desc: "沿用現有大招(回滿一半HP)" } },
     ult2: { name: "神聖新星", icon: "sun", effect: { kind: "dmgMult", value: 1.6, desc: "新大招:改走攻擊路線，傷害 x1.6(不回血)" } },
     mastery: { name: "治療精研", icon: "heart", levels: { 1: 1, 2: 2, 3: 3 }, desc: "沿用現有職業被動(完全治癒/每回合回血量提升)" },
@@ -555,11 +593,42 @@ window.CareerData = (function () {
     return Object.values(SKILL_TREE_NODES).filter((n) => n.requires === null);
   }
 
+  // 節點id去掉職業前綴，變成 active_skills / equipped_skill_a 這些欄位存的通用key，
+  // 例如 "warrior_skill_2" -> "skill_2"，"mage_ult_1" -> "ult_1"。
+  function nodeSuffix(classKey, nodeId) {
+    if (!nodeId) return nodeId;
+    return nodeId.startsWith(`${classKey}_`) ? nodeId.slice(classKey.length + 1) : nodeId;
+  }
+
   // Phase 4:大招裝備欄要拿到「目前裝備的大招長什麼效果、叫什麼名字」，這裡統一處理:
   //   - 最終職業(戰士/守衛/...):equippedUltId 有給就用該節點，沒給或給了無效值就退回 <classKey>_ult_1(預設大招)
   //   - 見習系列(novice/novice_strength/...):沒有裝備欄概念，直接用 CLASS_INFO/CLASS_EFFECTS 包成同樣形狀，
   //     這樣戰鬥引擎只要認得幾種 kind 就好，不用另外分見習/正職兩套邏輯
-  function resolveUltInfo(classKey, equippedUltId) {
+  // 大招也能升級了(2026-09玩家回饋):Lv.1是基礎強度，Lv.2/Lv.3依「主要強度數值」按比例加強
+  // (+10%/+20%)。用同一套規則套在所有 kind 上，不用每個大招各自寫一張等級表:
+  //   dmgMult/pierce/lifesteal的傷害倍率、multiHit的每次傷害倍率、immune的減傷比例、heal的治療比例，
+  //   直接乘上等級係數；ignoreDef(已經100%無視防禦，倍率沒東西可乘)跟guaranteedCritBelowHalf(暴擊已經
+  //   保證觸發，機率沒東西可乘)這兩種比較特殊，改成升級時額外加暴擊傷害倍率，一樣是「越練越痛」。
+  function scaleUltEffect(effect, level) {
+    if (!effect) return effect;
+    const lv = Math.max(1, Math.min(MAX_SKILL_LEVEL, level || 1));
+    const scale = { 1: 1, 2: 1.1, 3: 1.2 }[lv];
+    const round2 = (n) => Math.round(n * 100) / 100;
+    const scaled = { ...effect };
+    if (effect.kind === "dmgMult") scaled.value = round2((effect.value || 1) * scale);
+    else if (effect.kind === "pierce" || effect.kind === "lifesteal") scaled.dmgMult = round2((effect.dmgMult || 1) * scale);
+    else if (effect.kind === "multiHit") scaled.dmgMultPerHit = round2((effect.dmgMultPerHit != null ? effect.dmgMultPerHit : 1) * scale);
+    else if (effect.kind === "immune") scaled.dmgReduceRatio = Math.min(0.95, round2((effect.dmgReduceRatio || 0) * scale));
+    else if (effect.kind === "heal") scaled.healRatio = round2((effect.healRatio || 0.5) * scale);
+    else if (effect.kind === "ignoreDef") scaled.value = round2(1 * scale); // 無視防禦本身不會變(已經100%)，升級改成加傷害倍率
+    else if (effect.kind === "guaranteedCritBelowHalf") scaled.critDmgBonus = round2((lv - 1) * 0.08); // 必爆機率不會變，升級改成加爆擊傷害
+    return scaled;
+  }
+
+  // equippedUltId不帶/帶了無效值都會退回<classKey>_ult_1(預設大招，一定存在，一定免費能用)。
+  // level是這個大招目前的等級(1~3，事件範圍內的，見 db.js 的 career_progress.active_skills)，
+  // 沒帶就當Lv.1(基礎強度，不加成也不減損)。
+  function resolveUltInfo(classKey, equippedUltId, level) {
     if (classKey === "novice" || classKey.startsWith("novice_")) {
       const mult = (CLASS_EFFECTS[classKey] && CLASS_EFFECTS[classKey].ultDamageMult) || 1.3;
       return { name: (CLASS_INFO[classKey] && CLASS_INFO[classKey].ultName) || "大招", effect: { kind: "dmgMult", value: mult } };
@@ -568,7 +637,8 @@ window.CareerData = (function () {
     const requiresKey = `class_${classKey}`;
     const equippedNode = equippedUltId ? SKILL_TREE_NODES[equippedUltId] : null;
     const node = equippedNode && equippedNode.requires === requiresKey ? equippedNode : SKILL_TREE_NODES[defaultId];
-    return node ? { name: node.name, effect: node.effect } : { name: "大招", effect: { kind: "dmgMult", value: 1.3 } };
+    if (!node) return { name: "大招", effect: { kind: "dmgMult", value: 1.3 } };
+    return { name: node.name, effect: scaleUltEffect(node.effect, level) };
   }
 
   // 技能2(技能樹v2新開的第二個主動技能欄)的顯示名稱，slot=1回傳技能1的名字(跟舊的SKILL_NAME一樣)，
@@ -615,6 +685,8 @@ window.CareerData = (function () {
     PASSIVE_DEFS,
     PASSIVE_KEYS,
     passiveValue,
+    applyStatBoostPassives,
+    STAT_BOOST_KEYS,
     passiveLevelDesc,
     CLASS_MASTERY_DEFS,
     classMasteryDesc,
@@ -624,7 +696,9 @@ window.CareerData = (function () {
     getSkillTreeNode,
     getSkillTreeChildren,
     getSkillTreeRoots,
+    nodeSuffix,
     resolveUltInfo,
+    scaleUltEffect,
     skillSlotName,
     migrationTargetNodeId,
     SKILL_NAME,

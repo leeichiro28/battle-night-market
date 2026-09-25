@@ -32,8 +32,13 @@
   let myId = null;
   let myBuild = null;
   let progress = null;
-  let skillLevels = {}; // 第22點更新:永久技能/被動等級(只綁player_id，跨活動/跨賽季都不會重置)
+  let skillLevels = {}; // 第22點更新:永久被動等級(通用被動+職業被動，只綁player_id，跨活動/跨賽季都不會重置)
   let skillTreeSubTab = "skills"; // 技能樹分頁裡的子分頁:"path"(轉職路線) | "skills"(技能・大招) | "passives"(被動)
+
+  // 2026-09玩家回饋確認:技能A/B、大招1/2 不永久，是「這場活動自己的」，存在 progress.active_skills。
+  function _activeSkills() {
+    return (progress && progress.active_skills) || { ult_1: 1 };
+  }
   let lastBattle = null; // { won, log, floorDef, coinGain, expGain, leveledUp, drop }
   let lastEvent = null; // { eventDef, text, drop } — instant事件/商店購買結果(顯示在爬塔分頁)
   let lastGachaResult = null; // 抽獎結果(顯示在抽獎機分頁，不會跳走)
@@ -342,14 +347,14 @@
         ${
           s.skillUnlocked1
             ? `<button class="btn ghost" id="boss-skill-btn" style="flex:1 1 28%;" ${bossSubmitted || !skillAffordable ? "disabled" : ""}>
-                ${ui.icon("wand-sparkles")}${ui.esc(CareerData.SKILL_NAME[s.class1] || "戰技")}(${CareerData.SKILL_MANA_COST || 0}魔力)
+                ${ui.icon("wand-sparkles")}${ui.esc(s.skillAName1 || CareerData.SKILL_NAME[s.class1] || "戰技")}(${CareerData.SKILL_MANA_COST || 0}魔力)
               </button>`
             : ""
         }
         ${
           s.skill2Unlocked1
             ? `<button class="btn ghost" id="boss-skill2-btn" style="flex:1 1 28%;" ${bossSubmitted || !skill2Affordable ? "disabled" : ""}>
-                ${ui.icon("sparkles")}${ui.esc(CareerData.skillSlotName ? CareerData.skillSlotName(s.class1, 2) : "技能B")}(${CareerData.SKILL_MANA_COST || 0}魔力)
+                ${ui.icon("sparkles")}${ui.esc(s.skillBName1 || "技能B")}(${CareerData.SKILL_MANA_COST || 0}魔力)
               </button>`
             : ""
         }
@@ -378,7 +383,7 @@
     const { locked, hasPendingEvent, canTrain, trainCooldownMs, nextFloor, nextFloorDef, isAutoFarming } = ctx;
     // 戰報要顯示戰鬥後剩餘的HP/MP，這兩個數字在主 render() 裡已經算過一次，但那邊的區域變數
     // 沒辦法被這支獨立的函式讀到(不是巢狀函式，沒有共用closure)，這裡重新算一次同樣的東西。
-    const battleStats = CareerData.applyProgress(myBuild.final_class, progress.stat_alloc, progress.equipment);
+    const battleStats = CareerData.applyStatBoostPassives(CareerData.applyProgress(myBuild.final_class, progress.stat_alloc, progress.equipment), skillLevels);
     const effHp = progress.current_hp != null ? Math.max(0, Math.min(progress.current_hp, battleStats.maxHp)) : battleStats.maxHp;
     const effMp = progress.current_mp != null ? Math.max(0, Math.min(progress.current_mp, battleStats.maxMp)) : battleStats.maxMp;
     let html = "";
@@ -758,34 +763,51 @@
 
   // 子分頁2:技能・大招(技能A/B + 大招1/2)。有定案職業就是真的能升級/裝備的內容；
   // 只選了系、還沒定案職業的話，把該系底下兩個候選職業的整組內容都預覽出來(灰色，不能點)。
+  // 玩家回饋(2026-09):分不清楚哪個是技能、哪個是大招，所以這裡拆成「主動技能」跟「大招」
+  // 兩個小標題分開列，不要混在一起。
   function renderSkillTreeSkillsSection(chosenPath, chosenClass, canSpend) {
     const CD = CareerData;
     const atkCard = `
-      <div style="flex:1;min-width:130px;max-width:160px;background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius);padding:10px;text-align:center;">
+      <div style="display:flex;flex-direction:column;flex:1;min-width:130px;max-width:160px;background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius);padding:10px;text-align:center;">
         ${ui.icon("sword", { size: "18px" })}
         <p style="margin:6px 0 0;font-weight:700;font-size:12px;">普通攻擊</p>
         <p style="margin:2px 0 6px;font-size:10px;color:var(--ink-dim);">基礎攻擊，不用學，隨時可用</p>
-        <span style="font-size:10px;color:var(--green);font-weight:700;">${ui.icon("check", { size: "12px" })}已學會</span>
+        <div style="margin-top:auto;"><span style="font-size:10px;color:var(--green);font-weight:700;">${ui.icon("check", { size: "12px" })}已學會</span></div>
       </div>`;
 
+    function group(title, icon, cardsHtml) {
+      return `<p style="text-align:center;margin:16px 0 8px;font-size:12px;font-weight:700;color:var(--ink-dim);">${ui.icon(icon, { size: "13px" })}${title}</p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">${cardsHtml}</div>`;
+    }
+
     if (chosenClass) {
-      const kitNodes = CD.getSkillTreeChildren(`class_${chosenClass}`).filter((n) => n.type === "active_skill" || n.type === "ultimate");
+      const kitNodes = CD.getSkillTreeChildren(`class_${chosenClass}`);
+      const skillNodes = kitNodes.filter((n) => n.type === "active_skill");
+      const ultNodes = kitNodes.filter((n) => n.type === "ultimate");
+      const activeSkills = _activeSkills();
       const equippedUltId = progress.equipped_ult || `${chosenClass}_ult_1`;
-      return `<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">${atkCard}${kitNodes.map((n) => skillTreeKitCard(n, chosenClass, skillLevels, canSpend, equippedUltId, true)).join("")}</div>`;
+      const equippedSkillA = progress.equipped_skill_a || "skill_1";
+      const equippedSkillB = progress.equipped_skill_b || "skill_2";
+      let html = group(
+        "主動技能・3選2自由裝備(這場活動自己的等級，換下一場活動會重新歸零)",
+        "wand-sparkles",
+        atkCard + skillNodes.map((n) => skillTreeKitCard(n, chosenClass, activeSkills, canSpend, equippedUltId, equippedSkillA, equippedSkillB, true)).join("")
+      );
+      html += group("大招・2選1自由裝備(免費隨時換裝，但等級一樣是這場活動自己的)", "flame", ultNodes.map((n) => skillTreeKitCard(n, chosenClass, activeSkills, canSpend, equippedUltId, equippedSkillA, equippedSkillB, true)).join(""));
+      return html;
     }
 
     // 還沒定案職業:把候選職業都預覽出來，一次一個職業一組灰卡
     const classBranches = CD.getSkillTreeChildren(`path_${chosenPath}`);
-    let html = `<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">${atkCard}</div>`;
+    let html = group("主動技能", "wand-sparkles", atkCard);
     classBranches.forEach((branch) => {
       const previewClass = branch.effect.unlocksClassKey;
       const info = CD.CLASS_INFO[previewClass];
-      const kitNodes = CD.getSkillTreeChildren(`class_${previewClass}`).filter((n) => n.type === "active_skill" || n.type === "ultimate");
-      html += `
-        <p style="text-align:center;margin:16px 0 8px;font-size:12px;color:var(--ink-dim);">${ui.icon(info.icon, { size: "14px" })}如果選「${ui.esc(info.name)}」會拿到這些(預覽)</p>
-        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
-          ${kitNodes.map((n) => skillTreeKitCard(n, previewClass, {}, false, `${previewClass}_ult_1`, false)).join("")}
-        </div>`;
+      const skillNodes = CD.getSkillTreeChildren(`class_${previewClass}`).filter((n) => n.type === "active_skill");
+      const ultNodes = CD.getSkillTreeChildren(`class_${previewClass}`).filter((n) => n.type === "ultimate");
+      html += `<p style="text-align:center;margin:10px 0 4px;font-size:11px;color:var(--ink-dim);">${ui.icon(info.icon, { size: "13px" })}如果選「${ui.esc(info.name)}」(預覽)</p>`;
+      html += `<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">${skillNodes.map((n) => skillTreeKitCard(n, previewClass, {}, false, `${previewClass}_ult_1`, "skill_1", "skill_2", false)).join("")}</div>`;
+      html += `<p style="text-align:center;margin:14px 0 4px;font-size:12px;font-weight:700;color:var(--ink-dim);">${ui.icon("flame", { size: "13px" })}大招(預覽)</p>`;
+      html += `<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">${ultNodes.map((n) => skillTreeKitCard(n, previewClass, {}, false, `${previewClass}_ult_1`, "skill_1", "skill_2", false)).join("")}</div>`;
     });
     return html;
   }
@@ -818,56 +840,76 @@
     return html;
   }
 
-  // class_xxx底下的節點(技能A/技能B/大招1/大招2/職業被動)各自要長什麼樣子。
+  // class_xxx底下的節點(技能候選/大招1/大招2/職業被動)各自要長什麼樣子。
+  // activeSkills:這場活動自己的技能/大招投資等級(key是節點後綴)，interactive=false時傳{}就好。
+  // equippedSkillA/B:目前裝在技能A、技能B欄位的是哪個節點後綴。
   // interactive=false 時是「候選職業預覽」，強制灰色、不顯示按鈕，不管背後資料實際上是什麼等級。
-  function skillTreeKitCard(node, chosenClass, skillLevels, canSpend, equippedUltId, interactive) {
+  function skillTreeKitCard(node, chosenClass, activeSkills, canSpend, equippedUltId, equippedSkillA, equippedSkillB, interactive) {
     const CD = CareerData;
     const MAX_LV = node.maxLevel || CD.MAX_SKILL_LEVEL;
+    const active = activeSkills || {};
 
     if (node.type === "active_skill") {
-      const isSlot1 = node.id.endsWith("_1");
-      const key = isSlot1 ? "active_skill" : node.id;
-      const lv = interactive ? skillLevels[key] || 0 : 0;
+      const nodeSuffix = CD.nodeSuffix(chosenClass, node.id); // "skill_1"/"skill_2"/"skill_3"
+      const lv = interactive ? active[nodeSuffix] || 0 : 0;
       const atMax = interactive && lv >= MAX_LV;
-      const sub = isSlot1 ? "技能A(就是上面的技能卡)" : "技能B";
+      const unlocked = interactive && lv > 0;
+      const equippedSlot = !interactive ? null : equippedSkillA === nodeSuffix ? "A" : equippedSkillB === nodeSuffix ? "B" : null;
+      let actionHtml;
+      if (!interactive) {
+        actionHtml = `<span style="font-size:10px;color:var(--ink-dim);">尚未解鎖</span>`;
+      } else if (!unlocked) {
+        actionHtml = `<button class="btn ghost small" data-upgrade-active-skill="${nodeSuffix}" ${canSpend ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "13px" })}花1點解鎖</button>`;
+      } else if (equippedSlot) {
+        actionHtml =
+          (atMax
+            ? `<span style="font-size:10px;color:var(--green);font-weight:700;">${ui.icon("check", { size: "12px" })}裝備中(${equippedSlot})・已達最高等級</span>`
+            : `<button class="btn ghost small" data-upgrade-active-skill="${nodeSuffix}" ${canSpend ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "13px" })}裝備中(${equippedSlot})・升到 Lv.${lv + 1}</button>`) +
+          `<div style="margin-top:4px;"><button class="btn ghost small" data-equip-skill="${equippedSlot === "A" ? "b" : "a"}:${nodeSuffix}">${ui.icon("refresh-cw", { size: "12px" })}改裝到${equippedSlot === "A" ? "B" : "A"}欄</button></div>`;
+      } else {
+        actionHtml = `
+          ${!atMax ? `<button class="btn ghost small" data-upgrade-active-skill="${nodeSuffix}" ${canSpend ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "13px" })}升到 Lv.${lv + 1}</button>` : ""}
+          <div style="margin-top:4px;display:flex;gap:4px;justify-content:center;">
+            <button class="btn ghost small" data-equip-skill="a:${nodeSuffix}">${ui.icon("wand-sparkles", { size: "12px" })}裝到A欄</button>
+            <button class="btn ghost small" data-equip-skill="b:${nodeSuffix}">${ui.icon("wand-sparkles", { size: "12px" })}裝到B欄</button>
+          </div>`;
+      }
       return `
-        <div style="position:relative;flex:1;min-width:130px;max-width:160px;background:var(--panel2);border:1px solid ${!atMax && canSpend && interactive ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:10px;text-align:center;${interactive ? "" : "opacity:0.55;"}">
-          <div style="position:absolute;top:-5px;left:50%;transform:translateX(-50%);width:8px;height:8px;border-radius:50%;background:${interactive ? "var(--gold)" : "var(--line)"};"></div>
+        <div style="display:flex;flex-direction:column;position:relative;flex:1;min-width:140px;max-width:170px;background:var(--panel2);border:1px solid ${equippedSlot ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:10px;text-align:center;${interactive ? "" : "opacity:0.55;"}">
+          <div style="position:absolute;top:-5px;left:50%;transform:translateX(-50%);width:8px;height:8px;border-radius:50%;background:${equippedSlot ? "var(--gold)" : "var(--line)"};"></div>
           ${ui.icon(node.icon, { size: "18px" })}
           <p style="margin:6px 0 0;font-weight:700;font-size:12px;">${ui.esc(node.name)}${lv > 0 ? ` Lv.${lv}` : ""}</p>
-          <p style="margin:2px 0 6px;font-size:10px;color:var(--ink-dim);">${ui.esc(sub)}</p>
-          ${
-            !interactive
-              ? `<span style="font-size:10px;color:var(--ink-dim);">尚未解鎖</span>`
-              : atMax
-                ? `<span style="font-size:10px;color:var(--green);font-weight:700;">${ui.icon("check", { size: "12px" })}已達最高等級</span>`
-                : `<button class="btn ghost small" data-upgrade-skill="${key}" ${canSpend ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "13px" })}升到 Lv.${lv + 1}</button>`
-          }
+          <p style="margin:2px 0 6px;font-size:9.5px;color:var(--ink-dim);">${ui.esc(node.effect.desc || "")}</p>
+          <div style="margin-top:auto;">${actionHtml}</div>
         </div>`;
     }
 
     if (node.type === "ultimate") {
-      const lv = interactive ? skillLevels[node.id] || 0 : 0; // _ult_1 沒有對應的career_player_skills資料，永遠當作"已解鎖"(lv視為1)
-      const isDefault = node.id.endsWith("_1");
+      const nodeSuffix = CD.nodeSuffix(chosenClass, node.id); // "ult_1"/"ult_2"
+      const isDefault = nodeSuffix === "ult_1";
+      const lv = interactive ? active[nodeSuffix] || (isDefault ? 1 : 0) : 0; // 大招1沒點過也當Lv.1(免費基礎強度)
+      const atMax = interactive && lv >= MAX_LV;
       const unlocked = interactive && (isDefault || lv > 0);
       const isEquipped = interactive && equippedUltId === node.id;
       let actionHtml;
       if (!interactive) {
         actionHtml = `<span style="font-size:10px;color:var(--ink-dim);">尚未解鎖</span>`;
-      } else if (isEquipped) {
-        actionHtml = `<span style="font-size:10px;color:var(--green);font-weight:700;">${ui.icon("check", { size: "12px" })}裝備中</span>`;
-      } else if (unlocked) {
+      } else if (!unlocked) {
+        actionHtml = `<button class="btn ghost small" data-upgrade-active-skill="${nodeSuffix}" ${canSpend ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "13px" })}花1點解鎖</button>`;
+      } else if (!isEquipped) {
         actionHtml = `<button class="btn ghost small" data-equip-ult="${node.id}">${ui.icon("refresh-cw", { size: "13px" })}裝備這個(免費隨時換)</button>`;
+      } else if (atMax) {
+        actionHtml = `<span style="font-size:10px;color:var(--green);font-weight:700;">${ui.icon("check", { size: "12px" })}裝備中・已達最高等級</span>`;
       } else {
-        actionHtml = `<button class="btn ghost small" data-upgrade-skill="${node.id}" ${canSpend ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "13px" })}花1點解鎖</button>`;
+        actionHtml = `<button class="btn ghost small" data-upgrade-active-skill="${nodeSuffix}" ${canSpend ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "13px" })}裝備中・升到 Lv.${lv + 1}</button>`;
       }
       return `
-        <div style="position:relative;flex:1;min-width:130px;max-width:170px;background:var(--panel2);border:1px solid ${isEquipped ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:10px;text-align:center;${interactive ? "" : "opacity:0.55;"}">
+        <div style="display:flex;flex-direction:column;position:relative;flex:1;min-width:130px;max-width:170px;background:var(--panel2);border:1px solid ${isEquipped ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:10px;text-align:center;${interactive ? "" : "opacity:0.55;"}">
           <div style="position:absolute;top:-5px;left:50%;transform:translateX(-50%);width:8px;height:8px;border-radius:50%;background:${isEquipped ? "var(--gold)" : "var(--line)"};"></div>
           ${ui.icon(node.icon, { size: "18px" })}
-          <p style="margin:6px 0 0;font-weight:700;font-size:12px;">${ui.esc(node.name)}</p>
+          <p style="margin:6px 0 0;font-weight:700;font-size:12px;">${ui.esc(node.name)}${lv > 0 ? ` Lv.${lv}` : ""}</p>
           <p style="margin:2px 0 6px;font-size:9.5px;color:var(--ink-dim);">${ui.esc(node.effect.desc || "")}</p>
-          ${actionHtml}
+          <div style="margin-top:auto;">${actionHtml}</div>
         </div>`;
     }
 
@@ -895,16 +937,18 @@
     const previewDesc = CD.passiveLevelDesc(key, atMax ? lv : lv + 1); // 沒解鎖時預覽「升上去會變怎樣」，已經最高等級就顯示目前效果
     const statusText = atMax ? "已達最高等級" : lv > 0 ? `目前 Lv.${lv}` : "尚未解鎖";
     return `
-      <div style="flex:1;min-width:160px;background:var(--panel2);border:1px solid ${!atMax && canSpend ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:12px;text-align:center;">
+      <div style="display:flex;flex-direction:column;flex:1;min-width:160px;background:var(--panel2);border:1px solid ${!atMax && canSpend ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:12px;text-align:center;">
         ${ui.icon(def.icon, { size: "22px" })}
         <p style="margin:8px 0 2px;font-weight:700;font-size:13px;">${ui.esc(def.name)}${lv > 0 ? ` Lv.${lv}` : ""}</p>
         <p style="margin:0 0 4px;font-size:11px;color:var(--ink-dim);overflow-wrap:break-word;">${ui.esc(previewDesc)}</p>
         <p style="margin:0 0 8px;font-size:11px;color:${atMax ? "var(--green)" : lv > 0 ? "var(--gold)" : "var(--ink-dim)"};font-weight:700;">${statusText}</p>
-        ${
-          atMax
-            ? `<span style="font-size:10.5px;color:var(--green);font-weight:700;">${ui.icon("check", { size: "12px" })}已解鎖到頂</span>`
-            : `<button class="btn ghost small" data-upgrade-skill="${key}" ${canSpend ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "14px" })}升到 Lv.${lv + 1}</button>`
-        }
+        <div style="margin-top:auto;">
+          ${
+            atMax
+              ? `<span style="font-size:10.5px;color:var(--green);font-weight:700;">${ui.icon("check", { size: "12px" })}已解鎖到頂</span>`
+              : `<button class="btn ghost small" data-upgrade-skill="${key}" ${canSpend ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "14px" })}升到 Lv.${lv + 1}</button>`
+          }
+        </div>
       </div>`;
   }
 
@@ -920,18 +964,20 @@
     const statusText = atMax ? "已達最高等級" : effLv > 0 ? `目前 Lv.${effLv}` : "尚未解鎖";
     const key = `class_mastery:${classKey}`;
     return `
-      <div style="flex:1;min-width:160px;max-width:260px;background:var(--panel2);border:1px solid ${!atMax && canSpend && !forcePreview ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:12px;text-align:center;${forcePreview ? "opacity:0.55;" : ""}">
+      <div style="display:flex;flex-direction:column;flex:1;min-width:160px;max-width:260px;background:var(--panel2);border:1px solid ${!atMax && canSpend && !forcePreview ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:12px;text-align:center;${forcePreview ? "opacity:0.55;" : ""}">
         ${ui.icon(def.icon, { size: "22px" })}
         <p style="margin:8px 0 2px;font-weight:700;font-size:13px;">${ui.esc(def.name)}${effLv > 0 ? ` Lv.${effLv}` : ""}</p>
         <p style="margin:0 0 4px;font-size:11px;color:var(--ink-dim);overflow-wrap:break-word;">${ui.esc(previewDesc)}</p>
         <p style="margin:0 0 8px;font-size:11px;color:${atMax ? "var(--green)" : effLv > 0 ? "var(--gold)" : "var(--ink-dim)"};font-weight:700;">${statusText}</p>
-        ${
-          forcePreview
-            ? `<span style="font-size:10.5px;color:var(--ink-dim);">選這個職業後才能點</span>`
-            : atMax
-              ? `<span style="font-size:10.5px;color:var(--green);font-weight:700;">${ui.icon("check", { size: "12px" })}已解鎖到頂</span>`
-              : `<button class="btn ghost small" data-upgrade-skill="${key}" ${canSpend ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "14px" })}升到 Lv.${effLv + 1}</button>`
-        }
+        <div style="margin-top:auto;">
+          ${
+            forcePreview
+              ? `<span style="font-size:10.5px;color:var(--ink-dim);">選這個職業後才能點</span>`
+              : atMax
+                ? `<span style="font-size:10.5px;color:var(--green);font-weight:700;">${ui.icon("check", { size: "12px" })}已解鎖到頂</span>`
+                : `<button class="btn ghost small" data-upgrade-skill="${key}" ${canSpend ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "14px" })}升到 Lv.${effLv + 1}</button>`
+          }
+        </div>
       </div>`;
   }
 
@@ -1031,7 +1077,7 @@
   function render() {
     if (!progress) return;
     const info = CareerData.CLASS_INFO[myBuild.final_class];
-    const stats = CareerData.applyProgress(myBuild.final_class, progress.stat_alloc, progress.equipment);
+    const stats = CareerData.applyStatBoostPassives(CareerData.applyProgress(myBuild.final_class, progress.stat_alloc, progress.equipment), skillLevels);
     // 王戰進行中的話，頂部這條HP/MP要顯示戰鬥當下的即時數值(active_boss_battle.state)，
     // 不是還沒結算的persisted current_hp/current_mp，不然畫面上會同時出現兩個對不上的HP。
     const liveBossState = progress.active_boss_battle && progress.active_boss_battle.state;
@@ -1310,15 +1356,40 @@
           const result = await db.upgradePlayerSkill(eventId, myId, skillKey);
           progress = result.progress;
           skillLevels = { ...skillLevels, [skillKey]: result.level };
-          const isActive = skillKey === "active_skill";
           const masteryClassKey = skillKey.startsWith("class_mastery:") ? skillKey.slice("class_mastery:".length) : null;
-          const treeNode = CareerData.SKILL_TREE_NODES[skillKey]; // 技能B("<cls>_skill_2")、大招2("<cls>_ult_2")都是查這裡
-          const def = masteryClassKey ? CareerData.CLASS_MASTERY_DEFS[masteryClassKey] : treeNode || CareerData.PASSIVE_DEFS[skillKey];
-          const label = isActive ? CareerData.SKILL_NAME[myBuild.final_class] || "戰技" : def.name;
+          const def = masteryClassKey ? CareerData.CLASS_MASTERY_DEFS[masteryClassKey] : CareerData.PASSIVE_DEFS[skillKey];
           highlight = {
-            icon: isActive ? "wand-sparkles" : def.icon,
-            title: `「${label}」升到 Lv.${result.level}!`,
+            icon: def.icon,
+            title: `「${def.name}」升到 Lv.${result.level}!`,
             text: "這個等級會永久保留，之後的活動、下一個賽季都不會重置。",
+          };
+          render();
+        } catch (e) {
+          await ui.alert(e.message || "升級失敗", { title: "操作失敗", tone: "danger" });
+          await loadAndRender();
+        } finally {
+          busy = false;
+        }
+      };
+    });
+
+    // 技能A/B、大招1/2:這場活動自己的東西，不是永久的(2026-09確認)，走 upgradeActiveSkill，
+    // 不寫進永久表；換下一場活動會自動重新從0開始。
+    app.querySelectorAll("[data-upgrade-active-skill]").forEach((btn) => {
+      btn.onclick = async () => {
+        if (busy) return;
+        const nodeSuffix = btn.dataset.upgradeActiveSkill;
+        busy = true;
+        btn.disabled = true;
+        try {
+          const result = await db.upgradeActiveSkill(eventId, myId, nodeSuffix);
+          progress = result.progress;
+          const node = CareerData.SKILL_TREE_NODES[`${myBuild.final_class}_${nodeSuffix}`];
+          const label = node ? node.name : nodeSuffix;
+          highlight = {
+            icon: nodeSuffix.startsWith("ult") ? "flame" : "wand-sparkles",
+            title: `「${label}」升到 Lv.${result.level}!`,
+            text: "這個等級只在這場活動有效，換下一場活動、下一個賽季會重新歸零。",
           };
           render();
         } catch (e) {
@@ -1340,6 +1411,31 @@
           progress = await db.setEquippedUlt(eventId, myId, ultId);
           const node = CareerData.SKILL_TREE_NODES[ultId];
           highlight = { icon: (node && node.icon) || "flame", title: `大招換成「${node ? node.name : ultId}」了!`, text: "免費隨時換，不用花技能點，也不會影響剛剛升過的等級。" };
+          render();
+        } catch (e) {
+          await ui.alert(e.message || "裝備失敗", { title: "操作失敗", tone: "danger" });
+          await loadAndRender();
+        } finally {
+          busy = false;
+        }
+      };
+    });
+
+    // data-equip-skill 的值是 "a:skill_3" 這種「欄位:節點後綴」格式，一次解析出兩個資訊
+    app.querySelectorAll("[data-equip-skill]").forEach((btn) => {
+      btn.onclick = async () => {
+        if (busy) return;
+        const [slot, nodeSuffix] = (btn.dataset.equipSkill || "").split(":");
+        busy = true;
+        btn.disabled = true;
+        try {
+          progress = await db.setEquippedSkill(eventId, myId, slot, nodeSuffix);
+          const node = CareerData.SKILL_TREE_NODES[`${myBuild.final_class}_${nodeSuffix}`];
+          highlight = {
+            icon: (node && node.icon) || "wand-sparkles",
+            title: `技能${slot.toUpperCase()}換成「${node ? node.name : nodeSuffix}」了!`,
+            text: "免費隨時換，不用花技能點，也不會影響剛剛升過的等級。",
+          };
           render();
         } catch (e) {
           await ui.alert(e.message || "裝備失敗", { title: "操作失敗", tone: "danger" });

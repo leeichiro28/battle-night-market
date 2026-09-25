@@ -194,11 +194,16 @@
   async function renderLobby() {
     const info = CareerData.CLASS_INFO[myBuild.final_class];
     const progress = await db.getCareerProgressFor(eventId, myId).catch(() => null);
-    const stats = progress
+    const permLevels = await db.getPlayerSkillLevels(myId).catch(() => ({})); // 永久被動(含數值精研)，套進顯示的數值裡
+    const rawStats = progress
       ? CareerData.applyProgress(myBuild.final_class, progress.stat_alloc, progress.equipment)
       : CareerData.computeStats(myBuild.final_class);
+    const stats = CareerData.applyStatBoostPassives(rawStats, permLevels);
     // Phase 4:大招可能被換過，這張介紹卡要顯示「目前實際裝備的」大招，不是職業固定的預設值
-    const equippedUltInfo = CareerData.resolveUltInfo(myBuild.final_class, progress && progress.equipped_ult);
+    const activeSkills = (progress && progress.active_skills) || { ult1: 1 };
+    const equippedUltId = progress && progress.equipped_ult;
+    const ultLevel = equippedUltId && equippedUltId.endsWith("_ult_2") ? activeSkills.ult2 || 0 : activeSkills.ult1 || 1;
+    const equippedUltInfo = CareerData.resolveUltInfo(myBuild.final_class, equippedUltId, ultLevel);
     const isNovice = myBuild.final_class === "novice" || myBuild.final_class.startsWith("novice_");
     const queueEntry = await db.getMyCareerQueueEntry(eventId, myId);
     const inQueue = queueEntry && queueEntry.status === "waiting";
@@ -511,14 +516,14 @@
           ${
             mySkillUnlocked
               ? `<button class="btn ghost" id="skill-btn" style="flex:1 1 28%;" ${iActed || !skillAffordable ? "disabled" : ""}>
-                  ${ui.icon("wand-sparkles")}${ui.esc(CareerData.SKILL_NAME[myClass] || "戰技")}(${CareerData.SKILL_MANA_COST || 0}魔力)
+                  ${ui.icon("wand-sparkles")}${ui.esc((mySlot === 1 ? s.skillAName1 : s.skillAName2) || CareerData.SKILL_NAME[myClass] || "戰技")}(${CareerData.SKILL_MANA_COST || 0}魔力)
                 </button>`
               : ""
           }
           ${
             mySkill2Unlocked
               ? `<button class="btn ghost" id="skill2-btn" style="flex:1 1 28%;" ${iActed || !skill2Affordable ? "disabled" : ""}>
-                  ${ui.icon("sparkles")}${ui.esc(CareerData.skillSlotName ? CareerData.skillSlotName(myClass, 2) : "技能B")}(${CareerData.SKILL_MANA_COST || 0}魔力)
+                  ${ui.icon("sparkles")}${ui.esc((mySlot === 1 ? s.skillBName1 : s.skillBName2) || "技能B")}(${CareerData.SKILL_MANA_COST || 0}魔力)
                 </button>`
               : ""
           }
