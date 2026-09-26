@@ -528,52 +528,52 @@ window.CareerData = (function () {
   }
 
   _addClassKit("warrior", "class_warrior", {
-    skill1: { name: "連擊", icon: "sword", desc: "沿用現有戰技效果" },
-    skill2: { name: "破甲斬", icon: "axe", desc: "新技能:比連擊多一點無視防禦比例" },
-    skill3: { name: "旋風斬", icon: "wind", desc: "新技能:不看對方防禦策略，單純追求高爆發" },
-    ult1: { name: "怒吼衝鋒", icon: "flame", effect: { kind: "dmgMult", value: 2, desc: "這回合傷害 x2(沿用現有大招)" } },
-    ult2: { name: "血戰怒吼", icon: "heart", effect: { kind: "lifesteal", dmgMult: 1.5, lifestealRatio: 0.3, desc: "新大招:傷害 x1.5，並回復造成傷害30%的HP" } },
-    mastery: { name: "破防精研", icon: "sword", levels: { 1: 0.05, 2: 0.08, 3: 0.12 }, desc: "沿用現有職業被動(破防打法無視防禦比例提升)" },
+    skill1: { name: "連擊", icon: "sword", desc: "花費魔力，對敵人造成比普通攻擊更高的傷害" },
+    skill2: { name: "破甲斬", icon: "axe", desc: "比連擊多一點無視防禦比例" },
+    skill3: { name: "旋風斬", icon: "wind", desc: "不看對方防禦策略，單純追求高爆發" },
+    ult1: { name: "怒吼衝鋒", icon: "flame", effect: { kind: "dmgMult", value: 2, desc: "這回合傷害 x2" } },
+    ult2: { name: "血戰怒吼", icon: "heart", effect: { kind: "lifesteal", dmgMult: 1.5, lifestealRatio: 0.3, desc: "傷害 x1.5，並回復造成傷害30%的HP" } },
+    mastery: { name: "破防精研", icon: "sword", levels: { 1: 0.05, 2: 0.08, 3: 0.12 }, desc: "破防打法無視防禦比例提升" },
   });
   _addClassKit("guardian", "class_guardian", {
-    skill1: { name: "盾擊", icon: "shield", desc: "沿用現有戰技效果" },
-    skill2: { name: "嘲諷打擊", icon: "megaphone", desc: "新技能:命中後這回合反擊機率額外提升" },
-    skill3: { name: "格擋反手", icon: "shield-half", desc: "新技能:攻守兼具，兼顧輸出跟自身防禦感" },
-    ult1: { name: "銅牆鐵壁", icon: "shield", effect: { kind: "immune", dmgReduceRatio: 0.9, skipAttack: true, desc: "沿用現有大招(受到傷害-90%，本回合不出手)" } },
-    ult2: { name: "剛毅反擊", icon: "shield-alert", effect: { kind: "immune", dmgReduceRatio: 0.5, skipAttack: false, desc: "新大招:受到傷害-50%(比銅牆鐵壁少防)，但本回合仍可正常攻擊，不用跳過" } },
-    mastery: { name: "反擊精研", icon: "shield", levels: { 1: 0.05, 2: 0.08, 3: 0.12 }, desc: "沿用現有職業被動(反擊姿態觸發機率提升)" },
+    skill1: { name: "盾擊", icon: "shield", desc: "花費魔力，對敵人造成比普通攻擊更高的傷害" },
+    skill2: { name: "嘲諷打擊", icon: "megaphone", desc: "命中後這回合反擊機率額外提升" },
+    skill3: { name: "格擋反手", icon: "shield-half", desc: "攻守兼具，兼顧輸出跟自身防禦" },
+    ult1: { name: "銅牆鐵壁", icon: "shield", effect: { kind: "immune", dmgReduceRatio: 0.9, skipAttack: true, desc: "受到傷害-90%，本回合不出手" } },
+    ult2: { name: "剛毅反擊", icon: "shield-alert", effect: { kind: "immune", dmgReduceRatio: 0.5, skipAttack: false, desc: "受到傷害-50%(比銅牆鐵壁少防)，但本回合仍可正常攻擊，不用跳過" } },
+    mastery: { name: "反擊精研", icon: "shield", levels: { 1: 0.05, 2: 0.08, 3: 0.12 }, desc: "反擊姿態觸發機率提升" },
   });
   _addClassKit("archer", "class_archer", {
-    skill1: { name: "精準射擊", icon: "target", desc: "沿用現有戰技效果" },
-    skill2: { name: "毒箭", icon: "flask-conical", desc: "新技能:額外附加小量無視防禦傷害" },
-    skill3: { name: "連珠箭", icon: "target", desc: "新技能:射速快，魔力花費相同但手感更輕快" },
-    ult1: { name: "連環箭", icon: "target", effect: { kind: "multiHit", hits: 2, desc: "沿用現有大招(連續攻擊2次)" } },
-    ult2: { name: "貫穿射擊", icon: "crosshair", effect: { kind: "pierce", dmgMult: 2.2, ignoreDefRatio: 1, desc: "新大招:單次無視防禦，造成 x2.2 傷害" } },
-    mastery: { name: "連射精研", icon: "target", levels: { 1: 0.05, 2: 0.08, 3: 0.12 }, desc: "沿用現有職業被動(連射訓練追加一擊機率提升)" },
+    skill1: { name: "精準射擊", icon: "target", desc: "花費魔力，對敵人造成比普通攻擊更高的傷害" },
+    skill2: { name: "毒箭", icon: "flask-conical", desc: "額外附加小量無視防禦傷害" },
+    skill3: { name: "連珠箭", icon: "target", desc: "射速快，魔力花費相同但手感更輕快" },
+    ult1: { name: "連環箭", icon: "target", effect: { kind: "multiHit", hits: 2, desc: "連續攻擊2次" } },
+    ult2: { name: "貫穿射擊", icon: "crosshair", effect: { kind: "pierce", dmgMult: 2.2, ignoreDefRatio: 1, desc: "單次無視防禦，造成 x2.2 傷害" } },
+    mastery: { name: "連射精研", icon: "target", levels: { 1: 0.05, 2: 0.08, 3: 0.12 }, desc: "連射訓練追加一擊機率提升" },
   });
   _addClassKit("assassin", "class_assassin", {
-    skill1: { name: "突刺", icon: "sword", desc: "沿用現有戰技效果" },
-    skill2: { name: "影襲", icon: "moon", desc: "新技能:對方HP越低，這招傷害越高" },
-    skill3: { name: "暗影步", icon: "wind", desc: "新技能:欺身近打，講求速戰速決" },
-    ult1: { name: "暗殺", icon: "crosshair", effect: { kind: "guaranteedCritBelowHalf", desc: "沿用現有大招(對方HP過半以下必爆擊)" } },
-    ult2: { name: "血影連斬", icon: "swords", effect: { kind: "multiHit", hits: 3, dmgMultPerHit: 0.6, desc: "新大招:連續攻擊3次，每次傷害x0.6" } },
-    mastery: { name: "暗殺精研", icon: "crosshair", levels: { 1: 0.05, 2: 0.08, 3: 0.12 }, desc: "沿用現有職業被動(致命節奏暴擊率上限提升)" },
+    skill1: { name: "突刺", icon: "sword", desc: "花費魔力，對敵人造成比普通攻擊更高的傷害" },
+    skill2: { name: "影襲", icon: "moon", desc: "對方HP越低，這招傷害越高" },
+    skill3: { name: "暗影步", icon: "wind", desc: "欺身近打，講求速戰速決" },
+    ult1: { name: "暗殺", icon: "crosshair", effect: { kind: "guaranteedCritBelowHalf", desc: "對方HP過半以下必爆擊" } },
+    ult2: { name: "血影連斬", icon: "swords", effect: { kind: "multiHit", hits: 3, dmgMultPerHit: 0.6, desc: "連續攻擊3次，每次傷害x0.6" } },
+    mastery: { name: "暗殺精研", icon: "crosshair", levels: { 1: 0.05, 2: 0.08, 3: 0.12 }, desc: "致命節奏暴擊率上限提升" },
   });
   _addClassKit("mage", "class_mage", {
-    skill1: { name: "魔彈", icon: "sparkles", desc: "沿用現有戰技效果" },
-    skill2: { name: "烈焰波動", icon: "flame", desc: "新技能:魔攻導向，額外附加小量無視防禦傷害" },
-    skill3: { name: "冰霜箭", icon: "snowflake", desc: "新技能:魔攻導向，走精準路線的單體魔法" },
-    ult1: { name: "魔力爆發", icon: "flame", effect: { kind: "ignoreDef", ignoreDefRatio: 1, desc: "沿用現有大招(無視防禦，造成大量傷害)" } },
-    ult2: { name: "寒冰新星", icon: "snowflake", effect: { kind: "dmgMult", value: 1.8, extraCrit: 0.15, desc: "新大招:傷害 x1.8，且這回合暴擊率額外+15%" } },
-    mastery: { name: "法術精研", icon: "sparkles", levels: { 1: 0.05, 2: 0.08, 3: 0.12 }, desc: "沿用現有職業被動(魔法傷害額外提升)" },
+    skill1: { name: "魔彈", icon: "sparkles", desc: "花費魔力，對敵人造成比普通攻擊更高的傷害" },
+    skill2: { name: "烈焰波動", icon: "flame", desc: "魔攻導向，額外附加小量無視防禦傷害" },
+    skill3: { name: "冰霜箭", icon: "snowflake", desc: "魔攻導向，走精準路線的單體魔法" },
+    ult1: { name: "魔力爆發", icon: "flame", effect: { kind: "ignoreDef", ignoreDefRatio: 1, desc: "無視防禦，造成大量傷害" } },
+    ult2: { name: "寒冰新星", icon: "snowflake", effect: { kind: "dmgMult", value: 1.8, extraCrit: 0.15, desc: "傷害 x1.8，且這回合暴擊率額外+15%" } },
+    mastery: { name: "法術精研", icon: "sparkles", levels: { 1: 0.05, 2: 0.08, 3: 0.12 }, desc: "魔法傷害額外提升" },
   });
   _addClassKit("healer", "class_healer", {
-    skill1: { name: "聖光斬", icon: "heart-pulse", desc: "沿用現有戰技效果" },
-    skill2: { name: "祝福打擊", icon: "heart", desc: "新技能:造成傷害的同時，順便回復自己一點HP" },
-    skill3: { name: "淨化打擊", icon: "sparkles", desc: "新技能:魔攻導向，走驅邪路線的單體魔法" },
-    ult1: { name: "完全治癒", icon: "heart-pulse", effect: { kind: "heal", healRatio: 0.5, skipAttack: true, desc: "沿用現有大招(回滿一半HP)" } },
-    ult2: { name: "神聖新星", icon: "sun", effect: { kind: "dmgMult", value: 1.6, desc: "新大招:改走攻擊路線，傷害 x1.6(不回血)" } },
-    mastery: { name: "治療精研", icon: "heart", levels: { 1: 1, 2: 2, 3: 3 }, desc: "沿用現有職業被動(完全治癒/每回合回血量提升)" },
+    skill1: { name: "聖光斬", icon: "heart-pulse", desc: "花費魔力，對敵人造成比普通攻擊更高的傷害" },
+    skill2: { name: "祝福打擊", icon: "heart", desc: "造成傷害的同時，順便回復自己一點HP" },
+    skill3: { name: "淨化打擊", icon: "sparkles", desc: "魔攻導向，走驅邪路線的單體魔法" },
+    ult1: { name: "完全治癒", icon: "heart-pulse", effect: { kind: "heal", healRatio: 0.5, skipAttack: true, desc: "回滿一半HP" } },
+    ult2: { name: "神聖新星", icon: "sun", effect: { kind: "dmgMult", value: 1.6, desc: "改走攻擊路線，傷害 x1.6(不回血)" } },
+    mastery: { name: "治療精研", icon: "heart", levels: { 1: 1, 2: 2, 3: 3 }, desc: "完全治癒/每回合回血量提升" },
   });
 
   // ---- 通用被動:不綁系別/職業，Lv.5 技能樹一解鎖就能點(跟現有 PASSIVE_DEFS 8個對應) ----

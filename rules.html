@@ -465,7 +465,7 @@
       <button type="button" class="game-toggle">
         <i data-lucide="swords" class="ico"></i>
         <span class="game-toggle-label">職業養成對決</span>
-        <span class="game-toggle-count">7 個小節</span>
+        <span class="game-toggle-count">8 個小節</span>
         <i data-lucide="chevron-down" class="ico chev"></i>
       </button>
       <div class="game-body" hidden>
@@ -473,13 +473,27 @@
         <div class="game-section">
           <h4><i data-lucide="user" class="ico"></i> 職業與轉職(兩段式)</h4>
           <p style="color:var(--ink-dim);line-height:1.9;">
-          一開始每個人都是 <b style="color:var(--ink);">見習學徒</b>，數值最單純，PVP也打得動只是比較吃虧。<br/><br/>
-          <b style="color:var(--gold);">Lv.5</b>:可以選一個系——<b style="color:var(--ink);">力量系 / 敏捷系 / 魔法系</b>三選一，變成該系學徒，數值/大招都比純見習好一點，但還沒定案最終職業。<br/><br/>
-          <b style="color:var(--gold);">Lv.15</b>:在 Lv.5 選的那個系裡面選一條線，正式轉職成最終職業，<b style="color:var(--red);">選了就不能再改</b>:<br/><br/>
-          &nbsp;&nbsp;• 力量系 → <b style="color:var(--ink);">戰士</b>(攻擊路線，大招怒吼衝鋒傷害x2)或 <b style="color:var(--ink);">守衛</b>(防禦路線，大招銅牆鐵壁本回合幾乎不受傷)<br/>
-          &nbsp;&nbsp;• 敏捷系 → <b style="color:var(--ink);">弓箭手</b>(大招連環箭連續攻擊2次)或 <b style="color:var(--ink);">刺客</b>(大招暗殺，對方HP過半以下必定爆擊)<br/>
-          &nbsp;&nbsp;• 魔法系 → <b style="color:var(--ink);">法師</b>(靠<b style="color:var(--epic);">魔攻</b>而不是攻擊力打人，大招魔力爆發無視防禦)或 <b style="color:var(--ink);">巫醫</b>(也是靠魔攻，大招完全治癒回一半HP)<br/><br/>
+          一開始每個人都是 <b style="color:var(--ink);">見習學徒</b>，只有<b style="color:var(--ink);">普通攻擊</b>跟固定大招「拼盡全力」兩個行動，沒有技能樹、不核發技能點。<br/><br/>
+          <b style="color:var(--gold);">Lv.5</b>:可以選一個系——<b style="color:var(--ink);">力量系 / 敏捷系 / 魔法系</b>三選一，變成該系學徒。選系那一刻<b style="color:var(--ink);">技能樹正式解鎖</b>，並一次補發「目前等級」份的技能點(之前等級不核發，這裡一次補齊)。<br/><br/>
+          <b style="color:var(--gold);">Lv.15</b>:在 Lv.5 選的那個系裡面選一條線，正式轉職成最終職業，<b style="color:var(--red);">選了就不能再改</b>，同時解鎖該職業專屬的技能/大招/被動節點:<br/><br/>
+          &nbsp;&nbsp;• 力量系 → <b style="color:var(--ink);">戰士</b>(攻擊路線)或 <b style="color:var(--ink);">守衛</b>(防禦路線)<br/>
+          &nbsp;&nbsp;• 敏捷系 → <b style="color:var(--ink);">弓箭手</b>(遠程路線)或 <b style="color:var(--ink);">刺客</b>(爆發路線)<br/>
+          &nbsp;&nbsp;• 魔法系 → <b style="color:var(--ink);">法師</b>(靠<b style="color:var(--epic);">魔攻</b>而不是攻擊力打人)或 <b style="color:var(--ink);">巫醫</b>(也是靠魔攻，可以走輸出或治療)<br/><br/>
           Lv.5 選了力量系，Lv.15 就只能在戰士/守衛裡選，不能臨時跳去別系。法師、巫醫是唯二用<b style="color:var(--epic);">魔攻</b>(而不是攻擊力)計算傷害/治療量的職業，武器、加點都要點魔攻才有用，物理系加了也沒用，反之亦然。
+          </p>
+        </div>
+
+        <div class="game-section">
+          <h4><i data-lucide="git-branch" class="ico"></i> 技能樹:被動永久、技能/大招每場重來</h4>
+          <p style="color:var(--ink-dim);line-height:1.9;">
+          每升一級送1技能點(Lv.1~4不送，Lv.5選系那刻一次補發)，花點可以在「技能樹」分頁升級/解鎖東西，分三大類，<b style="color:var(--red);">永久程度不一樣，要分清楚</b>:<br/><br/>
+          <b style="color:var(--gold);">永久被動</b>(跨活動、跨賽季永久繼承，練過就不會歸零):<br/>
+          &nbsp;&nbsp;• 8個通用被動:暴擊精研、博學被動、勤奮掛機、財運被動、魔力充沛、爆擊強化、鑑定之眼、大招精修，任何職業都能點。<br/>
+          &nbsp;&nbsp;• 7個數值精研:臂力/體魄/魔力/身法/幸運/體質/魔量精研，固定加對應的戰鬥數值(HP/MP精研連血條上限也會漲)。<br/>
+          &nbsp;&nbsp;• 職業被動(例如戰士的破防精研):只能點目前這個職業的，但等級永久保留，之後轉別的職業再轉回來會接回原本的等級。<br/><br/>
+          <b style="color:var(--ink);">技能A / 技能B / 大招</b>(<u>不永久</u>，是這場活動自己的東西，換下一場活動、下一個賽季會重新歸零，要重新花點):<br/>
+          &nbsp;&nbsp;• 每個最終職業有3個技能候選，花點解鎖後可以自由選2個裝到技能A、技能B欄位，免費隨時換裝(不用重新花點)。<br/>
+          &nbsp;&nbsp;• 大招有2個候選(1個免費、1個要花點解鎖)，一樣免費隨時換裝，而且大招現在也能花點升級到 Lv.2、Lv.3，越練越強。
           </p>
         </div>
 
@@ -519,7 +533,7 @@
           <h4><i data-lucide="flame" class="ico"></i> 對戰期:PVP</h4>
           <p style="color:var(--ink-dim);line-height:1.9;">
           訓練期結束、切到對戰期後，爬塔功能關閉，PVP開放。配對是<b style="color:var(--ink);">先進先配</b>的持續配對池，不是賽程淘汰制——打完一場立刻退回佇列，馬上可以排下一場，落單的人就等下一個人加入。<br/><br/>
-          每回合雙方各選<b style="color:var(--ink);">普通攻擊</b>或<b style="color:var(--ink);">大招</b>(每場限用一次)，速度高的先手，同速隨機決定。普通攻擊傷害 = max(1, 攻擊力 − 防禦力/2) + 隨機浮動(1~3)，爆擊機率 = 5% + 幸運力x2%，爆擊傷害x1.5。30秒沒動作會自動幫你出普通攻擊。<br/><br/>
+          每回合選<b style="color:var(--ink);">普通攻擊</b>、<b style="color:var(--ink);">技能A</b>、<b style="color:var(--ink);">技能B</b>或<b style="color:var(--ink);">大招</b>，技能/大招都是花魔力使用(不是整場限一次)，魔力不夠就只能選普攻或先蓄力。速度高的先手，同速隨機決定。普通攻擊傷害 = max(1, 攻擊力 − 防禦力/2) + 隨機浮動(1~3)，爆擊機率 = 5% + 幸運力x2%，爆擊傷害x1.5(可被「爆擊強化」被動再加成)。30秒沒動作會自動幫你出普通攻擊。<br/><br/>
           你的PVP數值就是訓練期爬塔練出來的(基礎值 + 加點 + 裝備)，只要去過爬塔頁面一次，數值就會自動套用，沒去過的人用最陽春的基礎值應戰。
           </p>
         </div>

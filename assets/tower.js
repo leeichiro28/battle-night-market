@@ -815,13 +815,20 @@
   // 子分頁3:被動(通用被動8個 + 職業被動)。職業被動的預覽規則跟技能・大招分頁一樣。
   function renderSkillTreePassivesSection(chosenPath, chosenClass, canSpend) {
     const CD = CareerData;
+    // 把「數值精研」那7個(固定加數值的)跟其他8個(功能型效果)分成兩組顯示，不要混在一起，
+    // 不然玩家很難一眼分辨「這個被動是加數值還是加效果」。STAT_BOOST_KEYS 的 key 就是7個數值精研。
+    const statKeys = CD.PASSIVE_KEYS.filter((key) => CD.STAT_BOOST_KEYS[key]);
+    const otherKeys = CD.PASSIVE_KEYS.filter((key) => !CD.STAT_BOOST_KEYS[key]);
     let html = `
       <p style="text-align:center;margin:0 0 12px;font-weight:700;font-size:14px;">
         ${ui.icon("sparkles")}永久被動<span style="font-weight:400;color:var(--ink-dim);font-size:11.5px;"> · 跨活動、跨賽季永久繼承</span>
       </p>
       <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;">
-        ${CD.PASSIVE_KEYS.map((key) => passiveCard(key, skillLevels[key] || 0, canSpend)).join("")}
+        ${otherKeys.map((key) => passiveCard(key, skillLevels[key] || 0, canSpend)).join("")}
       </div>`;
+
+    html += `<p style="text-align:center;margin:20px 0 12px;font-weight:700;font-size:14px;">${ui.icon("gem")}數值精研<span style="font-weight:400;color:var(--ink-dim);font-size:11.5px;"> · 固定加數值，一樣永久繼承</span></p>`;
+    html += `<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;">${statKeys.map((key) => passiveCard(key, skillLevels[key] || 0, canSpend)).join("")}</div>`;
 
     html += `<p style="text-align:center;margin:20px 0 12px;font-weight:700;font-size:14px;">${ui.icon("shield")}職業被動<span style="font-weight:400;color:var(--ink-dim);font-size:11.5px;"> · 只能點目前的職業，但等級永久保留</span></p>`;
     if (chosenClass) {
