@@ -23,6 +23,8 @@
   let activeMatch = null;
   let mySlot = null;
   let resolving = false;
+  let finishedMatchShowUntil = 0; // P0-1修復:對戰結束(status變done)後,結果畫面至少留在螢幕上到這個時間點,
+  // 不要一結束就馬上被下一次 refresh 切回大廳(見 refreshAll 內的說明)。
   let submittedThisRound = false;
   let seenRound = null;
   let roundTimer = null;
@@ -174,11 +176,37 @@
     const match = await db.getMyActiveCareerMatch(eventId, myId);
     if (match) {
       activeMatch = match;
+      finishedMatchShowUntil = 0;
       await enterBattle(match);
       return;
     }
+
+    // P0-1修復:HP歸零、對戰結束(career_matches.status 從 active 變成 done)那一刻，
+    // Realtime 幾乎是瞬間通知到，比玩家眼睛看到「獲勝/戰敗」畫面還快，導致上面這行
+    // getMyActiveCareerMatch(只抓 status='active')直接抓不到，畫面瞬間跳回大廳——
+    // 玩家會覺得「血量已經變0，但這場對戰好像沒有正常結束就消失了」。
+    // 這裡補一段:如果我們原本正在看的那場(activeMatch)剛剛還是 active，現在查不到了，
+    // 就直接去讀那一場最新的狀態，如果它已經變成 done，先把結果畫面留著顯示一段時間，
+    // 不要立刻清空/跳轉。
+    if (activeMatch && activeMatch.status === "active") {
+      const finished = await db.getCareerMatch(activeMatch.id).catch(() => null);
+      if (finished && finished.status === "done") {
+        activeMatch = finished;
+        finishedMatchShowUntil = Date.now() + 3500;
+        renderBattle(finished);
+        setTimeout(() => {
+          if (Date.now() >= finishedMatchShowUntil) refreshAll().catch((e) => console.error(e));
+        }, 3600);
+        return;
+      }
+    }
+    if (activeMatch && Date.now() < finishedMatchShowUntil) {
+      return; // 結果畫面還在顯示中，先不要被其他 realtime 事件打斷、提前切回大廳
+    }
+
     if (activeMatch) {
       activeMatch = null;
+      finishedMatchShowUntil = 0;
       seenRound = null;
       submittedThisRound = false;
       clearInterval(roundTimer);
@@ -379,7 +407,42 @@
     }
   }
 
+  // P0-1修復:如果 state 裡的 hp1/hp2 已經 <=0(代表上一次已經算出勝負了)，但這場 match
+  // 卻還是 status='active'，代表算完傷害、把 newState 存回去之後，緊接著要呼叫的
+  // finishCareerMatch 那一步失敗/中斷了(例如網路瞬斷)——這時候 state.m1/m2 已經被
+  // resolveRound 清成 null，不能再靠「有沒有 m1/m2」判斷要不要處理，不然這場會永遠卡住，
+  // 玩家看到的就是「血量變0但對戰沒有結束」。
+  // 這裡直接照目前 state 裡已經定案的 HP 重新判斷勝負、重打一次 finishCareerMatch。
+  // 不受 iAmResolver 限制、任何一邊的分頁都可以幫忙修，因為結果已經是 state 裡的既定事實，
+  // 不是「誰先幫忙算」的問題;finish_career_match RPC 本身用 status='active' 當條件鎖，
+  // 兩邊分頁同時呼叫也只會有一次真的生效，不會重複發獎勵/重複計分。
+  async function maybeFinishIfAlreadyDead(match) {
+    if (match.status !== "active") return false;
+    const state = match.state || {};
+    const p1Dead = state.hp1 <= 0;
+    const p2Dead = state.hp2 <= 0;
+    if (!p1Dead && !p2Dead) return false;
+    if (resolving) return true;
+    resolving = true;
+    try {
+      let winnerId;
+      if (p1Dead && p2Dead) {
+        winnerId = Math.random() < 0.5 ? match.player1_id : match.player2_id;
+      } else {
+        winnerId = p1Dead ? match.player2_id : match.player1_id;
+      }
+      const loserId = winnerId === match.player1_id ? match.player2_id : match.player1_id;
+      await db.finishCareerMatch(match.id, winnerId, loserId);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      resolving = false;
+    }
+    return true;
+  }
+
   async function maybeResolveRound(match) {
+    if (await maybeFinishIfAlreadyDead(match)) return;
     const state = match.state || {};
     if (!state.m1 || !state.m2) return;
     if (!iAmResolver(match)) return;

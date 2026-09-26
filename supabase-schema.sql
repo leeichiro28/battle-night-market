@@ -990,6 +990,32 @@ alter table career_progress add column if not exists equipped_skill_b text;
 -- 讀寫邏輯在 assets/db.js 的 _activeSkills() / upgradeActiveSkill() / setEquippedSkill()。
 alter table career_progress add column if not exists active_skills jsonb not null default '{"ult_1":1}'::jsonb;
 
+-- P0-4(B) 修改(2026-09玩家回饋):傳說裝備原本是「整場限購1件，不分部位」(靠 legendary_purchased
+-- 這個單一 boolean)，改成「每個部位(武器/防具/飾品)各自限購1件」，這樣玩家可以三個部位都拿到
+-- 傳說、同時裝備3件傳說裝備在身上。新欄位 legendary_slots 記錄「這個部位拿過傳說了沒」，
+-- 商店買或抽獎機中都算(跟舊欄位規則一樣，只是拆成三個部位分開記)。
+-- 舊的 legendary_purchased 欄位保留不刪(避免破壞舊資料/舊的 select *，也留個歷史記錄)，
+-- 但新邏輯(assets/db.js、assets/tower.js)已經全部改讀/改寫 legendary_slots，不會再用到它。
+alter table career_progress add column if not exists legendary_slots jsonb not null default '{"weapon":false,"armor":false,"accessory":false}'::jsonb;
+-- 資料搬家:舊資料如果 legendary_purchased=true，去他背包(inventory)跟身上裝備(equipment)裡
+-- 實際找是哪個部位的傳說裝備，把對應部位標記起來，避免規則改了之後，舊資料被誤判成
+-- 「三個部位都還沒買過」而讓他能超買。只做一次，legendary_slots 不是預設值(代表已經跑過這段
+-- 搬家)的話就不會重複執行。
+update career_progress
+set legendary_slots = (
+  select jsonb_object_agg(
+    s.slot_key,
+    coalesce((equipment -> s.slot_key ->> 'rarity') = 'legendary', false)
+    or exists (
+      select 1 from jsonb_array_elements(coalesce(inventory, '[]'::jsonb)) it
+      where (it ->> 'slot') = s.slot_key and (it ->> 'rarity') = 'legendary'
+    )
+  )
+  from (values ('weapon'), ('armor'), ('accessory')) as s(slot_key)
+)
+where legendary_purchased = true
+  and legendary_slots = '{"weapon":false,"armor":false,"accessory":false}'::jsonb;
+
 -- ============================================
 -- 職業養成對決 第22點更新:被動等級，永久繼承
 -- ============================================

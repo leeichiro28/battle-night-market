@@ -45,7 +45,7 @@ window.CareerFloors = (function () {
       expReward: isMiniBoss ? Math.round(expBase * 1.8) : expBase,
       // 掉落機率跟稀有度用一致的四級系統(跟夜市拍賣商品清單同一套 common/rare/epic/legendary)：
       // 一般樓層只掉得到 普通/稀有；小關主保底掉 稀有 或 史詩，傳說裝備完全不會從樓層掉，
-      // 只有商店/抽獎機拿得到(整場限購1件，保持稀有感)。
+      // 只有商店/抽獎機拿得到(每個部位各限購1件，保持稀有感)。
       dropChance: isMiniBoss ? 1 : 0.3,
       dropRarityWeights: isMiniBoss ? { rare: 0.6, epic: 0.4 } : { common: 0.85, rare: 0.15 },
     };

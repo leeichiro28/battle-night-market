@@ -2848,21 +2848,32 @@ const db = (function () {
     const drop = window.CareerFloors.rollDrop(floorDef, build.final_class, window.CareerData.passiveValue("drop_luck", (skillLevels && skillLevels.drop_luck) || 0));
     const inventory = _addToInventory(progress.inventory, drop);
     const isTopFloor = isAdvance && floorNumber === window.CareerFloors.FLOORS.length;
+    const newFloor = isAdvance ? floorNumber : progress.floor;
+
+    // P0-3修復:掛機(auto_farm_floor)原本是「開啟當下選定樓層」的一次性快照，之後就算玩家
+    // 另外手動把樓層往上推進了，掛機還是一直打原本那層，狀態顯示也一直卡在原本那層，要手動
+    // 關掉再重開才會抓到新樓層。這裡讓「目前樓層往上推進」這件事發生時，如果玩家正在掛機中
+    // (auto_farm_floor 有值)，就順手把掛機目標樓層也跟著往上推進到同一層，掛機狀態即時跟著更新，
+    // 不用手動關掉重開。只在樓層真的往前推進(isAdvance)時才需要動，重複刷退步/原地踏步不用管。
+    const patch = {
+      floor: newFloor,
+      coins: progress.coins + coinGain,
+      exp: leveled.exp,
+      level: leveled.level,
+      stat_points: leveled.stat_points,
+      skill_points: leveled.skill_points,
+      inventory,
+      current_hp: endHp,
+      current_mp: endMp,
+      active_boss_battle: null,
+    };
+    if (isAdvance && progress.auto_farm_floor != null && progress.auto_farm_floor < newFloor) {
+      patch.auto_farm_floor = newFloor;
+    }
 
     const { data: updated, error } = await client
       .from("career_progress")
-      .update({
-        floor: isAdvance ? floorNumber : progress.floor,
-        coins: progress.coins + coinGain,
-        exp: leveled.exp,
-        level: leveled.level,
-        stat_points: leveled.stat_points,
-        skill_points: leveled.skill_points,
-        inventory,
-        current_hp: endHp,
-        current_mp: endMp,
-        active_boss_battle: null,
-      })
+      .update(patch)
       .eq("id", progress.id)
       .select()
       .single();
@@ -3169,14 +3180,30 @@ const db = (function () {
 
   // slot: weapon | armor | accessory；rarity: common | rare | epic | legendary。
   // 買到的東西一律進背包，要不要穿上是玩家在背包分頁自己決定。
+  const SLOT_LABEL = { weapon: "武器", armor: "防具", accessory: "飾品" };
+  function _defaultLegendarySlots() {
+    return { weapon: false, armor: false, accessory: false };
+  }
+  // 相容用:優先讀新的 legendary_slots(每個部位分開記)，舊資料如果剛好還沒被上面的 SQL
+  // 搬家指令碰到(理論上不會，但多一層防呆)，退回舊的 legendary_purchased 當「三個部位都算買過」，
+  // 比讓他無限超買安全。
+  function _legendarySlots(progress) {
+    if (progress.legendary_slots) return progress.legendary_slots;
+    if (progress.legendary_purchased) return { weapon: true, armor: true, accessory: true };
+    return _defaultLegendarySlots();
+  }
+
+  // P0-4(B)修改(2026-09玩家回饋):傳說裝備從「整場限購1件、不分部位」改成「每個部位
+  // (武器/防具/飾品)各自限購1件」，玩家可以三個部位都拿到傳說、同時裝備3件傳說在身上。
   async function buyCareerEquipment(eventId, playerId, slot, rarity) {
     const [progress, build] = await Promise.all([
       getOrCreateCareerProgress(eventId, playerId),
       getCareerBuildFor(eventId, playerId),
     ]);
     if (!build) throw new Error("請先選好職業");
-    if (rarity === "legendary" && progress.legendary_purchased) {
-      throw new Error("傳說裝備整場限購1件，你已經買過了");
+    const legendarySlots = _legendarySlots(progress);
+    if (rarity === "legendary" && legendarySlots[slot]) {
+      throw new Error(`傳說${SLOT_LABEL[slot]}限購1件，你這個部位已經買過了`);
     }
     const item =
       slot === "weapon"
@@ -3186,7 +3213,7 @@ const db = (function () {
     const price = window.CareerFloors.equipmentPrice(rarity);
     if (progress.coins < price) throw new Error(`幣不夠，這件要 ${price} 幣`);
     const patch = { coins: progress.coins - price, inventory: _addToInventory(progress.inventory, item) };
-    if (rarity === "legendary") patch.legendary_purchased = true;
+    if (rarity === "legendary") patch.legendary_slots = { ...legendarySlots, [slot]: true };
     const { data: updated, error } = await client
       .from("career_progress")
       .update(patch)
@@ -3203,7 +3230,8 @@ const db = (function () {
   }
 
   // 夜市抽獎機:55%小獎(幣)、20%數值點、10%普通裝備(補貨用)、12%稀有、2.5%史詩、0.5%傳說
-  // (傳說已經拿過的話，這 0.5% 會自動改發史詩，不會超賣第二件傳說)。
+  // (P0-4(B)修改:傳說改成每個部位分開算限量，抽到傳說時只會從「這個部位還沒買過傳說」的
+  // 部位裡面抽slot，三個部位都拿過傳說了才會自動改發史詩，不會有某個部位超賣兩件傳說)。
   async function buyCareerGachaPull(eventId, playerId) {
     const [progress, build] = await Promise.all([
       getOrCreateCareerProgress(eventId, playerId),
@@ -3228,15 +3256,26 @@ const db = (function () {
     } else {
       // 75%~85% 普通、85%~97% 稀有、97%~99.5% 史詩、99.5%~100% 傳說
       let rarity = roll < 0.85 ? "common" : roll < 0.97 ? "rare" : roll < 0.995 ? "epic" : "legendary";
-      if (rarity === "legendary" && progress.legendary_purchased) rarity = "epic";
-      const slot = window.CareerFloors.SLOTS[Math.floor(Math.random() * window.CareerFloors.SLOTS.length)];
+      const legendarySlots = _legendarySlots(progress);
+      let slot;
+      if (rarity === "legendary") {
+        const availableSlots = window.CareerFloors.SLOTS.filter((s) => !legendarySlots[s]);
+        if (availableSlots.length === 0) {
+          rarity = "epic"; // 三個部位的傳說都拿過了，改發史詩，不會超賣
+          slot = window.CareerFloors.SLOTS[Math.floor(Math.random() * window.CareerFloors.SLOTS.length)];
+        } else {
+          slot = availableSlots[Math.floor(Math.random() * availableSlots.length)];
+        }
+      } else {
+        slot = window.CareerFloors.SLOTS[Math.floor(Math.random() * window.CareerFloors.SLOTS.length)];
+      }
       drop =
         slot === "weapon"
           ? { slot, ...(window.CareerFloors.WEAPON_TABLE[build.final_class] || window.CareerFloors.WEAPON_TABLE.novice)[rarity] }
           : { slot, ...window.CareerFloors.EQUIPMENT_TABLE[slot][rarity] };
       patch.inventory = _addToInventory(progress.inventory, drop);
       if (rarity === "legendary") {
-        patch.legendary_purchased = true;
+        patch.legendary_slots = { ...legendarySlots, [slot]: true };
         gotLegendary = true;
       }
       text = `${rarity === "legendary" ? "頭獎" : rarity === "common" ? "小獎" : "大獎"}!抽中「${drop.name}」${window.CareerFloors.RARITY_LABEL[rarity]}，放進背包了!`;
@@ -3291,14 +3330,21 @@ const db = (function () {
     let inventory = (progress.inventory || []).filter((it) => it.id !== itemId);
     if (prevEquipped) inventory = _addToInventory(inventory, prevEquipped);
     const equipment = { ...progress.equipment, [item.slot]: item };
+    // P0-4修復:裝備/卸下/合成原本都沒有樂觀鎖，如果玩家開兩個分頁(或手機+電腦同時開著)
+    // 幾乎同時各做一次裝備欄操作，後寫入的那個會拿「動作開始當下」讀到的舊 inventory/equipment
+    // 去整組覆蓋回去，把另一個分頁剛做的改動直接蓋掉、憑空消失——最常遇到的就是傳說裝備這種
+    // 整場只有一件的東西，蓋掉了就真的沒了，不像一般裝備還能重新取得。這裡鎖住「現在資料庫裡的
+    // inventory 是不是還是我剛剛讀到的那份」，不是的話就直接失敗、請玩家重新整理再試，不會覆蓋
+    // 別的分頁剛做的改動。
     const { data: updated, error } = await client
       .from("career_progress")
       .update({ equipment, inventory })
       .eq("id", progress.id)
-      .select()
-      .single();
+      .eq("inventory", progress.inventory)
+      .select();
     if (error) throw error;
-    return { item, progress: updated };
+    if (!updated || !updated.length) throw new Error("背包剛好被別的分頁更新過了，請重新整理後再試一次");
+    return { item, progress: updated[0] };
   }
 
   // 卸下某個部位目前穿的裝備，退回背包。
@@ -3308,14 +3354,16 @@ const db = (function () {
     if (!item) throw new Error("這個部位本來就沒有裝備");
     const inventory = _addToInventory(progress.inventory, item);
     const equipment = { ...progress.equipment, [slot]: null };
+    // P0-4修復:同上，卸下也要鎖 inventory，避免跟另一個分頁的裝備欄操作互相覆蓋。
     const { data: updated, error } = await client
       .from("career_progress")
       .update({ equipment, inventory })
       .eq("id", progress.id)
-      .select()
-      .single();
+      .eq("inventory", progress.inventory)
+      .select();
     if (error) throw error;
-    return { progress: updated };
+    if (!updated || !updated.length) throw new Error("背包剛好被別的分頁更新過了，請重新整理後再試一次");
+    return { progress: updated[0] };
   }
 
   // 裝備合成:同一個部位、同一個稀有度的裝備湊滿3件，可以嘗試合成升級成下一個稀有度。
@@ -3355,14 +3403,16 @@ const db = (function () {
     }
     inventory = _addToInventory(inventory, resultItem);
 
+    // P0-4修復:合成也要鎖 inventory(同一個原因，見 equipCareerItem 的註解)。
     const { data: updated, error } = await client
       .from("career_progress")
       .update({ inventory })
       .eq("id", progress.id)
-      .select()
-      .single();
+      .eq("inventory", progress.inventory)
+      .select();
     if (error) throw error;
-    return { success, item: resultItem, progress: updated };
+    if (!updated || !updated.length) throw new Error("背包剛好被別的分頁更新過了，請重新整理後再試一次");
+    return { success, item: resultItem, progress: updated[0] };
   }
 
   // 花一點自由數值點(atk/def/spd/hp/luck 其中一項 +1)

@@ -505,19 +505,24 @@
     const statPrice = CF.statPointPrice(progress.stat_points_bought);
     const weaponTable = CF.WEAPON_TABLE[myBuild.final_class] || CF.WEAPON_TABLE.novice;
 
+    // P0-4(B)修改:傳說裝備從「整場限購1件」改成「每個部位各限購1件」，所以要照傳進來的
+    // slot 去查 legendary_slots[slot]，不是查全域的單一布林值。
+    const legendarySlots = (progress.legendary_slots) || (progress.legendary_purchased ? { weapon: true, armor: true, accessory: true } : { weapon: false, armor: false, accessory: false });
+
     function equipRow(slot, label, table) {
       const rows = CF.RARITIES.map((rarity) => {
         const [min, max] = CF.EQUIPMENT_PRICE_RANGE[rarity];
         const item = table[rarity];
         const isLegendary = rarity === "legendary";
-        const disabled = locked || (isLegendary && progress.legendary_purchased);
+        const legendaryOwned = isLegendary && legendarySlots[slot];
+        const disabled = locked || legendaryOwned;
         const reqLevel = CF.RARITY_REQ_LEVEL[rarity] || 1;
         return `
           <div class="shop-row">
             ${rarityTag(rarity)}
             <div class="shop-row-name">${ui.esc(item.name)}<span class="shop-row-desc">${CF.describeItem(item)}${reqLevel > 1 ? ` · 要 Lv.${reqLevel} 才穿得動` : ""}</span></div>
             <button class="btn small" data-buy-equip="${slot}:${rarity}" ${disabled ? "disabled" : ""}>
-              ${min}~${max}幣${isLegendary && progress.legendary_purchased ? "(已購買)" : ""}
+              ${min}~${max}幣${legendaryOwned ? "(已購買)" : ""}
             </button>
           </div>`;
       }).join("");
@@ -529,7 +534,7 @@
     }
 
     return `
-      <p style="margin:0 0 12px;font-size:11px;color:var(--ink-dim);">價格會有一點浮動；傳說裝備整場只能買 1 件(商店買或抽獎機中都算)。</p>
+      <p style="margin:0 0 12px;font-size:11px;color:var(--ink-dim);">價格會有一點浮動；傳說裝備每個部位(武器/防具/飾品)各限購 1 件，最多可以同時裝備 3 件傳說(商店買或抽獎機中都算數)。</p>
 
       <div class="shop-row" style="margin-bottom:14px;">
         ${ui.icon("sparkles")}
