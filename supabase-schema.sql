@@ -787,7 +787,7 @@ create table if not exists career_pvp_queue (
   id uuid primary key default gen_random_uuid(),
   event_id uuid references events(id) on delete cascade,
   player_id uuid references players(id) on delete cascade,
-  status text not null default 'waiting', -- waiting | matched
+  status text not null default 'waiting', -- waiting(排隊中，等配對) | matched(配對成功，對戰進行中) | idle(不在佇列裡，剛打完一場或還沒按過加入)
   current_score int not null default 0,
   wins int not null default 0,
   losses int not null default 0,
@@ -801,6 +801,20 @@ create table if not exists career_pvp_queue (
 alter table career_pvp_queue enable row level security;
 drop policy if exists "anon all career_pvp_queue" on career_pvp_queue;
 create policy "anon all career_pvp_queue" on career_pvp_queue for all using (true) with check (true);
+
+-- 修復(玩家實測回報 2026-09):「column "win_streak" does not exist」——上面那個 create table
+-- if not exists 只有在表格「第一次被建立」時才會真的套用完整欄位定義，如果 career_pvp_queue
+-- 這張表在 win_streak/final_rank/reward 這幾個欄位被加進上面的定義「之前」就已經在正式環境
+-- 建立過了，這幾個欄位實際上從來沒有真的被加到表格裡過，因為 create table if not exists
+-- 之後看到表格已經存在就整段跳過，不會補欄位。這也是 P0-1「PVP血量變0但對戰沒有結束」
+-- 一開始就存在的真正根本原因:finish_career_match 從最早的版本就已經在用 win_streak 這個
+-- 欄位，欄位不存在的話，每一次呼叫都會直接報錯、整個結算失敗，對戰永遠卡在 active，
+-- 之前那次修的「結果畫面顯示3.5秒+自動重試」是對的、也還是需要，但那次沒抓到「結算本身
+-- 從頭到尾就沒有成功執行過」這個更底層的問題。加上下面這三行，不管表格是什麼時候建立的，
+-- 都補齊這三個欄位，之後 finish_career_match(包含投降、正常打到血量歸零)才能真的執行成功。
+alter table career_pvp_queue add column if not exists win_streak int not null default 0;
+alter table career_pvp_queue add column if not exists final_rank int;
+alter table career_pvp_queue add column if not exists reward text;
 -- PVP 對戰場次。獨立於 matches 表之外，state 的欄位結構(hp1/hp2/atk1.../m1/m2/log)自己一套，
 -- 不會跟骰子/五手勢的 state 混在一起。initialized 是給「配對成功後才把雙方完整戰鬥數值寫進 state」
 -- 這一步用的旗標(見 assets/career.js initializeCareerMatch)，兩個分頁同時偵測到新場次也只有一個
@@ -879,13 +893,11 @@ end;
 $$;
 
 -- 一場 PVP 打完呼叫:贏家 +10 分再疊加連勝加成(每連勝+2分，最高再+10分封頂)、輸家 +2 分且連勝歸零
--- (企劃書第九節)，然後兩人的佇列狀態都退回 waiting、last_matched_at 更新成現在，可以馬上排下一場。
--- 用 status='matched' 當條件鎖，兩個分頁同時判定同一場結束也只有一次會真的加到分。
--- P1-7/P1-8修改(玩家回饋):PVP打贏不能只有排行分數，另外加碼給贏家幣、可自由分配的數值點，
--- 連勝越高獎勵越好(用跟積分連勝加成一樣的「封頂」寫法，連勝5場以上就頂滿，不會無限往上飆，
--- 避免PVP變成無腦刷資源)。獎勵細節算好後順便寫進 career_matches.state.pvpReward，
--- 這樣不管是誰的分頁(甚至旁觀者分頁)幫忙觸發這個結算，贏家自己重新整理都看得到自己實際拿了多少，
--- 不會因為是對方分頁幫忙結算就看不到明細。
+-- (企劃書第九節)。
+-- 玩家回饋修改(2026-09):原本打完一場，兩人的佇列狀態會直接退回 waiting，等於自動幫玩家排下一場，
+-- 玩家反應「不想要打完自動被排隊，要自己按按鈕才要排」。改成打完設成 'idle'(不在佇列裡)，
+-- match_career_players 只挑 status='waiting' 的人配對，'idle' 不會被自動撈到，玩家要自己按
+-- 「加入配對佇列」才會真的排回去(見 assets/db.js 的 joinCareerQueue，同一批修改)。
 create or replace function finish_career_match(p_match_id uuid, p_winner_id uuid, p_loser_id uuid)
 returns void
 language plpgsql
@@ -922,7 +934,7 @@ begin
   where id = p_match_id;
 
   update career_pvp_queue
-  set status = 'waiting',
+  set status = 'idle',
       current_score = current_score + 10 + streak_score_bonus,
       wins = wins + 1,
       win_streak = winner_streak,
@@ -930,7 +942,7 @@ begin
   where event_id = m.event_id and player_id = p_winner_id;
 
   update career_pvp_queue
-  set status = 'waiting', current_score = current_score + 2, losses = losses + 1, win_streak = 0, last_matched_at = now()
+  set status = 'idle', current_score = current_score + 2, losses = losses + 1, win_streak = 0, last_matched_at = now()
   where event_id = m.event_id and player_id = p_loser_id;
 
   -- 贏家的幣/數值點獎勵直接加到 career_progress(爬塔那邊用的資源)。如果贏家從頭到尾沒去過

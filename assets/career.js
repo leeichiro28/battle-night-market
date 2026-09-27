@@ -235,6 +235,8 @@
     const isNovice = myBuild.final_class === "novice" || myBuild.final_class.startsWith("novice_");
     const queueEntry = await db.getMyCareerQueueEntry(eventId, myId);
     const inQueue = queueEntry && queueEntry.status === "waiting";
+    // 玩家回饋:要能看到「誰正在排隊」，含職業/等級/數值，只有PVP開放時才需要撈。
+    const waitingList = pvpAllowed() ? await db.listWaitingCareerQueue(eventId).catch(() => []) : [];
 
     let html = "";
     if (broadcasts.length) {
@@ -280,9 +282,9 @@
       html += `
         <div class="career-queue-box">
           ${ui.icon("hourglass")}
-          <p style="margin:10px 0 4px;font-weight:700;">${notStarted ? "活動還沒開始" : `訓練期進行中${remainMin != null ? `，還剩約 ${remainMin} 分鐘` : ""}`}</p>
+          <p style="margin:10px 0 4px;font-weight:700;">${notStarted ? "活動還沒開始" : `準備時間進行中${remainMin != null ? `，還剩約 ${remainMin} 分鐘` : ""}`}</p>
           <p style="font-size:11.5px;color:var(--ink-dim);">${
-            notStarted ? "請等主辦人在後台按下「開始訓練期」。" : "PVP 對戰要等訓練期結束才會開放，先去爬塔練功、加點、拚裝備吧!(上面有「前往爬塔」的連結)"
+            notStarted ? "請等主辦人在後台按下「開始活動」。" : "PVP 對戰要等準備時間結束才會開放，先去爬塔練功、加點、拚裝備吧!(上面有「前往爬塔」的連結)"
           }</p>
         </div>`;
     } else if (inQueue) {
@@ -307,6 +309,35 @@
             <button class="btn" id="join-queue-btn">${ui.icon("swords")}加入配對佇列</button>
             <button class="btn ghost" id="test-bot-btn">${ui.icon("bot")}拉一隻機器人來打</button>
           </div>
+        </div>`;
+    }
+
+    // 玩家回饋新增:「誰正在排隊」列表，只有PVP開放時才顯示，含職業/等級/數值。
+    if (pvpAllowed()) {
+      html += `
+        <div style="margin-top:16px;">
+          <p class="shop-section-title">${ui.icon("users")}目前排隊中(${waitingList.length}人，等最久的排最前面)</p>
+          ${
+            waitingList.length
+              ? waitingList
+                  .map((row, idx) => {
+                    const isMe = row.queueEntry.player_id === myId;
+                    const name = (row.queueEntry.player && row.queueEntry.player.name) || "?";
+                    const summary = row.summary;
+                    const summaryText = summary
+                      ? `${ui.esc(summary.className)} Lv.${summary.level} · 攻${summary.stats.atk || summary.stats.matk || 0}防${summary.stats.def}速${summary.stats.spd}`
+                      : "";
+                    return `
+                      <div class="lb-row${isMe ? " me" : ""}">
+                        ${ui.rankBadge(idx + 1)}
+                        <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}
+                          <span style="color:var(--ink-dim);font-size:11px;"> · ${summaryText}</span>
+                        </span>
+                      </div>`;
+                  })
+                  .join("")
+              : `<div class="empty" style="font-size:11.5px;">${ui.icon("moon")}目前沒有人在排隊，加入佇列等下一個人來吧</div>`
+          }
         </div>`;
     }
 
@@ -490,10 +521,15 @@
       .map((row, idx) => {
         const isMe = row.queueEntry.player_id === myId;
         const name = (row.queueEntry.player && row.queueEntry.player.name) || "?";
+        const summary = row.summary;
+        // 玩家回饋:排行榜要能看到參加者的職業、等級、數值，不是只有分數跟樓層。
+        const summaryText = summary
+          ? ` · ${ui.esc(summary.className)} Lv.${summary.level} · 攻${summary.stats.atk || summary.stats.matk || 0}防${summary.stats.def}速${summary.stats.spd}`
+          : "";
         return `<div class="lb-row${isMe ? " me" : ""}">
           ${ui.rankBadge(idx + 1)}
           <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}
-            <span style="color:var(--ink-dim);font-size:11px;"> · 第${row.floor}層 · ${row.queueEntry.wins}勝${row.queueEntry.losses}敗</span>
+            <span style="color:var(--ink-dim);font-size:11px;"> · 第${row.floor}層 · ${row.queueEntry.wins}勝${row.queueEntry.losses}敗${summaryText}</span>
           </span>
           <span class="lb-score">${row.score}</span>
         </div>`;

@@ -2271,10 +2271,24 @@ const db = (function () {
     return data;
   }
 
-  // 加入配對佇列(已經在裡面就直接回傳現有那筆,不重置 last_matched_at,避免插隊)
+  // 加入配對佇列。
+  // 玩家回饋修改(2026-09):原本「已經在裡面就直接回傳現有那筆」，但現在打完一場後狀態會變成
+  // 'idle'(不會自動退回 waiting，見 finish_career_match)，所以這裡如果現有那筆不是 waiting/matched，
+  // 要真的把它改回 waiting、last_matched_at 更新成現在，玩家才會被排進佇列——不然按了「加入
+  // 配對佇列」畫面卻什麼都沒發生(因為舊的判斷邏輯以為「反正已經有資料列了」就直接跳過)。
   async function joinCareerQueue(eventId, playerId) {
     const existing = await getMyCareerQueueEntry(eventId, playerId);
-    if (existing) return existing;
+    if (existing && (existing.status === "waiting" || existing.status === "matched")) return existing;
+    if (existing) {
+      const { data, error } = await client
+        .from("career_pvp_queue")
+        .update({ status: "waiting", last_matched_at: new Date().toISOString() })
+        .eq("id", existing.id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    }
     const { data, error } = await client
       .from("career_pvp_queue")
       .insert({ event_id: eventId, player_id: playerId, status: "waiting" })
@@ -2282,6 +2296,58 @@ const db = (function () {
       .single();
     if (error) throw error;
     return data;
+  }
+
+  // 共用:給一批 player_id，撈他們的職業/等級/戰鬥數值，用在排行榜、排隊列表這種「秀給大家看」
+  // 的地方(玩家回饋:排行榜跟排隊列表都要能看到參加者的職業、等級、數值)。數值這裡用
+  // applyProgress算基礎值+加點+裝備，沒有另外疊加永久被動(數值精研之類)，因為那個要多一次
+  // 每人一筆的查詢，對「秀給大家看的概略數值」來說不划算，跟PVP對戰畫面裡看到的完整數值
+  // 會有些微落差，只是給玩家掃過去大概知道「這個人強不強」的用途。
+  async function _getCareerPlayerSummaries(eventId, playerIds) {
+    const ids = [...new Set(playerIds)].filter(Boolean);
+    if (!ids.length) return {};
+    const [buildsRes, progressRes] = await Promise.all([
+      client.from("career_builds").select("player_id, final_class").eq("event_id", eventId).in("player_id", ids),
+      client.from("career_progress").select("player_id, level, stat_alloc, equipment").eq("event_id", eventId).in("player_id", ids),
+    ]);
+    if (buildsRes.error) throw buildsRes.error;
+    if (progressRes.error) throw progressRes.error;
+    const buildByPlayer = {};
+    (buildsRes.data || []).forEach((b) => (buildByPlayer[b.player_id] = b));
+    const progressByPlayer = {};
+    (progressRes.data || []).forEach((p) => (progressByPlayer[p.player_id] = p));
+    const summaries = {};
+    ids.forEach((pid) => {
+      const build = buildByPlayer[pid];
+      const progress = progressByPlayer[pid];
+      const finalClass = (build && build.final_class) || "novice";
+      const classInfo = window.CareerData.CLASS_INFO[finalClass];
+      const stats = progress
+        ? window.CareerData.applyProgress(finalClass, progress.stat_alloc, progress.equipment)
+        : window.CareerData.computeStats(finalClass);
+      summaries[pid] = {
+        className: (classInfo && classInfo.name) || "見習生",
+        classIcon: (classInfo && classInfo.icon) || "user",
+        level: (progress && progress.level) || 1,
+        stats,
+      };
+    });
+    return summaries;
+  }
+
+  // 目前排隊中(status='waiting'，還沒配對成功的)的名單，玩家回饋要能看到「誰正在排隊」，
+  // 包含每個人的職業/等級/數值，等最久的排最前面。
+  async function listWaitingCareerQueue(eventId) {
+    const { data, error } = await client
+      .from("career_pvp_queue")
+      .select("*, player:player_id(name)")
+      .eq("event_id", eventId)
+      .eq("status", "waiting")
+      .order("last_matched_at", { ascending: true });
+    if (error) throw error;
+    const rows = data || [];
+    const summaries = await _getCareerPlayerSummaries(eventId, rows.map((r) => r.player_id));
+    return rows.map((r) => ({ queueEntry: r, summary: summaries[r.player_id] }));
   }
 
   async function listCareerQueue(eventId) {
@@ -3674,6 +3740,8 @@ const db = (function () {
     ]);
     if (queueRows.error) throw queueRows.error;
     if (progressRows.error) throw progressRows.error;
+    // 玩家回饋:排行榜要能看到參加者的職業、等級、數值，不是只有分數跟樓層。
+    const summaries = await _getCareerPlayerSummaries(eventId, (progressRows.data || []).map((p) => p.player_id));
     const queueByPlayer = {};
     (queueRows.data || []).forEach((q) => (queueByPlayer[q.player_id] = q));
     const rows = (progressRows.data || []).map((p) => {
@@ -3687,7 +3755,7 @@ const db = (function () {
         losses: 0,
         win_streak: 0,
       };
-      return { queueEntry, floor: p.floor || 0, floorBonus, score: queueEntry.current_score + floorBonus };
+      return { queueEntry, floor: p.floor || 0, floorBonus, score: queueEntry.current_score + floorBonus, summary: summaries[p.player_id] };
     });
     rows.sort((a, b) => b.score - a.score);
     return rows;
@@ -3869,6 +3937,7 @@ const db = (function () {
     getMyCareerQueueEntry,
     joinCareerQueue,
     listCareerQueue,
+    listWaitingCareerQueue,
     scanCareerMatchmaking,
     getMyActiveCareerMatch,
     getCareerMatch,

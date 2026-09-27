@@ -1105,11 +1105,16 @@
       .map((row, idx) => {
         const isMe = row.queueEntry.player_id === myId;
         const name = (row.queueEntry.player && row.queueEntry.player.name) || "?";
+        const summary = row.summary;
+        // 玩家回饋:排行榜要能看到參加者的職業、等級、數值，不是只有分數跟樓層。
+        const summaryText = summary
+          ? ` · ${ui.esc(summary.className)} Lv.${summary.level} · 攻${summary.stats.atk || summary.stats.matk || 0}防${summary.stats.def}速${summary.stats.spd}`
+          : "";
         return `
           <div class="lb-row${isMe ? " me" : ""}">
             ${ui.rankBadge(idx + 1)}
             <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}
-              <span style="color:var(--ink-dim);font-size:11px;"> · 第${row.floor}層 · ${row.queueEntry.wins}勝${row.queueEntry.losses}敗</span>
+              <span style="color:var(--ink-dim);font-size:11px;"> · 第${row.floor}層 · ${row.queueEntry.wins}勝${row.queueEntry.losses}敗${summaryText}</span>
             </span>
             <span class="lb-score">${row.score}</span>
           </div>`;
