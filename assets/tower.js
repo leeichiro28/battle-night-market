@@ -64,6 +64,16 @@
     refreshQueued = true;
     setTimeout(async () => {
       refreshQueued = false;
+      // P1-1修復:合成分頁用的是原生 <select> 下拉選單，只要整頁重繪(loadAndRender)就會把
+      // 這個 DOM 元素整個換掉，開著的下拉選單會被瀏覽器強制收合。這裡跟下面那顆「每秒重繪」
+      // 計時器一樣，判斷玩家目前是不是正在跟 <select>/<input>/<textarea> 互動，互動中的話
+      // 先不重繪，晚一點再重試一次，不會漏掉這次的資料更新，也不會把玩家選到一半的選單關掉。
+      const activeTag = document.activeElement && document.activeElement.tagName;
+      const interacting = activeTag === "SELECT" || activeTag === "INPUT" || activeTag === "TEXTAREA";
+      if (interacting) {
+        scheduleRefresh();
+        return;
+      }
       try {
         await loadAndRender();
       } catch (e) {
@@ -135,9 +145,11 @@
   }
 
   // 活動的「相」放在 events.rules.careerPhase(跟 dice 規則、auction 設定同一個 jsonb 欄位)：
-  //   還沒設定過(undefined) -> 主辦人還沒按「開始訓練期」，爬塔動作全部鎖住
-  //   'training' -> 訓練期進行中，爬塔開放
-  //   'battle'   -> 訓練期結束，爬塔鎖住，PVP開放
+  //   還沒設定過(undefined) -> 主辦人還沒按「開始活動」，爬塔動作全部鎖住
+  //   'training' -> 準備時間進行中(15分鐘)，爬塔開放，PVP還沒開放
+  //   'battle'   -> 準備時間結束，PVP開放，爬塔照樣開放(可以邊爬塔邊PVP)
+  // 只有 events.status==='closed'(整場活動結束，見 maybeAdvanceCareerPhase 的自動收尾)才會
+  // 把爬塔重新鎖住。
   function getCareerPhase() {
     return (ev && ev.rules && ev.rules.careerPhase) || "not_started";
   }
@@ -1011,22 +1023,48 @@
         </div>`;
     });
 
-    const invRows = Object.keys(groups)
+    // P1-2修復:背包原本完全沒有排序，就是資料陣列裡剛好的順序(等於是隨機的)，玩家沒辦法一眼
+    // 看出哪件比較強。這個遊戲的裝備數值是「同部位+同稀有度＝完全一樣」，稀有度越高數值一定越高
+    // (普通<稀有<史詩<傳說，這是資料表本身的設計)，所以照「稀有度高→低」排序，就等於是照
+    // 「實際數值高→低」排序，兩者是同一件事。同稀有度之間再照武器/防具/飾品分組，方便找。
+    const rarityRank = { legendary: 3, epic: 2, rare: 1, common: 0 };
+    const slotRank = { weapon: 0, armor: 1, accessory: 2 };
+    const sortedKeys = Object.keys(groups).sort((a, b) => {
+      const ga = groups[a];
+      const gb = groups[b];
+      const rarityDiff = rarityRank[gb.rarity] - rarityRank[ga.rarity];
+      if (rarityDiff !== 0) return rarityDiff;
+      return slotRank[ga.slot] - slotRank[gb.slot];
+    });
+
+    const invRows = sortedKeys
       .map((key) => {
         const g = groups[key];
         const reqLevel = g.minReq; // 挑最容易穿的那件當代表(equip按鈕預設也是穿它)
         const reqLevelText = g.minReq === g.maxReq ? `Lv.${g.minReq}` : `Lv.${g.minReq}~${g.maxReq}`;
         const canWear = progress.level >= reqLevel;
+        // P1-2新增:裝備比較——跟這個部位「目前身上穿的」比，讓玩家不用自己記數字就知道換上去是變強還變弱。
+        const equipped = progress.equipment[g.slot];
+        let compareHtml = "";
+        if (equipped && equipped.statKey === g.statKey && equipped.rarity !== g.rarity) {
+          const delta = g.statValue - equipped.statValue;
+          if (delta !== 0) {
+            const up = delta > 0;
+            compareHtml = `<span style="color:${up ? "var(--green)" : "var(--red)"};font-weight:700;"> ${up ? "↑" : "↓"}${Math.abs(delta)}(比目前裝備的${slotLabel(g.slot)})</span>`;
+          }
+        } else if (!equipped) {
+          compareHtml = `<span style="color:var(--ink-dim);"> ·這個部位還沒裝備東西</span>`;
+        }
         return `
           <div class="shop-row">
             ${rarityTag(g.rarity)}
-            <div class="shop-row-name">${ui.esc(g.name)}<span class="shop-row-desc">${CareerFloors.describeItem(g)} · 背包裡 ${g.count} 件 · 需要 ${reqLevelText}</span></div>
+            <div class="shop-row-name">${ui.esc(g.name)}<span class="shop-row-desc">${CareerFloors.describeItem(g)}${compareHtml} · 背包裡 ${g.count} 件 · 需要 ${reqLevelText}</span></div>
             <button class="btn small" data-equip-item="${g.ids[0]}" ${canWear ? "" : "disabled"}>${ui.icon("shirt")}${canWear ? "穿上" : `Lv.${reqLevel}才能穿`}</button>
           </div>`;
       })
       .join("");
 
-    html += `<p class="shop-section-title" style="margin-top:16px;">背包(${(progress.inventory || []).length} 件)</p>`;
+    html += `<p class="shop-section-title" style="margin-top:16px;">背包(${(progress.inventory || []).length} 件，稀有度高到低排序)</p>`;
     html += invRows || `<div class="empty" style="font-size:12px;">${ui.icon("package-open")}背包是空的，去挑戰樓層、開商店或抽獎機拿裝備吧</div>`;
     return html;
   }
@@ -1098,7 +1136,12 @@
     const expNeed = CareerFloors.expToNextLevel(progress.level);
     const trainCooldownMs = new Date(progress.train_ready_at).getTime() - Date.now();
     const phase = getCareerPhase();
-    const locked = phase !== "training"; // 只有訓練期才能做爬塔動作(還沒開始/已經結束都鎖)
+    // P1-4追加修改(2次回饋):原本設計是「準備時間爬塔、對戰期PVP」互斥切換，時間到PVP開放
+    // 後爬塔就整個鎖住。玩家實際想要的是「準備時間結束後，爬塔跟PVP同時開放，打不贏就投降
+    // 回來繼續爬塔」，所以現在只有「活動還沒開始」或「活動已經結束(時間到自動收尾或主辦人
+    // 手動結束)」才鎖爬塔功能，PVP開放期間(battle階段)爬塔一樣可以正常進行。
+    const eventClosed = ev && ev.status === "closed";
+    const locked = phase === "not_started" || eventClosed;
     const hasPendingEvent = !!progress.pending_event;
     const canTrain = trainCooldownMs <= 0 && !locked && !hasPendingEvent;
     const nextFloor = progress.floor + 1;
@@ -1107,11 +1150,10 @@
 
     let html = "";
     if (locked) {
-      const msg =
-        phase === "not_started"
-          ? "訓練期還沒開始，請等主辦人在後台按下「開始訓練期」，開始之後才能特訓/挑戰樓層/掛機。"
-          : "訓練期已經結束，爬塔功能關閉了，你目前的加點跟裝備就是這場PVP要用的數值，前往上面的PVP對戰吧!";
+      const msg = phase === "not_started" ? "準備時間還沒開始，請等主辦人在後台按下「開始活動」，開始之後才能特訓/挑戰樓層/掛機。" : "活動已經結束了，感謝你的參與!";
       html += `<div class="empty" style="margin-bottom:14px;">${ui.icon(phase === "not_started" ? "hourglass" : "flag")}${ui.esc(msg)}</div>`;
+    } else if (phase === "battle") {
+      html += `<div class="empty" style="margin-bottom:14px;">${ui.icon("swords")}PVP已經開放了，爬塔跟PVP可以同時進行，打不贏對手可以直接投降、回來繼續爬塔(上面有「前往PVP」的連結)。</div>`;
     }
 
     html += `

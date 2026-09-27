@@ -511,6 +511,24 @@
       </div>`;
   }
 
+  // P1-6新增:原本PVP畫面只看得到HP/MP條跟速度，看不到攻擊/防禦/幸運/暴擊率這些其實會決定
+  // 戰鬥走向的數值。這裡把雙方完整素質列出來，暴擊率照規則說明的公式(5% + 幸運x2%)現算一個
+  // 估計值給玩家參考(刺客職業實戰時會因為掉血而更高，這裡先顯示基礎值，不然每次掉血都要重算)。
+  function fullStatsHtml(classKey, atk, def, spd, luck, matk, critBonus) {
+    const chance = Math.round(CareerData.critChance({ luck }, 1, classKey, critBonus || 0, 0) * 100);
+    const items = [
+      matk > 0 ? ["魔攻", matk] : ["攻擊", atk],
+      ["防禦", def],
+      ["速度", spd],
+      ["幸運", luck],
+      ["暴擊率", `${chance}%`],
+    ];
+    return `
+      <div class="career-full-stats" style="display:flex;flex-wrap:wrap;gap:4px 10px;font-size:10.5px;color:var(--ink-dim);margin-top:2px;">
+        ${items.map(([label, val]) => `<span>${ui.esc(label)} ${val}</span>`).join("")}
+      </div>`;
+  }
+
   function renderBattle(match) {
     const s = match.state || {};
     const myName = mySlot === 1 ? match.p1?.name : match.p2?.name;
@@ -527,6 +545,16 @@
     const oppMaxMp = (mySlot === 1 ? s.maxmp2 : s.maxmp1) || 0;
     const mySpd = mySlot === 1 ? s.spd1 : s.spd2;
     const oppSpd = mySlot === 1 ? s.spd2 : s.spd1;
+    const myAtk = mySlot === 1 ? s.atk1 : s.atk2;
+    const oppAtk = mySlot === 1 ? s.atk2 : s.atk1;
+    const myDef = mySlot === 1 ? s.def1 : s.def2;
+    const oppDef = mySlot === 1 ? s.def2 : s.def1;
+    const myLuck = mySlot === 1 ? s.luck1 : s.luck2;
+    const oppLuck = mySlot === 1 ? s.luck2 : s.luck1;
+    const myMatk = (mySlot === 1 ? s.matk1 : s.matk2) || 0;
+    const oppMatk = (mySlot === 1 ? s.matk2 : s.matk1) || 0;
+    const myCritBonus = (mySlot === 1 ? s.critBonus1 : s.critBonus2) || 0;
+    const oppCritBonus = (mySlot === 1 ? s.critBonus2 : s.critBonus1) || 0;
     const ultAffordable = myMp >= (CareerData.ULT_MANA_COST || 0);
     const mySkillUnlocked = !!(mySlot === 1 ? s.skillUnlocked1 : s.skillUnlocked2);
     const skillAffordable = mySkillUnlocked && myMp >= (CareerData.SKILL_MANA_COST || 0);
@@ -552,6 +580,7 @@
           <div class="cs-sub">${ui.esc(myInfo.name)} · 速度 ${mySpd}</div>
           ${statBarHtml("HP", myHp, myMaxHp, "hp")}
           ${statBarHtml("MP", myMp, myMaxMp, "mp")}
+          ${fullStatsHtml(myClass, myAtk, myDef, mySpd, myLuck, myMatk, myCritBonus)}
         </div>
         <div class="career-vs-mid">VS</div>
         <div class="career-side right">
@@ -559,17 +588,26 @@
           <div class="cs-sub">${ui.esc(oppInfo.name)} · 速度 ${oppSpd}</div>
           ${statBarHtml("HP", oppHp, oppMaxHp, "hp")}
           ${statBarHtml("MP", oppMp, oppMaxMp, "mp")}
+          ${fullStatsHtml(oppClass, oppAtk, oppDef, oppSpd, oppLuck, oppMatk, oppCritBonus)}
         </div>
       </div>`;
 
     if (isDone) {
+      const reward = s.pvpReward; // P1-7/P1-8:贏家的幣/連勝加成明細，見 finish_career_match RPC
+      let rewardLine = "";
+      if (iWon && reward) {
+        const parts = [`+${reward.coinReward}幣`];
+        if (reward.statPointBonus > 0) parts.push(`+${reward.statPointBonus}數值點`);
+        rewardLine = `<p style="font-size:12px;color:var(--gold);margin:6px 0 0;">${ui.icon("gift")}${parts.join("、")}${reward.winStreak >= 2 ? `(連勝${reward.winStreak}場加成)` : ""}</p>`;
+      }
       html += `
         <div class="career-queue-box" style="background:var(--panel2);border-radius:var(--radius);border:1px solid var(--line);">
           ${ui.icon(iWon ? "trophy" : "skull")}
           <p style="margin:10px 0 4px;font-weight:700;color:${iWon ? "var(--gold)" : "var(--ink)"};">
             ${iWon ? "獲勝!+10 分" : "戰敗...+2 分"}
           </p>
-          <p style="font-size:11.5px;color:var(--ink-dim);">正在回到配對佇列，準備下一場...</p>
+          ${rewardLine}
+          <p style="font-size:11.5px;color:var(--ink-dim);margin-top:6px;">正在回到配對佇列，準備下一場...</p>
         </div>`;
     } else {
       const iActed = submittedThisRound;
@@ -594,6 +632,9 @@
             ${ui.icon("flame")}${ui.esc(myUltName || myInfo.ultName)}(${CareerData.ULT_MANA_COST || 0}魔力)${!ultAffordable ? "(魔力不足)" : ""}
           </button>
         </div>
+        <div style="text-align:center;margin-top:8px;">
+          <button class="btn ghost small" id="surrender-btn" style="color:var(--red);border-color:var(--red);">${ui.icon("flag")}投降</button>
+        </div>
         <p id="round-status" style="text-align:center;font-size:11.5px;color:var(--ink-dim);margin:10px 0 0;">
           ${iActed ? "已送出這回合的動作，等待對手..." : `第 ${s.round} 回合，剩餘 <span id="round-timer">30</span> 秒`}
         </p>`;
@@ -615,11 +656,35 @@
       const ultBtn = document.getElementById("ult-btn");
       const skillBtn = document.getElementById("skill-btn");
       const skill2Btn = document.getElementById("skill2-btn");
+      const surrenderBtn = document.getElementById("surrender-btn");
       if (atkBtn) atkBtn.onclick = () => submitMyMove(match, "attack");
       if (ultBtn) ultBtn.onclick = () => submitMyMove(match, "ult");
       if (skillBtn) skillBtn.onclick = () => submitMyMove(match, "skill1");
       if (skill2Btn) skill2Btn.onclick = () => submitMyMove(match, "skill2");
+      if (surrenderBtn) surrenderBtn.onclick = () => doSurrender(match);
       startRoundTimer(match);
+    }
+  }
+
+  // P1-5新增:投降——玩家發現打不過可以直接認輸，不用硬撐到血量歸零。投降方視同戰敗
+  // (拿戰敗的+2分、不會拿到勝利獎勵)，對手視同正常獲勝。呼叫的還是同一個 finishCareerMatch，
+  // 積分/連勝計算邏輯跟正常打完全場血量歸零結束完全一樣，不用另外寫一套判定。
+  async function doSurrender(match) {
+    const ok = await ui.confirm("確定要投降嗎?這場會直接判你戰敗，對手獲勝，不能反悔。", {
+      title: "投降",
+      confirmText: "確定投降",
+      tone: "danger",
+    });
+    if (!ok) return;
+    const surrenderBtn = document.getElementById("surrender-btn");
+    if (surrenderBtn) surrenderBtn.disabled = true;
+    try {
+      const opponentId = mySlot === 1 ? match.player2_id : match.player1_id;
+      await db.finishCareerMatch(match.id, opponentId, myId);
+      await refreshAll();
+    } catch (e) {
+      if (surrenderBtn) surrenderBtn.disabled = false;
+      await ui.alert("投降失敗:" + (e.message || "未知錯誤"), { title: "操作失敗", tone: "danger" });
     }
   }
 

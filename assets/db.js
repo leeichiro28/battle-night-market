@@ -3608,10 +3608,16 @@ const db = (function () {
   }
 
   // 主辦人開始訓練期:設定倒數分鐘數，寫入 trainingEndsAt。
+  // P1-4修改(玩家回饋):PVP改成「整場活動(準備+對戰)總共60分鐘、前15分鐘準備、15分鐘後開放PVP」，
+  // 這裡另外存一個 activityEndsAt(從現在起算60分鐘的整場活動截止時間，跟 minutes/trainingEndsAt
+  // 是分開算的兩件事)，讓對戰期不會無限期開著，時間到自動結算收尾(見 maybeAdvanceCareerPhase)。
+  const CAREER_ACTIVITY_TOTAL_MINUTES = 60;
   async function startCareerTrainingPhase(eventId, minutes) {
     const ev = await getEvent(eventId);
-    const trainingEndsAt = new Date(Date.now() + minutes * 60 * 1000).toISOString();
-    const rules = { ...(ev.rules || {}), careerPhase: "training", trainingMinutes: minutes, trainingEndsAt };
+    const now = Date.now();
+    const trainingEndsAt = new Date(now + minutes * 60 * 1000).toISOString();
+    const activityEndsAt = new Date(now + CAREER_ACTIVITY_TOTAL_MINUTES * 60 * 1000).toISOString();
+    const rules = { ...(ev.rules || {}), careerPhase: "training", trainingMinutes: minutes, trainingEndsAt, activityEndsAt };
     const { error } = await client.from("events").update({ rules }).eq("id", eventId);
     if (error) throw error;
   }
@@ -3629,13 +3635,30 @@ const db = (function () {
   async function maybeAdvanceCareerPhase(eventId) {
     const ev = await getEvent(eventId);
     const rules = ev.rules || {};
-    if (rules.careerPhase !== "training" || !rules.trainingEndsAt) return false;
-    if (new Date(rules.trainingEndsAt).getTime() > Date.now()) return false;
-    await client
-      .from("events")
-      .update({ rules: { ...rules, careerPhase: "battle" } })
-      .eq("id", eventId);
-    return true;
+    if (rules.careerPhase === "training" && rules.trainingEndsAt && new Date(rules.trainingEndsAt).getTime() <= Date.now()) {
+      await client
+        .from("events")
+        .update({ rules: { ...rules, careerPhase: "battle" } })
+        .eq("id", eventId);
+      return true;
+    }
+    // P1-4新增:整場活動(準備+PVP對戰)時間到(activityEndsAt)自動結算收尾，主辦人不用一直守著
+    // 手動按「結束活動」。用「先搶著把 status 改成 closed」當樂觀鎖:很多人剛好同時開著頁面、
+    // 時間一到大家幾乎同時觸發這個檢查，也只有一個人真的搶得到、去跑後面的結算流程，
+    // 不會重複結算、重複發獎勵(closeCareerEvent本身沒有防重入)。
+    if (rules.careerPhase === "battle" && rules.activityEndsAt && ev.status !== "closed" && new Date(rules.activityEndsAt).getTime() <= Date.now()) {
+      const { data: claimed, error: claimErr } = await client
+        .from("events")
+        .update({ status: "closed" })
+        .eq("id", eventId)
+        .eq("status", ev.status)
+        .select();
+      if (!claimErr && claimed && claimed.length) {
+        await closeCareerEvent(eventId);
+        return true;
+      }
+    }
+    return false;
   }
 
   // 最終積分 = PVP戰績分(含連勝加成，已經算在 current_score 裡) + 爬塔高度加成(每爬10層+5分)

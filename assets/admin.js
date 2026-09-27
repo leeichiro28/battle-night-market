@@ -468,12 +468,23 @@ async function renderAuctionAdminPanel(container, ev) {
   standings.forEach((row) => container.appendChild(auctionParticipantRow(row.participant, onSaved)));
 }
 
-// 職業養成對決訓練期倒數文字，卡片重繪時算一次就好(不需要到秒更新，主辦人畫面本來就會定期整批重繪)
+// 職業養成對決倒數文字，卡片重繪時算一次就好(不需要到秒更新，主辦人畫面本來就會定期整批重繪)
 function careerTrainingCountdownText(ev) {
   const endsAt = ev.rules && ev.rules.trainingEndsAt;
   if (!endsAt) return "";
   const ms = new Date(endsAt).getTime() - Date.now();
   if (ms <= 0) return "時間快到了，隨時會自動切到對戰期";
+  const totalSec = Math.ceil(ms / 1000);
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `剩餘 ${min} 分 ${sec} 秒`;
+}
+// P1-4新增:對戰期(PVP開放)的倒數文字，用 activityEndsAt(整場活動60分鐘的截止時間)算剩餘時間。
+function careerBattleCountdownText(ev) {
+  const endsAt = ev.rules && ev.rules.activityEndsAt;
+  if (!endsAt) return "";
+  const ms = new Date(endsAt).getTime() - Date.now();
+  if (ms <= 0) return "時間快到了，隨時會自動結算收尾";
   const totalSec = Math.ceil(ms / 1000);
   const min = Math.floor(totalSec / 60);
   const sec = totalSec % 60;
@@ -505,13 +516,13 @@ function eventAdminCard(ev) {
     ? `<div class="action-row" style="margin-top:8px;">
         ${
           !careerPhase
-            ? `<button class="btn small" data-action="start-career-training">${ui.icon("hourglass")}開始訓練期(60分鐘)</button>`
+            ? `<button class="btn small" data-action="start-career-training">${ui.icon("hourglass")}開始活動(15分鐘準備+開放PVP，共60分鐘)</button>`
             : careerPhase === "training"
-            ? `<span class="tag" style="margin-right:8px;">${ui.icon("hourglass")}訓練期倒數中，${ui.esc(
+            ? `<span class="tag" style="margin-right:8px;">${ui.icon("hourglass")}準備時間倒數中，${ui.esc(
                 careerTrainingCountdownText(ev)
               )}</span>
-               <button class="btn ghost small" data-action="end-career-training-now">${ui.icon("flag-off")}提前結束訓練期，開放PVP</button>`
-            : `<span class="tag">${ui.icon("swords")}對戰期進行中</span>`
+               <button class="btn ghost small" data-action="end-career-training-now">${ui.icon("flag-off")}提前結束準備，開放PVP</button>`
+            : `<span class="tag">${ui.icon("swords")}對戰期進行中，${ui.esc(careerBattleCountdownText(ev))}</span>`
         }
       </div>`
     : "";
@@ -589,7 +600,7 @@ function eventAdminCard(ev) {
       startTrainingBtn.disabled = true;
       startTrainingBtn.innerHTML = ui.icon("loader-circle") + "開始中...";
       try {
-        await db.startCareerTrainingPhase(ev.id, 60);
+        await db.startCareerTrainingPhase(ev.id, 15);
         loadAll();
       } catch (e) {
         await ui.alert(e.message || "開始訓練期失敗", { title: "操作失敗", tone: "danger" });
@@ -600,9 +611,9 @@ function eventAdminCard(ev) {
   const endTrainingBtn = card.querySelector('[data-action="end-career-training-now"]');
   if (endTrainingBtn) {
     endTrainingBtn.onclick = async () => {
-      const ok = await ui.confirm("確定要提前結束訓練期嗎?結束後爬塔功能會關閉，玩家改成可以開始PVP對戰。", {
-        title: "提前結束訓練期",
-        confirmText: "結束訓練期",
+      const ok = await ui.confirm("確定要提前結束準備時間嗎?結束後爬塔功能會關閉，玩家改成可以開始PVP對戰。", {
+        title: "提前結束準備時間",
+        confirmText: "結束準備時間",
       });
       if (!ok) return;
       endTrainingBtn.disabled = true;

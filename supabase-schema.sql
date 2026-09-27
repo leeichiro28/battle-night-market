@@ -881,6 +881,11 @@ $$;
 -- 一場 PVP 打完呼叫:贏家 +10 分再疊加連勝加成(每連勝+2分，最高再+10分封頂)、輸家 +2 分且連勝歸零
 -- (企劃書第九節)，然後兩人的佇列狀態都退回 waiting、last_matched_at 更新成現在，可以馬上排下一場。
 -- 用 status='matched' 當條件鎖，兩個分頁同時判定同一場結束也只有一次會真的加到分。
+-- P1-7/P1-8修改(玩家回饋):PVP打贏不能只有排行分數，另外加碼給贏家幣、可自由分配的數值點，
+-- 連勝越高獎勵越好(用跟積分連勝加成一樣的「封頂」寫法，連勝5場以上就頂滿，不會無限往上飆，
+-- 避免PVP變成無腦刷資源)。獎勵細節算好後順便寫進 career_matches.state.pvpReward，
+-- 這樣不管是誰的分頁(甚至旁觀者分頁)幫忙觸發這個結算，贏家自己重新整理都看得到自己實際拿了多少，
+-- 不會因為是對方分頁幫忙結算就看不到明細。
 create or replace function finish_career_match(p_match_id uuid, p_winner_id uuid, p_loser_id uuid)
 returns void
 language plpgsql
@@ -888,29 +893,54 @@ as $$
 declare
   m record;
   winner_streak int;
-  streak_bonus int;
+  streak_score_bonus int;
+  win_coin_reward int;
+  win_stat_point_bonus int;
+  reward jsonb;
 begin
   select * into m from career_matches where id = p_match_id and status = 'active';
   if m is null then
     return; -- 已經被結算過了
   end if;
 
-  update career_matches set status = 'done', winner_id = p_winner_id where id = p_match_id;
+  select coalesce(win_streak, 0) + 1 into winner_streak from career_pvp_queue where event_id = m.event_id and player_id = p_winner_id;
+  winner_streak := coalesce(winner_streak, 1);
+  streak_score_bonus := least(winner_streak * 2, 10);
+  -- 幣:基礎15~25隨機 + 每連勝1場多5幣，連勝5場以上封頂(最多再+25)。
+  win_coin_reward := (15 + floor(random() * 11)::int) + least(winner_streak * 5, 25);
+  -- 數值點:連勝滿3場才開始給，之後每多連勝2場多1點，最高封頂3點，避免PVP刷點刷過頭。
+  win_stat_point_bonus := least(greatest((winner_streak - 1) / 2, 0), 3);
+  reward := jsonb_build_object(
+    'winStreak', winner_streak,
+    'streakScoreBonus', streak_score_bonus,
+    'coinReward', win_coin_reward,
+    'statPointBonus', win_stat_point_bonus
+  );
 
-  select win_streak + 1 into winner_streak from career_pvp_queue where event_id = m.event_id and player_id = p_winner_id;
-  streak_bonus := least(coalesce(winner_streak, 1) * 2, 10);
+  update career_matches
+  set status = 'done', winner_id = p_winner_id, state = coalesce(state, '{}'::jsonb) || jsonb_build_object('pvpReward', reward)
+  where id = p_match_id;
 
   update career_pvp_queue
   set status = 'waiting',
-      current_score = current_score + 10 + streak_bonus,
+      current_score = current_score + 10 + streak_score_bonus,
       wins = wins + 1,
-      win_streak = coalesce(winner_streak, 1),
+      win_streak = winner_streak,
       last_matched_at = now()
   where event_id = m.event_id and player_id = p_winner_id;
 
   update career_pvp_queue
   set status = 'waiting', current_score = current_score + 2, losses = losses + 1, win_streak = 0, last_matched_at = now()
   where event_id = m.event_id and player_id = p_loser_id;
+
+  -- 贏家的幣/數值點獎勵直接加到 career_progress(爬塔那邊用的資源)。如果贏家從頭到尾沒去過
+  -- 爬塔頁面(理論上可能，PVP數值沒去過爬塔會用最陽春基礎值應戰)，這裡就不會有對應的
+  -- career_progress列可以更新，這次獎勵會悄悄沒發到(屬於已知的邊界情況，發生機率極低，
+  -- 因為正常玩法幾乎都會先去爬塔練基礎值)。
+  update career_progress
+  set coins = coins + win_coin_reward,
+      stat_points = stat_points + win_stat_point_bonus
+  where event_id = m.event_id and player_id = p_winner_id;
 end;
 $$;
 
