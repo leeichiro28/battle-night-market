@@ -503,9 +503,9 @@
           整場活動(準備+PVP對戰)總共60分鐘。活動開始要等主辦人在後台按下「開始活動」，前15分鐘是準備時間，只能爬塔不能PVP，時間到自動切到對戰期、開放PVP，主辦人也可以提前手動結束準備時間。<b style="color:var(--ink);">對戰期開放後爬塔不會關閉</b>，可以邊爬塔邊PVP，PVP打不贏也可以直接投降、回來繼續爬塔。<br/><br/>
           爬塔頁面有三個核心動作:<br/><br/>
           <b style="color:var(--ink);"><i data-lucide="hand-coins" class="ico"></i> 特訓</b>:每90秒可領一次，穩定的基礎收入(幣+少量經驗)，不用打怪也能慢慢升級。<br/><br/>
-          <b style="color:var(--ink);"><i data-lucide="swords" class="ico"></i> 挑戰樓層</b>:沒有冷卻，AI對手直接算完整場戰鬥(不用像PVP等對方回合)。打贏才推進樓層拿獎勵，打輸留在原樓層、不扣任何東西，可以馬上重試。已經清過的樓層也能回頭重新挑戰，用來穩定刷幣/經驗。每次挑戰都是<b style="color:var(--ink);">重新滿血開打</b>，不會把上一場的傷帶到下一場。<br/><br/>
+          <b style="color:var(--ink);"><i data-lucide="swords" class="ico"></i> 挑戰樓層</b>:沒有冷卻，AI對手直接算完整場戰鬥(不用像PVP等對方回合)。打贏才推進樓層拿獎勵，打輸留在原樓層、不扣任何東西，可以馬上重試。已經清過的樓層也能回頭重新挑戰，用來穩定刷幣/經驗/裝備掉落。每次挑戰都是<b style="color:var(--ink);">重新滿血開打</b>，不會把上一場的傷帶到下一場。<br/><br/>
           <b style="color:var(--ink);"><i data-lucide="repeat" class="ico"></i> 練功掛機</b>:只有已經清過的樓層才能開，系統背景自動幫你反覆挑戰，效率打七折，換取不用一直盯著操作。<br/><br/>
-          每滿10層會遇到小關主，數值比較高但獎勵也更好，保底掉稀有以上的裝備。
+          每滿10層會遇到小關主，數值比較高但獎勵也更好，保底掉稀有以上的裝備。<b style="color:var(--ink);">第一次</b>挑戰關主要手動即時對戰(可以撤退)，之後想再重打(賭裝備掉落)就跟一般樓層一樣AI直接算完，不用再手動打一次。40層、50層的關主是獨立命名的隱藏Boss，打贏有機率掉落Boss限定傳說裝備。
           </p>
         </div>
 
@@ -513,15 +513,16 @@
           <h4><i data-lucide="sparkles" class="ico"></i> 爬塔事件</h4>
           <p style="color:var(--ink-dim);line-height:1.9;">
           挑戰樓層時有 25% 機率不是打怪、是穿插一個隨機事件:<br/><br/>
-          <b style="color:var(--ink);">立即生效</b>:算命攤(臨時加值)、神秘人切磋(練習賽，輸了不扣東西)、扒手出沒(損失一點幣)、彈珠台機關(下次特訓多等10秒)、貴人相助(送1點自由數值點，很稀有)、夜市抽獎機(免費抽一次)。<br/><br/>
-          <b style="color:var(--ink);">需要選擇</b>:神秘寶箱(當場開穩拿小獎，或帶回去賭一把可能更好也可能更差)、路過商人(限時特價，買或不買)、轉職邀請(付幣把已經點過的數值點收回來重分配)——這種事件會先卡住，要先做選擇才能繼續其他爬塔動作。
+          <b style="color:var(--ink);">立即生效</b>:算命攤(臨時加值)、神秘人切磋(練習賽，輸了不扣東西)、扒手出沒(損失一點幣)、彈珠台機關(下次特訓多等10秒)、貴人相助(送1點自由數值點，很稀有)、夜市抽獎機(免費抽一次)、職業前輩客串教學(送經驗值)、夜市走失小孩(大機率拿到謝禮幣)、路邊試穿攤位(免費送一件普通裝備)、數值精靈眷顧(50%送1點數值點/50%拿走一點幣)。<br/><br/>
+          <b style="color:var(--ink);">需要選擇</b>:神秘寶箱(當場開穩拿小獎，或帶回去賭一把可能更好也可能更差)、路過商人(限時特價，買或不買)、轉職邀請(付幣把已經點過的數值點收回來重分配)、夜市矇眼摸彩(三個箱子隨便選一個，開了才知道裡面是什麼)——這種事件會先卡住，要先做選擇才能繼續其他爬塔動作(可以勾選「不要再問我」，下次同樣的事件直接照這次的選擇處理)。
           </p>
         </div>
 
         <div class="game-section">
           <h4><i data-lucide="store" class="ico"></i> 商店 / 抽獎機 / 合成 / 背包</h4>
           <p style="color:var(--ink-dim);line-height:1.9;">
-          裝備分四個稀有度:<span class="tier-tag common">普通</span> <span class="tier-tag rare">稀有</span> <span class="tier-tag epic">史詩</span> <span class="tier-tag legendary">傳說</span>，武器是分職業的(每個職業武器造型/加成都不一樣)，防具/飾品共用。<b style="color:var(--gold);">傳說裝備每個部位(武器/防具/飾品)各限購1件</b>，最多可以同時裝備3件傳說(商店買、抽獎機中都算同一個名額)。<br/><br/>
+          裝備分四個稀有度:<span class="tier-tag common">普通</span> <span class="tier-tag rare">稀有</span> <span class="tier-tag epic">史詩</span> <span class="tier-tag legendary">傳說</span>，武器是分職業的，而且每個職業每個稀有度都有<b style="color:var(--ink);">2款不同風格</b>的武器(例如戰士是「大鐵叉」跟「巨斧」)，取得時隨機拿到其中一款，史詩/傳說這兩款各自有不同的特殊效果，不是完全一樣。防具/飾品也是每個稀有度2款(不分職業共用)。<b style="color:var(--gold);">傳說裝備的限制是「同一件裝備(同名字)不會重複拿到第二件」</b>，不同名字的傳說裝備(例如同部位的另一款、或Boss限定掉落的)互不影響，都可以拿到、都可以同時裝備。<br/><br/>
+          <b style="color:var(--ink);">套裝效果</b>:40層、50層Boss限定掉落的傳說裝備(武器+防具+飾品)是同一套，三件都裝備在身上會額外觸發套裝效果(比單件更好一點)，背包分頁裝備齊全時會顯示提示。<br/><br/>
           <b style="color:var(--ink);">商店</b>:直接花幣加數值點(買一次漲一次價)、買指定稀有度的裝備、買戰功勳章(純加排行分，不影響戰鬥數值，給不想拚戰鬥的人)。<br/><br/>
           <b style="color:var(--ink);">抽獎機</b>:固定幣數抽一次，機率表:小獎(幣)55%、自由數值點20%、普通裝備10%、稀有裝備12%、史詩裝備2.5%、傳說裝備0.5%。<br/><br/>
           <b style="color:var(--ink);">合成</b>:背包裡同部位、同稀有度的裝備湊滿3件可以合成一次，固定機率成功變成下一個稀有度(普通→稀有→史詩)，失敗只拿回1件隨機部位的普通裝備。<br/><br/>
@@ -551,9 +552,23 @@
         <div class="game-section">
           <h4><i data-lucide="skull" class="ico"></i> 樓層怪物與掉落表</h4>
           <p style="color:var(--ink-dim);line-height:1.9;margin:0 0 10px;">
-          目前開放 20 層，每滿 10 層是小關主(要手動即時對戰，其餘樓層AI直接算完整場)。掉落機率是「打贏這一層」的前提下才會判定，普通樓層只掉得到普通/稀有，小關主保底稀有以上。裝備等級門檻是「第幾層掉的」決定(見上面商店那節)，不是看稀有度。
+          目前開放 50 層，每滿 10 層是小關主(第一次挑戰要手動即時對戰，重打跟其餘樓層一樣AI直接算完整場)。掉落機率是「打贏這一層」的前提下才會判定，普通樓層只掉得到普通/稀有，小關主保底稀有以上，40層開始一般樓層也會有機率掉史詩(機率隨樓層提高)，40層、50層的關主額外有機率掉Boss限定傳說裝備。裝備等級門檻是「第幾層掉的」決定(見上面商店那節)，不是看稀有度。
           </p>
           <div id="career-floor-table"></div>
+        </div>
+
+        <div class="game-section">
+          <h4><i data-lucide="swords" class="ico"></i> 裝備表</h4>
+          <p style="color:var(--ink-dim);line-height:1.9;margin:0 0 10px;">
+          全部裝備清單(含21~50層新增內容、Boss限定裝備、傳說裝備)，資料直接讀遊戲本體，樓層/數值調整這裡會自動跟著變，不用另外維護。武器每個職業每個稀有度有2款可以拿；防具/飾品每個稀有度也有2款(不分職業共用)；40層、50層Boss限定裝備是完全獨立的款式，不在一般武器/防具/飾品清單裡，另外列。
+          </p>
+          <div id="career-equipment-tabs" class="folder-tabs">
+            <button class="folder-tab active" data-eq-tab="weapon">武器</button>
+            <button class="folder-tab" data-eq-tab="armor">防具</button>
+            <button class="folder-tab" data-eq-tab="accessory">飾品</button>
+            <button class="folder-tab" data-eq-tab="boss">Boss限定裝備</button>
+          </div>
+          <div id="career-equipment-table"></div>
         </div>
 
       </div>

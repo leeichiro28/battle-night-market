@@ -1005,6 +1005,10 @@ create policy "anon all career_progress" on career_progress for all using (true)
 -- 已經是新版本、欄位本來就存在的話這行不會出錯也不會做任何事。
 alter table career_progress add column if not exists auto_farm_last_result jsonb;
 alter table career_progress add column if not exists pending_event jsonb;
+-- P2-8新增:「不要再問我此事件決定」——玩家對某個選擇型事件(神秘寶箱/路過商人/轉職邀請)勾選
+-- 這個之後，下次同一個事件會直接照這裡存的選擇自動套用效果，不會再跳出來問。key是事件key
+-- (chest/merchant/reclass)，各自獨立記錄，不會共用同一個選擇。
+alter table career_progress add column if not exists event_auto_choices jsonb not null default '{}'::jsonb;
 alter table career_progress add column if not exists stat_points_bought int not null default 0;
 alter table career_progress add column if not exists legendary_purchased boolean not null default false;
 alter table career_progress add column if not exists fragments int not null default 0;
@@ -1057,6 +1061,30 @@ set legendary_slots = (
 )
 where legendary_purchased = true
   and legendary_slots = '{"weapon":false,"armor":false,"accessory":false}'::jsonb;
+
+-- 使用者二次回饋修改(2026-09):「不同名稱的傳說裝備不應該互相卡名額，只有同一件裝備(同名字)
+-- 才需要防止重複拿兩件」。legendary_slots 的意義再改一次:從「這個部位拿過傳說了沒」(布林值)
+-- 改成「擁有過哪些傳說裝備」(用裝備名字當識別的集合，例如 {"見習生的必勝木劍": true}）。
+-- 繼續沿用同一個欄位(jsonb沒有固定schema，不用加新欄位)。
+-- 資料搬家:把上面那段還是「部位布林值」格式的舊資料(判斷方式:裡面還留著 weapon/armor/accessory
+-- 這幾個key)，重新根據他實際背包/裝備欄裡「真的擁有的傳說裝備名字」轉成新格式，這樣舊資料
+-- 不會因為格式改變而被誤判成「什麼都沒擁有過」重複買到同一件。已經是新格式(或還是空的{}) 的資料
+-- 不會被這段影響到(下面的 where 條件只挑得到舊格式)。
+update career_progress
+set legendary_slots = (
+  select coalesce(jsonb_object_agg(name, true), '{}'::jsonb)
+  from (
+    select (equipment -> s.slot_key ->> 'name') as name
+    from (values ('weapon'), ('armor'), ('accessory')) as s(slot_key)
+    where (equipment -> s.slot_key ->> 'rarity') = 'legendary'
+    union
+    select (it ->> 'name') as name
+    from jsonb_array_elements(coalesce(inventory, '[]'::jsonb)) it
+    where (it ->> 'rarity') = 'legendary'
+  ) x
+  where name is not null
+)
+where legendary_slots ? 'weapon' or legendary_slots ? 'armor' or legendary_slots ? 'accessory';
 
 -- ============================================
 -- 職業養成對決 第22點更新:被動等級，永久繼承

@@ -7,14 +7,48 @@
 window.CareerFloors = (function () {
   const CD = window.CareerData;
   const CLASS_KEYS = ["warrior", "guardian", "archer", "assassin", "mage", "healer"];
-  // 怪物名稱池，照樓層深度分兩批(前段夜市攤位系、後段比較兇一點)，讓低樓層跟高樓層的
-  // 怪物名字風格有點區別，不會整場都遇到同一套。
+  // 怪物名稱池，照樓層深度分幾批，風格越後面越兇一點，不會整場都遇到同一套。
+  // P2-1新增(21~50層)：21~30中階、31~40高階、41~50頂階(逼近Boss的氣氛)。
   const MONSTER_NAMES_EARLY = ["烤香腸小惡魔", "彈珠台幽靈", "撈金魚精", "臭豆腐妖", "套圈圈小鬼", "棉花糖史萊姆"];
   const MONSTER_NAMES_LATE = ["夜市顧攤老怪", "鹽酥雞修羅", "麻辣鴨血鬼", "算命攤占卜靈", "夾娃娃機守護者", "炒泡麵劍豪"];
+  const MONSTER_NAMES_MID = ["廟口八家將", "電子花車舞者", "牽亡魂法師", "紙紮人偶軍團", "乩童附身怪", "陣頭大鑼鼓精"];
+  const MONSTER_NAMES_HIGH = ["地下賭場老千", "討債公司打手", "槍手教頭", "黑頭轎班轎夫", "夜市角頭大哥", "暗巷放高利貸鬼"];
+  const MONSTER_NAMES_ELITE = ["失傳夜市傳說廚神", "百年老店鎮店妖", "深夜擺攤神秘人", "都市傳說計程車司機", "隱藏總舖師幽魂", "夜市之王親信"];
   function monsterNameFor(n) {
-    const pool = n <= 10 ? MONSTER_NAMES_EARLY : MONSTER_NAMES_LATE;
+    const pool = n <= 10 ? MONSTER_NAMES_EARLY : n <= 20 ? MONSTER_NAMES_LATE : n <= 30 ? MONSTER_NAMES_MID : n <= 40 ? MONSTER_NAMES_HIGH : MONSTER_NAMES_ELITE;
     return pool[n % pool.length];
   }
+  // P2-2新增:40層、50層的Boss不是普通關主，有獨立命名+機率掉「Boss限定傳說裝備」
+  // (見下面 BOSS_LEGENDARY_ITEMS，跟商店/抽獎機那套傳說裝備是分開的資料，但一樣受
+  // 「每個部位限購1件」的名額限制，不會超賣)。
+  const SPECIAL_BOSS_NAME = { 40: "傳說夜市之王", 50: "終極隱藏關主·夜市之神" };
+  // P2-10新增:Boss限定裝備天生就是「同一套」(setKey相同)，三件(武器+防具+飾品)都裝備在身上
+  // 會額外觸發套裝效果(見下面 SET_BONUSES)，比單件的效果更好一點，給玩家湊齊全套的動力。
+  const BOSS_LEGENDARY_ITEMS = {
+    40: {
+      weapon: { name: "夜市之王的無名兵刃", rarity: "legendary", statValue: 6, setKey: "boss40",
+        specialEffect: { key: "critDmgBonus", value: 0.25, desc: "暴擊傷害額外+25%" } },
+      armor: { name: "夜市之王的鎮攤戰甲", rarity: "legendary", statKey: "def", statValue: 5, extraHp: 12, setKey: "boss40",
+        specialEffect: { key: "dmgReduceRatio", value: 0.08, desc: "受到傷害減免8%" } },
+      accessory: { name: "夜市之王的傳承令牌", rarity: "legendary", statKey: "luck", statValue: 6, setKey: "boss40",
+        specialEffect: { key: "lifestealOnHit", value: 0.1, desc: "攻擊命中吸血10%" } },
+    },
+    50: {
+      weapon: { name: "終極隱藏關主的滅世之刃", rarity: "legendary", statValue: 8, setKey: "boss50",
+        specialEffect: { key: "critBonus", value: 0.1, desc: "暴擊率+10%" } },
+      armor: { name: "終極隱藏關主的不滅戰甲", rarity: "legendary", statKey: "def", statValue: 7, extraHp: 16, setKey: "boss50",
+        specialEffect: { key: "dmgReduceRatio", value: 0.12, desc: "受到傷害減免12%" } },
+      accessory: { name: "終極隱藏關主的神格徽記", rarity: "legendary", statKey: "luck", statValue: 8, setKey: "boss50",
+        specialEffect: { key: "critDmgBonus", value: 0.3, desc: "暴擊傷害額外+30%" } },
+    },
+  };
+  // 套裝效果:三件(武器+防具+飾品)的 setKey 都一樣、而且三個部位都真的裝備著，才會觸發。
+  // 效果一樣走 career-engine.js 認得的通用管道(跟單件specialEffect同一套)，見 db.js 的
+  // _equipEffectBonus 怎麼把這個疊加進去。
+  const SET_BONUSES = {
+    boss40: { key: "critBonus", value: 0.05, desc: "夜市之王套裝:暴擊率額外+5%", name: "夜市之王套裝" },
+    boss50: { key: "critDmgBonus", value: 0.15, desc: "終極隱藏關主套裝:暴擊傷害額外+15%", name: "終極隱藏關主套裝" },
+  };
 
   function buildFloor(n) {
     const isMiniBoss = n % 10 === 0; // 每滿10層是小關主(企劃書第五節「關主樓層」)
@@ -35,24 +69,39 @@ window.CareerFloors = (function () {
     const coinBase = 5 + Math.floor(n * 0.3);
     const expBase = 8 + Math.floor(n * 0.6);
 
+    // 掉落機率跟稀有度用一致的四級系統(跟夜市拍賣商品清單同一套 common/rare/epic/legendary)：
+    // 一般樓層只掉得到 普通/稀有；小關主保底掉 稀有 或 史詩。
+    // P2-2/P2-4新增:40層、50層Boss額外有機率掉「Boss限定傳說裝備」；40層開始，
+    // 就算不是關主樓層，每一層也都開始有機率掉史詩(機率隨樓層往上小幅提高)。
+    let dropChance = isMiniBoss ? 1 : 0.3;
+    let dropRarityWeights;
+    const isLegendaryBossFloor = n === 40 || n === 50;
+    if (isLegendaryBossFloor) {
+      dropRarityWeights = { epic: 0.5, legendary: 0.5 };
+    } else if (isMiniBoss) {
+      dropRarityWeights = { rare: 0.6, epic: 0.4 };
+    } else if (n >= 40) {
+      const epicChance = 0.05 + (n - 40) * 0.01; // 40層5%、49層14%，逐層微幅提高
+      dropRarityWeights = { common: 0.5, rare: Math.round((0.5 - epicChance) * 1000) / 1000, epic: epicChance };
+    } else {
+      dropRarityWeights = { common: 0.85, rare: 0.15 };
+    }
+
     return {
       floor: n,
-      name: isMiniBoss ? `${nameBase}王(${n}層關主)` : nameBase,
+      name: isMiniBoss ? SPECIAL_BOSS_NAME[n] || `${nameBase}王(${n}層關主)` : nameBase,
       isMiniBoss,
       classKey,
       stats: { atk, def, spd, hp, luck, matk, maxHp: hp },
       coinReward: isMiniBoss ? coinBase * 2 : coinBase,
       expReward: isMiniBoss ? Math.round(expBase * 1.8) : expBase,
-      // 掉落機率跟稀有度用一致的四級系統(跟夜市拍賣商品清單同一套 common/rare/epic/legendary)：
-      // 一般樓層只掉得到 普通/稀有；小關主保底掉 稀有 或 史詩，傳說裝備完全不會從樓層掉，
-      // 只有商店/抽獎機拿得到(每個部位各限購1件，保持稀有感)。
-      dropChance: isMiniBoss ? 1 : 0.3,
-      dropRarityWeights: isMiniBoss ? { rare: 0.6, epic: 0.4 } : { common: 0.85, rare: 0.15 },
+      dropChance,
+      dropRarityWeights,
     };
   }
 
   const FLOORS = [];
-  for (let n = 1; n <= 20; n++) FLOORS.push(buildFloor(n));
+  for (let n = 1; n <= 50; n++) FLOORS.push(buildFloor(n));
 
   function getFloor(n) {
     return FLOORS.find((f) => f.floor === n) || null;
@@ -61,64 +110,206 @@ window.CareerFloors = (function () {
   // 裝備表(企劃書第四節，四個稀有度：普通/稀有/史詩/傳說，跟夜市拍賣商品清單同一套稱呼)。
   // 武器分職業(每個職業武器都不一樣，符合角色設定)，防具/飾品先共用，之後要細分也是照這個
   // 模式再加一層 classKey 就好，架構不用大改。
+  // P2-3新增:所有傳說裝備都要有 specialEffect(不能只是數值比較高的普通裝備)，key 對應
+  // career-engine.js 認得的通用效果管道(critBonus/critDmgBonus/lifestealOnHit/dmgReduceRatio，
+  // 見 db.js 的 _equipEffectBonus)，不分職業都吃得到，不管哪個職業裝上這件都會生效。
+  // P2-10修改(玩家二次回饋):每個職業每個稀有度原本只有1把武器，玩家覺得「不同職業武器太像，
+  // 只是換數值」。改成每個職業每個稀有度有2把不同風格的武器可以拿(同一個職業裡，兩把武器
+  // 走同一條路線的不同兵器類型，例如戰士是「大鐵叉」跟「巨斧」兩種力量系兵器)，取得時
+  // (商店買/抽獎機/樓層掉落)隨機拿到其中一把，稀有度決定的數值一樣，但史詩/傳說這兩把
+  // 各自有不同的特殊效果，讓同職業玩家之間也會因為拿到哪一把而有點差異，不是完全同質化。
+  // 防具/飾品也比照辦理，各稀有度2款(不分職業，共用)。
   const WEAPON_TABLE = {
     novice: {
-      common: { name: "學徒練習木棍", rarity: "common", statKey: "atk", statValue: 1 },
-      rare: { name: "學徒鐵棍", rarity: "rare", statKey: "atk", statValue: 2 },
-      epic: { name: "學徒鑄鐵劍", rarity: "epic", statKey: "atk", statValue: 3 },
-      legendary: { name: "見習生的必勝木劍", rarity: "legendary", statKey: "atk", statValue: 4 },
+      common: [{ name: "學徒練習木棍", rarity: "common", statKey: "atk", statValue: 1 }],
+      rare: [{ name: "學徒鐵棍", rarity: "rare", statKey: "atk", statValue: 2 }],
+      epic: [{ name: "學徒鑄鐵劍", rarity: "epic", statKey: "atk", statValue: 3 }],
+      legendary: [{
+        name: "見習生的必勝木劍", rarity: "legendary", statKey: "atk", statValue: 4,
+        specialEffect: { key: "critBonus", value: 0.04, desc: "暴擊率+4%" },
+      }],
     },
+    // 力量系·戰士:大鐵叉(刺擊系) vs 巨斧(劈砍系)
     warrior: {
-      common: { name: "夜市烤香腸叉", rarity: "common", statKey: "atk", statValue: 1 },
-      rare: { name: "熱血烤肉大鐵叉", rarity: "rare", statKey: "atk", statValue: 3 },
-      epic: { name: "限量版夜市烤肉神叉", rarity: "epic", statKey: "atk", statValue: 4 },
-      legendary: { name: "地表最強·雷神烤肉叉", rarity: "legendary", statKey: "atk", statValue: 5 },
+      common: [
+        { name: "夜市烤香腸叉", rarity: "common", statKey: "atk", statValue: 1 },
+        { name: "路邊攤鐵鎚", rarity: "common", statKey: "atk", statValue: 1 },
+      ],
+      rare: [
+        { name: "熱血烤肉大鐵叉", rarity: "rare", statKey: "atk", statValue: 3 },
+        { name: "打鐵舖巨斧", rarity: "rare", statKey: "atk", statValue: 3 },
+      ],
+      epic: [
+        { name: "限量版夜市烤肉神叉", rarity: "epic", statKey: "atk", statValue: 4 },
+        { name: "限量版打鐵舖狂戰巨斧", rarity: "epic", statKey: "atk", statValue: 4 },
+      ],
+      legendary: [
+        { name: "地表最強·雷神烤肉叉", rarity: "legendary", statKey: "atk", statValue: 5,
+          specialEffect: { key: "critDmgBonus", value: 0.15, desc: "暴擊傷害額外+15%" } },
+        { name: "夜市傳說·開山巨斧", rarity: "legendary", statKey: "atk", statValue: 5,
+          specialEffect: { key: "lifestealOnHit", value: 0.08, desc: "攻擊命中吸血8%" } },
+      ],
     },
+    // 力量系·守衛:黃金拳套(格鬥系) vs 不倒鐵盾(防禦系)
     guardian: {
-      common: { name: "彈珠台鐵拳套", rarity: "common", statKey: "atk", statValue: 1 },
-      rare: { name: "撞球場鎮店球桿", rarity: "rare", statKey: "atk", statValue: 3 },
-      epic: { name: "限量版撞球場黃金球桿", rarity: "epic", statKey: "atk", statValue: 4 },
-      legendary: { name: "夜市鎮店之寶·黃金拳套", rarity: "legendary", statKey: "atk", statValue: 5 },
+      common: [
+        { name: "彈珠台鐵拳套", rarity: "common", statKey: "atk", statValue: 1 },
+        { name: "夜市巡守鐵盾", rarity: "common", statKey: "atk", statValue: 1 },
+      ],
+      rare: [
+        { name: "撞球場鎮店球桿", rarity: "rare", statKey: "atk", statValue: 3 },
+        { name: "巡守隊強化鐵盾", rarity: "rare", statKey: "atk", statValue: 3 },
+      ],
+      epic: [
+        { name: "限量版撞球場黃金球桿", rarity: "epic", statKey: "atk", statValue: 4 },
+        { name: "限量版巡守隊守護巨盾", rarity: "epic", statKey: "atk", statValue: 4 },
+      ],
+      legendary: [
+        { name: "夜市鎮店之寶·黃金拳套", rarity: "legendary", statKey: "atk", statValue: 5,
+          specialEffect: { key: "lifestealOnHit", value: 0.08, desc: "攻擊命中吸血8%" } },
+        { name: "夜市守護神·不倒鐵盾", rarity: "legendary", statKey: "atk", statValue: 5,
+          specialEffect: { key: "dmgReduceRatio", value: 0.06, desc: "受到傷害減免6%" } },
+      ],
     },
+    // 敏捷系·射手:玩具神槍(速射系) vs 神射長弓(精準系)
     archer: {
-      common: { name: "打氣球玩具槍", rarity: "common", statKey: "atk", statValue: 1 },
-      rare: { name: "夜市射擊神槍", rarity: "rare", statKey: "atk", statValue: 3 },
-      epic: { name: "限量版夜市射擊神槍Ⅱ", rarity: "epic", statKey: "atk", statValue: 4 },
-      legendary: { name: "傳說神槍手的終極玩具槍", rarity: "legendary", statKey: "atk", statValue: 5 },
+      common: [
+        { name: "打氣球玩具槍", rarity: "common", statKey: "atk", statValue: 1 },
+        { name: "夜市射鏢玩具弓", rarity: "common", statKey: "atk", statValue: 1 },
+      ],
+      rare: [
+        { name: "夜市射擊神槍", rarity: "rare", statKey: "atk", statValue: 3 },
+        { name: "夜市神射手長弓", rarity: "rare", statKey: "atk", statValue: 3 },
+      ],
+      epic: [
+        { name: "限量版夜市射擊神槍Ⅱ", rarity: "epic", statKey: "atk", statValue: 4 },
+        { name: "限量版夜市神射手勁弓", rarity: "epic", statKey: "atk", statValue: 4 },
+      ],
+      legendary: [
+        { name: "傳說神槍手的終極玩具槍", rarity: "legendary", statKey: "atk", statValue: 5,
+          specialEffect: { key: "critBonus", value: 0.06, desc: "暴擊率+6%" } },
+        { name: "傳說神射手的百步穿楊弓", rarity: "legendary", statKey: "atk", statValue: 5,
+          specialEffect: { key: "critDmgBonus", value: 0.18, desc: "暴擊傷害額外+18%" } },
+      ],
     },
+    // 敏捷系·刺客:開山刀(單刀系) vs 雙飛刀(暗器系)
     assassin: {
-      common: { name: "水果削皮刀", rarity: "common", statKey: "atk", statValue: 1 },
-      rare: { name: "老闆珍藏開山刀", rarity: "rare", statKey: "atk", statValue: 3 },
-      epic: { name: "限量版開山刀·夜襲", rarity: "epic", statKey: "atk", statValue: 4 },
-      legendary: { name: "都市傳說開山刀王", rarity: "legendary", statKey: "atk", statValue: 5 },
+      common: [
+        { name: "水果削皮刀", rarity: "common", statKey: "atk", statValue: 1 },
+        { name: "夜市甩牌飛鏢", rarity: "common", statKey: "atk", statValue: 1 },
+      ],
+      rare: [
+        { name: "老闆珍藏開山刀", rarity: "rare", statKey: "atk", statValue: 3 },
+        { name: "暗巷雙飛刀", rarity: "rare", statKey: "atk", statValue: 3 },
+      ],
+      epic: [
+        { name: "限量版開山刀·夜襲", rarity: "epic", statKey: "atk", statValue: 4 },
+        { name: "限量版暗影雙飛刀", rarity: "epic", statKey: "atk", statValue: 4 },
+      ],
+      legendary: [
+        { name: "都市傳說開山刀王", rarity: "legendary", statKey: "atk", statValue: 5,
+          specialEffect: { key: "critDmgBonus", value: 0.2, desc: "暴擊傷害額外+20%" } },
+        { name: "夜影傳說·索命雙飛刀", rarity: "legendary", statKey: "atk", statValue: 5,
+          specialEffect: { key: "critBonus", value: 0.07, desc: "暴擊率+7%" } },
+      ],
     },
+    // 魔法系·法師:鎮店法杖(法杖系) vs 秘傳魔導書(魔法書系)
     mage: {
-      common: { name: "棉花糖魔杖", rarity: "common", statKey: "matk", statValue: 1 },
-      rare: { name: "老闆特調法杖", rarity: "rare", statKey: "matk", statValue: 3 },
-      epic: { name: "限量版老闆秘藏法杖", rarity: "epic", statKey: "matk", statValue: 4 },
-      legendary: { name: "老闆傳承三代的鎮店法杖", rarity: "legendary", statKey: "matk", statValue: 5 },
+      common: [
+        { name: "棉花糖魔杖", rarity: "common", statKey: "matk", statValue: 1 },
+        { name: "路邊攤菜單魔導書", rarity: "common", statKey: "matk", statValue: 1 },
+      ],
+      rare: [
+        { name: "老闆特調法杖", rarity: "rare", statKey: "matk", statValue: 3 },
+        { name: "夜市秘傳魔導書", rarity: "rare", statKey: "matk", statValue: 3 },
+      ],
+      epic: [
+        { name: "限量版老闆秘藏法杖", rarity: "epic", statKey: "matk", statValue: 4 },
+        { name: "限量版夜市禁忌魔導書", rarity: "epic", statKey: "matk", statValue: 4 },
+      ],
+      legendary: [
+        { name: "老闆傳承三代的鎮店法杖", rarity: "legendary", statKey: "matk", statValue: 5,
+          specialEffect: { key: "lifestealOnHit", value: 0.06, desc: "攻擊命中吸血6%" } },
+        { name: "失傳夜市秘術魔導書", rarity: "legendary", statKey: "matk", statValue: 5,
+          specialEffect: { key: "critDmgBonus", value: 0.22, desc: "暴擊傷害額外+22%" } },
+      ],
     },
+    // 魔法系·補師:回春糖葫蘆(祝福系) vs 祈福法球(守護系)
     healer: {
-      common: { name: "藥燉排骨勺", rarity: "common", statKey: "matk", statValue: 1 },
-      rare: { name: "回春糖葫蘆杖", rarity: "rare", statKey: "matk", statValue: 3 },
-      epic: { name: "限量版糖葫蘆聖杖", rarity: "epic", statKey: "matk", statValue: 4 },
-      legendary: { name: "回春大師的傳說糖葫蘆", rarity: "legendary", statKey: "matk", statValue: 5 },
+      common: [
+        { name: "藥燉排骨勺", rarity: "common", statKey: "matk", statValue: 1 },
+        { name: "夜市祈福水晶球", rarity: "common", statKey: "matk", statValue: 1 },
+      ],
+      rare: [
+        { name: "回春糖葫蘆杖", rarity: "rare", statKey: "matk", statValue: 3 },
+        { name: "夜市守護法球", rarity: "rare", statKey: "matk", statValue: 3 },
+      ],
+      epic: [
+        { name: "限量版糖葫蘆聖杖", rarity: "epic", statKey: "matk", statValue: 4 },
+        { name: "限量版夜市祈福聖球", rarity: "epic", statKey: "matk", statValue: 4 },
+      ],
+      legendary: [
+        { name: "回春大師的傳說糖葫蘆", rarity: "legendary", statKey: "matk", statValue: 5,
+          specialEffect: { key: "critBonus", value: 0.05, desc: "暴擊率+5%" } },
+        { name: "夜市守護神·聖光法球", rarity: "legendary", statKey: "matk", statValue: 5,
+          specialEffect: { key: "dmgReduceRatio", value: 0.05, desc: "受到傷害減免5%" } },
+      ],
     },
   };
   const EQUIPMENT_TABLE = {
     armor: {
-      common: { name: "彈珠台鐵皮盾", rarity: "common", statKey: "def", statValue: 1, extraHp: 2 },
-      rare: { name: "臭豆腐限定重甲", rarity: "rare", statKey: "def", statValue: 2, extraHp: 5 },
-      epic: { name: "夜市限定強化鎧甲", rarity: "epic", statKey: "def", statValue: 3, extraHp: 7 },
-      legendary: { name: "夜市限量傳說鎧甲", rarity: "legendary", statKey: "def", statValue: 4, extraHp: 8 },
+      common: [
+        { name: "彈珠台鐵皮盾", rarity: "common", statKey: "def", statValue: 1, extraHp: 2 },
+        { name: "夜市顧攤圍裙甲", rarity: "common", statKey: "def", statValue: 1, extraHp: 2 },
+      ],
+      rare: [
+        { name: "臭豆腐限定重甲", rarity: "rare", statKey: "def", statValue: 2, extraHp: 5 },
+        { name: "夜市戰袍", rarity: "rare", statKey: "def", statValue: 2, extraHp: 5 },
+      ],
+      epic: [
+        { name: "夜市限定強化鎧甲", rarity: "epic", statKey: "def", statValue: 3, extraHp: 7 },
+        { name: "限量版夜市戰甲", rarity: "epic", statKey: "def", statValue: 3, extraHp: 7 },
+      ],
+      legendary: [
+        { name: "夜市限量傳說鎧甲", rarity: "legendary", statKey: "def", statValue: 4, extraHp: 8,
+          specialEffect: { key: "dmgReduceRatio", value: 0.05, desc: "受到傷害減免5%" } },
+        { name: "傳說夜市染血披風", rarity: "legendary", statKey: "def", statValue: 4, extraHp: 8,
+          specialEffect: { key: "lifestealOnHit", value: 0.04, desc: "攻擊命中吸血4%" } },
+      ],
     },
     accessory: {
-      common: { name: "夜市戰功手環", rarity: "common", statKey: "luck", statValue: 1 },
-      rare: { name: "金光閃閃四葉草吊飾", rarity: "rare", statKey: "luck", statValue: 3 },
-      epic: { name: "夜市限定幸運吊飾", rarity: "epic", statKey: "luck", statValue: 4 },
-      legendary: { name: "老闆珍藏傳說金牌", rarity: "legendary", statKey: "luck", statValue: 5 },
+      common: [
+        { name: "夜市戰功手環", rarity: "common", statKey: "luck", statValue: 1 },
+        { name: "夜市小福袋", rarity: "common", statKey: "luck", statValue: 1 },
+      ],
+      rare: [
+        { name: "金光閃閃四葉草吊飾", rarity: "rare", statKey: "luck", statValue: 3 },
+        { name: "夜市開運手鍊", rarity: "rare", statKey: "luck", statValue: 3 },
+      ],
+      epic: [
+        { name: "夜市限定幸運吊飾", rarity: "epic", statKey: "luck", statValue: 4 },
+        { name: "限量版夜市開運項鍊", rarity: "epic", statKey: "luck", statValue: 4 },
+      ],
+      legendary: [
+        { name: "老闆珍藏傳說金牌", rarity: "legendary", statKey: "luck", statValue: 5,
+          specialEffect: { key: "critBonus", value: 0.08, desc: "暴擊率+8%" } },
+        { name: "傳說夜市守護符", rarity: "legendary", statKey: "luck", statValue: 5,
+          specialEffect: { key: "dmgReduceRatio", value: 0.06, desc: "受到傷害減免6%" } },
+      ],
     },
   };
+  // 統一的「從這個稀有度的變化款裡面隨機挑一款」，取得裝備(商店買/抽獎機/樓層掉落)時都走
+  // 這個函式，回傳的是單一一件裝備物件(不是陣列了)，後面的程式碼不用知道背後有幾種變化款。
+  function pickVariant(list) {
+    if (!list || !list.length) return null;
+    return list[Math.floor(Math.random() * list.length)];
+  }
+  // 給商店列表用:列出這個稀有度全部可能拿到的變化款名字，讓玩家知道自己可能拿到哪幾款
+  // (實際拿到哪一款是隨機的，這是夜市的「驚喜」，不是玩家自己選)。
+  function variantNamePreview(list) {
+    if (!list || !list.length) return "";
+    return list.map((it) => it.name).join(" / ");
+  }
   const SLOTS = ["weapon", "armor", "accessory"];
   const RARITIES = ["common", "rare", "epic", "legendary"];
   const RARITY_LABEL = { common: "普通", rare: "稀有", epic: "史詩", legendary: "傳說" };
@@ -142,6 +333,7 @@ window.CareerFloors = (function () {
     const parts = [];
     if (item.statKey) parts.push(`${STAT_LABEL[item.statKey]}+${item.statValue}`);
     if (item.extraHp) parts.push(`HP+${item.extraHp}`);
+    if (item.specialEffect) parts.push(`★${item.specialEffect.desc}`);
     return parts.join("、");
   }
 
@@ -163,7 +355,18 @@ window.CareerFloors = (function () {
         break;
       }
     }
-    const base = slot === "weapon" ? (WEAPON_TABLE[classKey] || WEAPON_TABLE.novice)[rarity] : EQUIPMENT_TABLE[slot][rarity];
+    // P2-2新增:40/50層Boss機率掉的傳說裝備是「Boss限定裝備」，用專屬的資料表，不是一般的
+    // WEAPON_TABLE/EQUIPMENT_TABLE(那個傳說是商店/抽獎機專用的款式)。武器的statKey要照玩家
+    // 職業是不是魔法系決定(atk或matk)，因為Boss限定武器不像WEAPON_TABLE分職業各自一份。
+    if (rarity === "legendary" && BOSS_LEGENDARY_ITEMS[floorDef.floor]) {
+      const base = { ...BOSS_LEGENDARY_ITEMS[floorDef.floor][slot] };
+      if (slot === "weapon") {
+        const info = CD.CLASS_INFO[classKey];
+        base.statKey = info && info.path === "magic" ? "matk" : "atk";
+      }
+      return { slot, ...base, reqLevel: floorReqLevel(floorDef.floor), bossExclusive: true };
+    }
+    const base = pickVariant(slot === "weapon" ? (WEAPON_TABLE[classKey] || WEAPON_TABLE.novice)[rarity] : EQUIPMENT_TABLE[slot][rarity]);
     return { slot, ...base, reqLevel: floorReqLevel(floorDef.floor) };
   }
 
@@ -188,6 +391,11 @@ window.CareerFloors = (function () {
   function equipmentPrice(rarity) {
     const [min, max] = EQUIPMENT_PRICE_RANGE[rarity];
     return min + Math.floor(Math.random() * (max - min + 1));
+  }
+  // P2-9新增:一鍵賣裝的賣出價，抓買價區間中間值的25%(賣裝備本來就不會回本，只是清背包換點幣)。
+  function sellPrice(rarity) {
+    const [min, max] = EQUIPMENT_PRICE_RANGE[rarity];
+    return Math.round(((min + max) / 2) * 0.25);
   }
 
   const GACHA_PRICE = 50;
@@ -237,11 +445,16 @@ window.CareerFloors = (function () {
     STAT_LABEL,
     describeItem,
     rollDrop,
+    pickVariant,
+    variantNamePreview,
+    SET_BONUSES,
+    BOSS_LEGENDARY_ITEMS,
     expToNextLevel,
     CLASS_KEYS,
     statPointPrice,
     EQUIPMENT_PRICE_RANGE,
     equipmentPrice,
+    sellPrice,
     GACHA_PRICE,
     GACHA_POOL,
     POTIONS,

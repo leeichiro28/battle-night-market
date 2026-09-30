@@ -73,6 +73,14 @@ window.CareerEngine = (function () {
       critBonus2: p2.critBonus || 0,
       critDmgBonus1: p1.critDmgBonus || 0, // 「爆擊強化」被動:暴擊傷害倍率額外加成(跟基礎x1.5疊加)
       critDmgBonus2: p2.critDmgBonus || 0,
+      // P2-2/P2-3新增:傳說裝備特殊效果統一走這兩個通用管道，不分職業都吃得到(跟上面
+      // critBonus/critDmgBonus同一種設計，不像 mastery 是特定職業才會讀取的專屬被動)。
+      // lifestealOnHit:每次攻擊命中(不管普攻/技能/大招)都按造成傷害的比例回血。
+      // dmgReduceRatio:被打的時候固定按比例減傷，見 computeAttackHit 的 defenderDmgReduceRatio。
+      lifestealOnHit1: p1.lifestealOnHit || 0,
+      lifestealOnHit2: p2.lifestealOnHit || 0,
+      dmgReduceRatio1: p1.dmgReduceRatio || 0,
+      dmgReduceRatio2: p2.dmgReduceRatio || 0,
       manaRegenBonus1: p1.manaRegenBonus || 0, // 「魔力充沛」被動:每回合結束多回幾點魔力
       manaRegenBonus2: p2.manaRegenBonus || 0,
       ultCostReduce1: p1.ultCostReduce || 0, // 「大招精修」被動:大招消耗魔力降低
@@ -108,7 +116,7 @@ window.CareerEngine = (function () {
   // actionType: 'attack' | 'skill1' | 'skill2' | 'ult'。skillLevel 是這次用的技能等級(只有
   // isSkill 時有意義)，critBonus/critDmgBonus/mastery 意思跟以前一樣。
   // ultEffect 只有 actionType==='ult' 時有意義，是目前裝備的大招節點效果(見 initialMatchState 註解)。
-  function computeAttackHit(atkStats, defStats, attackerClass, actionType, hpRatio, defenderImmuneRatio, skillLevel, critBonus, critDmgBonus, mastery, ultEffect) {
+  function computeAttackHit(atkStats, defStats, attackerClass, actionType, hpRatio, defenderImmuneRatio, skillLevel, critBonus, critDmgBonus, mastery, ultEffect, defenderDmgReduceRatio) {
     mastery = mastery || {};
     const eff = CD.CLASS_EFFECTS[attackerClass];
     let ignoreDefRatio = (eff.ignoreDefRatio || 0) + (attackerClass === "warrior" ? mastery.ignoreDefRatio || 0 : 0); // 戰士線「破防打法」被動,普通攻擊也吃得到
@@ -163,6 +171,10 @@ window.CareerEngine = (function () {
     if (crit) dmg *= CD.CRIT_DMG_MULT + (critDmgBonus || 0) + ultCritDmgBonus;
 
     if (defenderImmuneRatio > 0) dmg *= 1 - defenderImmuneRatio; // 銅牆鐵壁/剛毅反擊:這回合受到的傷害按比例減免
+    // P2-3新增:傳說防具的「傷害減免」特殊效果，跟大招免傷是分開的兩件事——大招免傷只有那個回合
+    // 有效，這個是被動的、每次挨打都固定減免，兩者可以疊加(公式上是連乘，不是相加，數值都不大
+    // 所以差異很小，這樣寫比較單純)。
+    if (defenderDmgReduceRatio > 0) dmg *= 1 - defenderDmgReduceRatio;
 
     dmg = Math.max(0, Math.round(dmg));
     return { dmg, crit };
@@ -277,6 +289,8 @@ window.CareerEngine = (function () {
       const defMaxHp = side === 1 ? s.maxhp2 : s.maxhp1;
       const critBonus = side === 1 ? s.critBonus1 : s.critBonus2;
       const critDmgBonus = side === 1 ? s.critDmgBonus1 : s.critDmgBonus2;
+      const lifestealOnHit = side === 1 ? s.lifestealOnHit1 : s.lifestealOnHit2;
+      const defenderDmgReduceRatio = side === 1 ? s.dmgReduceRatio2 : s.dmgReduceRatio1;
       const mastery = side === 1 ? s.mastery1 : s.mastery2;
       const defenderMastery = side === 1 ? s.mastery2 : s.mastery1;
       const ultEffect = side === 1 ? s.ultEffect1 : s.ultEffect2;
@@ -304,14 +318,16 @@ window.CareerEngine = (function () {
       }
 
       let lastDmg = 0;
+      let totalDmgThisAction = 0;
       for (let i = 0; i < hits; i++) {
         const curDefHp = side === 1 ? hp2 : hp1;
         if (curDefHp <= 0) break;
         const curHpRatio = curDefHp / defMaxHp;
-        const { dmg, crit } = computeAttackHit(atkStats, defStats, cls, actionType, curHpRatio, defenderImmuneRatio, skillLevel, critBonus, critDmgBonus, mastery, ultEffect);
+        const { dmg, crit } = computeAttackHit(atkStats, defStats, cls, actionType, curHpRatio, defenderImmuneRatio, skillLevel, critBonus, critDmgBonus, mastery, ultEffect, defenderDmgReduceRatio);
         if (side === 1) hp2 = Math.max(0, hp2 - dmg);
         else hp1 = Math.max(0, hp1 - dmg);
         lastDmg = dmg;
+        totalDmgThisAction += dmg;
 
         events.push({
           side,
@@ -326,9 +342,10 @@ window.CareerEngine = (function () {
         if (actionType === "attack" && cls === "archer" && Math.random() < (CD.CLASS_EFFECTS.archer.extraHitChance || 0) + (mastery.extraHitChance || 0)) {
           const curDefHp2 = side === 1 ? hp2 : hp1;
           if (curDefHp2 > 0) {
-            const extra = computeAttackHit(atkStats, defStats, cls, "attack", curDefHp2 / defMaxHp, defenderImmuneRatio, skillLevel, critBonus, critDmgBonus, mastery, null);
+            const extra = computeAttackHit(atkStats, defStats, cls, "attack", curDefHp2 / defMaxHp, defenderImmuneRatio, skillLevel, critBonus, critDmgBonus, mastery, null, defenderDmgReduceRatio);
             if (side === 1) hp2 = Math.max(0, hp2 - extra.dmg);
             else hp1 = Math.max(0, hp1 - extra.dmg);
+            totalDmgThisAction += extra.dmg;
             events.push({ side, type: "extra_hit", dmg: extra.dmg, text: `${side === 1 ? "你" : "對方"}的連射訓練觸發,追加造成 ${extra.dmg} 點傷害!` });
           }
         }
@@ -341,6 +358,17 @@ window.CareerEngine = (function () {
           if (side === 1) hp1 = Math.min(s.maxhp1, hp1 + lifesteal);
           else hp2 = Math.min(s.maxhp2, hp2 + lifesteal);
           events.push({ side, type: "lifesteal", dmg: lifesteal, text: `${side === 1 ? "你" : "對方"}吸取了 ${lifesteal} 點HP!` });
+        }
+      }
+
+      // P2-2/P2-3新增:傳說裝備的吸血特殊效果，不管這次出的是普攻/技能/大招都算(用這次動作
+      // 造成的總傷害去算)，跟上面戰士大招的吸血是兩件獨立的事，可以疊加。
+      if (lifestealOnHit > 0 && totalDmgThisAction > 0) {
+        const equipLifesteal = Math.round(totalDmgThisAction * lifestealOnHit);
+        if (equipLifesteal > 0) {
+          if (side === 1) hp1 = Math.min(s.maxhp1, hp1 + equipLifesteal);
+          else hp2 = Math.min(s.maxhp2, hp2 + equipLifesteal);
+          events.push({ side, type: "equip_lifesteal", dmg: equipLifesteal, text: `${side === 1 ? "你" : "對方"}的傳說裝備效果觸發，吸取了 ${equipLifesteal} 點HP!` });
         }
       }
 

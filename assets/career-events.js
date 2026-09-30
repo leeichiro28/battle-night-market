@@ -1,7 +1,7 @@
 // 職業養成對決 · 爬塔事件庫(企劃書第六節)
 //
-// 這批事件原本是 Phase2 爬塔骨架清單裡的項目(「5~6個事件」)，當時先把三個核心行動的骨架
-// 做穩就沒跟著做，這裡補上。9 個事件都做了，比原本清單的 5~6 個還多一點。
+// Phase2 骨架先做了 10 個事件，P2階段(玩家回饋覺得事件太少、希望多點變化)又加了 5 個，
+// 現在總共 15 個。
 //
 // 觸發時機:挑戰樓層時，有 EVENT_TRIGGER_CHANCE 的機率不是打怪、而是觸發一個隨機事件，
 // 穿插在樓層遭遇戰之間(企劃書原文的形容)。
@@ -32,6 +32,17 @@ window.CareerEvents = (function () {
       desc: "路過的抽獎機好像卡幣了，免費讓你抽一次" },
     { key: "healing", icon: "heart-pulse", name: "路邊小吃攤", type: "instant", weight: 16,
       desc: "香噴噴的路邊攤，吃一輪順便回一下血跟魔力" },
+    // P2-7新增(玩家回饋:事件太少、希望多一點變化)，以下5個是新加的：
+    { key: "mentor", icon: "graduation-cap", name: "職業前輩客串教學", type: "instant", weight: 10,
+      desc: "同職業路線的前輩剛好擺攤在旁邊，順手指點你幾招" },
+    { key: "lost_child", icon: "footprints", name: "夜市走失小孩", type: "instant", weight: 9,
+      desc: "一個小孩哭著說找不到爸媽，要不要幫忙找找看?" },
+    { key: "try_on", icon: "shirt", name: "路邊試穿攤位", type: "instant", weight: 8,
+      desc: "攤位老闆說可以免費試用一件展示品，順手就給你了" },
+    { key: "spirit_blessing", icon: "wand-sparkles", name: "數值精靈眷顧", type: "instant", weight: 7,
+      desc: "感覺有股神秘力量在打量你" },
+    { key: "blind_boxes", icon: "package-search", name: "夜市矇眼摸彩", type: "choice", weight: 9,
+      desc: "老闆擺出三個一模一樣的箱子，說隨便挑一個，裡面是什麼只有打開才知道" },
   ];
 
   const EVENT_TRIGGER_CHANCE = 0.25; // 挑戰樓層時,25%機率變事件、75%正常打怪

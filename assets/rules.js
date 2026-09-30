@@ -97,6 +97,116 @@
   renderTier("common");
 })();
 
+// 職業養成對決:裝備表(來源：assets/career-floors.js，資料直接讀遊戲本體，
+// 武器/防具/飾品/Boss限定裝備分頁籤切換，跟上面「商品清單分頁」同一種UI)
+(function () {
+  const tabsEl = document.getElementById("career-equipment-tabs");
+  const listEl = document.getElementById("career-equipment-table");
+  if (!tabsEl || !listEl || !window.CareerFloors || !window.CareerData) return;
+  const CF = window.CareerFloors;
+  const CD = window.CareerData;
+
+  function rowHtml(name, typeLabel, rarity, statText, effectText, slotText, condText) {
+    return `
+      <tr>
+        <td>${ui.esc(name)}</td>
+        <td>${ui.esc(typeLabel)}</td>
+        <td><span class="tier-tag ${rarity}">${CF.RARITY_LABEL[rarity]}</span></td>
+        <td>${ui.esc(statText)}</td>
+        <td>${effectText ? "★" + ui.esc(effectText) : "-"}</td>
+        <td>${ui.esc(slotText)}</td>
+        <td>${ui.esc(condText)}</td>
+      </tr>`;
+  }
+
+  function statText(item) {
+    const parts = [];
+    if (item.statKey) parts.push(`${CF.STAT_LABEL[item.statKey]}+${item.statValue}`);
+    if (item.extraHp) parts.push(`HP+${item.extraHp}`);
+    return parts.join("、");
+  }
+
+  function weaponRows() {
+    const rows = [];
+    Object.keys(CF.WEAPON_TABLE).forEach((cls) => {
+      const clsName = (CD.CLASS_INFO[cls] && CD.CLASS_INFO[cls].name) || cls;
+      CF.RARITIES.forEach((rarity) => {
+        (CF.WEAPON_TABLE[cls][rarity] || []).forEach((item) => {
+          rows.push(
+            rowHtml(
+              item.name,
+              `武器(${clsName}專用)`,
+              rarity,
+              statText(item),
+              item.specialEffect ? item.specialEffect.desc : "",
+              "武器",
+              `要 Lv.${CF.RARITY_REQ_LEVEL[rarity]} 才穿得動`
+            )
+          );
+        });
+      });
+    });
+    return rows.join("");
+  }
+
+  function equipmentSlotRows(slot, label) {
+    const rows = [];
+    CF.RARITIES.forEach((rarity) => {
+      (CF.EQUIPMENT_TABLE[slot][rarity] || []).forEach((item) => {
+        rows.push(
+          rowHtml(item.name, label, rarity, statText(item), item.specialEffect ? item.specialEffect.desc : "", label, `要 Lv.${CF.RARITY_REQ_LEVEL[rarity]} 才穿得動`)
+        );
+      });
+    });
+    return rows.join("");
+  }
+
+  function bossRows() {
+    const rows = [];
+    const slotLabel = { weapon: "武器", armor: "防具", accessory: "飾品" };
+    [40, 50].forEach((floor) => {
+      const set = CF.BOSS_LEGENDARY_ITEMS[floor];
+      const setBonus = CF.SET_BONUSES["boss" + floor];
+      Object.keys(set).forEach((slot) => {
+        const item = set[slot];
+        const statPart = item.statKey ? `${CF.STAT_LABEL[item.statKey]}+${item.statValue}` : `攻擊或魔攻+${item.statValue}(依職業自動判斷)`;
+        const extraHpPart = item.extraHp ? `、HP+${item.extraHp}` : "";
+        rows.push(
+          rowHtml(
+            item.name,
+            `${slotLabel[slot]}(Boss限定)`,
+            "legendary",
+            statPart + extraHpPart,
+            item.specialEffect.desc + (setBonus ? `；集齊「${setBonus.name}」全套再+${setBonus.desc}` : ""),
+            slotLabel[slot],
+            `只有第${floor}層Boss掉落，要 Lv.${floor} 才穿得動`
+          )
+        );
+      });
+    });
+    return rows.join("");
+  }
+
+  function render(tab) {
+    const rowsHtml = tab === "weapon" ? weaponRows() : tab === "armor" ? equipmentSlotRows("armor", "防具") : tab === "accessory" ? equipmentSlotRows("accessory", "飾品") : bossRows();
+    listEl.innerHTML = `
+      <div class="rule-table-wrap">
+        <table class="rule-table">
+          <thead><tr><th>裝備名稱</th><th>裝備類型</th><th>稀有度</th><th>基礎數值</th><th>特殊效果</th><th>裝備位置</th><th>其他條件</th></tr></thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>`;
+  }
+
+  tabsEl.querySelectorAll("[data-eq-tab]").forEach((tab) => {
+    tab.onclick = () => {
+      render(tab.dataset.eqTab);
+      tabsEl.querySelectorAll("[data-eq-tab]").forEach((t) => t.classList.toggle("active", t === tab));
+    };
+  });
+  render("weapon");
+})();
+
 // 職業養成對決:樓層怪物/掉落表(來源：assets/career-floors.js，資料是算出來的不是手key的，
 // 樓層公式改了這裡自動跟著變，不用回來同步維護兩份)
 (function () {

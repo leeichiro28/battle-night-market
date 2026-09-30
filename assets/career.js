@@ -517,6 +517,7 @@
   function renderLeaderboardRows() {
     if (leaderboardStandings === null) return emptyMsg("排行榜載入失敗，再點一次試試", "triangle-alert");
     if (!leaderboardStandings.length) return emptyMsg("還沒有人參加。", "users");
+    const topScore = leaderboardStandings[0].score;
     return leaderboardStandings
       .map((row, idx) => {
         const isMe = row.queueEntry.player_id === myId;
@@ -526,10 +527,11 @@
         const summaryText = summary
           ? ` · ${ui.esc(summary.className)} Lv.${summary.level} · 攻${summary.stats.atk || summary.stats.matk || 0}防${summary.stats.def}速${summary.stats.spd}`
           : "";
+        const gapText = isMe && idx > 0 ? `<span style="color:var(--gold);font-size:11px;"> · 距第1名還差${topScore - row.score}分</span>` : "";
         return `<div class="lb-row${isMe ? " me" : ""}">
           ${ui.rankBadge(idx + 1)}
           <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}
-            <span style="color:var(--ink-dim);font-size:11px;"> · 第${row.floor}層 · ${row.queueEntry.wins}勝${row.queueEntry.losses}敗${summaryText}</span>
+            <span style="color:var(--ink-dim);font-size:11px;"> · 第${row.floor}層 · ${row.queueEntry.wins}勝${row.queueEntry.losses}敗${summaryText}</span>${gapText}
           </span>
           <span class="lb-score">${row.score}</span>
         </div>`;

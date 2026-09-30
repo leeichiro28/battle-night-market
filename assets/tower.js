@@ -51,6 +51,11 @@
   let highlight = null; // { icon, title, text } — 傳說裝備/爬完樓層之類的精彩時刻，顯示大卡片
   let busy = false;
   let activeTab = "tower";
+  // P2-9新增:一鍵賣裝的篩選勾選狀態，記在分頁裡就好，不用存進資料庫(每次重繪都要照這個畫勾選狀態)。
+  // P2-9追加修改(玩家二次回饋):新增可以勾選要不要連史詩/傳說也賣掉，預設不勾(安全起見)，
+  // 玩家自己主動勾選才會真的把史詩/傳說也列入賣出範圍。
+  let sellFilters = { common: true, rare: false, epic: false, legendary: false, lowLevelOnly: false };
+  let lastSellResult = null; // 賣裝結果(顯示在背包分頁，不會跳走)
   let scanTimer = null;
   let unsubProgress = null;
   let refreshQueued = false;
@@ -309,6 +314,11 @@
       choicesHtml = `
         <button class="btn small" data-event-choice="pay">${ui.icon("coins")}花 30 幣收回 1 點數值點</button>
         <button class="btn ghost small" data-event-choice="skip">${ui.icon("x")}維持原狀</button>`;
+    } else if (pending.key === "blind_boxes") {
+      choicesHtml = `
+        <button class="btn small" data-event-choice="box1">${ui.icon("package")}箱子 1</button>
+        <button class="btn small" data-event-choice="box2">${ui.icon("package")}箱子 2</button>
+        <button class="btn small" data-event-choice="box3">${ui.icon("package")}箱子 3</button>`;
     }
     return `
       <div style="background:var(--panel2);border:2px solid var(--gold);border-radius:var(--radius);padding:14px;margin:12px 0;">
@@ -317,6 +327,9 @@
         </p>
         <p style="margin:0 0 10px;font-size:12.5px;color:var(--ink);">${ui.esc(def.desc)}</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">${choicesHtml}</div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-dim);margin-top:10px;cursor:pointer;">
+          <input type="checkbox" id="event-remember-choice"/> 不要再問我此事件的決定(下次遇到「${ui.esc(def.name)}」直接照這次選的做)
+        </label>
       </div>`;
   }
 
@@ -517,24 +530,28 @@
     const statPrice = CF.statPointPrice(progress.stat_points_bought);
     const weaponTable = CF.WEAPON_TABLE[myBuild.final_class] || CF.WEAPON_TABLE.novice;
 
-    // P0-4(B)修改:傳說裝備從「整場限購1件」改成「每個部位各限購1件」，所以要照傳進來的
-    // slot 去查 legendary_slots[slot]，不是查全域的單一布林值。
-    const legendarySlots = (progress.legendary_slots) || (progress.legendary_purchased ? { weapon: true, armor: true, accessory: true } : { weapon: false, armor: false, accessory: false });
+    // 使用者二次回饋修改:傳說裝備限制改成「同一件裝備(同名字)不會重複拿到」，不是「這個部位
+    // 買過任何一件傳說就整個鎖住」。legendary_slots 現在存的是「擁有過哪些傳說裝備名字」，
+    // 判斷要不要顯示「已擁有」要照「這個部位的變化款是不是全部都擁有過了」來看。
+    const ownedLegendary = progress.legendary_slots || {};
 
     function equipRow(slot, label, table) {
       const rows = CF.RARITIES.map((rarity) => {
         const [min, max] = CF.EQUIPMENT_PRICE_RANGE[rarity];
-        const item = table[rarity];
+        const variants = table[rarity] || [];
         const isLegendary = rarity === "legendary";
-        const legendaryOwned = isLegendary && legendarySlots[slot];
-        const disabled = locked || legendaryOwned;
+        // P2-10新增:每個稀有度現在有2款可能的變化款，買到哪一款是隨機的(夜市驚喜)，
+        // 商店這裡列出全部可能拿到的名字，讓玩家心裡有底。
+        const namePreview = CF.variantNamePreview(variants);
+        const allOwned = isLegendary && variants.length > 0 && variants.every((v) => ownedLegendary[v.name]);
+        const disabled = locked || allOwned;
         const reqLevel = CF.RARITY_REQ_LEVEL[rarity] || 1;
         return `
           <div class="shop-row">
             ${rarityTag(rarity)}
-            <div class="shop-row-name">${ui.esc(item.name)}<span class="shop-row-desc">${CF.describeItem(item)}${reqLevel > 1 ? ` · 要 Lv.${reqLevel} 才穿得動` : ""}</span></div>
+            <div class="shop-row-name">${ui.esc(namePreview)}<span class="shop-row-desc">${CF.describeItem(variants[0])}${variants.length > 1 ? "(不同款效果可能不同，買到才知道是哪一款)" : ""}${reqLevel > 1 ? ` · 要 Lv.${reqLevel} 才穿得動` : ""}</span></div>
             <button class="btn small" data-buy-equip="${slot}:${rarity}" ${disabled ? "disabled" : ""}>
-              ${min}~${max}幣${legendaryOwned ? "(已購買)" : ""}
+              ${min}~${max}幣${allOwned ? "(已擁有)" : ""}
             </button>
           </div>`;
       }).join("");
@@ -1022,6 +1039,14 @@
           ${item ? `<button class="btn ghost small" data-unequip="${slot}">${ui.icon("shirt")}卸下</button>` : ""}
         </div>`;
     });
+    // P2-10新增:三個部位如果剛好湊齊同一套Boss限定裝備，提示套裝效果已經生效。
+    const eq = progress.equipment;
+    if (eq.weapon && eq.armor && eq.accessory && eq.weapon.setKey && eq.weapon.setKey === eq.armor.setKey && eq.weapon.setKey === eq.accessory.setKey) {
+      const setBonus = CareerFloors.SET_BONUSES[eq.weapon.setKey];
+      if (setBonus) {
+        html += `<div class="empty" style="font-size:11.5px;color:var(--gold);margin:6px 0 0;">${ui.icon("gem")}套裝效果已生效:${ui.esc(setBonus.desc)}</div>`;
+      }
+    }
 
     // P1-2修復:背包原本完全沒有排序，就是資料陣列裡剛好的順序(等於是隨機的)，玩家沒辦法一眼
     // 看出哪件比較強。這個遊戲的裝備數值是「同部位+同稀有度＝完全一樣」，稀有度越高數值一定越高
@@ -1065,6 +1090,29 @@
       .join("");
 
     html += `<p class="shop-section-title" style="margin-top:16px;">背包(${(progress.inventory || []).length} 件，稀有度高到低排序)</p>`;
+    // P2-9新增:一鍵賣裝，只開放普通/稀有(史詩/傳說一律不給這個功能賣，避免手滑賣掉重要裝備)，
+    // 已裝備的東西本來就不在這個列表裡，不用另外排除。
+    html += `
+      <div class="shop-row" style="flex-wrap:wrap;gap:8px 14px;">
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;">
+          <input type="checkbox" id="sell-filter-common" ${sellFilters.common ? "checked" : ""}/> 普通
+        </label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;">
+          <input type="checkbox" id="sell-filter-rare" ${sellFilters.rare ? "checked" : ""}/> 稀有
+        </label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;color:var(--gold);">
+          <input type="checkbox" id="sell-filter-epic" ${sellFilters.epic ? "checked" : ""}/> 史詩(請小心)
+        </label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;color:var(--gold);">
+          <input type="checkbox" id="sell-filter-legendary" ${sellFilters.legendary ? "checked" : ""}/> 傳說(請小心)
+        </label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;">
+          <input type="checkbox" id="sell-filter-lowlevel" ${sellFilters.lowLevelOnly ? "checked" : ""}/> 只賣低等級門檻(Lv.10以下)
+        </label>
+        <button class="btn ghost small" id="bulk-sell-btn">${ui.icon("coins")}一鍵賣裝</button>
+      </div>
+      ${lastSellResult ? `<p style="text-align:center;font-size:11.5px;color:var(--gold);margin:4px 0 0;">${ui.icon("check")}賣掉了 ${lastSellResult.soldCount} 件，+${lastSellResult.coinsGained} 幣</p>` : ""}
+      <p style="font-size:10.5px;color:var(--ink-dim);margin:2px 0 10px;">已裝備的裝備不會出現在這份清單、不會被賣掉;史詩/傳說預設不勾選，要自己勾選才會列入賣出範圍，請小心不要賣掉重要裝備。</p>`;
     html += invRows || `<div class="empty" style="font-size:12px;">${ui.icon("package-open")}背包是空的，去挑戰樓層、開商店或抽獎機拿裝備吧</div>`;
     return html;
   }
@@ -1098,10 +1146,12 @@
       </div>`;
   }
 
+  // P2-6修復:原本只顯示前10名，玩家回饋「所有參加者都要顯示，不是只顯示前幾名」，
+  // 改成全部列出；另外在自己那一列加上「距離第1名還差多少分」，一眼就知道跟第一名差多少。
   function renderLeaderboardSection() {
     if (!standings.length) return "";
+    const topScore = standings[0].score;
     const rows = standings
-      .slice(0, 10)
       .map((row, idx) => {
         const isMe = row.queueEntry.player_id === myId;
         const name = (row.queueEntry.player && row.queueEntry.player.name) || "?";
@@ -1110,11 +1160,12 @@
         const summaryText = summary
           ? ` · ${ui.esc(summary.className)} Lv.${summary.level} · 攻${summary.stats.atk || summary.stats.matk || 0}防${summary.stats.def}速${summary.stats.spd}`
           : "";
+        const gapText = isMe && idx > 0 ? `<span style="color:var(--gold);font-size:11px;"> · 距第1名還差${topScore - row.score}分</span>` : "";
         return `
           <div class="lb-row${isMe ? " me" : ""}">
             ${ui.rankBadge(idx + 1)}
             <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}
-              <span style="color:var(--ink-dim);font-size:11px;"> · 第${row.floor}層 · ${row.queueEntry.wins}勝${row.queueEntry.losses}敗${summaryText}</span>
+              <span style="color:var(--ink-dim);font-size:11px;"> · 第${row.floor}層 · ${row.queueEntry.wins}勝${row.queueEntry.losses}敗${summaryText}</span>${gapText}
             </span>
             <span class="lb-score">${row.score}</span>
           </div>`;
@@ -1122,7 +1173,7 @@
       .join("");
     return `
       <div class="card" style="margin-top:16px;">
-        <h3>${ui.icon("list-ordered")}目前排行榜</h3>
+        <h3>${ui.icon("list-ordered")}目前排行榜(全部 ${standings.length} 人)</h3>
         ${rows}
       </div>`;
   }
@@ -1506,7 +1557,10 @@
     });
 
     app.querySelectorAll("[data-event-choice]").forEach((btn) => {
-      btn.onclick = () => resolveEventChoice(btn.dataset.eventChoice);
+      btn.onclick = () => {
+        const rememberCb = document.getElementById("event-remember-choice");
+        resolveEventChoice(btn.dataset.eventChoice, !!(rememberCb && rememberCb.checked));
+      };
     });
 
     app.querySelectorAll("[data-buy-potion]").forEach((btn) => {
@@ -1673,6 +1727,47 @@
       };
     });
 
+    // P2-9新增:一鍵賣裝的勾選框+按鈕
+    const sellCommonCb = document.getElementById("sell-filter-common");
+    const sellRareCb = document.getElementById("sell-filter-rare");
+    const sellEpicCb = document.getElementById("sell-filter-epic");
+    const sellLegendaryCb = document.getElementById("sell-filter-legendary");
+    const sellLowLevelCb = document.getElementById("sell-filter-lowlevel");
+    if (sellCommonCb) sellCommonCb.onchange = () => (sellFilters.common = sellCommonCb.checked);
+    if (sellRareCb) sellRareCb.onchange = () => (sellFilters.rare = sellRareCb.checked);
+    if (sellEpicCb) sellEpicCb.onchange = () => (sellFilters.epic = sellEpicCb.checked);
+    if (sellLegendaryCb) sellLegendaryCb.onchange = () => (sellFilters.legendary = sellLegendaryCb.checked);
+    if (sellLowLevelCb) sellLowLevelCb.onchange = () => (sellFilters.lowLevelOnly = sellLowLevelCb.checked);
+    const bulkSellBtn = document.getElementById("bulk-sell-btn");
+    if (bulkSellBtn) {
+      bulkSellBtn.onclick = async () => {
+        if (busy) return;
+        if (!sellFilters.common && !sellFilters.rare && !sellFilters.epic && !sellFilters.legendary) {
+          await ui.alert("至少要勾選一個稀有度才能賣。", { title: "提醒" });
+          return;
+        }
+        const dangerNote = sellFilters.epic || sellFilters.legendary ? "\n\n⚠️ 你有勾選史詩或傳說，這兩種很稀有，賣掉之後很難再拿到，請再三確認。" : "";
+        const ok = await ui.confirm(`確定要照目前勾選的條件，把符合的裝備一次全部賣掉嗎?這個動作不能復原。${dangerNote}`, {
+          title: "一鍵賣裝",
+          confirmText: "確定賣掉",
+          tone: "danger",
+        });
+        if (!ok) return;
+        busy = true;
+        try {
+          const result = await db.bulkSellCareerEquipment(eventId, myId, sellFilters);
+          progress = result.progress;
+          lastSellResult = result;
+          render();
+        } catch (e) {
+          await ui.alert(e.message || "賣裝失敗", { title: "操作失敗", tone: "danger" });
+          await loadAndRender();
+        } finally {
+          busy = false;
+        }
+      };
+    }
+
     const highlightCloseBtn = document.getElementById("highlight-close-btn");
     if (highlightCloseBtn) {
       highlightCloseBtn.onclick = () => {
@@ -1798,11 +1893,11 @@
     }
   }
 
-  async function resolveEventChoice(choiceKey) {
+  async function resolveEventChoice(choiceKey, rememberChoice) {
     if (busy) return;
     busy = true;
     try {
-      const result = await db.resolveCareerEvent(eventId, myId, choiceKey);
+      const result = await db.resolveCareerEvent(eventId, myId, choiceKey, rememberChoice);
       progress = result.progress;
       lastEvent = result;
       lastBattle = null;
