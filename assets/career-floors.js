@@ -24,9 +24,33 @@ window.CareerFloors = (function () {
   const SPECIAL_BOSS_NAME = { 40: "傳說夜市之王", 50: "終極隱藏關主·夜市之神" };
   // P2-10新增:Boss限定裝備天生就是「同一套」(setKey相同)，三件(武器+防具+飾品)都裝備在身上
   // 會額外觸發套裝效果(見下面 SET_BONUSES)，比單件的效果更好一點，給玩家湊齊全套的動力。
+  // P2-10追加修改(玩家回饋:「Boss限定武器也要根據職業改名稱」):原本Boss限定武器不分職業都是
+  // 同一個名字，只有statKey(攻擊/魔攻)會依職業調整，玩家覺得名字也要跟職業對得上(像WEAPON_TABLE
+  // 那樣)。改成武器名稱依職業各自命名(數值、特殊效果維持一樣，只有名字+對應的攻擊屬性換)；
+  // 防具/飾品本來就不分職業(跟一般的EQUIPMENT_TABLE一樣共用)，維持不變。
+  const BOSS_WEAPON_NAMES = {
+    40: {
+      novice: "夜市之王賜下的練習木劍",
+      warrior: "夜市之王的無名巨斧",
+      guardian: "夜市之王的鎮壓鐵拳套",
+      archer: "夜市之王的獵殺長弓",
+      assassin: "夜市之王的暗影雙刃",
+      mage: "夜市之王的禁忌法杖",
+      healer: "夜市之王的祝聖法球",
+    },
+    50: {
+      novice: "終極隱藏關主賜下的木劍",
+      warrior: "終極隱藏關主的滅世巨斧",
+      guardian: "終極隱藏關主的毀滅拳套",
+      archer: "終極隱藏關主的殞落長弓",
+      assassin: "終極隱藏關主的黑暗雙刃",
+      mage: "終極隱藏關主的禁咒法杖",
+      healer: "終極隱藏關主的神聖法球",
+    },
+  };
   const BOSS_LEGENDARY_ITEMS = {
     40: {
-      weapon: { name: "夜市之王的無名兵刃", rarity: "legendary", statValue: 6, setKey: "boss40",
+      weapon: { rarity: "legendary", statValue: 6, setKey: "boss40",
         specialEffect: { key: "critDmgBonus", value: 0.25, desc: "暴擊傷害額外+25%" } },
       armor: { name: "夜市之王的鎮攤戰甲", rarity: "legendary", statKey: "def", statValue: 5, extraHp: 12, setKey: "boss40",
         specialEffect: { key: "dmgReduceRatio", value: 0.08, desc: "受到傷害減免8%" } },
@@ -34,7 +58,7 @@ window.CareerFloors = (function () {
         specialEffect: { key: "lifestealOnHit", value: 0.1, desc: "攻擊命中吸血10%" } },
     },
     50: {
-      weapon: { name: "終極隱藏關主的滅世之刃", rarity: "legendary", statValue: 8, setKey: "boss50",
+      weapon: { rarity: "legendary", statValue: 8, setKey: "boss50",
         specialEffect: { key: "critBonus", value: 0.1, desc: "暴擊率+10%" } },
       armor: { name: "終極隱藏關主的不滅戰甲", rarity: "legendary", statKey: "def", statValue: 7, extraHp: 16, setKey: "boss50",
         specialEffect: { key: "dmgReduceRatio", value: 0.12, desc: "受到傷害減免12%" } },
@@ -356,13 +380,16 @@ window.CareerFloors = (function () {
       }
     }
     // P2-2新增:40/50層Boss機率掉的傳說裝備是「Boss限定裝備」，用專屬的資料表，不是一般的
-    // WEAPON_TABLE/EQUIPMENT_TABLE(那個傳說是商店/抽獎機專用的款式)。武器的statKey要照玩家
-    // 職業是不是魔法系決定(atk或matk)，因為Boss限定武器不像WEAPON_TABLE分職業各自一份。
+    // WEAPON_TABLE/EQUIPMENT_TABLE(那個傳說是商店/抽獎機專用的款式)。
+    // P2-10追加修改:武器的名稱、statKey都要照玩家職業決定(名字見BOSS_WEAPON_NAMES，沒對應的
+    // 職業退回novice款)，不是所有職業共用同一個名字。防具/飾品維持不分職業共用。
     if (rarity === "legendary" && BOSS_LEGENDARY_ITEMS[floorDef.floor]) {
       const base = { ...BOSS_LEGENDARY_ITEMS[floorDef.floor][slot] };
       if (slot === "weapon") {
         const info = CD.CLASS_INFO[classKey];
         base.statKey = info && info.path === "magic" ? "matk" : "atk";
+        const names = BOSS_WEAPON_NAMES[floorDef.floor];
+        base.name = (names && (names[classKey] || names.novice)) || "無名的Boss限定兵刃";
       }
       return { slot, ...base, reqLevel: floorReqLevel(floorDef.floor), bossExclusive: true };
     }
@@ -449,6 +476,7 @@ window.CareerFloors = (function () {
     variantNamePreview,
     SET_BONUSES,
     BOSS_LEGENDARY_ITEMS,
+    BOSS_WEAPON_NAMES,
     expToNextLevel,
     CLASS_KEYS,
     statPointPrice,

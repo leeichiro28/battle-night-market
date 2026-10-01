@@ -169,7 +169,29 @@
       const setBonus = CF.SET_BONUSES["boss" + floor];
       Object.keys(set).forEach((slot) => {
         const item = set[slot];
-        const statPart = item.statKey ? `${CF.STAT_LABEL[item.statKey]}+${item.statValue}` : `攻擊或魔攻+${item.statValue}(依職業自動判斷)`;
+        if (slot === "weapon") {
+          // P2-10追加修改:Boss限定武器現在依職業各自命名(跟statKey一樣依職業決定)，
+          // 規則表要把7個職業的款式都列出來，不是只列一種泛用名字。
+          const names = CF.BOSS_WEAPON_NAMES[floor] || {};
+          Object.keys(names).forEach((cls) => {
+            const clsName = (CD.CLASS_INFO[cls] && CD.CLASS_INFO[cls].name) || cls;
+            const isMagic = CD.CLASS_INFO[cls] && CD.CLASS_INFO[cls].path === "magic";
+            const statKey = isMagic ? "matk" : "atk";
+            rows.push(
+              rowHtml(
+                names[cls],
+                `武器(${clsName}專用，Boss限定)`,
+                "legendary",
+                `${CF.STAT_LABEL[statKey]}+${item.statValue}`,
+                item.specialEffect.desc + (setBonus ? `；集齊「${setBonus.name}」全套再+${setBonus.desc}` : ""),
+                "武器",
+                `只有第${floor}層Boss掉落，要 Lv.${floor} 才穿得動`
+              )
+            );
+          });
+          return;
+        }
+        const statPart = `${CF.STAT_LABEL[item.statKey]}+${item.statValue}`;
         const extraHpPart = item.extraHp ? `、HP+${item.extraHp}` : "";
         rows.push(
           rowHtml(
@@ -235,4 +257,42 @@
         <tbody>${rows}</tbody>
       </table>
     </div>`;
+})();
+
+// 職業養成對決小節太多、整頁捲動太長(玩家回饋)，改成分頁籤切換，一次只顯示一個小節，
+// 不用改動上面每個小節本身的HTML，直接讀現有的 <h4> 當分頁籤標題，新增小節時也會自動出現
+// 在分頁籤列，不用回來另外維護一份清單。
+(function () {
+  const body = document.querySelector('.game-group[data-group="career"] .game-body');
+  if (!body) return;
+  const sections = Array.from(body.querySelectorAll(":scope > .game-section"));
+  if (sections.length < 2) return;
+
+  const tabBar = document.createElement("div");
+  tabBar.className = "folder-tabs";
+  tabBar.style.marginBottom = "14px";
+
+  sections.forEach((sec, idx) => {
+    const h4 = sec.querySelector("h4");
+    const fullLabel = h4 ? h4.textContent.trim() : `小節${idx + 1}`;
+    const shortLabel = fullLabel.split(/[:：]/)[0]; // 標題常常是「XX:說明」，分頁籤只取冒號前面那段，比較不會擠
+    const iconEl = h4 && h4.querySelector(".ico");
+    const iconName = iconEl ? iconEl.getAttribute("data-lucide") : null;
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "folder-tab" + (idx === 0 ? " active" : "");
+    btn.innerHTML = (iconName ? `<i data-lucide="${iconName}" class="ico"></i>` : "") + shortLabel;
+    btn.onclick = () => {
+      sections.forEach((s, i) => {
+        s.hidden = i !== idx;
+      });
+      tabBar.querySelectorAll(".folder-tab").forEach((t, i) => t.classList.toggle("active", i === idx));
+      sec.scrollIntoView({ block: "start", behavior: "smooth" });
+    };
+    tabBar.appendChild(btn);
+    sec.hidden = idx !== 0;
+  });
+
+  body.insertBefore(tabBar, sections[0]); // 圖示是動態插入的<i data-lucide>，ui.js已經有全域MutationObserver會自動轉成svg，這裡不用手動呼叫
 })();
