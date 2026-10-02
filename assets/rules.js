@@ -106,24 +106,35 @@
   const CF = window.CareerFloors;
   const CD = window.CareerData;
 
-  function rowHtml(name, typeLabel, rarity, statText, effectText, slotText, condText) {
-    return `
-      <tr>
-        <td>${ui.esc(name)}</td>
-        <td>${ui.esc(typeLabel)}</td>
-        <td><span class="tier-tag ${rarity}">${CF.RARITY_LABEL[rarity]}</span></td>
-        <td>${ui.esc(statText)}</td>
-        <td>${effectText ? "★" + ui.esc(effectText) : "-"}</td>
-        <td>${ui.esc(slotText)}</td>
-        <td>${ui.esc(condText)}</td>
-      </tr>`;
+  // P1-11修改(玩家回饋:裝備表格式要統一、數值欄位右對齊、不要每個項目排版都不一樣)：
+  // 固定10欄：裝備/類型/稀有度/等級/HP/攻擊/防禦/速度/幸運/特殊效果，不管武器/防具/飾品/
+  // Boss限定哪一類都套同一組欄位，沒有的數值顯示「—」，不是每種裝備各自排不同欄位。
+  function numCell(value, suffix) {
+    if (value == null) return `<td class="num empty">—</td>`;
+    return `<td class="num">+${value}${suffix || ""}</td>`;
   }
 
-  function statText(item) {
-    const parts = [];
-    if (item.statKey) parts.push(`${CF.STAT_LABEL[item.statKey]}+${item.statValue}`);
-    if (item.extraHp) parts.push(`HP+${item.extraHp}`);
-    return parts.join("、");
+  function rowHtml(item, typeLabel, rarity, levelNum) {
+    const hp = item.extraHp || null;
+    const isAtkLike = item.statKey === "atk" || item.statKey === "matk";
+    const atk = isAtkLike ? item.statValue : null;
+    const atkSuffix = item.statKey === "matk" ? "(魔)" : "";
+    const def = item.statKey === "def" ? item.statValue : null;
+    const spd = item.statKey === "spd" ? item.statValue : null;
+    const luck = item.statKey === "luck" ? item.statValue : null;
+    return `
+      <tr>
+        <td>${ui.esc(item.name)}</td>
+        <td>${ui.esc(typeLabel)}</td>
+        <td><span class="tier-tag ${rarity}">${CF.RARITY_LABEL[rarity]}</span></td>
+        <td class="num">${levelNum}</td>
+        ${numCell(hp)}
+        ${numCell(atk, atkSuffix)}
+        ${numCell(def)}
+        ${numCell(spd)}
+        ${numCell(luck)}
+        <td>${item.specialEffect ? "★" + ui.esc(item.specialEffect.desc) : "—"}</td>
+      </tr>`;
   }
 
   function weaponRows() {
@@ -132,17 +143,7 @@
       const clsName = (CD.CLASS_INFO[cls] && CD.CLASS_INFO[cls].name) || cls;
       CF.RARITIES.forEach((rarity) => {
         (CF.WEAPON_TABLE[cls][rarity] || []).forEach((item) => {
-          rows.push(
-            rowHtml(
-              item.name,
-              `武器(${clsName}專用)`,
-              rarity,
-              statText(item),
-              item.specialEffect ? item.specialEffect.desc : "",
-              "武器",
-              `要 Lv.${CF.RARITY_REQ_LEVEL[rarity]} 才穿得動`
-            )
-          );
+          rows.push(rowHtml(item, `武器(${clsName})`, rarity, CF.RARITY_REQ_LEVEL[rarity]));
         });
       });
     });
@@ -153,9 +154,7 @@
     const rows = [];
     CF.RARITIES.forEach((rarity) => {
       (CF.EQUIPMENT_TABLE[slot][rarity] || []).forEach((item) => {
-        rows.push(
-          rowHtml(item.name, label, rarity, statText(item), item.specialEffect ? item.specialEffect.desc : "", label, `要 Lv.${CF.RARITY_REQ_LEVEL[rarity]} 才穿得動`)
-        );
+        rows.push(rowHtml(item, label, rarity, CF.RARITY_REQ_LEVEL[rarity]));
       });
     });
     return rows.join("");
@@ -168,42 +167,32 @@
       const set = CF.BOSS_LEGENDARY_ITEMS[floor];
       const setBonus = CF.SET_BONUSES["boss" + floor];
       Object.keys(set).forEach((slot) => {
-        const item = set[slot];
+        const base = set[slot];
         if (slot === "weapon") {
-          // P2-10追加修改:Boss限定武器現在依職業各自命名(跟statKey一樣依職業決定)，
+          // P2-10追加修改:Boss限定武器依職業各自命名(跟statKey一樣依職業決定)，
           // 規則表要把7個職業的款式都列出來，不是只列一種泛用名字。
           const names = CF.BOSS_WEAPON_NAMES[floor] || {};
           Object.keys(names).forEach((cls) => {
             const clsName = (CD.CLASS_INFO[cls] && CD.CLASS_INFO[cls].name) || cls;
             const isMagic = CD.CLASS_INFO[cls] && CD.CLASS_INFO[cls].path === "magic";
-            const statKey = isMagic ? "matk" : "atk";
-            rows.push(
-              rowHtml(
-                names[cls],
-                `武器(${clsName}專用，Boss限定)`,
-                "legendary",
-                `${CF.STAT_LABEL[statKey]}+${item.statValue}`,
-                item.specialEffect.desc + (setBonus ? `；集齊「${setBonus.name}」全套再+${setBonus.desc}` : ""),
-                "武器",
-                `只有第${floor}層Boss掉落，要 Lv.${floor} 才穿得動`
-              )
-            );
+            const item = {
+              name: names[cls],
+              statKey: isMagic ? "matk" : "atk",
+              statValue: base.statValue,
+              specialEffect: { desc: base.specialEffect.desc + (setBonus ? `；集滿「${setBonus.name}」全套再${setBonus.desc}` : "") },
+            };
+            rows.push(rowHtml(item, `武器(${clsName}，限定)`, "legendary", floor));
           });
           return;
         }
-        const statPart = `${CF.STAT_LABEL[item.statKey]}+${item.statValue}`;
-        const extraHpPart = item.extraHp ? `、HP+${item.extraHp}` : "";
-        rows.push(
-          rowHtml(
-            item.name,
-            `${slotLabel[slot]}(Boss限定)`,
-            "legendary",
-            statPart + extraHpPart,
-            item.specialEffect.desc + (setBonus ? `；集齊「${setBonus.name}」全套再+${setBonus.desc}` : ""),
-            slotLabel[slot],
-            `只有第${floor}層Boss掉落，要 Lv.${floor} 才穿得動`
-          )
-        );
+        const item = {
+          name: base.name,
+          statKey: base.statKey,
+          statValue: base.statValue,
+          extraHp: base.extraHp,
+          specialEffect: { desc: base.specialEffect.desc + (setBonus ? `；集滿「${setBonus.name}」全套再${setBonus.desc}` : "") },
+        };
+        rows.push(rowHtml(item, `${slotLabel[slot]}(限定)`, "legendary", floor));
       });
     });
     return rows.join("");
@@ -214,10 +203,16 @@
     listEl.innerHTML = `
       <div class="rule-table-wrap">
         <table class="rule-table">
-          <thead><tr><th>裝備名稱</th><th>裝備類型</th><th>稀有度</th><th>基礎數值</th><th>特殊效果</th><th>裝備位置</th><th>其他條件</th></tr></thead>
+          <thead><tr>
+            <th>裝備</th><th>類型</th><th>稀有度</th>
+            <th class="num">等級</th><th class="num">HP</th><th class="num">攻擊</th>
+            <th class="num">防禦</th><th class="num">速度</th><th class="num">幸運</th>
+            <th>特殊效果</th>
+          </tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table>
-      </div>`;
+      </div>
+      ${tab === "boss" ? `<p style="font-size:11px;color:var(--ink-dim);margin-top:6px;">※ Boss限定裝備只有打贏對應樓層的Boss才會機率掉落(40層/50層)，「等級」欄位就是樓層數，也是要穿上的最低等級。</p>` : ""}`;
   }
 
   tabsEl.querySelectorAll("[data-eq-tab]").forEach((tab) => {
@@ -268,9 +263,12 @@
   const sections = Array.from(body.querySelectorAll(":scope > .game-section"));
   if (sections.length < 2) return;
 
+  // 小節數量文字是寫死的("8 個小節")，之後小節增減很容易忘記同步，改成直接照實際小節數算。
+  const countEl = document.querySelector('.game-group[data-group="career"] .game-toggle-count');
+  if (countEl) countEl.textContent = `${sections.length} 個小節`;
+
   const tabBar = document.createElement("div");
-  tabBar.className = "folder-tabs";
-  tabBar.style.marginBottom = "14px";
+  tabBar.className = "rule-tabs";
 
   sections.forEach((sec, idx) => {
     const h4 = sec.querySelector("h4");
@@ -281,13 +279,13 @@
 
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "folder-tab" + (idx === 0 ? " active" : "");
+    btn.className = "rule-tab" + (idx === 0 ? " active" : "");
     btn.innerHTML = (iconName ? `<i data-lucide="${iconName}" class="ico"></i>` : "") + shortLabel;
     btn.onclick = () => {
       sections.forEach((s, i) => {
         s.hidden = i !== idx;
       });
-      tabBar.querySelectorAll(".folder-tab").forEach((t, i) => t.classList.toggle("active", i === idx));
+      tabBar.querySelectorAll(".rule-tab").forEach((t, i) => t.classList.toggle("active", i === idx));
       sec.scrollIntoView({ block: "start", behavior: "smooth" });
     };
     tabBar.appendChild(btn);

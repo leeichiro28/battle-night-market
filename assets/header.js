@@ -40,21 +40,30 @@
       profile = await db.getPlayerProfile(player.id);
     } catch (e) {}
     const unlocked = (profile && profile.titles) || [];
-    if (!unlocked.length) {
-      await ui.alert("還沒解鎖任何稱號，去比賽或拍賣裡拿下佳績試試看吧！", { title: "稱號" });
-      return;
-    }
     const current = (profile && profile.display_title) || "";
-    const optionsHtml = unlocked
-      .map((key) => {
-        const meta = (db.TITLE_CATALOG || []).find((t) => t.key === key);
-        if (!meta) return "";
+    // P1-12修復(玩家回饋):原本只列出「已解鎖」的稱號，完全沒解鎖過任何稱號的人點了只會看到
+    // 一段提示文字、看不到有哪些稱號可以追求；已解鎖的那些也只顯示圖示，看不出名字。
+    // 改成：不管解不解鎖都列出全部稱號，已解鎖的正常可點選，未解鎖的名字照樣顯示、
+    // 整列降低亮度、掛🔒圖示、不能點選，玩家可以清楚知道「有哪些稱號、我拿到了哪些」。
+    const optionsHtml = (db.TITLE_CATALOG || [])
+      .map((meta) => {
+        const isUnlocked = unlocked.includes(meta.key);
+        if (isUnlocked) {
+          return `
+            <label class="title-pick-row">
+              <input type="radio" name="title-pick" value="${ui.esc(meta.key)}" ${current === meta.key ? "checked" : ""} />
+              ${ui.icon(meta.icon || "crown")}
+              <span><b>${ui.esc(meta.name)}</b><span class="hint">${ui.esc(meta.desc || "")}</span></span>
+              <span class="title-pick-status unlocked">${ui.icon("check")}已取得</span>
+            </label>`;
+        }
         return `
-          <label class="title-pick-row">
-            <input type="radio" name="title-pick" value="${ui.esc(key)}" ${current === key ? "checked" : ""} />
+          <div class="title-pick-row locked" aria-disabled="true">
+            <span class="title-pick-lock">${ui.icon("lock")}</span>
             ${ui.icon(meta.icon || "crown")}
             <span><b>${ui.esc(meta.name)}</b><span class="hint">${ui.esc(meta.desc || "")}</span></span>
-          </label>`;
+            <span class="title-pick-status locked">${ui.icon("lock")}未取得</span>
+          </div>`;
       })
       .join("");
 

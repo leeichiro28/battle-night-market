@@ -143,6 +143,31 @@ a{color:var(--gold);text-decoration:none;}
 }
 .folder-tab-card{border-top-left-radius:0;}
 
+/* P1-9/P1-10新增(玩家回饋):規則頁的分頁籤(小節導覽、裝備表內的武器/防具/飾品/Boss限定)
+   分頁數量比較多，原本想沿用上面 .folder-tabs 那套「排不下就橫向捲動」的設計，結果玩家實際
+   測試發現捲動不好發現、有分頁籤「看得到存在但找不到／滑不到」的狀況。改成專用的樣式：
+   不靠隱藏的橫向捲動，排不下直接自動換行(flex-wrap)，確保每一個分頁都看得到、點得到；
+   同時把外觀改成方正、乾淨:直角(不是圓角卡片)、統一高度/間距、選中狀態明確，不做多餘裝飾。 */
+.rule-tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;}
+.rule-tab{
+  display:inline-flex;align-items:center;gap:6px;
+  height:36px;padding:0 14px;
+  font-size:12.5px;font-weight:700;
+  color:var(--ink-dim);
+  background:var(--panel2);
+  border:1px solid var(--line);
+  border-radius:4px;
+  cursor:pointer;
+  white-space:nowrap;
+}
+.rule-tab .ico{width:14px;height:14px;}
+.rule-tab:hover{color:var(--ink);border-color:var(--ink-dim);}
+.rule-tab.active{
+  background:var(--gold);
+  color:#1a1206;
+  border-color:var(--gold);
+}
+
 /* 規則頁的「遊戲分組」收合區塊，互動方式跟首頁「活動已結束」的收合按鈕一致 */
 .game-group{margin-bottom:16px;}
 .game-toggle{
@@ -894,6 +919,9 @@ label{
 .rule-table.calc-table{min-width:520px;}
 .rule-table.calc-table td:first-child{color:var(--gold-d);font-family:'Space Mono',monospace;width:32px;}
 .rule-table.calc-table td:nth-child(2){color:var(--ink);}
+/* P1-11新增(玩家回饋:裝備表數值欄位要右對齊、名稱左對齊、欄位固定，各區塊統一格式) */
+.rule-table td.num,.rule-table th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.rule-table td.num.empty{color:var(--ink-dim);opacity:.5;}
 .modal-card p{font-size:13px;color:var(--ink-dim);margin:0 0 10px;line-height:1.7;}
 .modal-card p:first-of-type{margin-top:0;}
 /* 「本場活動額外開啟的機制」每一條規則的容器，取代原本直接塞進 <p> 的做法，
@@ -1345,6 +1373,16 @@ body.dialog-open{overflow:hidden;}
 .title-pick-row input{flex-shrink:0;}
 .title-pick-row b{display:block;font-size:13px;color:var(--ink);}
 .title-pick-row .hint{display:block;font-size:12px;color:var(--ink-dim);margin-top:2px;}
+/* P1-12新增:未解鎖的稱號列，整列降低亮度、不能點、掛鎖頭圖示，跟已解鎖的做出明顯區分 */
+.title-pick-row.locked{cursor:not-allowed;opacity:.45;filter:grayscale(.6);}
+.title-pick-row .title-pick-lock{flex-shrink:0;color:var(--ink-dim);}
+.title-pick-row .title-pick-status{
+  margin-left:auto;flex-shrink:0;display:flex;align-items:center;gap:4px;
+  font-size:11px;white-space:nowrap;
+}
+.title-pick-row .title-pick-status.unlocked{color:var(--green);}
+.title-pick-row .title-pick-status.locked{color:var(--ink-dim);}
+.title-pick-row .title-pick-status .ico{width:13px;height:13px;}
 .dialog-actions{
   display:flex;
   justify-content:flex-end;
