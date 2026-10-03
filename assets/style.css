@@ -922,6 +922,23 @@ label{
 /* P1-11新增(玩家回饋:裝備表數值欄位要右對齊、名稱左對齊、欄位固定，各區塊統一格式) */
 .rule-table td.num,.rule-table th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
 .rule-table td.num.empty{color:var(--ink-dim);opacity:.5;}
+/* P1-11二次修復(玩家回饋:類型/特殊效果欄位太窄、文字擠得每格超長，速度/幸運反而不用那麼寬)：
+   裝備表(.equipment-table)改成固定版面(table-layout:fixed)，每欄寬度明確指定——名稱、類型、
+   特殊效果這種本來文字就比較長的欄位分配多一點寬度，稀有度/等級/HP/攻擊/防禦/速度/幸運這種
+   短數值或短標籤欄位給少一點，不要讓短欄位占太多空間、逼長欄位的文字擠成一長串直排。
+   欄位順序對應產生HTML的順序:裝備/類型/稀有度/等級/HP/攻擊/防禦/速度/幸運/特殊效果。 */
+.rule-table.equipment-table{table-layout:fixed;min-width:920px;}
+.rule-table.equipment-table th,.rule-table.equipment-table td{white-space:normal;word-break:break-word;}
+.rule-table.equipment-table th:nth-child(1),.rule-table.equipment-table td:nth-child(1){width:15%;}
+.rule-table.equipment-table th:nth-child(2),.rule-table.equipment-table td:nth-child(2){width:13%;}
+.rule-table.equipment-table th:nth-child(3),.rule-table.equipment-table td:nth-child(3){width:7%;}
+.rule-table.equipment-table th:nth-child(4),.rule-table.equipment-table td:nth-child(4){width:6%;}
+.rule-table.equipment-table th:nth-child(5),.rule-table.equipment-table td:nth-child(5){width:6%;}
+.rule-table.equipment-table th:nth-child(6),.rule-table.equipment-table td:nth-child(6){width:7%;}
+.rule-table.equipment-table th:nth-child(7),.rule-table.equipment-table td:nth-child(7){width:6%;}
+.rule-table.equipment-table th:nth-child(8),.rule-table.equipment-table td:nth-child(8){width:6%;}
+.rule-table.equipment-table th:nth-child(9),.rule-table.equipment-table td:nth-child(9){width:6%;}
+.rule-table.equipment-table th:nth-child(10),.rule-table.equipment-table td:nth-child(10){width:28%;}
 .modal-card p{font-size:13px;color:var(--ink-dim);margin:0 0 10px;line-height:1.7;}
 .modal-card p:first-of-type{margin-top:0;}
 /* 「本場活動額外開啟的機制」每一條規則的容器，取代原本直接塞進 <p> 的做法，
@@ -1362,20 +1379,25 @@ body.dialog-open{overflow:hidden;}
 }
 .dialog-field{margin-bottom:16px;}
 .dialog-field label{margin-bottom:8px;}
-/* 跨場永久系統(Phase 0):稱號選單裡每一列，圖示+名稱+說明橫排，選到的那列高亮邊框 */
+/* 跨場永久系統(Phase 0):稱號選單裡每一列，圖示+名稱+說明橫排，選到的那列高亮邊框。
+   P1-12二次修復(玩家回饋:部分列變成空白大方塊):這裡現在是<button>(已解鎖，可點)或
+   <div>(未解鎖)，不是<label>包原生<input type="radio">，所以要把<button>的原生外觀
+   (預設邊框/背景/字體/寬度不滿版)完全重置掉，不然不同瀏覽器對裸按鈕的預設樣式差很多，
+   就是先前「有些列變成一個不知道多高的空方塊」的根本原因。 */
 .title-pick-row{
-  display:flex;align-items:center;gap:10px;
+  display:flex;align-items:center;gap:10px;width:100%;
   padding:10px 12px;border-radius:10px;border:1px solid var(--line);
   margin-bottom:8px;cursor:pointer;text-align:left;
+  background:none;font:inherit;color:inherit;appearance:none;
+  box-sizing:border-box;
 }
 .title-pick-row:last-child{margin-bottom:0;}
-.title-pick-row:has(input:checked){border-color:var(--gold-d);background:rgba(242,183,5,.08);}
-.title-pick-row input{flex-shrink:0;}
+.title-pick-row.selected{border-color:var(--gold-d);background:rgba(242,183,5,.08);}
 .title-pick-row b{display:block;font-size:13px;color:var(--ink);}
 .title-pick-row .hint{display:block;font-size:12px;color:var(--ink-dim);margin-top:2px;}
 /* P1-12新增:未解鎖的稱號列，整列降低亮度、不能點、掛鎖頭圖示，跟已解鎖的做出明顯區分 */
 .title-pick-row.locked{cursor:not-allowed;opacity:.45;filter:grayscale(.6);}
-.title-pick-row .title-pick-lock{flex-shrink:0;color:var(--ink-dim);}
+.title-pick-row .title-pick-lock{flex-shrink:0;color:var(--ink-dim);width:14px;height:14px;display:inline-flex;}
 .title-pick-row .title-pick-status{
   margin-left:auto;flex-shrink:0;display:flex;align-items:center;gap:4px;
   font-size:11px;white-space:nowrap;
@@ -1383,6 +1405,7 @@ body.dialog-open{overflow:hidden;}
 .title-pick-row .title-pick-status.unlocked{color:var(--green);}
 .title-pick-row .title-pick-status.locked{color:var(--ink-dim);}
 .title-pick-row .title-pick-status .ico{width:13px;height:13px;}
+.title-pick-row .ico{flex-shrink:0;}
 .dialog-actions{
   display:flex;
   justify-content:flex-end;

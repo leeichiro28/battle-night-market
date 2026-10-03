@@ -40,32 +40,43 @@
       profile = await db.getPlayerProfile(player.id);
     } catch (e) {}
     const unlocked = (profile && profile.titles) || [];
-    const current = (profile && profile.display_title) || "";
+    let selected = (profile && profile.display_title) || "";
+
     // P1-12修復(玩家回饋):原本只列出「已解鎖」的稱號，完全沒解鎖過任何稱號的人點了只會看到
     // 一段提示文字、看不到有哪些稱號可以追求；已解鎖的那些也只顯示圖示，看不出名字。
     // 改成：不管解不解鎖都列出全部稱號，已解鎖的正常可點選，未解鎖的名字照樣顯示、
     // 整列降低亮度、掛🔒圖示、不能點選，玩家可以清楚知道「有哪些稱號、我拿到了哪些」。
-    const optionsHtml = (db.TITLE_CATALOG || [])
-      .map((meta) => {
-        const isUnlocked = unlocked.includes(meta.key);
-        if (isUnlocked) {
-          return `
-            <label class="title-pick-row">
-              <input type="radio" name="title-pick" value="${ui.esc(meta.key)}" ${current === meta.key ? "checked" : ""} />
-              ${ui.icon(meta.icon || "crown")}
-              <span><b>${ui.esc(meta.name)}</b><span class="hint">${ui.esc(meta.desc || "")}</span></span>
-              <span class="title-pick-status unlocked">${ui.icon("check")}已取得</span>
-            </label>`;
-        }
+    // 二次修復(玩家回饋:部分列會顯示成一個超大的空白方塊，裡面只有一顆小圓點):原本用
+    // <label>包<input type="radio">，不同瀏覽器/手機對「裸的radio加沒有固定高度的label」
+    // 渲染不一致，容易被撐得很高、看起來就是空方塊裡一顆點(就是沒套樣式的原生radio)。
+    // 改成完全不用原生radio/checkbox，純粹用按鈕+JS記錄目前選了哪個、重繪整個清單標記
+    // 選中狀態，不依賴任何表單元件的原生外觀，不會再有渲染不一致的問題。
+    function rowHtml(key, name, desc, icon, locked) {
+      if (locked) {
         return `
           <div class="title-pick-row locked" aria-disabled="true">
             <span class="title-pick-lock">${ui.icon("lock")}</span>
-            ${ui.icon(meta.icon || "crown")}
-            <span><b>${ui.esc(meta.name)}</b><span class="hint">${ui.esc(meta.desc || "")}</span></span>
+            ${ui.icon(icon || "crown")}
+            <span><b>${ui.esc(name)}</b>${desc ? `<span class="hint">${ui.esc(desc)}</span>` : ""}</span>
             <span class="title-pick-status locked">${ui.icon("lock")}未取得</span>
           </div>`;
-      })
-      .join("");
+      }
+      const isSelected = selected === key;
+      return `
+        <button type="button" class="title-pick-row${isSelected ? " selected" : ""}" data-title-key="${ui.esc(key)}">
+          ${icon ? ui.icon(icon) : `<span class="title-pick-lock"></span>`}
+          <span><b>${ui.esc(name)}</b>${desc ? `<span class="hint">${ui.esc(desc)}</span>` : ""}</span>
+          <span class="title-pick-status unlocked">${ui.icon(isSelected ? "circle-check" : "check")}${isSelected ? "使用中" : "已取得"}</span>
+        </button>`;
+    }
+
+    function bodyHtml() {
+      let html = rowHtml("", "不顯示任何稱號", "", null, false);
+      (db.TITLE_CATALOG || []).forEach((meta) => {
+        html += rowHtml(meta.key, meta.name, meta.desc, meta.icon, !unlocked.includes(meta.key));
+      });
+      return html;
+    }
 
     const overlay = document.createElement("div");
     overlay.className = "dialog-overlay show";
@@ -75,13 +86,7 @@
           <span class="dialog-icon tone-info">${ui.icon("crown")}</span>
           <h3 class="dialog-title">選擇要顯示的稱號</h3>
         </div>
-        <div class="dialog-body">
-          <label class="title-pick-row">
-            <input type="radio" name="title-pick" value="" ${!current ? "checked" : ""} />
-            <span><b>不顯示任何稱號</b></span>
-          </label>
-          ${optionsHtml}
-        </div>
+        <div class="dialog-body" id="title-pick-body">${bodyHtml()}</div>
         <div class="dialog-actions">
           <button type="button" class="btn ghost" id="title-pick-cancel">取消</button>
           <button type="button" class="btn" id="title-pick-ok">儲存</button>
@@ -91,6 +96,18 @@
     document.body.appendChild(overlay);
     document.body.classList.add("dialog-open");
 
+    const bodyEl = overlay.querySelector("#title-pick-body");
+    function wireRows() {
+      bodyEl.querySelectorAll("[data-title-key]").forEach((btn) => {
+        btn.onclick = () => {
+          selected = btn.dataset.titleKey;
+          bodyEl.innerHTML = bodyHtml();
+          wireRows();
+        };
+      });
+    }
+    wireRows();
+
     return new Promise((resolve) => {
       function close() {
         overlay.remove();
@@ -99,10 +116,8 @@
       }
       overlay.querySelector("#title-pick-cancel").onclick = close;
       overlay.querySelector("#title-pick-ok").onclick = async () => {
-        const picked = overlay.querySelector('input[name="title-pick"]:checked');
-        const key = picked ? picked.value : "";
         try {
-          await db.setDisplayTitle(player.id, key || null);
+          await db.setDisplayTitle(player.id, selected || null);
         } catch (e) {
           await ui.alert(e.message || "儲存失敗", { title: "儲存失敗", tone: "danger" });
         }

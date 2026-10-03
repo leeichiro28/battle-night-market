@@ -202,7 +202,7 @@
     const rowsHtml = tab === "weapon" ? weaponRows() : tab === "armor" ? equipmentSlotRows("armor", "防具") : tab === "accessory" ? equipmentSlotRows("accessory", "飾品") : bossRows();
     listEl.innerHTML = `
       <div class="rule-table-wrap">
-        <table class="rule-table">
+        <table class="rule-table equipment-table">
           <thead><tr>
             <th>裝備</th><th>類型</th><th>稀有度</th>
             <th class="num">等級</th><th class="num">HP</th><th class="num">攻擊</th>
@@ -293,4 +293,98 @@
   });
 
   body.insertBefore(tabBar, sections[0]); // 圖示是動態插入的<i data-lucide>，ui.js已經有全域MutationObserver會自動轉成svg，這裡不用手動呼叫
+})();
+
+// 職業養成對決:職業表(玩家回饋「職業也要細分」，力量/敏捷/魔法三條路線、每條線2個最終職業，
+// 一次表格列出主要數值、被動特色、大招、代表武器，不要整段文字擠在一起)
+(function () {
+  const el = document.getElementById("career-class-table");
+  if (!el || !window.CareerData || !window.CareerFloors) return;
+  const CD = window.CareerData;
+  const CF = window.CareerFloors;
+
+  const PATH_LABEL = { strength: "力量系", agility: "敏捷系", magic: "魔法系" };
+  // CLASS_EFFECTS 裡的機制(忽視防禦/反擊/連射/連擊率/治療加成)是數值代號，玩家看不懂，
+  // 這裡手動配一句白話說明，跟 statBonus 的固定加值合併顯示在「被動特色」欄。
+  const PASSIVE_NOTE = {
+    warrior: "攻擊無視對方30%防禦",
+    guardian: "受擊15%機率反擊",
+    archer: "攻擊20%機率追加一次普攻",
+    assassin: "殘血對手時暴擊率大幅提升",
+    mage: "—",
+    healer: "大招治療量加成，回合開始自動回一點HP",
+  };
+  const CLASS_ORDER = ["warrior", "guardian", "archer", "assassin", "mage", "healer"];
+
+  function rowHtml(cls) {
+    const info = CD.CLASS_INFO[cls];
+    const eff = CD.CLASS_EFFECTS[cls] || {};
+    const bonusText = Object.keys(eff.statBonus || {})
+      .map((k) => `${CF.STAT_LABEL[k] || k}+${eff.statBonus[k]}`)
+      .join("、") || "—";
+    const weapon = (CF.WEAPON_TABLE[cls] && CF.WEAPON_TABLE[cls].common && CF.WEAPON_TABLE[cls].common[0]) || null;
+    return `
+      <tr>
+        <td>${PATH_LABEL[info.path] || info.pathLabel || "-"}</td>
+        <td><span class="row-label">${ui.icon(info.icon || "user")}${ui.esc(info.name)}</span></td>
+        <td>${ui.esc(bonusText)}</td>
+        <td>${ui.esc(PASSIVE_NOTE[cls] || "—")}</td>
+        <td>${ui.esc(info.ultName || "-")}<span class="hint" style="display:block;font-size:11px;color:var(--ink-dim);">${ui.esc(info.ultDesc || "")}</span></td>
+        <td>${weapon ? ui.esc(weapon.name) : "-"}</td>
+      </tr>`;
+  }
+
+  el.innerHTML = `
+    <div class="rule-table-wrap">
+      <table class="rule-table">
+        <thead><tr><th>路線</th><th>最終職業</th><th>固定加值</th><th>被動特色</th><th>大招</th><th>代表武器(普通)</th></tr></thead>
+        <tbody>${CLASS_ORDER.map(rowHtml).join("")}</tbody>
+      </table>
+    </div>`;
+})();
+
+// 職業養成對決:事件表(玩家回饋「事件也要細分」，15個事件一次表格列出類型跟效果，
+// 不要整段文字擠成一大串逗號分隔)
+(function () {
+  const el = document.getElementById("career-event-table");
+  if (!el || !window.CareerEvents) return;
+  const CE = window.CareerEvents;
+
+  // EVENTS 資料本身只有 desc(情境文字)，沒有「效果」的精簡白話版，這裡手動配一句，
+  // 跟 db.js 的 _resolveInstantEvent / _computeEventChoicePatch 實際邏輯保持一致。
+  const EFFECT_NOTE = {
+    chest: "當場開穩拿小獎，或帶回去賭一把(可能更好也可能更差)",
+    merchant: "花幣買下限時特價的普通裝備，或不買",
+    fortune: "小機率拿到額外數值點，大多時候是小獎勵",
+    sparring: "練習賽形式的小型戰鬥，輸了不扣任何東西",
+    reclass: "付30幣把已經點過的1點數值點收回來，變成自由數值點重分配",
+    pickpocket: "損失一點幣",
+    landmine: "下次特訓要多等10秒",
+    benefactor: "直接送1點自由數值點(很稀有)",
+    gacha: "免費抽一次夜市抽獎機",
+    healing: "回復30%最大HP跟MP",
+    mentor: "直接送15~30點經驗值",
+    lost_child: "70%機率拿到8~20幣謝禮，其餘沒事發生",
+    try_on: "免費送一件普通裝備(隨機部位)",
+    spirit_blessing: "50%送1點自由數值點，50%拿走5~15幣",
+    blind_boxes: "三選一開箱，獎勵從摃龜到稀有裝備都有可能",
+  };
+
+  function rowHtml(def) {
+    return `
+      <tr>
+        <td><span class="row-label">${ui.icon(def.icon)}${ui.esc(def.name)}</span></td>
+        <td>${def.type === "choice" ? "需要選擇" : "立即生效"}</td>
+        <td>${ui.esc(def.desc)}</td>
+        <td>${ui.esc(EFFECT_NOTE[def.key] || "-")}</td>
+      </tr>`;
+  }
+
+  el.innerHTML = `
+    <div class="rule-table-wrap">
+      <table class="rule-table">
+        <thead><tr><th>事件</th><th>類型</th><th>情境</th><th>效果</th></tr></thead>
+        <tbody>${CE.EVENTS.map(rowHtml).join("")}</tbody>
+      </table>
+    </div>`;
 })();
