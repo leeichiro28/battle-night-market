@@ -41,6 +41,7 @@
   }
   let lastBattle = null; // { won, log, floorDef, coinGain, expGain, leveledUp, drop }
   let lastEvent = null; // { eventDef, text, drop } — instant事件/商店購買結果(顯示在爬塔分頁)
+  let lastShopNote = null; // 商店購買結果(顯示在商店分頁頂端，買完留在商店不跳走)
   let lastGachaResult = null; // 抽獎結果(顯示在抽獎機分頁，不會跳走)
   let lastSynthesisResult = null; // 合成結果(顯示在合成分頁，不會跳走)
   let bossSubmitted = false; // 王戰:這回合是否已經送出動作
@@ -593,7 +594,12 @@
         </div>`;
     }
 
+    const noteHtml = lastShopNote
+      ? `<div style="margin:0 0 12px;padding:10px 12px;border-radius:var(--radius);border:1px solid var(--gold-d);background:var(--panel2);display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink);overflow-wrap:anywhere;">${ui.icon(lastShopNote.icon || "shopping-bag")}<span>${ui.esc(lastShopNote.text)}</span></div>`
+      : "";
+
     return `
+      ${noteHtml}
       <p style="margin:0 0 12px;font-size:11px;color:var(--ink-dim);">價格會有一點浮動；傳說裝備每個部位(武器/防具/飾品)各限購 1 件，最多可以同時裝備 3 件傳說(商店買或抽獎機中都算數)。</p>
 
       <div class="shop-row" style="margin-bottom:14px;">
@@ -1421,6 +1427,7 @@
     app.querySelectorAll("[data-tab]").forEach((tab) => {
       tab.onclick = () => {
         activeTab = tab.dataset.tab;
+        lastShopNote = null; // 離開商店就清掉購買提示
         render();
       };
     });
@@ -1672,8 +1679,7 @@
         try {
           const result = await db.buyCareerPotion(eventId, myId, btn.dataset.buyPotion);
           progress = result.progress;
-          lastEvent = { eventDef: { icon: result.potionDef.icon, name: "商店" }, text: `花 ${result.potionDef.price} 幣買了 1 瓶${result.potionDef.name}。` };
-          lastBattle = null;
+          lastShopNote = { icon: result.potionDef.icon, text: `花 ${result.potionDef.price} 幣買了 1 瓶${result.potionDef.name}。` };
           render();
         } catch (e) {
           await ui.alert(e.message || "購買失敗", { title: "操作失敗", tone: "danger" });
@@ -1692,9 +1698,7 @@
         try {
           const result = await db.buyCareerStatPoint(eventId, myId);
           progress = result.progress;
-          lastEvent = { eventDef: { icon: "sparkles", name: "商店" }, text: `花 ${result.price} 幣買了 1 點自由數值點。` };
-          lastBattle = null;
-          activeTab = "tower";
+          lastShopNote = { icon: "sparkles", text: `花 ${result.price} 幣買了 1 點自由數值點。` };
           render();
         } catch (e) {
           await ui.alert(e.message || "購買失敗", { title: "操作失敗", tone: "danger" });
@@ -1713,12 +1717,10 @@
           const [slot, rarity] = btn.dataset.buyEquip.split(":");
           const result = await db.buyCareerEquipment(eventId, myId, slot, rarity);
           progress = result.progress;
-          lastEvent = { eventDef: { icon: "shopping-bag", name: "商店" }, text: `花 ${result.price} 幣買下「${result.item.name}」，放進背包了，去「背包」分頁穿上。` };
-          lastBattle = null;
+          lastShopNote = { icon: "shopping-bag", text: `花 ${result.price} 幣買下「${result.item.name}」，放進背包了，去「背包」分頁穿上。` };
           if (rarity === "legendary") {
             highlight = { icon: "crown", title: "傳說降臨!", text: `你在商店買到了傳說裝備「${result.item.name}」!` };
           }
-          activeTab = "tower";
           render();
         } catch (e) {
           await ui.alert(e.message || "購買失敗", { title: "操作失敗", tone: "danger" });
@@ -1757,9 +1759,7 @@
         try {
           const result = await db.buyCareerMedal(eventId, myId, btn.dataset.buyMedal);
           progress = result.progress;
-          lastEvent = { eventDef: { icon: "medal", name: "戰功勳章" }, text: `花 ${result.tier.price} 幣買了「${result.tier.name}」，排行分 +${result.tier.scoreBonus}。` };
-          lastBattle = null;
-          activeTab = "tower";
+          lastShopNote = { icon: "medal", text: `花 ${result.tier.price} 幣買了「${result.tier.name}」，排行分 +${result.tier.scoreBonus}。` };
           render();
         } catch (e) {
           await ui.alert(e.message || "購買失敗", { title: "操作失敗", tone: "danger" });
