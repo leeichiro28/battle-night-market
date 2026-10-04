@@ -3676,7 +3676,7 @@ const db = (function () {
       .from("career_progress")
       .update(patch)
       .eq("id", progress.id)
-      .eq("inventory", progress.inventory)
+      .eq("inventory_rev", progress.inventory_rev) // 樂觀鎖:比對版本號(資料庫 trigger 在 inventory 變動時自動 +1)，不要拿整個 jsonb 當篩選條件
       .select();
     if (error) throw error;
     if (!updated || !updated.length) throw new Error("背包剛好被別的分頁更新過了，請重新整理後再試一次");
@@ -3705,7 +3705,7 @@ const db = (function () {
       .from("career_progress")
       .update({ equipment, inventory })
       .eq("id", progress.id)
-      .eq("inventory", progress.inventory)
+      .eq("inventory_rev", progress.inventory_rev) // 樂觀鎖:比對版本號(資料庫 trigger 在 inventory 變動時自動 +1)，不要拿整個 jsonb 當篩選條件
       .select();
     if (error) throw error;
     if (!updated || !updated.length) throw new Error("背包剛好被別的分頁更新過了，請重新整理後再試一次");
@@ -3724,7 +3724,7 @@ const db = (function () {
       .from("career_progress")
       .update({ equipment, inventory })
       .eq("id", progress.id)
-      .eq("inventory", progress.inventory)
+      .eq("inventory_rev", progress.inventory_rev) // 樂觀鎖:比對版本號(資料庫 trigger 在 inventory 變動時自動 +1)，不要拿整個 jsonb 當篩選條件
       .select();
     if (error) throw error;
     if (!updated || !updated.length) throw new Error("背包剛好被別的分頁更新過了，請重新整理後再試一次");
@@ -3777,7 +3777,7 @@ const db = (function () {
       .from("career_progress")
       .update({ inventory })
       .eq("id", progress.id)
-      .eq("inventory", progress.inventory)
+      .eq("inventory_rev", progress.inventory_rev) // 樂觀鎖:比對版本號(資料庫 trigger 在 inventory 變動時自動 +1)，不要拿整個 jsonb 當篩選條件
       .select();
     if (error) throw error;
     if (!updated || !updated.length) throw new Error("背包剛好被別的分頁更新過了，請重新整理後再試一次");
