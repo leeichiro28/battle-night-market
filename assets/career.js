@@ -97,7 +97,15 @@
     }
 
     broadcasts = await db.listCareerBroadcasts(eventId).catch(() => []);
-    await refreshAll();
+    await db.cleanupStaleCareerMatches(eventId); // 先清掉上次中途離開留下的死對戰，不然一進來就被丟回那場
+    try {
+      await refreshAll();
+    } catch (e) {
+      // 以前這裡沒接錯誤，refreshAll 一出錯整頁就永遠停在「載入中」，連後面的即時更新跟
+      // 配對掃描都沒啟動。現在顯示錯誤，並繼續往下啟動，之後的掃描會自己重試。
+      console.error(e);
+      app.innerHTML = emptyMsg("載入失敗:" + ((e && e.message) || "未知錯誤") + "(會自動重試，也可以重新整理頁面)", "triangle-alert");
+    }
 
     unsubQueue = db.onTableChange("career_pvp_queue", `event_id=eq.${eventId}`, scheduleRefresh);
     unsubMatches = db.onTableChange("career_matches", `event_id=eq.${eventId}`, scheduleRefresh);
@@ -111,6 +119,7 @@
       try {
         const advanced = await db.maybeAdvanceCareerPhase(eventId);
         if (advanced) ev = await db.getEventSafe(eventId);
+        await db.cleanupStaleCareerMatches(eventId);
         if (!activeMatch) {
           await db.scanCareerMatchmaking(eventId);
         }
@@ -207,7 +216,7 @@
     // 不要立刻清空/跳轉。
     if (activeMatch && activeMatch.status === "active") {
       const finished = await db.getCareerMatch(activeMatch.id).catch(() => null);
-      if (finished && finished.status === "done") {
+      if (finished && finished.status === "done" && finished.winner_id) {
         activeMatch = finished;
         finishedMatchShowUntil = Date.now() + 3500;
         renderBattle(finished);

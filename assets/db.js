@@ -2278,7 +2278,13 @@ const db = (function () {
   // 配對佇列」畫面卻什麼都沒發生(因為舊的判斷邏輯以為「反正已經有資料列了」就直接跳過)。
   async function joinCareerQueue(eventId, playerId) {
     const existing = await getMyCareerQueueEntry(eventId, playerId);
-    if (existing && (existing.status === "waiting" || existing.status === "matched")) return existing;
+    if (existing && existing.status === "waiting") return existing;
+    if (existing && existing.status === "matched") {
+      // 狀態是 matched 但其實已經沒有進行中的對戰(對戰中途有人離開、被清掉了)，不能直接回傳，
+      // 不然玩家會永遠卡在「已配對」、既排不進佇列也配不到人。
+      const liveMatch = await getMyActiveCareerMatch(eventId, playerId).catch(() => null);
+      if (liveMatch) return existing;
+    }
     if (existing) {
       const { data, error } = await client
         .from("career_pvp_queue")
@@ -2382,6 +2388,18 @@ const db = (function () {
 
   // 呼叫 match_career_players RPC:撈佇列裡等最久的兩人配對。任何開著頁面的分頁都能呼叫,
   // 沒人可配對時回傳 null,不用特別處理。
+  // 結束太久沒動作的死對戰、放開卡在 matched 的人(見 migration-pvp-stale-match.sql)。
+  // 還沒執行那份 SQL 時這個 RPC 不存在，錯誤直接吞掉，不影響原本的配對流程。
+  async function cleanupStaleCareerMatches(eventId) {
+    try {
+      const { data, error } = await client.rpc("cleanup_stale_career_matches", { p_event_id: eventId, p_stale_seconds: 120 });
+      if (error) return 0;
+      return data || 0;
+    } catch (e) {
+      return 0;
+    }
+  }
+
   async function scanCareerMatchmaking(eventId) {
     const { data, error } = await client.rpc("match_career_players", { p_event_id: eventId });
     if (error) throw error;
@@ -4261,6 +4279,7 @@ const db = (function () {
     listCareerQueue,
     listWaitingCareerQueue,
     scanCareerMatchmaking,
+    cleanupStaleCareerMatches,
     getMyActiveCareerMatch,
     getCareerMatch,
     initializeCareerMatch,
