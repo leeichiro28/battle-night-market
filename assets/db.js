@@ -2373,9 +2373,9 @@ const db = (function () {
       .eq("status", "waiting")
       .order("last_matched_at", { ascending: true });
     if (error) throw error;
-    // 不顯示已經離開頁面的幽靈(最近 25 秒沒回報在線；機器人例外；欄位還不存在時不過濾)
+    // 不顯示已經離開頁面的幽靈(最近 20 秒沒回報在線，門檻要跟 match_career_players 的 20 秒一致，否則會出現「看得到卻配不到」；機器人例外；欄位還不存在時不過濾)
     const rows = (data || []).filter(
-      (r) => !r.last_seen_at || (r.player && r.player.is_bot) || Date.now() - new Date(r.last_seen_at).getTime() < 25000
+      (r) => !r.last_seen_at || (r.player && r.player.is_bot) || Date.now() - new Date(r.last_seen_at).getTime() < 20000
     );
     const summaries = await _getCareerPlayerSummaries(eventId, rows.map((r) => r.player_id));
     return rows.map((r) => ({ queueEntry: r, summary: summaries[r.player_id] }));

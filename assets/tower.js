@@ -58,6 +58,8 @@
   let sellFilters = { common: true, rare: false, epic: false, legendary: false, lowLevelOnly: false };
   let lastSellResult = null; // 賣裝結果(顯示在背包分頁，不會跳走)
   let scanTimer = null;
+  let pvpTimer = null; // 爬塔頁也要回報在線(心跳)並幫忙推進配對，不然排隊的人一離開 career.html 就被配對函式當成幽靈
+  let pvpStatus = { queue: null, inMatch: false }; // 我在 PVP 佇列的狀態，用來在爬塔頁提醒「你有對戰」
   let unsubProgress = null;
   // 「不要再問我此事件的決定」的勾選狀態存在這裡，不能只靠 DOM:畫面每秒/每次資料變動都會整頁重繪，
   // 勾選框會被重畫成未勾選，玩家勾了還沒按選項就被洗掉，結果永遠沒有被記住。
@@ -141,6 +143,31 @@
       }
     }, 8000);
 
+    // 排隊中的玩家如果跑去爬塔，career.js 的 3 秒心跳就停了，20 秒後配對函式會把他當幽靈跳過。
+    // 所以爬塔頁也每 3 秒回報在線；排隊中時順便幫忙掃描配對，並記下狀態讓畫面提醒玩家回去對戰。
+    const pvpTick = async () => {
+      try {
+        await db.careerHeartbeat(eventId, myId);
+        const entry = await db.getMyCareerQueueEntry(eventId, myId);
+        if (entry && entry.status === "waiting") await db.scanCareerMatchmaking(eventId);
+        const fresh = entry ? await db.getMyCareerQueueEntry(eventId, myId) : null;
+        let inMatch = false;
+        if (fresh && fresh.status === "matched") {
+          inMatch = !!(await db.getMyActiveCareerMatch(eventId, myId).catch(() => null));
+        }
+        const prev = pvpStatus;
+        pvpStatus = { queue: fresh ? fresh.status : null, inMatch };
+        if (prev.queue !== pvpStatus.queue || prev.inMatch !== pvpStatus.inMatch) render();
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    pvpTick();
+    pvpTimer = setInterval(pvpTick, 3000);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) pvpTick(); // 切回前景立刻補一次，不等下一個 3 秒
+    });
+
     setInterval(() => {
       // 每秒重繪一次冷卻倒數文字，不用等資料庫事件——但如果玩家正在跟 <select>/<input>
       // 互動(例如合成分頁的下拉選單開著)，這時候整頁重繪會把瀏覽器原生的下拉選單元素
@@ -155,6 +182,7 @@
 
     window.addEventListener("beforeunload", () => {
       if (unsubBroadcasts) unsubBroadcasts();
+      clearInterval(pvpTimer);
     });
   }
 
@@ -1281,6 +1309,12 @@
       html += `<div class="empty" style="margin-bottom:14px;">${ui.icon(phase === "not_started" ? "hourglass" : "flag")}${ui.esc(msg)}</div>`;
     } else if (phase === "battle") {
       html += `<div class="empty" style="margin-bottom:14px;">${ui.icon("swords")}PVP已經開放了，爬塔跟PVP可以同時進行，打不贏對手可以直接投降、回來繼續爬塔(上面有「前往PVP」的連結)。</div>`;
+    }
+
+    if (!eventClosed && pvpStatus.inMatch) {
+      html += `<div class="empty" style="margin-bottom:14px;border-color:var(--gold);">${ui.icon("swords")}你有一場 PVP 對戰正在進行，對手在等你出招!<a class="btn" style="margin-left:8px;" href="career.html?event=${encodeURIComponent(eventId)}">${ui.icon("swords")}回到對戰</a></div>`;
+    } else if (!eventClosed && pvpStatus.queue === "waiting") {
+      html += `<div class="empty" style="margin-bottom:14px;">${ui.icon("loader-circle")}你正在 PVP 排隊中，配對成功會在這裡提醒你。<a class="btn" style="margin-left:8px;" href="career.html?event=${encodeURIComponent(eventId)}">${ui.icon("swords")}前往 PVP</a></div>`;
     }
 
     html += storyBannerHtml(phase, eventClosed);

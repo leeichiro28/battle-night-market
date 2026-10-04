@@ -800,6 +800,20 @@
     }, 1000);
   }
 
+  // 手機鎖屏 / 切到別的分頁時瀏覽器會把 setInterval 節流甚至暫停，心跳就斷了；
+  // 切回前景的瞬間立刻補一次心跳 + 掃描 + 重繪，不用等下一個 3 秒。
+  document.addEventListener("visibilitychange", async () => {
+    if (document.hidden || !myId || !eventId) return;
+    try {
+      await db.careerHeartbeat(eventId, myId);
+      await db.cleanupStaleCareerMatches(eventId);
+      if (!activeMatch) await db.scanCareerMatchmaking(eventId);
+      await refreshAll();
+    } catch (e) {
+      console.error(e);
+    }
+  });
+
   window.addEventListener("beforeunload", () => {
     if (unsubQueue) unsubQueue();
     if (unsubMatches) unsubMatches();
