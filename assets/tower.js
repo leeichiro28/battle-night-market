@@ -58,6 +58,9 @@
   let lastSellResult = null; // 賣裝結果(顯示在背包分頁，不會跳走)
   let scanTimer = null;
   let unsubProgress = null;
+  // 「不要再問我此事件的決定」的勾選狀態存在這裡，不能只靠 DOM:畫面每秒/每次資料變動都會整頁重繪，
+  // 勾選框會被重畫成未勾選，玩家勾了還沒按選項就被洗掉，結果永遠沒有被記住。
+  let rememberEventChoice = false;
   let refreshQueued = false;
   // P1-1根本修復用的狀態:
   let synthesisChoice = "weapon:common"; // 合成下拉選單目前選的值，記在變數裡，重繪後不會被重設回第一項
@@ -340,7 +343,7 @@
         ${def.flavor ? `<p style="margin:0 0 10px;font-size:11.5px;color:var(--ink-dim);font-style:italic;">${ui.esc(def.flavor)}</p>` : ""}
         <div style="display:flex;gap:8px;flex-wrap:wrap;">${choicesHtml}</div>
         <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-dim);margin-top:10px;cursor:pointer;">
-          <input type="checkbox" id="event-remember-choice"/> 不要再問我此事件的決定(下次遇到「${ui.esc(def.name)}」直接照這次選的做)
+          <input type="checkbox" id="event-remember-choice" ${rememberEventChoice ? "checked" : ""}/> 不要再問我此事件的決定(下次遇到「${ui.esc(def.name)}」直接照這次選的做)
         </label>
       </div>`;
   }
@@ -1647,10 +1650,17 @@
       };
     });
 
+    const rememberCb = document.getElementById("event-remember-choice");
+    if (rememberCb) {
+      rememberCb.onchange = () => {
+        rememberEventChoice = rememberCb.checked;
+      };
+    }
     app.querySelectorAll("[data-event-choice]").forEach((btn) => {
       btn.onclick = () => {
-        const rememberCb = document.getElementById("event-remember-choice");
-        resolveEventChoice(btn.dataset.eventChoice, !!(rememberCb && rememberCb.checked));
+        const remember = rememberEventChoice || !!(rememberCb && rememberCb.checked);
+        rememberEventChoice = false; // 只管這一次事件，下一個事件要重新勾
+        resolveEventChoice(btn.dataset.eventChoice, remember);
       };
     });
 
