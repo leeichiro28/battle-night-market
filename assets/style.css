@@ -921,7 +921,7 @@ label{
 .rule-table.calc-table td:nth-child(2){color:var(--ink);}
 /* P1-11新增(玩家回饋:裝備表數值欄位要右對齊、名稱左對齊、欄位固定，各區塊統一格式) */
 .rule-table td.num,.rule-table th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
-.rule-table td.num.empty{color:var(--ink-dim);opacity:.5;}
+.rule-table td.num.is-empty{color:var(--ink-dim);opacity:.5;}
 /* P1-11二次修復(玩家回饋:類型/特殊效果欄位太窄、文字擠得每格超長，速度/幸運反而不用那麼寬)：
    裝備表(.equipment-table)改成固定版面(table-layout:fixed)，每欄寬度明確指定——名稱、類型、
    特殊效果這種本來文字就比較長的欄位分配多一點寬度，稀有度/等級/HP/攻擊/防禦/速度/幸運這種

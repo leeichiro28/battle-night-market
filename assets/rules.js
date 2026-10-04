@@ -110,7 +110,7 @@
   // 固定10欄：裝備/類型/稀有度/等級/HP/攻擊/防禦/速度/幸運/特殊效果，不管武器/防具/飾品/
   // Boss限定哪一類都套同一組欄位，沒有的數值顯示「—」，不是每種裝備各自排不同欄位。
   function numCell(value, suffix) {
-    if (value == null) return `<td class="num empty">—</td>`;
+    if (value == null) return `<td class="num is-empty">—</td>`;
     return `<td class="num">+${value}${suffix || ""}</td>`;
   }
 
