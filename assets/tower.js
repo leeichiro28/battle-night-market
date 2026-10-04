@@ -330,7 +330,8 @@
         <p style="margin:0 0 6px;font-weight:700;color:var(--gold);display:flex;align-items:center;gap:6px;">
           ${ui.icon(def.icon)}${ui.esc(def.name)}
         </p>
-        <p style="margin:0 0 10px;font-size:12.5px;color:var(--ink);">${ui.esc(def.desc)}</p>
+        <p style="margin:0 0 ${def.flavor ? "4px" : "10px"};font-size:12.5px;color:var(--ink);">${ui.esc(def.desc)}</p>
+        ${def.flavor ? `<p style="margin:0 0 10px;font-size:11.5px;color:var(--ink-dim);font-style:italic;">${ui.esc(def.flavor)}</p>` : ""}
         <div style="display:flex;gap:8px;flex-wrap:wrap;">${choicesHtml}</div>
         <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-dim);margin-top:10px;cursor:pointer;">
           <input type="checkbox" id="event-remember-choice"/> 不要再問我此事件的決定(下次遇到「${ui.esc(def.name)}」直接照這次選的做)
@@ -357,6 +358,11 @@
 
     let html = `
       <div class="empty" style="margin-bottom:14px;">${ui.icon("swords")}王戰進行中:${ui.esc(floorDef.name)}(第${active.floor}層)</div>
+      ${
+        s.round === 1 && floorDef.story && floorDef.story.pre
+          ? `<p style="margin:0 0 12px;font-size:12.5px;color:var(--ink);font-style:italic;text-align:center;overflow-wrap:anywhere;">${ui.esc(floorDef.name)}:${ui.esc(floorDef.story.pre)}</p>`
+          : ""
+      }
       <div class="career-vs-row">
         <div class="career-side">
           <div class="cs-name">${ui.icon(myInfo.icon)}${ui.esc(myInfo.name)}</div>
@@ -493,6 +499,7 @@
             ${ui.icon(def ? def.icon : "sparkles")}${def ? ui.esc(def.name) : "夜市事件"}
           </p>
           <p style="margin:0;font-size:12.5px;color:var(--ink);">${ui.esc(lastEvent.text || "")}</p>
+          ${def && def.flavor ? `<p style="margin:6px 0 0;font-size:11.5px;color:var(--ink-dim);font-style:italic;">${ui.esc(def.flavor)}</p>` : ""}
         </div>`;
     }
 
@@ -511,6 +518,16 @@
                   <br/>剩餘 HP ${effHp}/${battleStats.maxHp}，MP ${effMp}/${battleStats.maxMp}
                 </p>`
               : `<p style="font-size:12px;color:var(--ink-dim);margin:0 0 6px;">留在原樓層，沒有拿到獎勵，可以馬上再試一次。<br/>剩餘 HP ${effHp}/${battleStats.maxHp}，MP ${effMp}/${battleStats.maxMp}${effHp <= Math.round(battleStats.maxHp * 0.35) ? "，HP剩不多了，先喝藥水或休息一下比較保險" : ""}</p>`
+          }
+          ${
+            b.won && b.floorDef && b.floorDef.story && b.floorDef.story.post
+              ? `<p style="margin:8px 0 0;font-size:12px;color:var(--ink);font-style:italic;overflow-wrap:anywhere;">${ui.esc(b.floorDef.story.post)}</p>`
+              : ""
+          }
+          ${
+            !b.won && b.reviveText
+              ? `<p style="margin:8px 0 0;font-size:12px;color:var(--ink-dim);font-style:italic;overflow-wrap:anywhere;">${ui.esc(b.reviveText)}</p>`
+              : ""
           }
         </div>`;
     }
@@ -1138,6 +1155,28 @@
       </div>`;
   }
 
+  // 世界觀第一階段:活動層級的劇情廣播(開場/準備期/擂台開張/收攤)，文案見 career-story.js。
+  // 內容只會在時間門檻跨過時才變，不會每秒跳動，所以不會干擾 render() 的「內容一樣就不重繪」判斷。
+  function storyBannerHtml(phase, closed) {
+    if (typeof CareerStory === "undefined") return "";
+    const rules = (ev && ev.rules) || {};
+    const b = CareerStory.phaseBanner({
+      phase,
+      closed,
+      eventName: ev && ev.name,
+      eventId,
+      trainingEndsAt: rules.trainingEndsAt,
+      trainingMinutes: rules.trainingMinutes,
+      activityEndsAt: rules.activityEndsAt,
+    });
+    if (!b || !b.lines || !b.lines.length) return "";
+    return `
+      <div style="padding:10px 14px;margin-bottom:12px;border-radius:var(--radius);background:var(--panel2);border:1px solid var(--line);">
+        <p style="margin:0 0 6px;font-weight:700;font-size:12.5px;color:var(--gold);display:flex;align-items:center;gap:6px;">${ui.icon(b.icon || "megaphone")}${ui.esc(b.title)}</p>
+        ${b.lines.map((l) => `<p style="margin:0 0 3px;font-size:12px;color:var(--ink);overflow-wrap:anywhere;">${ui.esc(l)}</p>`).join("")}
+      </div>`;
+  }
+
   function broadcastTickerHtml() {
     if (!broadcasts.length) return "";
     const latest = broadcasts[0];
@@ -1216,6 +1255,8 @@
     } else if (phase === "battle") {
       html += `<div class="empty" style="margin-bottom:14px;">${ui.icon("swords")}PVP已經開放了，爬塔跟PVP可以同時進行，打不贏對手可以直接投降、回來繼續爬塔(上面有「前往PVP」的連結)。</div>`;
     }
+
+    html += storyBannerHtml(phase, eventClosed);
 
     html += `
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
@@ -1779,7 +1820,7 @@
           await ui.alert("至少要勾選一個稀有度才能賣。", { title: "提醒" });
           return;
         }
-        const dangerNote = sellFilters.epic || sellFilters.legendary ? "\n\n⚠️ 你有勾選史詩或傳說，這兩種很稀有，賣掉之後很難再拿到，請再三確認。" : "";
+        const dangerNote = sellFilters.epic || sellFilters.legendary ? "\n\n注意:你有勾選史詩或傳說，這兩種很稀有，賣掉之後很難再拿到，請再三確認。" : "";
         const ok = await ui.confirm(`確定要照目前勾選的條件，把符合的裝備一次全部賣掉嗎?這個動作不能復原。${dangerNote}`, {
           title: "一鍵賣裝",
           confirmText: "確定賣掉",
@@ -1848,7 +1889,7 @@
             highlight = { icon: "swords", title: "王戰勝利!", text: `打贏了第${result.floorDef.floor}層的關主「${result.floorDef.name}」!` };
           }
         } else {
-          lastBattle = { won: false, log: result.log, floorDef: result.floorDef };
+          lastBattle = { won: false, log: result.log, floorDef: result.floorDef, reviveText: window.CareerStory ? CareerStory.pickRevive() : "" };
         }
       }
       render();
@@ -1913,6 +1954,8 @@
       } else {
         lastEvent = null;
         lastBattle = result;
+        // 世界觀:倒下後「有人把你拖出來」，只在戰敗當下抽一次(不能在 render 裡抽，會每秒亂跳)
+        if (!result.won && window.CareerStory) lastBattle = { ...result, reviveText: CareerStory.pickRevive() };
         if (result.topFloorCleared) {
           highlight = { icon: "mountain", title: "爬塔完賽!", text: `你爬完了目前開放的所有樓層(第${result.floorDef.floor}層)!` };
         }

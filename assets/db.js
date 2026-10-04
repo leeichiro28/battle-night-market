@@ -350,7 +350,7 @@ const db = (function () {
   // 之後配對到真人時，對手那邊的 checkEntryTimeout 偵測到對面是機器人，會跳過原本給真人
   // 用的60秒等待猶豫期，改成幾秒後就直接開始代打，讓主辦人不用真的找第二個人也能跑完整場流程。
   async function addTestBot(eventId, name) {
-    const botName = name || `🤖 測試機器人 ${Math.floor(Math.random() * 1000)}`;
+    const botName = name || `測試機器人 ${Math.floor(Math.random() * 1000)}`;
     const { data: player, error: playerErr } = await client
       .from("players")
       .insert({ name: botName, is_bot: true })
@@ -2479,7 +2479,7 @@ const db = (function () {
   // 主辦人/玩家自己測試用:建一個機器人玩家、隨機挑一個職業建置、直接排進佇列,
   // 方便一個人也能測完整場 PVP 流程,不用真的找第二個人。
   async function addCareerTestBot(eventId) {
-    const botName = `🤖 測試機器人 ${Math.floor(Math.random() * 1000)}`;
+    const botName = `測試機器人 ${Math.floor(Math.random() * 1000)}`;
     const { data: player, error: playerErr } = await client
       .from("players")
       .insert({ name: botName, is_bot: true })
@@ -3050,15 +3050,15 @@ const db = (function () {
 
     if (isTopFloor) {
       const name = await _playerName(playerId);
-      await broadcastCareerEvent(eventId, "mountain", `🏔️ ${name} 爬完了目前開放的所有樓層(第${floorNumber}層)!`);
+      await broadcastCareerEvent(eventId, "mountain", `${name} 爬完了目前開放的所有樓層(第${floorNumber}層)!`);
     }
     if (floorDef.isMiniBoss) {
       const name = await _playerName(playerId);
-      await broadcastCareerEvent(eventId, "swords", `⚔️ ${name} 打贏了第${floorNumber}層的關主「${floorDef.name}」!`);
+      await broadcastCareerEvent(eventId, "swords", `${name} 打贏了第${floorNumber}層的關主「${floorDef.name}」!`);
     }
     if (bossLegendaryWon) {
       const name = await _playerName(playerId);
-      await broadcastCareerEvent(eventId, "crown", `👑 ${name} 打贏「${floorDef.name}」，掉落了Boss限定傳說裝備「${drop.name}」!`);
+      await broadcastCareerEvent(eventId, "crown", `${name} 打贏「${floorDef.name}」，掉落了Boss限定傳說裝備「${drop.name}」!`);
     }
 
     return {
@@ -3472,7 +3472,7 @@ const db = (function () {
     if (!updated || !updated.length) throw new Error("手慢了，請再按一次");
     if (rarity === "legendary") {
       const name = await _playerName(playerId);
-      await broadcastCareerEvent(eventId, "crown", `👑 ${name} 在商店買到了傳說裝備「${item.name}」!`);
+      await broadcastCareerEvent(eventId, "crown", `${name} 在商店買到了傳說裝備「${item.name}」!`);
     }
     return { item, price, progress: updated[0] };
   }
@@ -3554,7 +3554,7 @@ const db = (function () {
     if (!updated || !updated.length) throw new Error("手慢了，請再按一次");
     if (gotLegendary) {
       const name = await _playerName(playerId);
-      await broadcastCareerEvent(eventId, "crown", `👑 ${name} 從抽獎機抽中了傳說裝備「${drop.name}」!`);
+      await broadcastCareerEvent(eventId, "crown", `${name} 從抽獎機抽中了傳說裝備「${drop.name}」!`);
     }
     return { text, drop, progress: updated[0] };
   }

@@ -45,6 +45,28 @@ window.CareerEvents = (function () {
       desc: "老闆擺出三個一模一樣的箱子，說隨便挑一個，裡面是什麼只有打開才知道" },
   ];
 
+  // 世界觀第一階段:每個事件一句 flavor text(純文字)，顯示在事件卡片/事件結果上，不影響任何效果。
+  // 斗笠人(sparring)、老師傅(reclass)、貴人(benefactor)、走失小孩(lost_child)、
+  // 數值精靈(spirit_blessing)是世界觀裡的「高伏筆」事件，文案刻意留白。
+  const FLAVOR = {
+    chest: "寶箱上貼著便利貼:「別人的，請勿開啟。」",
+    merchant: "你問他為什麼在這。他說:「人潮在哪，我在哪。」",
+    fortune: "算命的說:「你今晚會贏。」然後收錢，不讓你問怎麼贏。",
+    sparring: "他出招很熟練，像在回憶什麼。",
+    reclass: "老師傅嘆氣:「手續費我也要吃飯啊。」",
+    pickpocket: "小偷留下一張字條:「下次再來。」",
+    landmine: "彈珠台上寫著:「本機台由 ○ 層維修。」",
+    benefactor: "他把東西塞給你就走了，沒留名字。",
+    gacha: "機器在冒煙，吐出來的東西有點眼熟，又有點陌生。",
+    healing: "老闆說:「看你可憐。」",
+    mentor: "前輩教完，說:「我以前也這樣。」然後轉身消失。",
+    lost_child: "小孩說:「我爸媽在上面。」你問上面是哪，他指著天花板。",
+    try_on: "這件是展示品，我不收錢。……因為沒人敢穿。",
+    spirit_blessing: "有什麼東西在你身上停了一下，然後離開。",
+    blind_boxes: "老闆說:「每個都是獎，只是有些是獎中的獎。」",
+  };
+  EVENTS.forEach((e) => { e.flavor = FLAVOR[e.key] || ""; });
+
   const EVENT_TRIGGER_CHANCE = 0.25; // 挑戰樓層時,25%機率變事件、75%正常打怪
 
   function pickWeighted() {

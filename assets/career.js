@@ -37,6 +37,12 @@
   // 佇列/廣播的即時更新會觸發整頁重繪，DOM上的狀態每次都會被砍掉重來，導致排行榜自己收合
   let leaderboardStandings = [];
 
+  // 世界觀第一階段:一行斜體小字的劇情文案(文案來源 career-story.js，純文字、這裡負責 esc)
+  function storyLine(text) {
+    if (!text) return "";
+    return `<p style="font-size:11.5px;color:var(--ink-dim);font-style:italic;margin:6px 0 0;overflow-wrap:anywhere;">${ui.esc(text)}</p>`;
+  }
+
   function emptyMsg(text, icon) {
     return `<div class="empty">${ui.icon(icon || "info")}${ui.esc(text)}</div>`;
   }
@@ -294,6 +300,7 @@
           ${ui.icon("loader-circle")}
           <p style="margin:10px 0 4px;font-weight:700;">配對中...(已等待約 ${waitedSec} 秒)</p>
           <p style="font-size:11.5px;color:var(--ink-dim);">戰績:${queueEntry.wins} 勝 ${queueEntry.losses} 敗,積分 ${queueEntry.current_score}</p>
+          ${storyLine(CareerStory.queueWait(eventId + ":" + queueEntry.wins + ":" + queueEntry.losses))}
         </div>
         <div style="text-align:center;margin-top:10px;">
           <button class="btn small" id="test-bot-btn">${ui.icon("bot")}沒人可配對?拉一隻機器人來打</button>
@@ -305,6 +312,7 @@
           ${ui.icon("swords")}
           <p style="margin:10px 0 4px;font-weight:700;">準備好就加入配對佇列吧</p>
           <p style="font-size:11.5px;color:var(--ink-dim);">${ui.esc(score)}</p>
+          ${storyLine(CareerStory.queueIdle(eventId + ":" + (queueEntry ? queueEntry.wins + queueEntry.losses : 0)))}
           <div style="margin-top:14px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
             <button class="btn" id="join-queue-btn">${ui.icon("swords")}加入配對佇列</button>
             <button class="btn ghost" id="test-bot-btn">${ui.icon("bot")}拉一隻機器人來打</button>
@@ -499,7 +507,7 @@
           const winnerQueue = await db.getMyCareerQueueEntry(eventId, winnerId);
           if (winnerQueue && winnerQueue.win_streak >= 3) {
             const winnerName = winnerId === match.player1_id ? match.p1?.name : match.p2?.name;
-            await db.broadcastCareerEvent(eventId, "flame", `🔥 ${winnerName || "神秘玩家"} 在PVP擂台連勝 ${winnerQueue.win_streak} 場!`);
+            await db.broadcastCareerEvent(eventId, "flame", `${winnerName || "神秘玩家"} 在PVP擂台連勝 ${winnerQueue.win_streak} 場!`);
           }
         } catch (e) {
           console.error(e);
@@ -569,6 +577,7 @@
 
   function renderBattle(match) {
     const s = match.state || {};
+    const matchSeed = match.id || ""; // 劇情文案的穩定種子:同一場對戰永遠挑到同一句
     const myName = mySlot === 1 ? match.p1?.name : match.p2?.name;
     const oppName = mySlot === 1 ? match.p2?.name : match.p1?.name;
     const myClass = mySlot === 1 ? s.class1 : s.class2;
@@ -629,6 +638,7 @@
           ${fullStatsHtml(oppClass, oppAtk, oppDef, oppSpd, oppLuck, oppMatk, oppCritBonus)}
         </div>
       </div>`;
+    if (!isDone && s.round === 1) html += storyLine(CareerStory.pvpFound(matchSeed));
 
     if (isDone) {
       const reward = s.pvpReward; // P1-7/P1-8:贏家的幣/連勝加成明細，見 finish_career_match RPC
@@ -645,6 +655,8 @@
             ${iWon ? "獲勝!+10 分" : "戰敗...+2 分"}
           </p>
           ${rewardLine}
+          ${iWon && reward && CareerStory.streakTitle(reward.winStreak) ? `<p style="font-size:12px;color:var(--gold);margin:6px 0 0;">${ui.icon("award")}${ui.esc("稱號:" + CareerStory.streakTitle(reward.winStreak))}</p>` : ""}
+          ${storyLine(iWon ? CareerStory.pvpWin(matchSeed) : CareerStory.pvpLose(matchSeed))}
           <p style="font-size:11.5px;color:var(--ink-dim);margin-top:6px;">正在回到配對佇列，準備下一場...</p>
         </div>`;
     } else {
