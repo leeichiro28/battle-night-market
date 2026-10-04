@@ -48,7 +48,7 @@
   let bossRoundTimer = null;
   let broadcasts = [];
   let standings = []; // 目前排行榜，顯示在頁面最下面，每次背景掃描順便刷新一次
-  let highlight = null; // { icon, title, text } — 傳說裝備/爬完樓層之類的精彩時刻，顯示大卡片
+  let highlight = null; // { icon, title, text, quote(可省略,劇情那句小字) } — 傳說裝備/爬完樓層之類的精彩時刻，顯示大卡片
   let busy = false;
   let activeTab = "tower";
   // P2-9新增:一鍵賣裝的篩選勾選狀態，記在分頁裡就好，不用存進資料庫(每次重繪都要照這個畫勾選狀態)。
@@ -94,7 +94,7 @@
       app.innerHTML = emptyMsg("找不到這場活動，可能已經被刪除。");
       return;
     }
-    document.getElementById("page-eyebrow").textContent = `${ev.name} · 訓練期`;
+    document.getElementById("page-eyebrow").textContent = `${ev.name} · 訓練期${themeSuffix()}`;
     const pvpLink = document.getElementById("to-pvp-link");
     if (pvpLink) pvpLink.href = `career.html?event=${eventId}`;
 
@@ -160,6 +160,12 @@
   //   'battle'   -> 準備時間結束，PVP開放，爬塔照樣開放(可以邊爬塔邊PVP)
   // 只有 events.status==='closed'(整場活動結束，見 maybeAdvanceCareerPhase 的自動收尾)才會
   // 把爬塔重新鎖住。
+  // 非一般夜時，在頁面小標題後面加上主題名稱(例如「 · 雨夜」)
+  function themeSuffix() {
+    const key = ev && ev.rules && ev.rules.storyTheme;
+    return key && key !== "normal" && window.CareerStory ? " · " + CareerStory.getTheme(key).label : "";
+  }
+
   function getCareerPhase() {
     return (ev && ev.rules && ev.rules.careerPhase) || "not_started";
   }
@@ -1141,13 +1147,24 @@
 
   // ---------------- 全服事件廣播 ----------------
 
+  // 轉職演出的劇情句(career-story.js);CareerStory 沒載入或找不到就回空字串,不顯示
+  function pathQuoteText(pathKey) {
+    const q = window.CareerStory && CareerStory.pathQuote(pathKey);
+    return q ? q.quote : "";
+  }
+  function masterQuoteText(classKey) {
+    const q = window.CareerStory && CareerStory.masterQuote(classKey);
+    return q ? `${q.school}的師傅說:${q.quote}` : "";
+  }
+
   function highlightCardHtml() {
     if (!highlight) return "";
     return `
       <div style="text-align:center;padding:20px 16px;margin-bottom:14px;border-radius:var(--radius);border:2px solid var(--gold);background:radial-gradient(circle at 50% 0%, rgba(242,183,5,.15), var(--panel2));">
         ${ui.icon(highlight.icon, { size: "32px" })}
         <p style="margin:10px 0 4px;font-family:'Display',sans-serif;font-size:16px;color:var(--gold);letter-spacing:.05em;">${ui.esc(highlight.title)}</p>
-        <p style="margin:0 0 14px;font-size:13px;color:var(--ink);">${ui.esc(highlight.text)}</p>
+        <p style="margin:0 0 ${highlight.quote ? "8px" : "14px"};font-size:13px;color:var(--ink);">${ui.esc(highlight.text)}</p>
+        ${highlight.quote ? `<p style="margin:0 0 14px;font-size:12.5px;color:var(--ink-dim);font-style:italic;overflow-wrap:anywhere;">${ui.esc(highlight.quote)}</p>` : ""}
         <div style="display:flex;gap:8px;justify-content:center;">
           <button class="btn small" id="highlight-share-btn">${ui.icon("copy")}複製分享文字</button>
           <button class="btn ghost small" id="highlight-close-btn">${ui.icon("x")}關閉</button>
@@ -1165,6 +1182,7 @@
       closed,
       eventName: ev && ev.name,
       eventId,
+      theme: rules.storyTheme,
       trainingEndsAt: rules.trainingEndsAt,
       trainingMinutes: rules.trainingMinutes,
       activityEndsAt: rules.activityEndsAt,
@@ -1426,7 +1444,7 @@
             .map((k) => `${CareerFloors.STAT_LABEL[k] || k}+${k === "hp" ? result.bonus[k] * 10 : k === "mp" ? result.bonus[k] * 2 : result.bonus[k]}`)
             .join("、");
           const packText = result.starterPack ? `，還送了 ${result.starterPack.hp || 0} 瓶恢復藥水、${result.starterPack.mp || 0} 瓶魔力藥水` : "";
-          highlight = { icon: CareerData.CAREER_TREE[pathKey].icon, title: "轉職成功!", text: `數值提升:${bonusText}${packText}!` };
+          highlight = { icon: CareerData.CAREER_TREE[pathKey].icon, title: "轉職成功!", text: `數值提升:${bonusText}${packText}!`, quote: pathQuoteText(pathKey) };
           activeTab = "tower";
           render();
         } catch (e) {
@@ -1454,7 +1472,7 @@
           const bonusText = Object.keys(result.bonus)
             .map((k) => `${CareerFloors.STAT_LABEL[k] || k}+${k === "hp" ? result.bonus[k] * 10 : k === "mp" ? result.bonus[k] * 2 : result.bonus[k]}`)
             .join("、");
-          highlight = { icon: info.icon, title: `轉職成${info.name}!`, text: `數值提升:${bonusText}!從今以後你就是${info.name}了。` };
+          highlight = { icon: info.icon, title: `轉職成${info.name}!`, text: `數值提升:${bonusText}!從今以後你就是${info.name}了。`, quote: masterQuoteText(key) };
           activeTab = "tower";
           render();
         } catch (e) {

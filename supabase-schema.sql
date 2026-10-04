@@ -1162,6 +1162,42 @@ end;
 $$;
 
 -- ============================================
+-- 夜記(世界觀第二階段):跨活動的線索收集，記在玩家帳號上，不屬於任何一場活動
+-- ============================================
+-- 只記「看過什麼」，不記劇情答案:救援者是誰、四個伏筆角色是不是同一批人，這裡都不存。
+-- entry_key 範例:boss:10(打贏10層關主)、npc:cloak(遇過斗笠人)、revive(被救起)、closing_bell(聽過收攤的逼聲)。
+-- 每個 key 的文字內容都放在前端 assets/career-story.js 的 JOURNAL，資料表不需要跟著改。
+-- first_event_id 用 on delete set null:活動被刪掉不應該連玩家的夜記一起消失。
+create table if not exists career_journal (
+  id uuid primary key default gen_random_uuid(),
+  player_id uuid not null references players(id) on delete cascade,
+  entry_key text not null,
+  times_seen int not null default 1,
+  first_event_id uuid references events(id) on delete set null,
+  first_seen_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now(),
+  unique (player_id, entry_key)
+);
+alter table career_journal enable row level security;
+drop policy if exists "anon all career_journal" on career_journal;
+create policy "anon all career_journal" on career_journal for all using (true) with check (true);
+
+-- 記一筆夜記:第一次看到就新增，之後再看到只把次數 +1。用 on conflict 一次完成，
+-- 兩個分頁同時觸發同一條線索也不會撞 unique 噴錯。
+create or replace function record_career_journal(p_player_id uuid, p_event_id uuid, p_entry_key text)
+returns void
+language plpgsql
+as $$
+begin
+  insert into career_journal (player_id, entry_key, first_event_id)
+  values (p_player_id, p_entry_key, p_event_id)
+  on conflict (player_id, entry_key) do update
+    set times_seen = career_journal.times_seen + 1,
+        last_seen_at = now();
+end;
+$$;
+
+-- ============================================
 -- Realtime(Database Publications):以下這段可以整份跟著上面一起貼到 SQL Editor 執行，
 -- 不用再手動去 Database → Replication 一張一張打開開關。用 pg_publication_tables 先檢查
 -- 這張表是不是已經在 supabase_realtime 這個發布清單裡，不在才加，所以整份重跑也不會出錯

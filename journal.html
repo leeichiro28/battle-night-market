@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>夜記 · 擂台夜市</title>
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+<link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <div id="site-header"></div>
+  <div class="wrap">
+    <div class="marquee">
+      <span class="eyebrow"><i data-lucide="notebook-pen" class="ico"></i>Night Journal</span>
+      <h1>夜記</h1>
+      <p>每一晚看到的事都會記在這裡。沒看過的，就先是「？？？」</p>
+    </div>
+
+    <div id="journal-app">
+      <div class="empty"><i data-lucide="loader-circle" class="ico"></i>載入中...</div>
+    </div>
+
+    <div class="footer-nav"><a href="index.html"><i data-lucide="arrow-left" class="ico"></i>回活動列表</a></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@1.27.0/dist/umd/lucide.min.js"></script>
+  <script src="assets/supabase-config.js"></script>
+  <script src="assets/db.js"></script>
+  <script src="assets/ui.js"></script>
+  <script src="assets/header.js"></script>
+  <script src="assets/career-data.js"></script>
+  <script src="assets/career-floors.js"></script>
+  <script src="assets/career-story.js"></script>
+  <script src="assets/journal.js"></script>
+</body>
+</html>

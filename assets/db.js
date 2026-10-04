@@ -2979,6 +2979,62 @@ const db = (function () {
     return { hp, mp };
   }
 
+  // ---------- 夜記(世界觀第二階段,見 career-story.js 的 JOURNAL、supabase-schema.sql 的 career_journal) ----------
+  // 夜記只記「看過什麼」，不記答案。這裡的記錄是附帶動作，絕對不能影響爬塔本身:
+  // 資料表還沒建(沒重跑 schema)、網路抖一下、RPC 失敗，都只在 console 警告，不丟錯、不擋住畫面。
+  // 呼叫端不需要 await(除非像結算那樣想等全部寫完)。
+  const JOURNAL_NPC_BY_EVENT = {
+    sparring: "npc:cloak", // 斗笠人
+    reclass: "npc:master", // 老師傅
+    benefactor: "npc:benefactor", // 貴人
+    lost_child: "npc:lost_child", // 走失小孩
+    spirit_blessing: "event:spirit", // 數值精靈眷顧(不是人，是「有什麼東西在看你」)
+  };
+  async function _noteJournal(eventId, playerId, entryKey) {
+    if (!playerId || !entryKey) return;
+    try {
+      const { error } = await client.rpc("record_career_journal", {
+        p_player_id: playerId,
+        p_event_id: eventId || null,
+        p_entry_key: entryKey,
+      });
+      if (error) console.warn("夜記寫入失敗(不影響遊戲):", entryKey, error.message);
+    } catch (e) {
+      console.warn("夜記寫入失敗(不影響遊戲):", entryKey, e && e.message);
+    }
+  }
+
+  // 夜記頁用:這個玩家所有夜記條目 + 夜數 + 最高樓層。
+  // 夜數 = 參加過幾場職業養成對決(career_progress 有幾列);最高樓層取歷史最高跟各場最高的較大值。
+  async function getCareerJournal(playerId) {
+    const [journalRes, progressRes, profile] = await Promise.all([
+      client.from("career_journal").select("entry_key, times_seen, first_event_id, first_seen_at, last_seen_at").eq("player_id", playerId),
+      client.from("career_progress").select("floor").eq("player_id", playerId),
+      getPlayerProfile(playerId).catch(() => null),
+    ]);
+    if (journalRes.error) throw journalRes.error;
+    const entries = {};
+    (journalRes.data || []).forEach((r) => { entries[r.entry_key] = r; });
+    // 夜晚回顧:把「第一次看到」的活動名稱一起撈回來。活動被刪掉的話 first_event_id 會是 null(on delete set null),
+    // 撈活動名稱失敗也不影響夜記本體,只是回顧那一區拿不到名字。
+    const eventIds = [...new Set((journalRes.data || []).map((r) => r.first_event_id).filter(Boolean))];
+    const eventNames = {};
+    if (eventIds.length) {
+      try {
+        const { data: evs } = await client.from("events").select("id, name").in("id", eventIds);
+        (evs || []).forEach((e) => { eventNames[e.id] = e.name; });
+      } catch (e) {}
+    }
+    const floors = (progressRes.data || []).map((r) => r.floor || 0);
+    const profileHighest = (profile && profile.lifetime_stats && profile.lifetime_stats.career_highest_floor) || 0;
+    return {
+      entries,
+      eventNames,
+      nights: floors.length,
+      highestFloor: Math.max(profileHighest, ...floors, 0),
+    };
+  }
+
   // 死掉不會卡住玩家:HP見底就自動復活、保留三成HP，馬上可以再挑戰，不用被迫先去買藥水/
   // 等事件才能繼續玩。輸的懲罰本來就是「沒有獎勵」，不需要再疊加一個「打不開下一場」的硬牆。
   function _respawnHpIfNeeded(hp, maxHp) {
@@ -3047,6 +3103,9 @@ const db = (function () {
       .select()
       .single();
     if (error) throw error;
+
+    // 夜記:打贏有劇情對話的關主(10/20/30/40/50 層)才記,一般樓層不記
+    if (floorDef.story) _noteJournal(eventId, playerId, `boss:${floorNumber}`);
 
     if (isTopFloor) {
       const name = await _playerName(playerId);
@@ -3117,6 +3176,8 @@ const db = (function () {
     // 都不會被事件打斷，維持原本「王戰就是王戰」的規則。
     if (!floorDef.isMiniBoss && Math.random() < window.CareerEvents.EVENT_TRIGGER_CHANCE) {
       const eventDef = window.CareerEvents.pickWeighted();
+      // 夜記:遇到四個「疑似有關」的角色就記一筆(出現就算,不管玩家之後怎麼選)
+      if (JOURNAL_NPC_BY_EVENT[eventDef.key]) _noteJournal(eventId, playerId, JOURNAL_NPC_BY_EVENT[eventDef.key]);
 
       if (eventDef.type === "choice") {
         // 神秘寶箱/路過商人/轉職邀請:先把選項存起來，等玩家選了才生效(見 resolveCareerEvent)
@@ -3229,6 +3290,7 @@ const db = (function () {
     if (!battle.won) {
       const { data: updated, error } = await client.from("career_progress").update(hpMpPatch).eq("id", progress.id).select().single();
       if (error) throw error;
+      _noteJournal(eventId, playerId, "revive"); // 夜記:被救起一次(只記次數,不記是誰救的)
       return { won: false, log: battle.log, progress: updated, floorDef };
     }
 
@@ -3265,6 +3327,7 @@ const db = (function () {
           .select()
           .single();
         if (error) throw error;
+        _noteJournal(eventId, playerId, "revive"); // 夜記:被救起一次
         return { bossBattle: true, done: true, won: false, log: newState.log, floorDef, progress: updated };
       }
       const result = await _applyFloorWinRewards(eventId, playerId, progress, build, floorDef, active.floor, newState.hp1, newState.mp1, skillLevels);
@@ -3928,6 +3991,19 @@ const db = (function () {
     if (error) throw error;
   }
 
+  // 已建立的職業養成對決活動事後改今夜主題。只動 rules.storyTheme，其他 rules(階段、倒數時間)原樣保留;
+  // 「一般夜」不存這個欄位(跟建立活動時一樣)。主題只換文案、不影響數值，所以活動進行中也可以改。
+  // 呼叫端要自己確認 themeKey 是有效的主題(後台下拉選單只會給有效值)。
+  async function setCareerStoryTheme(eventId, themeKey) {
+    const ev = await getEvent(eventId);
+    const rules = { ...(ev.rules || {}) };
+    if (!themeKey || themeKey === "normal") delete rules.storyTheme;
+    else rules.storyTheme = themeKey;
+    const { error } = await client.from("events").update({ rules }).eq("id", eventId);
+    if (error) throw error;
+    return rules;
+  }
+
   // 主辦人提前結束訓練期(有時候大家練完想早點開戰)，立刻切到對戰期。
   async function endCareerTrainingPhaseNow(eventId) {
     const ev = await getEvent(eventId);
@@ -4033,6 +4109,8 @@ const db = (function () {
     // 活動狀態變成closed而不會再幫忙推進的那種「看起來還在跑但其實沒用」的怪狀態。
     await client.from("career_progress").update({ auto_farm_floor: null }).eq("event_id", eventId).not("auto_farm_floor", "is", null);
     await awardCareerTitles(eventId, standings);
+    // 夜記:收攤那一聲「逼——」,每位參加者聽一次(_noteJournal 不會丟錯,不影響結算)
+    await Promise.all(standings.map((row) => _noteJournal(eventId, row.queueEntry.player_id, "closing_bell")));
     return standings;
   }
 
@@ -4223,6 +4301,8 @@ const db = (function () {
     maybeAdvanceCareerPhase,
     computeCareerStandings,
     closeCareerEvent,
+    getCareerJournal,
+    setCareerStoryTheme,
     awardCareerTitles,
   };
 })();

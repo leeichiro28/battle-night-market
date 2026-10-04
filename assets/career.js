@@ -37,10 +37,21 @@
   // 佇列/廣播的即時更新會觸發整頁重繪，DOM上的狀態每次都會被砍掉重來，導致排行榜自己收合
   let leaderboardStandings = [];
 
+  // 今夜主題(主辦人建立活動時選的)，沒選就是 undefined → 一般夜
+  function storyTheme() {
+    return ev && ev.rules && ev.rules.storyTheme;
+  }
+
   // 世界觀第一階段:一行斜體小字的劇情文案(文案來源 career-story.js，純文字、這裡負責 esc)
   function storyLine(text) {
     if (!text) return "";
     return `<p style="font-size:11.5px;color:var(--ink-dim);font-style:italic;margin:6px 0 0;overflow-wrap:anywhere;">${ui.esc(text)}</p>`;
+  }
+
+  // 非一般夜時，在頁面小標題後面加上主題名稱，例如「週五夜擂台賽 · 雨夜」
+  function themeSuffix() {
+    const key = storyTheme();
+    return key && key !== "normal" ? " · " + CareerStory.getTheme(key).label : "";
   }
 
   function emptyMsg(text, icon) {
@@ -70,7 +81,7 @@
       app.innerHTML = emptyMsg("找不到這場活動，可能已經被刪除。");
       return;
     }
-    document.getElementById("page-eyebrow").textContent = ev.name;
+    document.getElementById("page-eyebrow").textContent = ev.name + themeSuffix();
     const towerLink = document.getElementById("to-tower-link");
     if (towerLink) towerLink.href = `tower.html?event=${eventId}`;
     const local = db.getLocalPlayer();
@@ -300,7 +311,7 @@
           ${ui.icon("loader-circle")}
           <p style="margin:10px 0 4px;font-weight:700;">配對中...(已等待約 ${waitedSec} 秒)</p>
           <p style="font-size:11.5px;color:var(--ink-dim);">戰績:${queueEntry.wins} 勝 ${queueEntry.losses} 敗,積分 ${queueEntry.current_score}</p>
-          ${storyLine(CareerStory.queueWait(eventId + ":" + queueEntry.wins + ":" + queueEntry.losses))}
+          ${storyLine(CareerStory.queueWait(eventId + ":" + queueEntry.wins + ":" + queueEntry.losses, storyTheme()))}
         </div>
         <div style="text-align:center;margin-top:10px;">
           <button class="btn small" id="test-bot-btn">${ui.icon("bot")}沒人可配對?拉一隻機器人來打</button>
@@ -638,7 +649,7 @@
           ${fullStatsHtml(oppClass, oppAtk, oppDef, oppSpd, oppLuck, oppMatk, oppCritBonus)}
         </div>
       </div>`;
-    if (!isDone && s.round === 1) html += storyLine(CareerStory.pvpFound(matchSeed));
+    if (!isDone && s.round === 1) html += storyLine(CareerStory.pvpFound(matchSeed, storyTheme()));
 
     if (isDone) {
       const reward = s.pvpReward; // P1-7/P1-8:贏家的幣/連勝加成明細，見 finish_career_match RPC
@@ -656,7 +667,7 @@
           </p>
           ${rewardLine}
           ${iWon && reward && CareerStory.streakTitle(reward.winStreak) ? `<p style="font-size:12px;color:var(--gold);margin:6px 0 0;">${ui.icon("award")}${ui.esc("稱號:" + CareerStory.streakTitle(reward.winStreak))}</p>` : ""}
-          ${storyLine(iWon ? CareerStory.pvpWin(matchSeed) : CareerStory.pvpLose(matchSeed))}
+          ${storyLine(iWon ? CareerStory.pvpWin(matchSeed, storyTheme()) : CareerStory.pvpLose(matchSeed, storyTheme()))}
           <p style="font-size:11.5px;color:var(--ink-dim);margin-top:6px;">正在回到配對佇列，準備下一場...</p>
         </div>`;
     } else {

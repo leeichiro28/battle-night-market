@@ -60,6 +60,15 @@ function finishPick(key) {
   if (window._classPickResolve) window._classPickResolve(key);
 }
 
+// 職業養成對決的今夜主題標籤(一般夜、舊活動、不認得的主題都不顯示)。跟後台活動卡片同一套寫法。
+function themeTagHtml(ev) {
+  if (ev.game_type !== "career" || !window.CareerStory) return "";
+  const key = ev.rules && ev.rules.storyTheme;
+  if (!key || key === "normal") return "";
+  const theme = CareerStory.getTheme(key);
+  return ui.tag(theme.icon, "主題:" + theme.label);
+}
+
 function eventRow(ev) {
   const div = document.createElement("div");
   div.className = "card event-card";
@@ -75,6 +84,7 @@ function eventRow(ev) {
       <div class="tag-row">
         ${ui.gameTag(ev.game_type)}
         ${ui.statusTag(ev.status)}
+        ${themeTagHtml(ev)}
         ${ev.losers_bracket ? ui.losersTag() : ""}
         ${ui.deadlineTag(ev.registration_deadline, "報名截止")}
       </div>

@@ -199,6 +199,7 @@ v2 只有骰子對戰、五手勢對戰、夜市拍賣三種遊戲；v3 新增 *
 - `career.html` — 職業養成對決的報名/選職業頁(走獨立架構，不經過 `lobby.html`)
 - `tower.html` — 職業養成對決主畫面:爬塔、練功掛機、技能樹、商店、背包、PVP、排行榜
 - `announcements.html` / `sponsors.html` — 遊戲公告、贊助名單
+- `journal.html` — 夜記:跨活動的劇情線索收集(資料表 `career_journal`，文案在 `assets/career-story.js` 的 `JOURNAL`)
 - `auction.html` — 夜市拍賣(獨立遊戲類型，報名後直接進這頁，不經過 `lobby.html`)
 - `admin.html` — 後台:開活動、鎖定產生賽程(骰子/五手勢)或設定拍賣參數(夜市拍賣)、踢出參加者、控制狀態、填獎勵
 - `rules.html` — 完整規則說明頁，各遊戲類型都有

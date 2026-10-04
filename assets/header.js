@@ -4,6 +4,7 @@
   const NAV_LINKS = [
     { href: "index.html", icon: "house", label: "活動首頁" },
     { href: "rules.html", icon: "book-open", label: "遊戲規則" },
+    { href: "journal.html", icon: "notebook-pen", label: "夜記" },
     { href: "announcements.html", icon: "megaphone", label: "遊戲公告" },
     { href: "sponsors.html", icon: "gem", label: "贊助名單" },
     { href: "admin.html", icon: "wrench", label: "後台" },

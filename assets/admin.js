@@ -60,8 +60,21 @@ function renderRps5RuleCheckboxes() {
 }
 renderRps5RuleCheckboxes();
 
+// 職業養成對決・今夜主題:選項跟文案都定義在 career-story.js(CareerStory.THEMES)
+function renderThemeSelect() {
+  const sel = document.getElementById("new-theme");
+  sel.innerHTML = CareerStory.THEME_ORDER.map((k) => `<option value="${k}">${ui.esc(CareerStory.THEMES[k].label)}</option>`).join("");
+  const updateDesc = () => {
+    document.getElementById("new-theme-desc").textContent = CareerStory.getTheme(sel.value).desc;
+  };
+  sel.onchange = updateDesc;
+  updateDesc();
+}
+renderThemeSelect();
+
 document.getElementById("new-type").onchange = (e) => {
   const type = e.target.value;
+  document.getElementById("career-theme-field").style.display = type === "career" ? "block" : "none";
   document.getElementById("dice-rules-box").style.display = type === "dice" ? "block" : "none";
   document.getElementById("rps5-rules-box").style.display = type === "rps5" ? "block" : "none";
   document.getElementById("auction-settings-box").style.display = type === "auction" ? "block" : "none";
@@ -527,6 +540,18 @@ function eventAdminCard(ev) {
       </div>`
     : "";
 
+  // 已建立的職業養成對決也能改今夜主題(只換文案)，活動還沒結束都可以改
+  const currentTheme = (ev.rules && ev.rules.storyTheme && CareerStory.THEMES[ev.rules.storyTheme]) ? ev.rules.storyTheme : "normal";
+  const careerThemeRow = isCareer && !isClosed
+    ? `<div class="action-row" style="margin-top:8px;align-items:center;">
+        <label for="theme-${ev.id}" style="font-size:12px;color:var(--ink-dim);">今夜主題</label>
+        <select id="theme-${ev.id}" data-action="change-theme" style="width:auto;min-width:120px;">
+          ${CareerStory.THEME_ORDER.map((k) => `<option value="${k}"${k === currentTheme ? " selected" : ""}>${ui.esc(CareerStory.THEMES[k].label)}</option>`).join("")}
+        </select>
+        <span style="font-size:11.5px;color:var(--ink-dim);">只換文案，不影響數值</span>
+      </div>`
+    : "";
+
   card.innerHTML = `
     <div class="event-card" style="margin-bottom:14px;">
       <div class="meta">
@@ -537,6 +562,7 @@ function eventAdminCard(ev) {
           ${ev.losers_bracket ? ui.losersTag() : ""}
           ${ui.deadlineTag(ev.registration_deadline)}
           ${ui.ruleTags(ev.rules)}
+          ${ev.game_type === "career" && ev.rules && ev.rules.storyTheme && ev.rules.storyTheme !== "normal" ? ui.tag(CareerStory.getTheme(ev.rules.storyTheme).icon, "主題:" + CareerStory.getTheme(ev.rules.storyTheme).label) : ""}
         </div>
       </div>
       <div class="action-row">
@@ -547,6 +573,7 @@ function eventAdminCard(ev) {
         <button class="btn ghost small outline-danger" data-action="delete">${ui.icon("trash-2")}刪除活動</button>
       </div>
       ${careerPhaseRow}
+      ${careerThemeRow}
     </div>
     <div class="bracket-summary"></div>
     <div class="participants"></div>
@@ -605,6 +632,30 @@ function eventAdminCard(ev) {
       } catch (e) {
         await ui.alert(e.message || "開始訓練期失敗", { title: "操作失敗", tone: "danger" });
         startTrainingBtn.disabled = false;
+      }
+    };
+  }
+  const themeSelect = card.querySelector('[data-action="change-theme"]');
+  if (themeSelect) {
+    themeSelect.onchange = async () => {
+      const next = themeSelect.value;
+      const label = CareerStory.getTheme(next).label;
+      const ok = await ui.confirm(`要把「${ev.name}」的今夜主題改成「${label}」嗎?只會換開場、廣播、收攤和擂台的文案，不影響數值。`, {
+        title: "更改今夜主題",
+        confirmText: "改成" + label,
+      });
+      if (!ok) {
+        themeSelect.value = currentTheme;
+        return;
+      }
+      themeSelect.disabled = true;
+      try {
+        await db.setCareerStoryTheme(ev.id, next);
+        loadAll();
+      } catch (e) {
+        await ui.alert(e.message || "更改主題失敗", { title: "操作失敗", tone: "danger" });
+        themeSelect.value = currentTheme;
+        themeSelect.disabled = false;
       }
     };
   }
@@ -742,6 +793,10 @@ document.getElementById("create-btn").onclick = async () => {
       if (box.checked) rules[box.dataset.rule] = true;
     });
   }
+  if (type === "career") {
+    const theme = document.getElementById("new-theme").value;
+    if (theme && theme !== "normal") rules.storyTheme = theme; // 一般夜不存，跟舊活動一樣沒有這個欄位
+  }
   if (type === "auction") {
     rules.startingBudget = Math.max(1, parseInt(document.getElementById("auction-budget").value) || AUCTION_DEFAULT_BUDGET);
     rules.waveIntervalSec = Math.max(10, parseInt(document.getElementById("auction-wave-interval").value) || AUCTION_DEFAULT_WAVE_INTERVAL_SEC);
@@ -769,6 +824,8 @@ document.getElementById("create-btn").onclick = async () => {
     document.getElementById("new-name").value = "";
     document.getElementById("new-deadline").value = "";
     document.getElementById("new-losers").checked = false;
+    document.getElementById("new-theme").value = "normal";
+    document.getElementById("new-theme-desc").textContent = CareerStory.getTheme("normal").desc;
     document.getElementById("auction-budget").value = AUCTION_DEFAULT_BUDGET;
     document.getElementById("auction-wave-interval").value = AUCTION_DEFAULT_WAVE_INTERVAL_SEC;
     document.getElementById("auction-items-per-wave").value = AUCTION_DEFAULT_ITEMS_PER_WAVE;

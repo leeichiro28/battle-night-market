@@ -43,6 +43,11 @@
         <label for="new-deadline">報名截止時間(選填，不填就一直開放到主辦人鎖定名單為止)</label>
         <input type="datetime-local" id="new-deadline" />
       </div>
+      <div class="field" id="career-theme-field" style="display:none;">
+        <label for="new-theme">今夜主題(只換開場/廣播/收攤的劇情文案，不影響數值)</label>
+        <select id="new-theme"></select>
+        <p id="new-theme-desc" style="font-size:11.5px;color:var(--ink-dim);margin:6px 0 0;"></p>
+      </div>
       <div class="field" id="losers-field">
         <label class="check-item" style="margin-bottom:0;">
           <input type="checkbox" id="new-losers" />
@@ -196,6 +201,7 @@
   <script src="assets/ui.js"></script>
   <script src="assets/header.js"></script>
   <script src="assets/auction-catalog.js"></script>
+  <script src="assets/career-story.js"></script>
   <script src="assets/admin.js"></script>
   <script>
     document.getElementById("admin-tabs").addEventListener("click", (e) => {
