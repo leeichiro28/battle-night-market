@@ -97,6 +97,7 @@
     }
 
     broadcasts = await db.listCareerBroadcasts(eventId).catch(() => []);
+    await db.careerHeartbeat(eventId, myId);
     await db.cleanupStaleCareerMatches(eventId); // 先清掉上次中途離開留下的死對戰，不然一進來就被丟回那場
     try {
       await refreshAll();
@@ -119,6 +120,7 @@
       try {
         const advanced = await db.maybeAdvanceCareerPhase(eventId);
         if (advanced) ev = await db.getEventSafe(eventId);
+        await db.careerHeartbeat(eventId, myId);
         await db.cleanupStaleCareerMatches(eventId);
         if (!activeMatch) {
           await db.scanCareerMatchmaking(eventId);

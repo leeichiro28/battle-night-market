@@ -2293,6 +2293,7 @@ const db = (function () {
         .select()
         .single();
       if (error) throw error;
+      await careerHeartbeat(eventId, playerId);
       return data;
     }
     const { data, error } = await client
@@ -2301,6 +2302,7 @@ const db = (function () {
       .select()
       .single();
     if (error) throw error;
+    await careerHeartbeat(eventId, playerId);
     return data;
   }
 
@@ -2366,12 +2368,15 @@ const db = (function () {
   async function listWaitingCareerQueue(eventId) {
     const { data, error } = await client
       .from("career_pvp_queue")
-      .select("*, player:player_id(name)")
+      .select("*, player:player_id(name, is_bot)")
       .eq("event_id", eventId)
       .eq("status", "waiting")
       .order("last_matched_at", { ascending: true });
     if (error) throw error;
-    const rows = data || [];
+    // 不顯示已經離開頁面的幽靈(最近 25 秒沒回報在線；機器人例外；欄位還不存在時不過濾)
+    const rows = (data || []).filter(
+      (r) => !r.last_seen_at || (r.player && r.player.is_bot) || Date.now() - new Date(r.last_seen_at).getTime() < 25000
+    );
     const summaries = await _getCareerPlayerSummaries(eventId, rows.map((r) => r.player_id));
     return rows.map((r) => ({ queueEntry: r, summary: summaries[r.player_id] }));
   }
@@ -2392,11 +2397,21 @@ const db = (function () {
   // 還沒執行那份 SQL 時這個 RPC 不存在，錯誤直接吞掉，不影響原本的配對流程。
   async function cleanupStaleCareerMatches(eventId) {
     try {
-      const { data, error } = await client.rpc("cleanup_stale_career_matches", { p_event_id: eventId, p_stale_seconds: 120 });
+      const { data, error } = await client.rpc("cleanup_stale_career_matches", { p_event_id: eventId, p_stale_seconds: 60 });
       if (error) return 0;
       return data || 0;
     } catch (e) {
       return 0;
+    }
+  }
+
+  // 回報「我還在這頁」，配對只會挑最近有回報的人，避免把真人配給已經關掉頁面的幽靈。
+  // 還沒執行 migration-pvp-heartbeat.sql 時這個 RPC 不存在，錯誤吞掉，不影響其他流程。
+  async function careerHeartbeat(eventId, playerId) {
+    try {
+      await client.rpc("career_heartbeat", { p_event_id: eventId, p_player_id: playerId });
+    } catch (e) {
+      /* ignore */
     }
   }
 
@@ -4280,6 +4295,7 @@ const db = (function () {
     listWaitingCareerQueue,
     scanCareerMatchmaking,
     cleanupStaleCareerMatches,
+    careerHeartbeat,
     getMyActiveCareerMatch,
     getCareerMatch,
     initializeCareerMatch,
