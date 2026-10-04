@@ -330,7 +330,7 @@
                     return `
                       <div class="lb-row${isMe ? " me" : ""}">
                         ${ui.rankBadge(idx + 1)}
-                        <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}
+                        <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}${ui.titleBadge(row.displayTitle)}
                           <span style="color:var(--ink-dim);font-size:11px;"> · ${summaryText}</span>
                         </span>
                       </div>`;
@@ -530,7 +530,7 @@
         const gapText = isMe && idx > 0 ? `<span style="color:var(--gold);font-size:11px;"> · 距第1名還差${topScore - row.score}分</span>` : "";
         return `<div class="lb-row${isMe ? " me" : ""}">
           ${ui.rankBadge(idx + 1)}
-          <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}
+          <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}${ui.titleBadge(row.displayTitle)}
             <span style="color:var(--ink-dim);font-size:11px;"> · 第${row.floor}層 · ${row.queueEntry.wins}勝${row.queueEntry.losses}敗${summaryText}</span>${gapText}
           </span>
           <span class="lb-score">${row.score}</span>

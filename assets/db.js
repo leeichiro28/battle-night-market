@@ -3982,6 +3982,10 @@ const db = (function () {
     if (progressRows.error) throw progressRows.error;
     // 玩家回饋:排行榜要能看到參加者的職業、等級、數值，不是只有分數跟樓層。
     const summaries = await _getCareerPlayerSummaries(eventId, (progressRows.data || []).map((p) => p.player_id));
+    // 玩家回饋:爬塔排行榜/排隊表也要顯示玩家選擇掛在名字旁邊的稱號。一次查出全部參加者的
+    // 稱號放進每一列的 displayTitle，各個畫面直接用 ui.titleBadge(row.displayTitle) 就好，
+    // 不用每個畫面各自再去查一次。查失敗不影響排行榜本身(就只是不顯示稱號)。
+    const profiles = await getPlayerProfiles((progressRows.data || []).map((p) => p.player_id)).catch(() => ({}));
     const queueByPlayer = {};
     (queueRows.data || []).forEach((q) => (queueByPlayer[q.player_id] = q));
     const rows = (progressRows.data || []).map((p) => {
@@ -3995,7 +3999,7 @@ const db = (function () {
         losses: 0,
         win_streak: 0,
       };
-      return { queueEntry, floor: p.floor || 0, floorBonus, score: queueEntry.current_score + floorBonus, summary: summaries[p.player_id] };
+      return { queueEntry, floor: p.floor || 0, floorBonus, score: queueEntry.current_score + floorBonus, summary: summaries[p.player_id], displayTitle: (profiles[p.player_id] && profiles[p.player_id].display_title) || "" };
     });
     rows.sort((a, b) => b.score - a.score);
     return rows;
