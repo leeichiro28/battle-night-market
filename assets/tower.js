@@ -59,6 +59,11 @@
   let scanTimer = null;
   let unsubProgress = null;
   let refreshQueued = false;
+  // P1-1根本修復用的狀態:
+  let synthesisChoice = "weapon:common"; // 合成下拉選單目前選的值，記在變數裡，重繪後不會被重設回第一項
+  let lastRenderedHtml = ""; // 上一次真正寫進畫面的HTML，內容沒變就不重繪
+  let pointerDown = false; // 玩家正按著滑鼠/手指(mousedown到click之間)，這時候換掉按鈕會讓這次點擊落空
+  let renderPending = false; // 因為上面的原因被擋掉的重繪，放開後補做一次(事件驅動，不是輪詢重試)
 
   function emptyMsg(text, icon) {
     return `<div class="empty">${ui.icon(icon || "info")}${ui.esc(text)}</div>`;
@@ -69,16 +74,8 @@
     refreshQueued = true;
     setTimeout(async () => {
       refreshQueued = false;
-      // P1-1修復:合成分頁用的是原生 <select> 下拉選單，只要整頁重繪(loadAndRender)就會把
-      // 這個 DOM 元素整個換掉，開著的下拉選單會被瀏覽器強制收合。這裡跟下面那顆「每秒重繪」
-      // 計時器一樣，判斷玩家目前是不是正在跟 <select>/<input>/<textarea> 互動，互動中的話
-      // 先不重繪，晚一點再重試一次，不會漏掉這次的資料更新，也不會把玩家選到一半的選單關掉。
-      const activeTag = document.activeElement && document.activeElement.tagName;
-      const interacting = activeTag === "SELECT" || activeTag === "INPUT" || activeTag === "TEXTAREA";
-      if (interacting) {
-        scheduleRefresh();
-        return;
-      }
+      // P1-1根本修復:不再用「玩家在操作就晚點重試」的輪詢。是否要真的動畫面交給 render() 判斷
+      // (內容沒變就不重繪、玩家正按著按鈕/選單才暫緩)，資料本身照常更新，不會漏。
       try {
         await loadAndRender();
       } catch (e) {
@@ -114,7 +111,15 @@
 
     await loadAndRender();
 
-    unsubProgress = db.onTableChange("career_progress", `event_id=eq.${eventId}`, scheduleRefresh);
+    // P1-1根本修復:這張表整場活動所有人共用，別人特訓/挑戰/掛機/買裝備都會觸發事件。
+    // 以前不管是誰的資料變動，每個人的畫面都跟著重繪，人一多、有人狂點練功就等於一直在重繪，
+    // 光靠「晚一點重試」擋不住。現在只在「自己那一列」有異動(或拿不到是誰的，例如重新連線)才更新；
+    // 別人的進度只影響排行榜，排行榜由下面8秒一次的背景掃描更新就夠了。
+    unsubProgress = db.onTableChange("career_progress", `event_id=eq.${eventId}`, (payload) => {
+      const row = payload && (payload.new && payload.new.player_id ? payload.new : payload.old);
+      if (row && row.player_id && row.player_id !== myId) return;
+      scheduleRefresh();
+    });
     let unsubBroadcasts = db.onTableChange("career_broadcasts", `event_id=eq.${eventId}`, async () => {
       broadcasts = await db.listCareerBroadcasts(eventId).catch(() => broadcasts);
       render();
@@ -682,7 +687,7 @@
         const count = (groups[`${slot}:${rarity}`] || { count: 0 }).count;
         const nextRarity = CF.SYNTHESIS_PATH[rarity];
         options.push(
-          `<option value="${slot}:${rarity}">${slotLabel(slot)} · ${CF.RARITY_LABEL[rarity]}(你有${count}件) → ${CF.RARITY_LABEL[nextRarity]}</option>`
+          `<option value="${slot}:${rarity}"${synthesisChoice === `${slot}:${rarity}` ? " selected" : ""}>${slotLabel(slot)} · ${CF.RARITY_LABEL[rarity]}(你有${count}件) → ${CF.RARITY_LABEL[nextRarity]}</option>`
         );
       });
     });
@@ -1261,9 +1266,36 @@
 
     html += renderLeaderboardSection();
 
+    // P1-1根本修復:
+    // 1) 內容跟上一次畫面一模一樣就不重繪(合成分頁沒有倒數文字，每秒計時器跟別人的事件造成的
+    //    重繪，大部分其實都是同樣的HTML，不用把DOM整個換掉)。
+    if (html === lastRenderedHtml && app.firstChild) return;
+    // 2) 內容真的有變，但玩家正按著按鈕、或正在操作下拉選單/輸入框，換掉DOM會讓點擊落空或選單收合，
+    //    先記下「需要重繪」，等玩家放開/選完(pointerup、change、blur)再補做一次。
+    const activeTag = document.activeElement && document.activeElement.tagName;
+    const interacting = activeTag === "SELECT" || activeTag === "INPUT" || activeTag === "TEXTAREA";
+    if (pointerDown || interacting) {
+      renderPending = true;
+      return;
+    }
+    renderPending = false;
+    lastRenderedHtml = html;
     app.innerHTML = html;
     bindHandlers();
   }
+
+  function flushPendingRender() {
+    if (!renderPending) return;
+    const activeTag = document.activeElement && document.activeElement.tagName;
+    if (pointerDown || activeTag === "SELECT" || activeTag === "INPUT" || activeTag === "TEXTAREA") return;
+    render();
+  }
+  document.addEventListener("pointerdown", () => { pointerDown = true; }, true);
+  // 用 setTimeout 0 讓 click 事件先處理完(按鈕自己的 onclick 要先跑)，再補做被擋掉的重繪
+  const _releasePointer = () => { pointerDown = false; setTimeout(flushPendingRender, 0); };
+  document.addEventListener("pointerup", _releasePointer, true);
+  document.addEventListener("pointercancel", _releasePointer, true);
+  document.addEventListener("focusout", () => setTimeout(flushPendingRender, 0), true);
 
   // ---------------- 事件綁定 ----------------
 
@@ -1669,14 +1701,15 @@
       };
     });
 
+    const synthesisSelect = document.getElementById("synthesis-select");
+    if (synthesisSelect) synthesisSelect.onchange = () => { synthesisChoice = synthesisSelect.value; };
     const synthesizeBtn = document.getElementById("synthesize-btn");
     if (synthesizeBtn && !synthesizeBtn.disabled) {
       synthesizeBtn.onclick = async () => {
         if (busy) return;
         busy = true;
         try {
-          const select = document.getElementById("synthesis-select");
-          const [slot, rarity] = select.value.split(":");
+          const [slot, rarity] = synthesisChoice.split(":");
           const result = await db.synthesizeCareerEquipment(eventId, myId, slot, rarity);
           progress = result.progress;
           lastSynthesisResult = {
