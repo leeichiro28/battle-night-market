@@ -2131,3 +2131,49 @@ input,select,textarea{max-width:100%;min-width:0;}
 .journal-line{display:flex;gap:8px;align-items:flex-start;font-size:13px;line-height:1.7;margin-bottom:6px;min-width:0;}
 .journal-line > span:last-child{min-width:0;overflow-wrap:anywhere;font-style:italic;}
 .journal-line-label{flex-shrink:0;font-size:11px;color:var(--ink-dim);border:1px solid var(--line);border-radius:999px;padding:1px 8px;white-space:nowrap;}
+
+/* ===== 排版修正:技能樹/被動卡片、PVP 按鈕列、商店列(手機不跑出框外) ===== */
+/* 技能樹卡片:原本各自寫死 min-width/max-width + 不換行的按鈕，按鈕文字比卡片寬就會衝出外框。
+   現在用 auto-fit 欄，卡片寬度由容器決定，卡片裡的按鈕可以換行、不會超出卡片。 */
+.st-card{
+  flex:1 1 150px;min-width:0;max-width:100%;box-sizing:border-box;overflow-wrap:anywhere;
+}
+.st-card.wide{flex:1 1 200px;max-width:280px;}
+.st-card.branch{flex:1 1 100px;max-width:160px;}
+.st-card .btn{
+  white-space:normal;flex-shrink:1;max-width:100%;min-width:0;line-height:1.35;text-align:center;
+}
+.st-card .btn .ico{flex-shrink:0;}
+.st-card p{overflow-wrap:anywhere;}
+@media (max-width:480px){
+  .st-card{flex-basis:calc(50% - 6px);}
+  .st-card.wide{flex-basis:100%;max-width:100%;}
+}
+
+/* 按鈕列(技能選項/PVP 出招):文字很長時允許換行，不要把整列撐出畫面 */
+.career-action-row .btn{white-space:normal;line-height:1.35;overflow-wrap:anywhere;}
+@media (max-width:480px){
+  .career-action-row .btn{flex:1 1 calc(50% - 5px) !important;}
+  .shop-row .btn{white-space:normal;max-width:100%;text-align:center;}
+}
+
+/* 自由數值點分配面板 */
+.alloc-panel{background:var(--panel2);border:1px solid var(--gold-d);border-radius:var(--radius);padding:12px;margin:12px 0;}
+.alloc-title{margin:0 0 4px;font-size:12.5px;color:var(--gold);font-weight:700;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.alloc-hint{margin:0 0 8px;font-size:11px;color:var(--ink-dim);}
+.alloc-row{
+  display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:8px;
+  padding:6px 0;border-bottom:1px dashed var(--line);
+}
+.alloc-row:last-of-type{border-bottom:none;}
+.alloc-name{font-size:13px;font-weight:700;}
+.alloc-val{font-size:13px;font-family:'Space Mono',monospace;min-width:0;overflow-wrap:anywhere;}
+.alloc-gain{color:var(--green);font-weight:700;}
+.alloc-ctrl{display:inline-flex;align-items:center;gap:4px;}
+.alloc-btn{padding:5px 0 !important;min-width:34px;font-size:13px !important;}
+.alloc-n{min-width:30px;text-align:center;font-size:13px;font-weight:700;font-family:'Space Mono',monospace;}
+.alloc-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+@media (max-width:420px){
+  .alloc-row{grid-template-columns:40px minmax(0,1fr);}
+  .alloc-ctrl{grid-column:1 / -1;justify-content:flex-end;}
+}

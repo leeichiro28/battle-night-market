@@ -28,6 +28,9 @@
   let submittedThisRound = false;
   let seenRound = null;
   let roundTimer = null;
+  const ROUND_SECONDS_PVP = 30; // 每回合思考秒數
+  let timerKey = null; // 目前這個計時器是哪一場哪一回合的
+  let roundStartedAt = 0;
   let scanTimer = null;
   let unsubQueue = null;
   let unsubMatches = null;
@@ -118,8 +121,16 @@
     // match_career_players/maybeAdvanceCareerPhase 本身都是安全可以重複呼叫的)
     scanTimer = setInterval(async () => {
       try {
-        const advanced = await db.maybeAdvanceCareerPhase(eventId);
-        if (advanced) ev = await db.getEventSafe(eventId);
+        await db.maybeAdvanceCareerPhase(eventId);
+        // 每個 tick 都重讀活動狀態(以前只有「自己推進了」才會更新,別人先結算/先開放 PVP 時這裡一直是舊的)
+        const freshEv = await db.getEventSafe(eventId);
+        if (freshEv) ev = freshEv;
+        if (ev && ev.status === "closed" && !activeMatch) {
+          clearInterval(scanTimer);
+          clearInterval(roundTimer);
+          await renderClosedSummary();
+          return;
+        }
         await db.careerHeartbeat(eventId, myId);
         await db.cleanupStaleCareerMatches(eventId);
         if (!activeMatch) {
@@ -325,7 +336,7 @@
           ${storyLine(CareerStory.queueWait(eventId + ":" + queueEntry.wins + ":" + queueEntry.losses, storyTheme()))}
         </div>
         <div style="text-align:center;margin-top:10px;">
-          <button class="btn small" id="test-bot-btn">${ui.icon("bot")}沒人可配對?拉一隻機器人來打</button>
+          <button class="btn small" id="test-bot-btn">${ui.icon("bot")}沒人可配對?拉機器人練習(不計分)</button>
         </div>`;
     } else {
       const score = queueEntry ? `戰績:${queueEntry.wins} 勝 ${queueEntry.losses} 敗,積分 ${queueEntry.current_score}` : "還沒打過任何一場";
@@ -337,7 +348,7 @@
           ${storyLine(CareerStory.queueIdle(eventId + ":" + (queueEntry ? queueEntry.wins + queueEntry.losses : 0)))}
           <div style="margin-top:14px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
             <button class="btn" id="join-queue-btn">${ui.icon("swords")}加入配對佇列</button>
-            <button class="btn ghost" id="test-bot-btn">${ui.icon("bot")}拉一隻機器人來打</button>
+            <button class="btn ghost" id="test-bot-btn">${ui.icon("bot")}拉機器人練習(不計分)</button>
           </div>
         </div>`;
     }
@@ -428,8 +439,11 @@
   function opponentIsBot(match) {
     return mySlot === 1 ? match.p2 && match.p2.is_bot : match.p1 && match.p1.is_bot;
   }
-  function iAmResolver(match) {
-    return mySlot === 1 || opponentIsBot(match);
+  // 以前只有 1 號玩家(或對手是機器人時)能結算回合:1 號玩家掛網/分頁被凍結時,2 號玩家就算已經出招
+  // 也永遠等不到結算,整場卡死。現在兩邊都能結算,寫入時用「回合數」當條件(見 updateCareerMatchState),
+  // 先寫入的贏,不會重複結算。
+  function iAmResolver() {
+    return true;
   }
 
   async function enterBattle(match) {
@@ -450,7 +464,62 @@
 
     if (match.status === "active") {
       await maybeAutoSubmitForBot(match);
+      await maybeAutopilotOpponent(match);
       await maybeResolveRound(match);
+    }
+  }
+
+  // ---- 對手掛網(跟骰子對戰「在場的人幫缺席的人代打」同一個原則) ----
+  // 以前每個人只會替「自己」計時自動出招,對手的分頁關了/睡著/被手機凍結就完全沒有人替他出招,
+  // 這邊只能乾等到卡死。現在在場的玩家會替沒出招的對手代打普通攻擊:
+  //   對手還在回報在線 -> 給他完整的 30 秒(+8 秒緩衝)才代打,不搶他的回合
+  //   對手已經失聯(在線回報 15 秒沒更新) -> 6 秒後就代打
+  //   連續代打 3 回合對手都沒回來 -> 直接判對手棄權、我方獲勝
+  // 失聯判斷用「在線回報的值有沒有在變」,不拿手機時鐘跟伺服器時間比,所以不怕裝置時間不準。
+  const AUTOPILOT_GRACE_MS = (ROUND_SECONDS_PVP + 8) * 1000;
+  const AUTOPILOT_GRACE_GONE_MS = 6000;
+  const OPP_GONE_AFTER_MS = 15000;
+  const AFK_ROUNDS_TO_FORFEIT = 3;
+  let oppWait = { key: null, since: 0 };
+  let oppSeen = null; // { value, since }
+  let afkMatchId = null;
+  let afkAutoRounds = 0;
+  async function maybeAutopilotOpponent(match) {
+    if (opponentIsBot(match)) return;
+    const s = match.state || {};
+    const oppSlot = mySlot === 1 ? 2 : 1;
+    if (s[`m${oppSlot}`] || s.hp1 <= 0 || s.hp2 <= 0) {
+      oppWait = { key: null, since: 0 };
+      oppSeen = null;
+      return;
+    }
+    const key = match.id + ":" + s.round;
+    if (oppWait.key !== key) oppWait = { key, since: Date.now() };
+    const oppId = oppSlot === 1 ? match.player1_id : match.player2_id;
+    try {
+      const q = await db.getMyCareerQueueEntry(eventId, oppId);
+      const value = q && q.last_seen_at;
+      if (!oppSeen || oppSeen.value !== value) oppSeen = { value, since: Date.now() };
+    } catch (e) {
+      /* 讀不到就當作對手還在線,走完整等待時間 */
+    }
+    const gone = !!oppSeen && Date.now() - oppSeen.since > OPP_GONE_AFTER_MS;
+    if (Date.now() - oppWait.since < (gone ? AUTOPILOT_GRACE_GONE_MS : AUTOPILOT_GRACE_MS)) return;
+
+    if (afkMatchId !== match.id) {
+      afkMatchId = match.id;
+      afkAutoRounds = 0;
+    }
+    try {
+      if (afkAutoRounds >= AFK_ROUNDS_TO_FORFEIT) {
+        await db.finishCareerMatch(match.id, myId, oppId, "afk"); // 對手連續沒回應,視同棄權(分數打折)
+        return;
+      }
+      afkAutoRounds += 1;
+      oppWait = { key, since: Date.now() };
+      await db.submitCareerMove(match.id, oppSlot, { action: "attack", auto: true });
+    } catch (e) {
+      console.error(e);
     }
   }
 
@@ -523,7 +592,8 @@
           winnerId = p1Dead ? match.player2_id : match.player1_id;
         }
         const loserId = winnerId === match.player1_id ? match.player2_id : match.player1_id;
-        await db.updateCareerMatchState(match.id, { state: newState });
+        const wrote = await db.updateCareerMatchState(match.id, { state: newState }, state.round);
+        if (!wrote) return; // 對方的分頁已經先結算這一回合了
         await db.finishCareerMatch(match.id, winnerId, loserId);
         // 連勝3場以上順手廣播一下，讓大家知道場上有人在連勝
         try {
@@ -536,7 +606,7 @@
           console.error(e);
         }
       } else {
-        await db.updateCareerMatchState(match.id, { state: newState });
+        await db.updateCareerMatchState(match.id, { state: newState }, state.round);
       }
     } catch (e) {
       console.error(e);
@@ -674,7 +744,8 @@
     if (isDone) {
       const reward = s.pvpReward; // P1-7/P1-8:贏家的幣/連勝加成明細，見 finish_career_match RPC
       let rewardLine = "";
-      if (iWon && reward) {
+      const practice = !!(reward && reward.practice);
+      if (iWon && reward && !practice) {
         const parts = [`+${reward.coinReward}幣`];
         if (reward.statPointBonus > 0) parts.push(`+${reward.statPointBonus}數值點`);
         rewardLine = `<p style="font-size:12px;color:var(--gold);margin:6px 0 0;">${ui.icon("gift")}${parts.join("、")}${reward.winStreak >= 2 ? `(連勝${reward.winStreak}場加成)` : ""}</p>`;
@@ -683,10 +754,10 @@
         <div class="career-queue-box" style="background:var(--panel2);border-radius:var(--radius);border:1px solid var(--line);">
           ${ui.icon(iWon ? "trophy" : "skull")}
           <p style="margin:10px 0 4px;font-weight:700;color:${iWon ? "var(--gold)" : "var(--ink)"};">
-            ${iWon ? "獲勝!+10 分" : "戰敗...+2 分"}
+            ${practice ? (iWon ? "獲勝!(練習賽,不計分)" : "戰敗...(練習賽,不計分)") : iWon ? `獲勝!+${reward && reward.scoreGained != null ? reward.scoreGained : 10} 分${reward && reward.afkForfeit ? "(對手棄權,分數打折)" : ""}${reward && reward.capped ? "(已達每小時得分上限)" : ""}` : `戰敗...+${reward && reward.loserScoreGained != null ? reward.loserScoreGained : 2} 分`}
           </p>
           ${rewardLine}
-          ${iWon && reward && CareerStory.streakTitle(reward.winStreak) ? `<p style="font-size:12px;color:var(--gold);margin:6px 0 0;">${ui.icon("award")}${ui.esc("稱號:" + CareerStory.streakTitle(reward.winStreak))}</p>` : ""}
+          ${iWon && reward && !practice && CareerStory.streakTitle(reward.winStreak) ? `<p style="font-size:12px;color:var(--gold);margin:6px 0 0;">${ui.icon("award")}${ui.esc("稱號:" + CareerStory.streakTitle(reward.winStreak))}</p>` : ""}
           ${storyLine(iWon ? CareerStory.pvpWin(matchSeed, storyTheme()) : CareerStory.pvpLose(matchSeed, storyTheme()))}
           <p style="font-size:11.5px;color:var(--ink-dim);margin-top:6px;">正在回到配對佇列，準備下一場...</p>
         </div>`;
@@ -791,22 +862,32 @@
     }
   }
 
-  // 30 秒沒動作就自動幫自己送出普通攻擊(避免忘記回來看畫面卡住對手一直等)
+  // 30 秒沒動作就自動幫自己送出普通攻擊(避免忘記回來看畫面卡住對手一直等)。
+  // 修正:以前每次重繪畫面(每 3 秒一次)都會呼叫這個函式並把倒數重設回 30 秒,
+  // 結果倒數永遠數不完,自動出招從來沒有真的觸發過,對手一掛網整場就卡死。
+  // 現在「這一場的這一回合」第一次看到時才記下開始時間,之後重繪只更新顯示;
+  // 剩餘時間用實際經過的時間算(不是數 setInterval 幾次),手機鎖屏/分頁被凍結回來也會算對。
   function startRoundTimer(match) {
     clearInterval(roundTimer);
+    roundTimer = null;
     if (submittedThisRound) return;
-    let remain = 30;
-    const label = document.getElementById("round-timer");
-    if (label) label.textContent = String(remain);
-    roundTimer = setInterval(async () => {
-      remain -= 1;
+    const key = match.id + ":" + ((match.state && match.state.round) || 1);
+    if (key !== timerKey) {
+      timerKey = key;
+      roundStartedAt = Date.now();
+    }
+    const tick = async () => {
+      const remain = Math.max(0, ROUND_SECONDS_PVP - Math.floor((Date.now() - roundStartedAt) / 1000));
       const el = document.getElementById("round-timer");
-      if (el) el.textContent = String(Math.max(0, remain));
-      if (remain <= 0) {
+      if (el) el.textContent = String(remain);
+      if (remain <= 0 && !submittedThisRound) {
         clearInterval(roundTimer);
-        if (!submittedThisRound) await submitMyMove(match, "attack");
+        roundTimer = null;
+        await submitMyMove(match, "attack");
       }
-    }, 1000);
+    };
+    roundTimer = setInterval(tick, 1000);
+    tick();
   }
 
   // 手機鎖屏 / 切到別的分頁時瀏覽器會把 setInterval 節流甚至暫停，心跳就斷了；

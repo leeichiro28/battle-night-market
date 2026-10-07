@@ -126,6 +126,14 @@
       if (row && row.player_id && row.player_id !== myId) return;
       scheduleRefresh();
     });
+    // 活動狀態/階段一變(主辦人按結束、別人的分頁結算、準備期轉對戰期)就立刻更新,不用等 8 秒的掃描
+    db.onTableChange("events", `id=eq.${eventId}`, async () => {
+      const fresh = await db.getEventSafe(eventId).catch(() => null);
+      if (fresh) {
+        ev = fresh;
+        scheduleRefresh();
+      }
+    });
     let unsubBroadcasts = db.onTableChange("career_broadcasts", `event_id=eq.${eventId}`, async () => {
       broadcasts = await db.listCareerBroadcasts(eventId).catch(() => broadcasts);
       render();
@@ -134,8 +142,11 @@
     scanTimer = setInterval(async () => {
       try {
         await db.processCareerAutoFarmTicks(eventId);
-        const advanced = await db.maybeAdvanceCareerPhase(eventId);
-        if (advanced) ev = await db.getEventSafe(eventId); // 訓練期剛好在這個tick結束，重新讀一次活動拿到最新的 rules
+        await db.maybeAdvanceCareerPhase(eventId);
+        // 不管是不是自己這一次推進的,每個 tick 都重讀最新的活動狀態:
+        // 以前只有「自己搶到結算」才會更新 ev,別人的分頁先結算了這裡就一直是舊的,時間到還能繼續爬塔。
+        const fresh = await db.getEventSafe(eventId);
+        if (fresh) ev = fresh;
         standings = await db.computeCareerStandings(eventId).catch(() => standings);
         scheduleRefresh();
       } catch (e) {
@@ -200,6 +211,31 @@
 
   function getCareerPhase() {
     return (ev && ev.rules && ev.rules.careerPhase) || "not_started";
+  }
+
+  // 活動是不是已經結束:資料庫狀態是 closed,或是「整場結束時間」已經過了(就算還沒有任何人的分頁
+  // 搶到結算、ev.status 還沒更新,畫面也要先鎖住),並馬上通知資料庫結算一次。
+  let endCheckInFlight = false;
+  function isEventOver() {
+    if (!ev) return false;
+    if (ev.status === "closed") return true;
+    const endsAt = ev.rules && ev.rules.activityEndsAt;
+    if (endsAt && new Date(endsAt).getTime() <= Date.now()) {
+      if (!endCheckInFlight) {
+        endCheckInFlight = true;
+        db.maybeAdvanceCareerPhase(eventId)
+          .then(() => db.getEventSafe(eventId))
+          .then((fresh) => {
+            if (fresh) ev = fresh;
+            lastRenderedHtml = ""; // 強制重繪
+            render();
+          })
+          .catch((e) => console.error(e))
+          .finally(() => setTimeout(() => (endCheckInFlight = false), 5000));
+      }
+      return true;
+    }
+    return false;
   }
 
   async function loadAndRender() {
@@ -372,7 +408,7 @@
         ${def.flavor ? `<p style="margin:0 0 10px;font-size:11.5px;color:var(--ink-dim);font-style:italic;">${ui.esc(def.flavor)}</p>` : ""}
         <div style="display:flex;gap:8px;flex-wrap:wrap;">${choicesHtml}</div>
         <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-dim);margin-top:10px;cursor:pointer;">
-          <input type="checkbox" id="event-remember-choice" ${rememberEventChoice ? "checked" : ""}/> 不要再問我此事件的決定(下次遇到「${ui.esc(def.name)}」直接照這次選的做)
+          <input type="checkbox" id="event-remember-choice" ${rememberEventChoice ? "checked" : ""}/> 不要再問我此事件(下次遇到「${ui.esc(def.name)}」直接照這次選的做${def.key === "merchant" || def.key === "reclass" ? ";如果選的是拒絕,以後這個事件就不會再出現" : ""})
         </label>
       </div>`;
   }
@@ -458,6 +494,95 @@
     return html;
   }
 
+  // ---------------- 自由數值點:+/- 預覽,按「確認加點」一次寫入 ----------------
+  // allocDraft 記在變數裡(畫面每秒會重繪,不能只存在 DOM),點數變動時會自動夾回手上還有的點數。
+  const ALLOC_STATS = [
+    { key: "atk", label: "攻擊", per: 1, get: (st) => st.atk, magicOnly: false },
+    { key: "matk", label: "魔攻", per: 1, get: (st) => st.matk, magicOnly: true },
+    { key: "def", label: "防禦", per: 1, get: (st) => st.def },
+    { key: "spd", label: "速度", per: 1, get: (st) => st.spd },
+    { key: "hp", label: "HP", per: 10, get: (st) => st.maxHp },
+    { key: "mp", label: "MP", per: 2, get: (st) => st.maxMp },
+    { key: "luck", label: "幸運", per: 1, get: (st) => st.luck },
+  ];
+  let allocDraft = {};
+  function allocDraftTotal() {
+    return Object.keys(allocDraft).reduce((sum, k) => sum + (allocDraft[k] || 0), 0);
+  }
+  function clampAllocDraft() {
+    let left = progress.stat_points || 0;
+    Object.keys(allocDraft).forEach((k) => {
+      allocDraft[k] = Math.max(0, Math.min(allocDraft[k] || 0, left));
+      left -= allocDraft[k];
+    });
+  }
+
+  function renderAllocPanel(cls, stats) {
+    clampAllocDraft();
+    const isMagic = CareerData.CLASS_INFO[cls].path === "magic";
+    const total = allocDraftTotal();
+    const left = (progress.stat_points || 0) - total;
+    const rows = ALLOC_STATS.filter((d) => (d.key === "atk" ? !isMagic : d.key === "matk" ? isMagic : true))
+      .map((d) => {
+        const add = allocDraft[d.key] || 0;
+        const cur = d.get(stats) || 0;
+        const gain = add * d.per;
+        return `
+          <div class="alloc-row">
+            <span class="alloc-name">${d.label}</span>
+            <span class="alloc-val">${cur}${gain ? `<b class="alloc-gain"> → ${cur + gain}</b>` : ""}</span>
+            <span class="alloc-ctrl">
+              <button class="btn ghost small alloc-btn" data-alloc-step="${d.key}:-5" ${add < 1 ? "disabled" : ""} aria-label="${d.label}減5點">-5</button>
+              <button class="btn ghost small alloc-btn" data-alloc-step="${d.key}:-1" ${add < 1 ? "disabled" : ""} aria-label="${d.label}減1點">-</button>
+              <span class="alloc-n">${add ? "+" + add : "0"}</span>
+              <button class="btn small alloc-btn" data-alloc-step="${d.key}:1" ${left < 1 ? "disabled" : ""} aria-label="${d.label}加1點">+</button>
+              <button class="btn small alloc-btn" data-alloc-step="${d.key}:5" ${left < 1 ? "disabled" : ""} aria-label="${d.label}加5點">+5</button>
+            </span>
+          </div>`;
+      })
+      .join("");
+    return `
+      <div class="alloc-panel">
+        <p class="alloc-title">${ui.icon("sparkles")}自由數值點:剩 ${left} 點可分配${total ? `(已預選 ${total} 點)` : ""}</p>
+        <p class="alloc-hint">HP 每點 +10、MP 每點 +2,其餘每點 +1。按 +/- 預覽,確認後才會真的扣點。</p>
+        ${rows}
+        <div class="alloc-actions">
+          <button class="btn small" id="alloc-confirm-btn" ${total ? "" : "disabled"}>${ui.icon("check")}確認加點${total ? `(${total})` : ""}</button>
+          <button class="btn ghost small" id="alloc-all-btn" ${left < 1 ? "disabled" : ""}>剩餘全放最多的</button>
+          <button class="btn ghost small" id="alloc-reset-btn" ${total ? "" : "disabled"}>重設</button>
+        </div>
+      </div>`;
+  }
+
+  const CHOICE_LABEL = {
+    chest: { open_now: "當場打開", save_later: "帶回去晚點開" },
+    merchant: { buy: "買下商品", skip: "不用了(此事件不再出現)" },
+    reclass: { pay: "付錢收回 1 點", skip: "維持原狀(此事件不再出現)" },
+    blind_boxes: { box1: "箱子 1", box2: "箱子 2", box3: "箱子 3" },
+  };
+  function renderRememberedChoices() {
+    const remembered = progress.event_auto_choices || {};
+    const keys = Object.keys(remembered).filter((k) => CareerEvents.getEvent(k));
+    if (!keys.length) return "";
+    const rows = keys
+      .map((k) => {
+        const def = CareerEvents.getEvent(k);
+        const label = (CHOICE_LABEL[k] && CHOICE_LABEL[k][remembered[k]]) || remembered[k];
+        return `
+          <div class="shop-row">
+            ${ui.icon(def.icon)}
+            <div class="shop-row-name">${ui.esc(def.name)}<span class="shop-row-desc">已記住:${ui.esc(label)}</span></div>
+            <button class="btn ghost small" data-clear-event-choice="${k}">取消記住</button>
+          </div>`;
+      })
+      .join("");
+    return `
+      <div style="margin-top:14px;">
+        <p class="shop-section-title">已設定「不要再問我」的事件(取消後下次遇到會重新詢問)</p>
+        ${rows}
+      </div>`;
+  }
+
   function renderTowerTab(ctx) {
     if (progress.active_boss_battle) return renderBossBattleUi();
     const { locked, hasPendingEvent, canTrain, trainCooldownMs, nextFloor, nextFloorDef, isAutoFarming } = ctx;
@@ -487,21 +612,7 @@
     }
 
     if (progress.stat_points > 0 && !locked) {
-      const isMagic = CareerData.CLASS_INFO[cls].path === "magic";
-      html += `
-        <div style="background:var(--panel2);border:1px solid var(--gold-d);border-radius:var(--radius);padding:12px;margin:12px 0;">
-          <p style="margin:0 0 8px;font-size:12.5px;color:var(--gold);font-weight:700;">
-            ${ui.icon("sparkles")}你有 ${progress.stat_points} 點自由數值點可以分配!
-          </p>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            ${isMagic ? `<button class="btn small" data-alloc="matk">魔攻+1</button>` : `<button class="btn small" data-alloc="atk">攻擊+1</button>`}
-            <button class="btn small" data-alloc="def">防禦+1</button>
-            <button class="btn small" data-alloc="spd">速度+1</button>
-            <button class="btn small" data-alloc="hp">HP+10</button>
-            <button class="btn small" data-alloc="mp">MP+2</button>
-            <button class="btn small" data-alloc="luck">幸運+1</button>
-          </div>
-        </div>`;
+      html += renderAllocPanel(cls, battleStats);
     }
 
     if (progress.skill_points > 0 && !locked) {
@@ -540,7 +651,7 @@
       html += `
         <div style="margin-top:14px;padding:12px;border-radius:var(--radius);border:1px solid var(--gold-d);background:var(--panel2);">
           <p style="margin:0 0 6px;font-weight:700;color:var(--gold);display:flex;align-items:center;gap:6px;">
-            ${ui.icon(def ? def.icon : "sparkles")}${def ? ui.esc(def.name) : "夜市事件"}
+            ${ui.icon(def ? def.icon : "sparkles")}${def ? ui.esc(def.name) : "夜市事件"}${lastEvent.autoResolved ? `<span style="font-weight:400;font-size:11px;color:var(--ink-dim);"> · 依你記住的選擇自動處理</span>` : ""}
           </p>
           <p style="margin:0;font-size:12.5px;color:var(--ink);">${ui.esc(lastEvent.text || "")}</p>
           ${def && def.flavor ? `<p style="margin:6px 0 0;font-size:11.5px;color:var(--ink-dim);font-style:italic;">${ui.esc(def.flavor)}</p>` : ""}
@@ -576,6 +687,8 @@
         </div>`;
     }
 
+    html += renderRememberedChoices();
+
     html += `<div class="log-panel career-log-panel" style="margin-top:12px;">${
       lastBattle && lastBattle.log && lastBattle.log.length
         ? lastBattle.log
@@ -594,6 +707,9 @@
   function renderShopTab(locked) {
     const CF = CareerFloors;
     const statPrice = CF.statPointPrice(progress.stat_points_bought);
+    const statCap = CF.STAT_POINT_BUY_CAP;
+    const statBought = progress.stat_points_bought || 0;
+    const statCapped = statBought >= statCap;
     const weaponTable = CF.WEAPON_TABLE[myBuild.final_class] || CF.WEAPON_TABLE.novice;
 
     // 使用者二次回饋修改:傳說裝備限制改成「同一件裝備(同名字)不會重複拿到」，不是「這個部位
@@ -638,8 +754,8 @@
 
       <div class="shop-row" style="margin-bottom:14px;">
         ${ui.icon("sparkles")}
-        <div class="shop-row-name">自由數值點<span class="shop-row-desc">下一次會更貴</span></div>
-        <button class="btn small" id="buy-statpoint-btn" ${locked ? "disabled" : ""}>花 ${statPrice} 幣買 1 點</button>
+        <div class="shop-row-name">自由數值點<span class="shop-row-desc">已買 ${statBought}/${statCap} 點${statCapped ? "(已達本場上限)" : " · 下一次會更貴"}</span></div>
+        <button class="btn small" id="buy-statpoint-btn" ${locked || statCapped ? "disabled" : ""}>${statCapped ? "已買滿" : `花 ${statPrice} 幣買 1 點`}</button>
       </div>
 
       <div style="margin-bottom:14px;">
@@ -660,17 +776,6 @@
       ${equipRow("armor", "防具", CF.EQUIPMENT_TABLE.armor)}
       ${equipRow("accessory", "飾品", CF.EQUIPMENT_TABLE.accessory)}
 
-      <div>
-        <p class="shop-section-title">戰功勳章(純加排行分，不影響戰鬥數值)</p>
-        ${CF.MEDAL_TIERS.map(
-          (t) => `
-          <div class="shop-row">
-            ${ui.icon("medal")}
-            <div class="shop-row-name">${ui.esc(t.name)}<span class="shop-row-desc">排行分 +${t.scoreBonus}</span></div>
-            <button class="btn ghost small" data-buy-medal="${t.key}" ${locked ? "disabled" : ""}>${t.price}幣</button>
-          </div>`
-        ).join("")}
-      </div>
       <p style="margin:12px 0 0;font-size:11px;color:var(--ink-dim);text-align:center;">想抽獎嗎?抽獎機獨立在隔壁「抽獎機」分頁。</p>`;
   }
 
@@ -842,7 +947,7 @@
 
     function branchNode(node, chosen) {
       return `
-        <div style="position:relative;flex:1;min-width:100px;max-width:150px;background:${chosen ? "var(--panel2)" : "transparent"};border:1px solid ${chosen ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:10px;text-align:center;opacity:${chosen ? "1" : "0.5"};">
+        <div class="st-card branch" style="position:relative;background:${chosen ? "var(--panel2)" : "transparent"};border:1px solid ${chosen ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:10px;text-align:center;opacity:${chosen ? "1" : "0.5"};">
           <div style="position:absolute;top:-5px;left:50%;transform:translateX(-50%);width:8px;height:8px;border-radius:50%;background:${chosen ? "var(--gold)" : "var(--line)"};"></div>
           ${ui.icon(node.icon, { size: "18px" })}
           <p style="margin:6px 0 0;font-weight:700;font-size:12px;">${ui.esc(node.name)}</p>
@@ -873,7 +978,7 @@
   function renderSkillTreeSkillsSection(chosenPath, chosenClass, canSpend) {
     const CD = CareerData;
     const atkCard = `
-      <div style="display:flex;flex-direction:column;flex:1;min-width:130px;max-width:160px;background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius);padding:10px;text-align:center;">
+      <div class="st-card" style="display:flex;flex-direction:column;background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius);padding:10px;text-align:center;">
         ${ui.icon("sword", { size: "18px" })}
         <p style="margin:6px 0 0;font-weight:700;font-size:12px;">普通攻擊</p>
         <p style="margin:2px 0 6px;font-size:10px;color:var(--ink-dim);">基礎攻擊，不用學，隨時可用</p>
@@ -987,7 +1092,7 @@
           </div>`;
       }
       return `
-        <div style="display:flex;flex-direction:column;position:relative;flex:1;min-width:140px;max-width:170px;background:var(--panel2);border:1px solid ${equippedSlot ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:10px;text-align:center;${interactive ? "" : "opacity:0.55;"}">
+        <div class="st-card" style="display:flex;flex-direction:column;position:relative;background:var(--panel2);border:1px solid ${equippedSlot ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:10px;text-align:center;${interactive ? "" : "opacity:0.55;"}">
           <div style="position:absolute;top:-5px;left:50%;transform:translateX(-50%);width:8px;height:8px;border-radius:50%;background:${equippedSlot ? "var(--gold)" : "var(--line)"};"></div>
           ${ui.icon(node.icon, { size: "18px" })}
           <p style="margin:6px 0 0;font-weight:700;font-size:12px;">${ui.esc(node.name)}${lv > 0 ? ` Lv.${lv}` : ""}</p>
@@ -1016,7 +1121,7 @@
         actionHtml = `<button class="btn ghost small" data-upgrade-active-skill="${nodeSuffix}" ${canSpend ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "13px" })}裝備中・升到 Lv.${lv + 1}</button>`;
       }
       return `
-        <div style="display:flex;flex-direction:column;position:relative;flex:1;min-width:130px;max-width:170px;background:var(--panel2);border:1px solid ${isEquipped ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:10px;text-align:center;${interactive ? "" : "opacity:0.55;"}">
+        <div class="st-card" style="display:flex;flex-direction:column;position:relative;background:var(--panel2);border:1px solid ${isEquipped ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:10px;text-align:center;${interactive ? "" : "opacity:0.55;"}">
           <div style="position:absolute;top:-5px;left:50%;transform:translateX(-50%);width:8px;height:8px;border-radius:50%;background:${isEquipped ? "var(--gold)" : "var(--line)"};"></div>
           ${ui.icon(node.icon, { size: "18px" })}
           <p style="margin:6px 0 0;font-weight:700;font-size:12px;">${ui.esc(node.name)}${lv > 0 ? ` Lv.${lv}` : ""}</p>
@@ -1029,7 +1134,7 @@
     const lv = skillLevels[`class_mastery:${chosenClass}`] || 0;
     const atMax = lv >= (CD.MAX_SKILL_LEVEL || 3);
     return `
-      <div style="position:relative;flex:1;min-width:130px;max-width:160px;background:var(--panel2);border:1px dashed var(--line);border-radius:var(--radius);padding:10px;text-align:center;opacity:0.85;">
+      <div class="st-card" style="position:relative;background:var(--panel2);border:1px dashed var(--line);border-radius:var(--radius);padding:10px;text-align:center;opacity:0.85;">
         <div style="position:absolute;top:-5px;left:50%;transform:translateX(-50%);width:8px;height:8px;border-radius:50%;background:${lv > 0 ? "var(--gold)" : "var(--line)"};"></div>
         ${ui.icon(node.icon, { size: "18px" })}
         <p style="margin:6px 0 0;font-weight:700;font-size:12px;">${ui.esc(node.name)}${lv > 0 ? ` Lv.${lv}` : ""}</p>
@@ -1049,7 +1154,7 @@
     const previewDesc = CD.passiveLevelDesc(key, atMax ? lv : lv + 1); // 沒解鎖時預覽「升上去會變怎樣」，已經最高等級就顯示目前效果
     const statusText = atMax ? "已達最高等級" : lv > 0 ? `目前 Lv.${lv}` : "尚未解鎖";
     return `
-      <div style="display:flex;flex-direction:column;flex:1;min-width:160px;background:var(--panel2);border:1px solid ${!atMax && canSpend ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:12px;text-align:center;">
+      <div class="st-card wide" style="display:flex;flex-direction:column;background:var(--panel2);border:1px solid ${!atMax && canSpend ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:12px;text-align:center;">
         ${ui.icon(def.icon, { size: "22px" })}
         <p style="margin:8px 0 2px;font-weight:700;font-size:13px;">${ui.esc(def.name)}${lv > 0 ? ` Lv.${lv}` : ""}</p>
         <p style="margin:0 0 4px;font-size:11px;color:var(--ink-dim);overflow-wrap:break-word;">${ui.esc(previewDesc)}</p>
@@ -1076,7 +1181,7 @@
     const statusText = atMax ? "已達最高等級" : effLv > 0 ? `目前 Lv.${effLv}` : "尚未解鎖";
     const key = `class_mastery:${classKey}`;
     return `
-      <div style="display:flex;flex-direction:column;flex:1;min-width:160px;max-width:260px;background:var(--panel2);border:1px solid ${!atMax && canSpend && !forcePreview ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:12px;text-align:center;${forcePreview ? "opacity:0.55;" : ""}">
+      <div class="st-card wide" style="display:flex;flex-direction:column;background:var(--panel2);border:1px solid ${!atMax && canSpend && !forcePreview ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:12px;text-align:center;${forcePreview ? "opacity:0.55;" : ""}">
         ${ui.icon(def.icon, { size: "22px" })}
         <p style="margin:8px 0 2px;font-weight:700;font-size:13px;">${ui.esc(def.name)}${effLv > 0 ? ` Lv.${effLv}` : ""}</p>
         <p style="margin:0 0 4px;font-size:11px;color:var(--ink-dim);overflow-wrap:break-word;">${ui.esc(previewDesc)}</p>
@@ -1301,7 +1406,7 @@
     // 後爬塔就整個鎖住。玩家實際想要的是「準備時間結束後，爬塔跟PVP同時開放，打不贏就投降
     // 回來繼續爬塔」，所以現在只有「活動還沒開始」或「活動已經結束(時間到自動收尾或主辦人
     // 手動結束)」才鎖爬塔功能，PVP開放期間(battle階段)爬塔一樣可以正常進行。
-    const eventClosed = ev && ev.status === "closed";
+    const eventClosed = isEventOver();
     const locked = phase === "not_started" || eventClosed;
     const hasPendingEvent = !!progress.pending_event;
     const canTrain = trainCooldownMs <= 0 && !locked && !hasPendingEvent;
@@ -1580,22 +1685,56 @@
       };
     }
 
-    app.querySelectorAll("[data-alloc]").forEach((btn) => {
-      btn.onclick = async () => {
+    app.querySelectorAll("[data-alloc-step]").forEach((btn) => {
+      btn.onclick = () => {
+        const [key, deltaStr] = btn.dataset.allocStep.split(":");
+        const delta = parseInt(deltaStr, 10);
+        const left = (progress.stat_points || 0) - allocDraftTotal();
+        const cur = allocDraft[key] || 0;
+        const next = delta > 0 ? cur + Math.min(delta, left) : Math.max(0, cur + delta);
+        allocDraft = { ...allocDraft, [key]: next };
+        render();
+      };
+    });
+    const allocReset = document.getElementById("alloc-reset-btn");
+    if (allocReset) {
+      allocReset.onclick = () => {
+        allocDraft = {};
+        render();
+      };
+    }
+    // 「剩餘全放最多的」:把還沒預選的點數全部加到目前預選最多(都沒選就加第一個主屬性)的那一項
+    const allocAll = document.getElementById("alloc-all-btn");
+    if (allocAll) {
+      allocAll.onclick = () => {
+        const left = (progress.stat_points || 0) - allocDraftTotal();
+        if (left < 1) return;
+        const isMagic = CareerData.CLASS_INFO[myBuild.final_class].path === "magic";
+        const keys = Object.keys(allocDraft).filter((k) => allocDraft[k] > 0);
+        const target = keys.length ? keys.sort((a, b) => allocDraft[b] - allocDraft[a])[0] : isMagic ? "matk" : "atk";
+        allocDraft = { ...allocDraft, [target]: (allocDraft[target] || 0) + left };
+        render();
+      };
+    }
+    const allocConfirm = document.getElementById("alloc-confirm-btn");
+    if (allocConfirm) {
+      allocConfirm.onclick = async () => {
         if (busy) return;
         busy = true;
-        btn.disabled = true;
+        allocConfirm.disabled = true;
         try {
-          progress = await db.allocateCareerStatPoint(eventId, myId, btn.dataset.alloc);
+          progress = await db.allocateCareerStatPoints(eventId, myId, allocDraft);
+          allocDraft = {};
           render();
         } catch (e) {
           await ui.alert(e.message || "分配失敗", { title: "操作失敗", tone: "danger" });
+          allocDraft = {};
           await loadAndRender();
         } finally {
           busy = false;
         }
       };
-    });
+    }
 
     app.querySelectorAll("[data-upgrade-skill]").forEach((btn) => {
       btn.onclick = async () => {
@@ -1697,6 +1836,21 @@
       };
     });
 
+    app.querySelectorAll("[data-clear-event-choice]").forEach((btn) => {
+      btn.onclick = async () => {
+        if (busy) return;
+        busy = true;
+        try {
+          progress = await db.clearCareerEventAutoChoice(eventId, myId, btn.dataset.clearEventChoice);
+          render();
+        } catch (e) {
+          await ui.alert(e.message || "操作失敗", { title: "操作失敗", tone: "danger" });
+        } finally {
+          busy = false;
+        }
+      };
+    });
+
     const rememberCb = document.getElementById("event-remember-choice");
     if (rememberCb) {
       rememberCb.onchange = () => {
@@ -1705,7 +1859,8 @@
     }
     app.querySelectorAll("[data-event-choice]").forEach((btn) => {
       btn.onclick = () => {
-        const remember = rememberEventChoice || !!(rememberCb && rememberCb.checked);
+        const liveCb = document.getElementById("event-remember-choice");
+        const remember = !!(liveCb ? liveCb.checked : rememberEventChoice);
         rememberEventChoice = false; // 只管這一次事件，下一個事件要重新勾
         resolveEventChoice(btn.dataset.eventChoice, remember);
       };
@@ -1791,25 +1946,6 @@
         }
       };
     }
-    app.querySelectorAll("[data-buy-medal]").forEach((btn) => {
-      if (btn.disabled) return;
-      btn.onclick = async () => {
-        if (busy) return;
-        busy = true;
-        try {
-          const result = await db.buyCareerMedal(eventId, myId, btn.dataset.buyMedal);
-          progress = result.progress;
-          lastShopNote = { icon: "medal", text: `花 ${result.tier.price} 幣買了「${result.tier.name}」，排行分 +${result.tier.scoreBonus}。` };
-          render();
-        } catch (e) {
-          await ui.alert(e.message || "購買失敗", { title: "操作失敗", tone: "danger" });
-          await loadAndRender();
-        } finally {
-          busy = false;
-        }
-      };
-    });
-
     const synthesisSelect = document.getElementById("synthesis-select");
     if (synthesisSelect) synthesisSelect.onchange = () => { synthesisChoice = synthesisSelect.value; };
     const synthesizeBtn = document.getElementById("synthesize-btn");

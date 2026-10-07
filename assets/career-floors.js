@@ -434,6 +434,19 @@ window.CareerFloors = (function () {
   function statPointPrice(boughtCount) {
     return 50 + boughtCount * 25;
   }
+  // 商店「自由數值點」每場活動最多買幾點(第 N 點 = 50 + 25×(N-1) 幣，買滿 10 點共 1625 幣)。
+  // 想調整難度只改這個數字，畫面跟購買檢查都會跟著變。
+  const STAT_POINT_BUY_CAP = 10;
+
+  // 爬塔排行分:每爬 1 層 +1 分，每 10 層(守關王)再多 +5 分。50 層共 75 分
+  // (原本只有每 10 層 +5、最高 25，跟 PVP 比太低)。要改比重只改這兩個數字；
+  // 伺服器端 finish_career_match 的積分加權也用同一個公式，改了要一起改 SQL。
+  const FLOOR_SCORE_PER_FLOOR = 1;
+  const FLOOR_SCORE_PER_BOSS = 5;
+  function floorScore(floor) {
+    const f = Math.max(0, Math.floor(floor || 0));
+    return f * FLOOR_SCORE_PER_FLOOR + Math.floor(f / 10) * FLOOR_SCORE_PER_BOSS;
+  }
 
   const EQUIPMENT_PRICE_RANGE = {
     common: [100, 150],
@@ -477,13 +490,6 @@ window.CareerFloors = (function () {
   const SYNTHESIS_INPUT_COUNT = 3;
   const SYNTHESIS_SUCCESS_RATE = 0.5;
 
-  // 戰功勳章:純加分，給不想拚戰鬥、只想衝排行分的人(企劃書第八、九節)
-  const MEDAL_TIERS = [
-    { key: "bronze", name: "銅牌功勳", price: 40, scoreBonus: 5 },
-    { key: "silver", name: "銀牌功勳", price: 100, scoreBonus: 12 },
-    { key: "gold", name: "金牌功勳", price: 220, scoreBonus: 25 },
-  ];
-
   return {
     FLOORS,
     getFloor,
@@ -512,7 +518,8 @@ window.CareerFloors = (function () {
     GACHA_PRICE,
     GACHA_POOL,
     POTIONS,
-    MEDAL_TIERS,
+    STAT_POINT_BUY_CAP,
+    floorScore,
     SYNTHESIS_PATH,
     SYNTHESIS_INPUT_COUNT,
     SYNTHESIS_SUCCESS_RATE,

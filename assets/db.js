@@ -2277,6 +2277,7 @@ const db = (function () {
   // 要真的把它改回 waiting、last_matched_at 更新成現在，玩家才會被排進佇列——不然按了「加入
   // 配對佇列」畫面卻什麼都沒發生(因為舊的判斷邏輯以為「反正已經有資料列了」就直接跳過)。
   async function joinCareerQueue(eventId, playerId) {
+    await _assertCareerOpen(eventId);
     const existing = await getMyCareerQueueEntry(eventId, playerId);
     if (existing && existing.status === "waiting") return existing;
     if (existing && existing.status === "matched") {
@@ -2397,7 +2398,7 @@ const db = (function () {
   // 還沒執行那份 SQL 時這個 RPC 不存在，錯誤直接吞掉，不影響原本的配對流程。
   async function cleanupStaleCareerMatches(eventId) {
     try {
-      const { data, error } = await client.rpc("cleanup_stale_career_matches", { p_event_id: eventId, p_stale_seconds: 60 });
+      const { data, error } = await client.rpc("cleanup_stale_career_matches", { p_event_id: eventId, p_stale_seconds: 45 });
       if (error) return 0;
       return data || 0;
     } catch (e) {
@@ -2495,18 +2496,26 @@ const db = (function () {
     if (error) throw error;
   }
 
-  async function updateCareerMatchState(matchId, patch) {
-    const { error } = await client.from("career_matches").update(patch).eq("id", matchId);
+  // expectedRound(選填):只有「這場還是 active、而且回合數還是 expectedRound」才寫入，回傳有沒有真的寫進去。
+  // 兩邊玩家的分頁都可能偵測到「雙方都出招了」而同時結算回合(其中一方掛網/分頁被凍結時，
+  // 不能再規定只有 1 號玩家能結算，不然另一方永遠卡死)，用回合數當條件，先寫入的贏、後到的不會重複套用。
+  async function updateCareerMatchState(matchId, patch, expectedRound) {
+    let q = client.from("career_matches").update(patch).eq("id", matchId);
+    if (expectedRound != null) q = q.eq("status", "active").filter("state->>round", "eq", String(expectedRound));
+    const { data, error } = await q.select("id");
     if (error) throw error;
+    return !!(data && data.length);
   }
 
   // 一場結束時呼叫:寫入 winner_id、雙方 +10/+2 分並退回佇列繼續配對(RPC 用 status='active'
   // 當條件鎖,兩邊分頁同時判定結束也只會真的結算一次)。
-  async function finishCareerMatch(matchId, winnerId, loserId) {
+  // reason(選填):'afk' = 對手掛網棄權，伺服器會用打折的分數結算(防止朋友刻意掛網刷分)
+  async function finishCareerMatch(matchId, winnerId, loserId, reason) {
     const { error } = await client.rpc("finish_career_match", {
       p_match_id: matchId,
       p_winner_id: winnerId,
       p_loser_id: loserId,
+      p_reason: reason || null,
     });
     if (error) throw error;
   }
@@ -2850,7 +2859,30 @@ const db = (function () {
 
   // 特訓領幣:跟拍賣「打工」同一套機制，用 train_ready_at<=now 當樂觀鎖，
   // 同一秒連點兩次也只會成功一次。
+  // 活動是否還開放爬塔/商店/PVP排隊:status 變 closed，或「整場活動結束時間(activityEndsAt)」已過，都算結束。
+  // 每次會花幣/拿資源的動作都先查一次最新的活動(不走快取)，不能只信畫面上的舊資料——
+  // 別人的分頁搶先結算了、這個分頁還沒刷新時，玩家就能繼續爬(玩家回報的「時間到還能爬塔」)。
+  // 時間已到但還沒有任何人結算時，這裡順手觸發結算，不用等 8 秒一次的背景掃描。
+  async function _assertCareerOpen(eventId) {
+    const ev = await getEventSafe(eventId);
+    if (!ev) throw new Error("找不到這場活動，可能已經被刪除");
+    const rules = ev.rules || {};
+    const timeUp = !!(rules.activityEndsAt && new Date(rules.activityEndsAt).getTime() <= Date.now());
+    if (ev.status === "closed" || timeUp) {
+      if (ev.status !== "closed") {
+        try {
+          if (await maybeAdvanceCareerPhase(eventId)) await maybeAdvanceCareerPhase(eventId); // 訓練期→對戰期、再→結算，最多兩步
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      throw new Error("活動時間已經結束了，不能再進行這個動作。");
+    }
+    return ev;
+  }
+
   async function trainForCareerCoins(eventId, playerId) {
+    await _assertCareerOpen(eventId);
     const [progress, skillLevels] = await Promise.all([getOrCreateCareerProgress(eventId, playerId), getPlayerSkillLevels(playerId)]);
     if (new Date(progress.train_ready_at).getTime() > Date.now()) {
       throw new Error("還在冷卻中");
@@ -3169,6 +3201,7 @@ const db = (function () {
   }
 
   async function challengeCareerFloor(eventId, playerId, floorNumber) {
+    await _assertCareerOpen(eventId);
     const [progress, build, skillLevels] = await Promise.all([
       getOrCreateCareerProgress(eventId, playerId),
       getCareerBuildFor(eventId, playerId),
@@ -3209,8 +3242,16 @@ const db = (function () {
 
     // 25%機率不是真的打怪，是穿插一個爬塔事件(企劃書第六節)；關主樓層(不管第一次還是重打)
     // 都不會被事件打斷，維持原本「王戰就是王戰」的規則。
+    // 玩家勾過「不要再問我」且記住的是「拒絕/略過」(路過商人:不用了、轉職邀請:維持原狀)的事件，
+    // 直接不觸發，這一層照常打怪，連事件卡片都不會出現。
+    let rolledEvent = null;
     if (!floorDef.isMiniBoss && Math.random() < window.CareerEvents.EVENT_TRIGGER_CHANCE) {
-      const eventDef = window.CareerEvents.pickWeighted();
+      rolledEvent = window.CareerEvents.pickWeighted();
+      const remembered = progress.event_auto_choices && progress.event_auto_choices[rolledEvent.key];
+      if (rolledEvent.type === "choice" && remembered && _EVENT_DECLINE_CHOICE[rolledEvent.key] === remembered) rolledEvent = null;
+    }
+    if (rolledEvent) {
+      const eventDef = rolledEvent;
       // 夜記:遇到四個「疑似有關」的角色就記一筆(出現就算,不管玩家之後怎麼選)
       if (JOURNAL_NPC_BY_EVENT[eventDef.key]) _noteJournal(eventId, playerId, JOURNAL_NPC_BY_EVENT[eventDef.key]);
 
@@ -3228,23 +3269,25 @@ const db = (function () {
         // 不用再跳出來問一次、也不會卡在 pending_event 等玩家處理。
         const autoChoice = progress.event_auto_choices && progress.event_auto_choices[eventDef.key];
         if (autoChoice) {
+          // 玩家勾過「不要再問我」:不管怎樣都不再跳出選項。記住的選擇這次套用不了(幣不夠買、
+          // 沒有可收回的數值點...)就改成安全的預設(略過/當場打開)，不會退回去詢問。
+          let prefix = "";
+          let computed;
           try {
-            const { patch: effectPatch, text } = _computeEventChoicePatch(progress, eventDef.key, context, autoChoice);
-            const { data: updated, error } = await client.from("career_progress").update(effectPatch).eq("id", progress.id).select().single();
-            if (error) throw error;
-            return { event: true, pending: false, autoResolved: true, eventDef, text, progress: updated };
+            computed = _computeEventChoicePatch(progress, eventDef.key, context, autoChoice);
           } catch (e) {
-            // 自動選擇這次剛好套用失敗(例如幣不夠買商人商品)，退回去正常跳出來問一次，
-            // 不要讓玩家卡住、也不要把挑戰樓層這個動作搞失敗。
-            const { data: updated, error } = await client
-              .from("career_progress")
-              .update({ pending_event: { key: eventDef.key, context } })
-              .eq("id", progress.id)
-              .select()
-              .single();
-            if (error) throw error;
-            return { event: true, pending: true, eventDef, context, progress: updated };
+            computed = _computeEventChoicePatch(progress, eventDef.key, context, _EVENT_SAFE_FALLBACK[eventDef.key]);
+            prefix = `(你記住的選擇這次辦不到:${e.message}，自動改成略過)`;
           }
+          let updatedProgress = progress;
+          // patch 是空物件時(例如記住的是「不用了」)不送出空的 update——空 update 在部分 PostgREST
+          // 版本會直接回錯誤，舊寫法一出錯就退回「再問一次」，是「勾了不要再問還是會問」的可能原因之一。
+          if (computed.patch && Object.keys(computed.patch).length) {
+            const { data: updated, error } = await client.from("career_progress").update(computed.patch).eq("id", progress.id).select().single();
+            if (error) throw error;
+            updatedProgress = updated;
+          }
+          return { event: true, pending: false, autoResolved: true, eventDef, text: prefix + computed.text, progress: updatedProgress };
         }
         const { data: updated, error } = await client
           .from("career_progress")
@@ -3338,6 +3381,7 @@ const db = (function () {
   // 直接算這一回合(不用像PVP等對方回合，因為怪物不是真人，不用等)。沒分出勝負就把
   // 進行中的狀態存回 active_boss_battle，分出勝負就結算獎勵、清空 active_boss_battle。
   async function submitCareerBossMove(eventId, playerId, action) {
+    await _assertCareerOpen(eventId);
     const [progress, build, skillLevels] = await Promise.all([
       getOrCreateCareerProgress(eventId, playerId),
       getCareerBuildFor(eventId, playerId),
@@ -3399,6 +3443,11 @@ const db = (function () {
   // 現在有兩個地方要用到同一套邏輯:①玩家手動點按鈕(resolveCareerEvent)②玩家之前勾選過
   // 「不要再問我」，這次直接照存起來的選擇自動套用效果(doChallengeFloor)。不同事件的選擇
   // 分開記錄在 event_auto_choices(每個事件key各自一筆)，不會共用同一個選擇。
+  // 「不要再問我」記住這個選擇時，這個事件整個不觸發(= 玩家選的是拒絕類選項)。
+  const _EVENT_DECLINE_CHOICE = { merchant: "skip", reclass: "skip" };
+  // 記住的選擇這次辦不到時的安全預設(一定不會丟錯、不花錢)。
+  const _EVENT_SAFE_FALLBACK = { chest: "open_now", merchant: "skip", reclass: "skip", blind_boxes: "box1" };
+
   function _computeEventChoicePatch(progress, pendingKey, pendingContext, choiceKey) {
     let text = "";
     let patch = {};
@@ -3504,7 +3553,10 @@ const db = (function () {
   // 直接加1點數值，買一次漲一次價。用 coins 當樂觀鎖(跟 allocateCareerStatPoint 同樣的寫法)，
   // 避免兩個分頁同時搶著買、算出來的漲價價格對不上。
   async function buyCareerStatPoint(eventId, playerId) {
+    await _assertCareerOpen(eventId);
     const progress = await getOrCreateCareerProgress(eventId, playerId);
+    const cap = window.CareerFloors.STAT_POINT_BUY_CAP;
+    if (progress.stat_points_bought >= cap) throw new Error(`商店的自由數值點每場活動最多買 ${cap} 點，你已經買滿了。`);
     const price = window.CareerFloors.statPointPrice(progress.stat_points_bought);
     if (progress.coins < price) throw new Error(`幣不夠，這一點要 ${price} 幣`);
     const { data: updated, error } = await client
@@ -3538,6 +3590,7 @@ const db = (function () {
   // 二次回饋修改:再放寬成「同一件裝備(同名字)不會重複拿到第二件，但不同名字的傳說裝備
   // (例如同一個部位的兩種變化款、或商店買的 vs Boss限定掉的)互不影響，都可以拿」。
   async function buyCareerEquipment(eventId, playerId, slot, rarity) {
+    await _assertCareerOpen(eventId);
     const [progress, build] = await Promise.all([
       getOrCreateCareerProgress(eventId, playerId),
       getCareerBuildFor(eventId, playerId),
@@ -3579,6 +3632,7 @@ const db = (function () {
   // (P0-4(B)修改:傳說改成每個部位分開算限量，抽到傳說時只會從「這個部位還沒買過傳說」的
   // 部位裡面抽slot，三個部位都拿過傳說了才會自動改發史詩，不會有某個部位超賣兩件傳說)。
   async function buyCareerGachaPull(eventId, playerId) {
+    await _assertCareerOpen(eventId);
     const [progress, build] = await Promise.all([
       getOrCreateCareerProgress(eventId, playerId),
       getCareerBuildFor(eventId, playerId),
@@ -3657,23 +3711,10 @@ const db = (function () {
     return { text, drop, progress: updated[0] };
   }
 
-  // 戰功勳章:純加分，不影響戰鬥數值，給不想拚戰鬥、只想衝排行分的人。
-  // 分數是加在 career_pvp_queue.current_score 上(排行榜就是讀那張表)，扣幣+加分兩件事
-  // 包在 buy_career_medal 這個 SQL 交易裡一起做，不會有「幣扣了分沒加到」的半吊子狀態。
-  async function buyCareerMedal(eventId, playerId, tierKey) {
-    const tier = window.CareerFloors.MEDAL_TIERS.find((t) => t.key === tierKey);
-    if (!tier) throw new Error("找不到這個勳章等級");
-    const progress = await getOrCreateCareerProgress(eventId, playerId);
-    if (progress.coins < tier.price) throw new Error(`幣不夠，${tier.name} 要 ${tier.price} 幣`);
-    const { error } = await client.rpc("buy_career_medal", {
-      p_event_id: eventId,
-      p_player_id: playerId,
-      p_price: tier.price,
-      p_score_bonus: tier.scoreBonus,
-    });
-    if (error) throw new Error(error.message.includes("幣不夠") ? "幣不夠" : error.message);
-    const updatedProgress = await getOrCreateCareerProgress(eventId, playerId);
-    return { tier, progress: updatedProgress };
+  // 戰功勳章(用幣買排行分)已經移除:太容易洗分，排行分只能靠 PVP 戰績與爬塔高度。
+  // 保留函式名稱只是避免舊畫面呼叫時整頁壞掉，一律丟錯。
+  async function buyCareerMedal() {
+    throw new Error("戰功勳章已經下架，排行分只能靠 PVP 與爬塔取得。");
   }
 
   // ---------- 背包(第四階段):裝備、卸下、合成 ----------
@@ -3772,6 +3813,7 @@ const db = (function () {
   // 傳說要不要開放合成是「以後可能會做」的事，目前 SYNTHESIS_PATH 沒有 epic 這一項，
   // 之後真的要開放，直接補上那個 key 就好，這支函式不用改。
   async function synthesizeCareerEquipment(eventId, playerId, slot, rarity) {
+    await _assertCareerOpen(eventId);
     const [progress, build] = await Promise.all([
       getOrCreateCareerProgress(eventId, playerId),
       getCareerBuildFor(eventId, playerId),
@@ -3835,6 +3877,43 @@ const db = (function () {
     return updated[0];
   }
 
+  // 一次加多點(畫面上用 +/- 先預覽，按「確認加點」才一次寫入，不用一點一點按)。
+  // deltas 例:{ atk: 3, def: 2 }。總點數不能超過手上的自由數值點，用 stat_points 當樂觀鎖。
+  async function allocateCareerStatPoints(eventId, playerId, deltas) {
+    const ALLOWED = ["atk", "matk", "def", "spd", "hp", "mp", "luck"];
+    const progress = await getOrCreateCareerProgress(eventId, playerId);
+    const alloc = { ...progress.stat_alloc };
+    let total = 0;
+    Object.keys(deltas || {}).forEach((k) => {
+      const n = Math.floor(Number(deltas[k]) || 0);
+      if (n <= 0) return;
+      if (!ALLOWED.includes(k)) throw new Error("不認得的數值欄位");
+      alloc[k] = (alloc[k] || 0) + n;
+      total += n;
+    });
+    if (total <= 0) throw new Error("還沒有選擇要加的點數");
+    if (total > progress.stat_points) throw new Error("數值點不夠");
+    const { data: updated, error } = await client
+      .from("career_progress")
+      .update({ stat_points: progress.stat_points - total, stat_alloc: alloc })
+      .eq("id", progress.id)
+      .eq("stat_points", progress.stat_points)
+      .select();
+    if (error) throw error;
+    if (!updated || !updated.length) throw new Error("手慢了，請再按一次");
+    return updated[0];
+  }
+
+  // 取消某個事件的「不要再問我」(之後遇到會重新詢問)。
+  async function clearCareerEventAutoChoice(eventId, playerId, eventKey) {
+    const progress = await getOrCreateCareerProgress(eventId, playerId);
+    const next = { ...(progress.event_auto_choices || {}) };
+    delete next[eventKey];
+    const { data, error } = await client.from("career_progress").update({ event_auto_choices: next }).eq("id", progress.id).select().single();
+    if (error) throw error;
+    return data;
+  }
+
   // 花1技能點把「戰技」永久等級+1(第22點更新:不再是解鎖/沒解鎖的布林值，是 Lv.1~Lv.3，
   // 而且是永久的，見 upgradePlayerSkill)。只要有轉正職(final_class不是novice系列)就能點，
   // 見習系列也有戰技名稱可以顯示，但實際上正職才有意義去點(見習還在練，不急著花點)。
@@ -3846,6 +3925,7 @@ const db = (function () {
 
   // 買藥水(商店用)。type: 'hp' | 'mp'。
   async function buyCareerPotion(eventId, playerId, type) {
+    await _assertCareerOpen(eventId);
     const potionDef = window.CareerFloors.POTIONS[type];
     if (!potionDef) throw new Error("找不到這種藥水");
     const progress = await getOrCreateCareerProgress(eventId, playerId);
@@ -3923,6 +4003,7 @@ const db = (function () {
   // 開關練功掛機。floorNumber=null 表示關閉；開啟時樓層必須是已經清過的(<=目前floor)。
   // 開啟的當下就馬上打一場給玩家看(不用乾等第一次背景 tick 的間隔)，之後才交給背景定期推進。
   async function toggleCareerAutoFarm(eventId, playerId, floorNumber) {
+    if (floorNumber != null) await _assertCareerOpen(eventId); // 開始掛機要活動還開著；停止掛機隨時可以
     const progress = await getOrCreateCareerProgress(eventId, playerId);
     if (floorNumber != null && floorNumber > progress.floor) {
       throw new Error("只有已經清過的樓層才能開自動掛機");
@@ -3957,6 +4038,8 @@ const db = (function () {
   async function processCareerAutoFarmTicks(eventId) {
     const event = await getEventSafe(eventId);
     if (!event || event.status === "closed") return [];
+    const endsAt = event.rules && event.rules.activityEndsAt;
+    if (endsAt && new Date(endsAt).getTime() <= Date.now()) return []; // 時間到、還沒人結算的空檔，掛機也不再推進
 
     const cutoff = new Date(Date.now() - CAREER_AUTO_FARM_INTERVAL_SEC * 1000).toISOString();
     const { data: dueRows, error } = await client
@@ -4101,7 +4184,7 @@ const db = (function () {
     (queueRows.data || []).forEach((q) => (queueByPlayer[q.player_id] = q));
     const rows = (progressRows.data || []).map((p) => {
       const q = queueByPlayer[p.player_id];
-      const floorBonus = Math.floor((p.floor || 0) / 10) * 5;
+      const floorBonus = window.CareerFloors.floorScore(p.floor || 0);
       const queueEntry = q || {
         player_id: p.player_id,
         player: p.player,
@@ -4322,6 +4405,8 @@ const db = (function () {
     broadcastCareerEvent,
     listCareerBroadcasts,
     allocateCareerStatPoint,
+    allocateCareerStatPoints,
+    clearCareerEventAutoChoice,
     unlockCareerSkill,
     getPlayerSkillLevels,
     upgradePlayerSkill,
