@@ -2409,9 +2409,11 @@ const db = (function () {
   // 還沒執行 migration-pvp-heartbeat.sql 時這個 RPC 不存在，錯誤吞掉，不影響其他流程。
   async function careerHeartbeat(eventId, playerId) {
     try {
-      await client.rpc("career_heartbeat", { p_event_id: eventId, p_player_id: playerId });
+      // supabase-js 的 rpc 失敗時不會丟例外，而是回傳 { error }，所以要自己檢查，不然失敗會完全沒聲音。
+      const { error } = await client.rpc("career_heartbeat", { p_event_id: eventId, p_player_id: playerId });
+      if (error) console.warn("career_heartbeat 失敗(可能還沒執行 migration-pvp-heartbeat.sql):", error.message || error);
     } catch (e) {
-      /* ignore */
+      console.warn("career_heartbeat 失敗:", e);
     }
   }
 

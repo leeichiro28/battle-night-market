@@ -9,9 +9,14 @@ window.CareerData = (function () {
   // matk(魔攻/魔力):魔法系(法師/巫醫)專用的傷害數值，物理系職業用不到、平常也不會顯示。
   // 加了這個之後法師才是「靠魔攻打」而不是共用攻擊力，武器/加點/裝備都會分開算。
   // mp(魔力值):任何職業都有，不是魔法系專屬——大招要花魔力才能用(見 career-engine.js)，
-  // 魔力不夠就只能普通攻擊，回合結束會回一點魔力，也可以用魔力藥水補。
+  // 魔力不夠就只能普通攻擊；回合結束基礎回魔只有「這回合沒花魔力」的一方才會有，魔力充沛被動的加成則每回合都回(見 career-engine.js)，也可以用魔力藥水補。
   const BASE_STATS = { atk: 3, def: 2, spd: 3, hp: 100, luck: 0, matk: 2, mp: 10 };
   const ULT_MANA_COST = 6; // 大招固定花費(先不分職業，簡單版)
+  // 大招點(怒氣條):每場戰鬥從0開始，滿了「而且」魔力夠才能放大招，放完歸零(雙門檻)。
+  const ULT_CHARGE_MAX = 100;
+  const ULT_CHARGE_PER_ROUND = 15; // 每回合結束固定累積
+  const ULT_CHARGE_ON_DEAL = 10; // 這回合有造成傷害
+  const ULT_CHARGE_ON_HIT = 10; // 這回合有被打到
   const MANA_REGEN_PER_ROUND = 2;
 
   // 5% 基礎爆擊 + 幸運力 x2%(企劃書第七節)
@@ -160,12 +165,12 @@ window.CareerData = (function () {
     skillKeys: [],
   };
 
-  // 技能樹 v1:每個職業(含見習系列)都有一招「戰技」，比大招便宜(魔力3點 vs 大招6點)、
+  // 技能樹 v1:每個職業(含見習系列)都有一招「戰技」，比大招便宜(魔力4點 vs 大招6點，大招還要大招點滿)、
   // 效果也比較單純(固定倍率的攻擊，沒有大招那些特殊效果:不會無視防禦、不會必爆、不會多打一次)。
   // 要花1技能點解鎖才能用(見 unlocked_skill)，技能點是每升一級送1點，跟自由數值點是分開的資源。
   // 守衛/巫醫平常沒有主動輸出手段(大招是防禦/治療型，不會攻擊)，解鎖戰技之後才多一個「打人」的選項，
   // build多樣性主要就是靠這個。
-  const SKILL_MANA_COST = 3;
+  const SKILL_MANA_COST = 4;
   const SKILL_DMG_MULT = 1.4; // 保留給沒有等級資訊的舊呼叫端當預設值(= Lv.1)
 
   // 第22點更新:技能／被動不再只有「解鎖／沒解鎖」，改成 Lv.1 → Lv.2 → Lv.3(先開放到這裡，
@@ -215,7 +220,7 @@ window.CareerData = (function () {
     mana_regen: {
       name: "魔力充沛",
       icon: "droplets",
-      desc: "對戰／爬塔每回合額外回復魔力",
+      desc: "對戰／爬塔每回合額外回復魔力(用技能或大招的回合也會回，不受「花魔力不回魔」限制)",
       format: "flat",
       levels: { 1: 1, 2: 2, 3: 3 }, // 每回合多回 +1 / +2 / +3 魔力
     },
@@ -676,6 +681,10 @@ window.CareerData = (function () {
     FINAL_TRANSFER_BONUS,
     STARTER_PACK_POTIONS,
     ULT_MANA_COST,
+    ULT_CHARGE_MAX,
+    ULT_CHARGE_PER_ROUND,
+    ULT_CHARGE_ON_DEAL,
+    ULT_CHARGE_ON_HIT,
     MANA_REGEN_PER_ROUND,
     SKILL_MANA_COST,
     SKILL_DMG_MULT,

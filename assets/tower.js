@@ -215,7 +215,7 @@
     return `
       <div class="stat-bar-row">
         <div class="stat-bar-label"><span>${ui.esc(label)}</span><span>${curText}</span></div>
-        <div class="stat-bar ${kind === "hp" || kind === "mp" ? kind : ""}"><div class="stat-bar-fill ${kind}${lowCls}" style="width:${Math.max(0, Math.min(1, ratio)) * 100}%;"></div></div>
+        <div class="stat-bar ${kind === "hp" || kind === "mp" || kind === "ult" ? kind : ""}"><div class="stat-bar-fill ${kind}${lowCls}" style="width:${Math.max(0, Math.min(1, ratio)) * 100}%;"></div></div>
       </div>`;
   }
 
@@ -383,7 +383,11 @@
     const floorDef = CareerFloors.getFloor(active.floor) || { name: "關主" };
     const myInfo = CareerData.CLASS_INFO[s.class1];
     const monsterInfo = CareerData.CLASS_INFO[s.class2];
-    const ultAffordable = (s.mp1 || 0) >= (CareerData.ULT_MANA_COST || 0);
+    const ultChargeMax = CareerData.ULT_CHARGE_MAX || 100;
+    const ultCharge1 = s.ultCharge1 || 0;
+    const ultCharged = ultCharge1 >= ultChargeMax;
+    const ultCost = Math.max(1, (CareerData.ULT_MANA_COST || 0) - (s.ultCostReduce1 || 0)); // 含「大招精修」減免，跟引擎一致
+    const ultAffordable = ultCharged && (s.mp1 || 0) >= ultCost;
     const skillAffordable = s.skillUnlocked1 && (s.mp1 || 0) >= (CareerData.SKILL_MANA_COST || 0);
     const skill2Affordable = s.skill2Unlocked1 && (s.mp1 || 0) >= (CareerData.SKILL_MANA_COST || 0);
     const ultDisplayName = s.ultName1 || myInfo.ultName; // Phase 4:大招可能被換成大招2，用state裡實際裝備的名字，不是職業固定的預設名字
@@ -407,6 +411,7 @@
           <div class="cs-sub">速度 ${s.spd1}</div>
           ${statBarRow("HP", `${s.hp1} / ${s.maxhp1}`, s.hp1 / s.maxhp1, "hp")}
           ${statBarRow("MP", `${s.mp1} / ${s.maxmp1}`, s.maxmp1 > 0 ? s.mp1 / s.maxmp1 : 0, "mp")}
+          ${statBarRow("大招點", `${Math.round(ultCharge1)} / ${ultChargeMax}`, ultCharge1 / ultChargeMax, "ult")}
         </div>
         <div class="career-vs-mid">VS</div>
         <div class="career-side right">
@@ -414,6 +419,7 @@
           <div class="cs-sub">速度 ${s.spd2}</div>
           ${statBarRow("HP", `${s.hp2} / ${s.maxhp2}`, s.hp2 / s.maxhp2, "hp")}
           ${statBarRow("MP", `${s.mp2} / ${s.maxmp2}`, s.maxmp2 > 0 ? s.mp2 / s.maxmp2 : 0, "mp")}
+          ${statBarRow("大招點", `${Math.round(s.ultCharge2 || 0)} / ${ultChargeMax}`, (s.ultCharge2 || 0) / ultChargeMax, "ult")}
         </div>
       </div>
       <div class="career-action-row" style="flex-wrap:wrap;">
@@ -433,7 +439,7 @@
             : ""
         }
         <button class="btn career-ult-btn" id="boss-ult-btn" style="flex:1 1 28%;" ${bossSubmitted || !ultAffordable ? "disabled" : ""}>
-          ${ui.icon("flame")}${ui.esc(ultDisplayName)}(${CareerData.ULT_MANA_COST || 0}魔力)${!ultAffordable ? "(魔力不足)" : ""}
+          ${ui.icon("flame")}${ui.esc(ultDisplayName)}(${ultCost}魔力)${!ultCharged ? `(大招點 ${Math.round(ultCharge1)}/${ultChargeMax})` : (s.mp1 || 0) < ultCost ? "(魔力不足)" : ""}
         </button>
       </div>
       <p style="text-align:center;font-size:11.5px;color:var(--ink-dim);margin:10px 0 0;">

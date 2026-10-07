@@ -9,14 +9,26 @@
 window.CareerPve = (function () {
   const MAX_ROUNDS = 30; // 安全上限，理論上 5~8 回合內就會分出勝負(企劃書第七節)
 
-  // 簡單 AI:魔力夠、且(對方HP已經過半以下 或 隨機機率命中)就放大招，否則普通攻擊
+  // 簡單 AI:
+  //   1. 大招點滿、且魔力夠大招(算上「大招精修」減免)就放大招
+  //   2. 否則如果有解鎖技能A/B、魔力夠，50%機率放技能(兩個都能用就隨機挑一個)
+  //   3. 其餘普通攻擊
+  // 野怪沒有技能等級(skillLevel/skill2Level 為0)，所以只會走 1 或 3。
   function decideAction(state, side) {
-    const mp = side === 1 ? state.mp1 : state.mp2;
-    if ((mp || 0) < (window.CareerData.ULT_MANA_COST || 0)) return { action: "attack" };
-    const defHp = side === 1 ? state.hp2 : state.hp1;
-    const defMaxHp = side === 1 ? state.maxhp2 : state.maxhp1;
-    const hpRatio = defMaxHp > 0 ? defHp / defMaxHp : 1;
-    if (hpRatio <= 0.5 || Math.random() < 0.3) return { action: "ult" };
+    const CD = window.CareerData;
+    const mp = (side === 1 ? state.mp1 : state.mp2) || 0;
+    const ultReduce = (side === 1 ? state.ultCostReduce1 : state.ultCostReduce2) || 0;
+    const ultCost = Math.max(1, (CD.ULT_MANA_COST || 0) - ultReduce);
+    const charge = (side === 1 ? state.ultCharge1 : state.ultCharge2) || 0;
+    const chargeReady = charge >= (CD.ULT_CHARGE_MAX || 100);
+    // 大招點滿 + 魔力夠才放;現在放大招受大招點限制，滿了就放(不再用機率拖著)
+    if (chargeReady && mp >= ultCost) return { action: "ult" };
+    if (mp >= (CD.SKILL_MANA_COST || 0)) {
+      const options = [];
+      if ((side === 1 ? state.skillLevel1 : state.skillLevel2) > 0) options.push("skill1");
+      if ((side === 1 ? state.skill2Level1 : state.skill2Level2) > 0) options.push("skill2");
+      if (options.length && Math.random() < 0.5) return { action: options[Math.floor(Math.random() * options.length)] };
+    }
     return { action: "attack" };
   }
 

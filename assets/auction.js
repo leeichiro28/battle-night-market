@@ -696,7 +696,7 @@ function partnerSectionHtml(lot) {
   }
   if (!status || status === "declined") {
     if (lot.status !== "scheduled") {
-      return `<div class="partner-box muted">${ui.icon("clock-x")}開拍前沒找到合夥人，這波已經沒辦法再邀請，只能自己單獨出價</div>`;
+      return `<div class="partner-box muted">${ui.icon("clock-alert")}開拍前沒找到合夥人，這波已經沒辦法再邀請，只能自己單獨出價</div>`;
     }
     const others = standings.filter((r) => r.participant.player_id !== myId);
     if (!others.length) return "";
@@ -720,7 +720,7 @@ function guessSectionHtml(lot, myGuess) {
     return `<div class="guess-box">${ui.icon("target")}你猜這件會標到 <b>${myGuess.guess}</b> 財神幣，結標後看誰最接近就加分</div>`;
   }
   if (lot.status !== "scheduled") {
-    return `<div class="guess-box muted">${ui.icon("clock-x")}開拍前沒有猜價，這波已經錯過猜價視窗了</div>`;
+    return `<div class="guess-box muted">${ui.icon("clock-alert")}開拍前沒有猜價，這波已經錯過猜價視窗了</div>`;
   }
   return `
     <div class="guess-box">

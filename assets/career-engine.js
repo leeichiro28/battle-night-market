@@ -105,6 +105,8 @@ window.CareerEngine = (function () {
       hp2: opts.hp2 != null ? Math.min(opts.hp2, p2.stats.maxHp) : p2.stats.maxHp,
       maxmp2: p2.stats.maxMp || 0,
       mp2: opts.mp2 != null ? Math.min(opts.mp2, p2.stats.maxMp || 0) : p2.stats.maxMp || 0,
+      ultCharge1: opts.ultCharge1 || 0, // 大招點(怒氣):滿了才能放大招，每場戰鬥從0開始
+      ultCharge2: opts.ultCharge2 || 0,
       m1: null,
       m2: null,
     };
@@ -185,8 +187,9 @@ window.CareerEngine = (function () {
   function resolveRound(state) {
     const s = { ...state };
     const log = [...(s.log || [])];
-    const m1 = s.m1 || { action: "attack" };
-    const m2 = s.m2 || { action: "attack" };
+    // 複製一份再改，不要動到傳進來的 state.m1/m2(B4)
+    const m1 = { ...(s.m1 || { action: "attack" }) };
+    const m2 = { ...(s.m2 || { action: "attack" }) };
     // 舊的行動指令可能還是 "skill"(切版前送出、或還沒重新整理的前端)，一律當成技能A
     if (m1.action === "skill") m1.action = "skill1";
     if (m2.action === "skill") m2.action = "skill1";
@@ -200,6 +203,16 @@ window.CareerEngine = (function () {
     let immuneRatio2 = 0;
     let skip1 = false; // 這回合不出手攻擊(守衛「銅牆鐵壁」/巫醫「完全治癒」這種skipAttack:true的大招)
     let skip2 = false;
+    const startMp1 = mp1;
+    const startMp2 = mp2;
+    let spent1 = 0; // 這回合實際花掉的魔力(有花才不回魔，見回合結束段)
+    let spent2 = 0;
+    let ultUsed1 = false; // 這回合有放大招 -> 回合結束大招點歸零
+    let ultUsed2 = false;
+    let dealt1 = false; // 這回合有造成傷害 / 被打到 -> 大招點加成
+    let dealt2 = false;
+    let took1 = false;
+    let took2 = false;
 
     const stats1 = { atk: s.atk1, def: s.def1, spd: s.spd1, luck: s.luck1, matk: s.matk1 || 0 };
     const stats2 = { atk: s.atk2, def: s.def2, spd: s.spd2, luck: s.luck2, matk: s.matk2 || 0 };
@@ -210,10 +223,12 @@ window.CareerEngine = (function () {
       const reduce = side === 1 ? s.ultCostReduce1 : s.ultCostReduce2;
       return Math.max(1, CD.ULT_MANA_COST - (reduce || 0));
     }
+    // 大招要「大招點滿 + 魔力夠」兩個條件都符合(舊的進行中對戰沒有 ultCharge 欄位，當作0)
     function canUlt(side) {
       const m = side === 1 ? m1 : m2;
       const mp = side === 1 ? mp1 : mp2;
-      return m && m.action === "ult" && mp >= ultCost(side);
+      const charge = (side === 1 ? s.ultCharge1 : s.ultCharge2) || 0;
+      return m && m.action === "ult" && mp >= ultCost(side) && charge >= (CD.ULT_CHARGE_MAX || 100);
     }
     // slot: 1(技能A，沿用舊的"戰技") | 2(技能B，技能樹v2新開的第二個主動技能)
     function canSkillSlot(side, slot) {
@@ -223,8 +238,13 @@ window.CareerEngine = (function () {
       return m && m.action === `skill${slot}` && lvl > 0 && mp >= CD.SKILL_MANA_COST;
     }
     function spendMana(side, amount) {
-      if (side === 1) mp1 = Math.max(0, mp1 - amount);
-      else mp2 = Math.max(0, mp2 - amount);
+      if (side === 1) {
+        spent1 += Math.min(amount, mp1);
+        mp1 = Math.max(0, mp1 - amount);
+      } else {
+        spent2 += Math.min(amount, mp2);
+        mp2 = Math.max(0, mp2 - amount);
+      }
     }
 
     // ---- 位置3:非攻擊型大招(immune=全免疫/半免疫型、heal=治療型)。這兩種不是攻擊動作,先處理，
@@ -237,6 +257,8 @@ window.CareerEngine = (function () {
       if (!ultEffect) return;
       if (ultEffect.kind === "immune") {
         spendMana(side, ultCost(side));
+        if (side === 1) ultUsed1 = true;
+        else ultUsed2 = true;
         const ratio = ultEffect.dmgReduceRatio != null ? ultEffect.dmgReduceRatio : 0.9;
         const willSkip = ultEffect.skipAttack !== false;
         if (side === 1) {
@@ -253,6 +275,8 @@ window.CareerEngine = (function () {
         });
       } else if (ultEffect.kind === "heal") {
         spendMana(side, ultCost(side));
+        if (side === 1) ultUsed1 = true;
+        else ultUsed2 = true;
         const maxHp = side === 1 ? s.maxhp1 : s.maxhp2;
         const matk = side === 1 ? s.matk1 : s.matk2;
         const mastery = side === 1 ? s.mastery1 : s.mastery2;
@@ -279,6 +303,7 @@ window.CareerEngine = (function () {
     function performAttack(side) {
       const skip = side === 1 ? skip1 : skip2;
       if (skip) return; // 這回合選了會跳過攻擊的大招(銅牆鐵壁/完全治癒這種)
+      if ((side === 1 ? hp1 : hp2) <= 0) return; // 自己已經在這回合先被打倒了，不能再出手
       const defenderHp = side === 1 ? hp2 : hp1;
       if (defenderHp <= 0) return; // 對方已經陣亡,不用再打
 
@@ -310,6 +335,8 @@ window.CareerEngine = (function () {
       const hits = wantsUlt && ultEffect.kind === "multiHit" ? ultEffect.hits || 1 : 1;
       if (wantsUlt) {
         spendMana(side, ultCost(side));
+        if (side === 1) ultUsed1 = true;
+        else ultUsed2 = true;
         events.push({ side, type: "ult_attack", text: `${side === 1 ? "你" : "對方"}使出「${ultName}」!` });
       } else if (wantsSkill1 || wantsSkill2) {
         spendMana(side, CD.SKILL_MANA_COST);
@@ -351,6 +378,16 @@ window.CareerEngine = (function () {
         }
       }
 
+      if (totalDmgThisAction > 0) {
+        if (side === 1) {
+          dealt1 = true;
+          took2 = true;
+        } else {
+          dealt2 = true;
+          took1 = true;
+        }
+      }
+
       // 「血戰怒吼」(戰士大招2):吸血，用剛剛最後一次攻擊造成的傷害去算回血量
       if (wantsUlt && ultEffect.kind === "lifesteal" && lastDmg > 0) {
         const lifesteal = Math.round(lastDmg * (ultEffect.lifestealRatio || 0));
@@ -377,12 +414,20 @@ window.CareerEngine = (function () {
       // 算是「已經用了大招的防禦效果，反擊姿態這回合讓位」
       const defenderClass = side === 1 ? s.class2 : s.class1;
       const defenderOwnImmuneRatio = side === 1 ? immuneRatio2 : immuneRatio1;
-      if (actionType === "attack" && defenderClass === "guardian" && !(defenderOwnImmuneRatio > 0)) {
+      const defenderAliveNow = (side === 1 ? hp2 : hp1) > 0; // 守衛已經被這一擊打倒就不能反擊
+      if (actionType === "attack" && defenderClass === "guardian" && defenderAliveNow && !(defenderOwnImmuneRatio > 0)) {
         const lastEvent = events[events.length - 1];
         if (lastEvent && lastEvent.type === "attack" && lastEvent.dmg > 0 && Math.random() < (CD.CLASS_EFFECTS.guardian.counterChance || 0) + (defenderMastery.counterChance || 0)) {
           const counterDmg = lastEvent.dmg;
-          if (side === 1) hp1 = Math.max(0, hp1 - counterDmg);
-          else hp2 = Math.max(0, hp2 - counterDmg);
+          if (side === 1) {
+            hp1 = Math.max(0, hp1 - counterDmg);
+            dealt2 = true;
+            took1 = true;
+          } else {
+            hp2 = Math.max(0, hp2 - counterDmg);
+            dealt1 = true;
+            took2 = true;
+          }
           events.push({ side: side === 1 ? 2 : 1, type: "counter", dmg: counterDmg, text: `${side === 1 ? "對方" : "你"}觸發反擊姿態,反彈了 ${counterDmg} 點傷害!` });
         }
       }
@@ -396,8 +441,32 @@ window.CareerEngine = (function () {
     if (s.class2 === "healer" && hp2 > 0) hp2 = Math.min(s.maxhp2, hp2 + (CD.CLASS_EFFECTS.healer.regenPerRound || 0) + (s.mastery2.regenBonus || 0));
 
     // 每回合結束雙方各回魔力(基礎值 + 各自「魔力充沛」被動的加成，不管這回合有沒有用大招)
-    mp1 = Math.min(s.maxmp1 || 0, mp1 + (CD.MANA_REGEN_PER_ROUND || 0) + (s.manaRegenBonus1 || 0));
-    mp2 = Math.min(s.maxmp2 || 0, mp2 + (CD.MANA_REGEN_PER_ROUND || 0) + (s.manaRegenBonus2 || 0));
+    // 基礎回魔:這回合花了魔力(技能/大招)的一方不回，沒花的才回，這樣花多少就是真的少多少。
+    // 「魔力充沛」被動的加成不受這個限制，不管有沒有花魔力每回合都會回。
+    mp1 = Math.min(s.maxmp1 || 0, mp1 + (spent1 === 0 ? CD.MANA_REGEN_PER_ROUND || 0 : 0) + (s.manaRegenBonus1 || 0));
+    mp2 = Math.min(s.maxmp2 || 0, mp2 + (spent2 === 0 ? CD.MANA_REGEN_PER_ROUND || 0 : 0) + (s.manaRegenBonus2 || 0));
+    // 戰報加上魔力變化，玩家看得到這回合花了多少、回了多少
+    [[1, startMp1, mp1, spent1], [2, startMp2, mp2, spent2]].forEach(([side, from, to, spent]) => {
+      if (from === to && spent === 0) return;
+      const who = side === 1 ? "你" : "對方";
+      const text = spent > 0 ? `${who}花了 ${spent} 點魔力(剩 ${to})。` : `${who}回復魔力 ${from}→${to}。`;
+      events.push({ side, type: "mana", text });
+    });
+
+    // 大招點:放了大招的一方歸零，其他人每回合 +15、造成傷害 +10、被打到 +10(上限100)
+    const chargeMax = CD.ULT_CHARGE_MAX || 100;
+    function nextCharge(side, used, dealt, took) {
+      const before = (side === 1 ? s.ultCharge1 : s.ultCharge2) || 0;
+      if (used) return 0;
+      const gain = (CD.ULT_CHARGE_PER_ROUND || 0) + (dealt ? CD.ULT_CHARGE_ON_DEAL || 0 : 0) + (took ? CD.ULT_CHARGE_ON_HIT || 0 : 0);
+      const after = Math.min(chargeMax, before + gain);
+      if (before < chargeMax && after >= chargeMax) {
+        events.push({ side, type: "ult_ready", text: `${side === 1 ? "你" : "對方"}的大招點已滿，可以放大招了!` });
+      }
+      return after;
+    }
+    const ultCharge1 = hp1 > 0 ? nextCharge(1, ultUsed1, dealt1, took1) : (s.ultCharge1 || 0);
+    const ultCharge2 = hp2 > 0 ? nextCharge(2, ultUsed2, dealt2, took2) : (s.ultCharge2 || 0);
 
     const entrySummary = `第${s.round}回合:` + events.map((e) => e.text).join(" ");
     log.push(entrySummary);
@@ -408,6 +477,8 @@ window.CareerEngine = (function () {
       hp2,
       mp1,
       mp2,
+      ultCharge1,
+      ultCharge2,
       round: s.round + 1,
       m1: null,
       m2: null,

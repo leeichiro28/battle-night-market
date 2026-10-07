@@ -459,8 +459,9 @@
     const oppSlot = mySlot === 1 ? 2 : 1;
     const state = match.state || {};
     if (state[`m${oppSlot}`]) return;
-    const canUlt = (state[`mp${oppSlot}`] || 0) >= (CareerData.ULT_MANA_COST || 0);
-    const action = canUlt && Math.random() < 0.35 ? "ult" : "attack";
+    const botUltCost = Math.max(1, (CareerData.ULT_MANA_COST || 0) - (state[`ultCostReduce${oppSlot}`] || 0));
+    const canUlt = (state[`mp${oppSlot}`] || 0) >= botUltCost && (state[`ultCharge${oppSlot}`] || 0) >= (CareerData.ULT_CHARGE_MAX || 100);
+    const action = canUlt ? "ult" : "attack";
     try {
       await db.submitCareerMove(match.id, oppSlot, { action });
     } catch (e) {
@@ -624,7 +625,13 @@
     const oppMatk = (mySlot === 1 ? s.matk2 : s.matk1) || 0;
     const myCritBonus = (mySlot === 1 ? s.critBonus1 : s.critBonus2) || 0;
     const oppCritBonus = (mySlot === 1 ? s.critBonus2 : s.critBonus1) || 0;
-    const ultAffordable = myMp >= (CareerData.ULT_MANA_COST || 0);
+    const myUltCharge = (mySlot === 1 ? s.ultCharge1 : s.ultCharge2) || 0;
+    const oppUltCharge = (mySlot === 1 ? s.ultCharge2 : s.ultCharge1) || 0;
+    const ultChargeMax = CareerData.ULT_CHARGE_MAX || 100;
+    const ultCharged = myUltCharge >= ultChargeMax;
+    // 「大招精修」被動會降低大招魔力花費(最低1點)，按鈕判斷跟顯示都要用減免後的實際花費，跟引擎一致
+    const myUltCost = Math.max(1, (CareerData.ULT_MANA_COST || 0) - ((mySlot === 1 ? s.ultCostReduce1 : s.ultCostReduce2) || 0));
+    const ultAffordable = ultCharged && myMp >= myUltCost;
     const mySkillUnlocked = !!(mySlot === 1 ? s.skillUnlocked1 : s.skillUnlocked2);
     const skillAffordable = mySkillUnlocked && myMp >= (CareerData.SKILL_MANA_COST || 0);
     const mySkill2Unlocked = !!(mySlot === 1 ? s.skill2Unlocked1 : s.skill2Unlocked2);
@@ -649,6 +656,7 @@
           <div class="cs-sub">${ui.esc(myInfo.name)} · 速度 ${mySpd}</div>
           ${statBarHtml("HP", myHp, myMaxHp, "hp")}
           ${statBarHtml("MP", myMp, myMaxMp, "mp")}
+          ${statBarHtml("大招點", myUltCharge, ultChargeMax, "ult")}
           ${fullStatsHtml(myClass, myAtk, myDef, mySpd, myLuck, myMatk, myCritBonus)}
         </div>
         <div class="career-vs-mid">VS</div>
@@ -657,6 +665,7 @@
           <div class="cs-sub">${ui.esc(oppInfo.name)} · 速度 ${oppSpd}</div>
           ${statBarHtml("HP", oppHp, oppMaxHp, "hp")}
           ${statBarHtml("MP", oppMp, oppMaxMp, "mp")}
+          ${statBarHtml("大招點", oppUltCharge, ultChargeMax, "ult")}
           ${fullStatsHtml(oppClass, oppAtk, oppDef, oppSpd, oppLuck, oppMatk, oppCritBonus)}
         </div>
       </div>`;
@@ -701,7 +710,7 @@
               : ""
           }
           <button class="btn career-ult-btn" id="ult-btn" style="flex:1 1 28%;" ${iActed || !ultAffordable ? "disabled" : ""}>
-            ${ui.icon("flame")}${ui.esc(myUltName || myInfo.ultName)}(${CareerData.ULT_MANA_COST || 0}魔力)${!ultAffordable ? "(魔力不足)" : ""}
+            ${ui.icon("flame")}${ui.esc(myUltName || myInfo.ultName)}(${myUltCost}魔力)${!ultCharged ? `(大招點 ${Math.round(myUltCharge)}/${ultChargeMax})` : myMp < myUltCost ? "(魔力不足)" : ""}
           </button>
         </div>
         <div style="text-align:center;margin-top:8px;">
