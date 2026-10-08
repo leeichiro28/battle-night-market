@@ -1579,5 +1579,6 @@ drop function if exists buy_career_medal(uuid, uuid, int, int);
 -- (選用)如果想把「已經用勳章買到的分數」歸零，要先知道每個人買了多少。目前沒有另外記錄，
 -- 只能由主辦人手動調整 career_pvp_queue.current_score，或在活動開始前就先執行本檔。
 
--- 階段三:合成保底(同 migration-synthesis-pity.sql)
+-- ===== 合成保底 (migration-synthesis-pity.sql) =====
+-- 合成失敗累積保底次數(依稀有度分開記，例如 {"rare": 2, "epic": 1})，成功後該稀有度歸零。
 alter table career_progress add column if not exists synthesis_pity jsonb not null default '{}'::jsonb;

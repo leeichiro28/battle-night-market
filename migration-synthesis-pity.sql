@@ -1,3 +1,3 @@
--- 階段三:合成保底。記錄每個稀有度連續失敗幾次，例如 {"rare":2,"epic":1}。
--- 要先執行這份(內容同時附加在 supabase-schema.sql 最後面)，再上傳前端檔案。
+-- 合成保底:在 Supabase SQL Editor 執行一次即可(可重複執行，內容也已附加在 supabase-schema.sql 最後面)。
+-- 合成失敗累積保底次數(依稀有度分開記，例如 {"rare": 2, "epic": 1})，成功後該稀有度歸零。
 alter table career_progress add column if not exists synthesis_pity jsonb not null default '{}'::jsonb;

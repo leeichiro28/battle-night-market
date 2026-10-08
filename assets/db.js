@@ -2550,14 +2550,6 @@ const db = (function () {
   const CAREER_TRAIN_EXP_MAX = 5;
   const CAREER_AUTO_FARM_INTERVAL_SEC = 15; // 掛機每隔幾秒背景推進一次(原本25秒感覺太久，縮短一點)
   const CAREER_AUTO_FARM_EFFICIENCY = 0.7; // 掛機效率打七折(企劃書第五、八節)
-  // 放慢升級(BUG md 28-1):已通關過的樓層(含到頂後連點、掛機)經驗減半，首次通關加倍。
-  // 掛機 = 樓層經驗 × 0.7 × 0.5(維持「掛機比手動慢」的相對關係)；掛機的幣仍只打 0.7 折。
-  const CAREER_FIRST_CLEAR_EXP_MULT = 2;
-  const CAREER_REPEAT_EXP_MULT = 0.5;
-  const CAREER_REPEAT_COIN_MULT = 1; // 重複挑戰的幣不砍(使用者回饋:幣維持原本收入)；之後要調改這個數字
-  // 數值遞減(BUG md 29-3):超過 Lv.100 之後，每 3 級才給一次自由數值點(+2)與技能點(+1)。
-  const CAREER_LEVEL_DIMINISH_AFTER = 100;
-  const CAREER_LEVEL_DIMINISH_STEP = 3;
 
   function _emptyStatAlloc() {
     return { atk: 0, def: 0, spd: 0, hp: 0, luck: 0, matk: 0, mp: 0 };
@@ -2737,10 +2729,11 @@ const db = (function () {
     if (progress.skill_points <= 0) throw new Error("沒有可以花的技能點了");
     const levels = await getPlayerSkillLevels(playerId);
     const curLevel = levels[skillKey] || 0;
-    const maxLevel = window.CareerData.MAX_SKILL_LEVEL;
+    const passiveDef = window.CareerData.PASSIVE_DEFS[skillKey];
+    const maxLevel = (passiveDef && passiveDef.maxLevel) || window.CareerData.MAX_SKILL_LEVEL;
     if (curLevel >= maxLevel) throw new Error("這個被動已經是目前開放的最高等級了");
-    const reqLv1 = window.CareerData.skillLevelCharReq(curLevel + 1);
-    if (progress.level < reqLv1) throw new Error(`升到 Lv.${curLevel + 1} 需要角色達到 Lv.${reqLv1}`);
+    const charReq = window.CareerData.skillLevelCharReq(curLevel + 1);
+    if (charReq && (progress.level || 1) < charReq) throw new Error(`升到 Lv.${curLevel + 1} 需要角色等級 Lv.${charReq}(你現在 Lv.${progress.level || 1})`);
 
     // 先扣本場活動的技能點,用樂觀鎖擋手快連點兩下(跟其他花點函式同一套寫法)
     const { data: spent, error: spendErr } = await client
@@ -2780,22 +2773,20 @@ const db = (function () {
     let statPoints = progress.stat_points;
     let skillPoints = progress.skill_points || 0;
     let leveledUp = false;
-    const startStatPoints = statPoints;
     const transferLevel = (window.CareerData && window.CareerData.TRANSFER_LEVEL_PATH) || 5;
     const perLevel = (window.CareerData && window.CareerData.SKILL_POINTS_PER_LEVEL) || 1;
     while (exp >= window.CareerFloors.expToNextLevel(level)) {
       exp -= window.CareerFloors.expToNextLevel(level);
       level += 1;
-      // 數值遞減:Lv.100 以前每級都給；超過 Lv.100 後，只有 (level-100) 是 3 的倍數那一級才給
-      // (Lv.103、106、109…)，自由數值點與技能點在同一個等級給。
-      const givesPoints = level <= CAREER_LEVEL_DIMINISH_AFTER || (level - CAREER_LEVEL_DIMINISH_AFTER) % CAREER_LEVEL_DIMINISH_STEP === 0;
-      if (givesPoints) {
-        statPoints += 2; // 每升一級送2自由數值點(企劃書第三節，見習期也有，跟技能點不一樣)
+      // 每升一級送2自由數值點(企劃書第三節，見習期也有，跟技能點不一樣)。
+      // Lv.100 以後改成每 3 級才給一次,數值點與技能點一起遞減(CareerFloors.levelUpGivesPoints)。
+      if (window.CareerFloors.levelUpGivesPoints(level)) {
+        statPoints += 2;
         if (level > transferLevel) skillPoints += perLevel; // 升到 Lv.6 以上才逐級送技能點
       }
       leveledUp = true;
     }
-    return { exp, level, stat_points: statPoints, skill_points: skillPoints, leveledUp, newLevel: level, statPointsGained: statPoints - startStatPoints };
+    return { exp, level, stat_points: statPoints, skill_points: skillPoints, leveledUp, newLevel: level };
   }
 
   async function getOrCreateCareerProgress(eventId, playerId) {
@@ -2861,8 +2852,9 @@ const db = (function () {
     const activeSkills = _activeSkills(progress);
     const curLevel = activeSkills[nodeSuffix] || 0;
     if (curLevel >= window.CareerData.MAX_SKILL_LEVEL) throw new Error("這個技能/大招已經是目前開放的最高等級了");
-    const reqLv2 = window.CareerData.skillLevelCharReq(curLevel + 1);
-    if (progress.level < reqLv2) throw new Error(`升到 Lv.${curLevel + 1} 需要角色達到 Lv.${reqLv2}`);
+    // 解鎖(Lv.0→1)與 Lv.2~3 不限制;升到 Lv.4、Lv.5 要角色等級夠高
+    const charReq = window.CareerData.skillLevelCharReq(curLevel + 1);
+    if (charReq && (progress.level || 1) < charReq) throw new Error(`升到 Lv.${curLevel + 1} 需要角色等級 Lv.${charReq}(你現在 Lv.${progress.level || 1})`);
     const nextActiveSkills = { ...activeSkills, [nodeSuffix]: curLevel + 1 };
     const { data, error } = await client
       .from("career_progress")
@@ -3131,13 +3123,17 @@ const db = (function () {
   // 跟王戰(手動即時對戰打贏)共用同一套，不用寫兩次。
   // skillLevels 帶進來是為了算「博學被動」(exp_boost)/「財運被動」(coin_boost)的加成，不帶就當作沒有這兩個被動。
   async function _applyFloorWinRewards(eventId, playerId, progress, build, floorDef, floorNumber, endHp, endMp, skillLevels) {
-    // 首次通關(這層比目前進度更高)經驗 ×2；已通關過的樓層(含到頂後連點)經驗 ×0.5、幣 ×0.6。
-    const isFirstClear = floorNumber > progress.floor;
-    const expGain = Math.round(floorDef.expReward * (isFirstClear ? CAREER_FIRST_CLEAR_EXP_MULT : CAREER_REPEAT_EXP_MULT) * _expMult(skillLevels));
-    const leveled = _applyExpGain(progress, expGain);
-    const coinGain = Math.round(floorDef.coinReward * (isFirstClear ? 1 : CAREER_REPEAT_COIN_MULT) * _coinMult(skillLevels));
     const isAdvance = floorNumber === progress.floor + 1;
-    let drop = window.CareerFloors.rollDrop(floorDef, build.final_class, window.CareerData.passiveValue("drop_luck", (skillLevels && skillLevels.drop_luck) || 0));
+    // 第一次通關經驗加倍;已經通關過的樓層(含到頂後連點)經驗減半、幣打折(見 CareerFloors 的說明)
+    const CFl = window.CareerFloors;
+    const expRatio = isAdvance ? CFl.FIRST_CLEAR_EXP_MULT : floorNumber <= progress.floor ? CFl.REPEAT_EXP_MULT : 1;
+    const coinRatio = floorNumber <= progress.floor ? CFl.REPEAT_COIN_MULT : 1;
+    const expGain = Math.round(floorDef.expReward * expRatio * _expMult(skillLevels));
+    const leveled = _applyExpGain(progress, expGain);
+    const coinGain = Math.round(floorDef.coinReward * coinRatio * _coinMult(skillLevels));
+    // 重複挑戰關主樓層不再保底掉裝備(第一次通關才是 100%),避免無限刷保底史詩
+    const dropFloorDef = floorDef.isMiniBoss && floorNumber <= progress.floor ? { ...floorDef, dropChance: window.CareerFloors.REPEAT_BOSS_DROP_CHANCE } : floorDef;
+    let drop = window.CareerFloors.rollDrop(dropFloorDef, build.final_class, window.CareerData.passiveValue("drop_luck", (skillLevels && skillLevels.drop_luck) || 0));
     // 使用者二次回饋修改:限制改成「同一件裝備(同名字)不會重複拿到」，不是「這個部位買過任何一件
     // 傳說就整個鎖住」——不同名字的傳說裝備(自己買的武器傳說 vs Boss限定掉的武器傳說)互不影響，
     // 都可以拿到。已經擁有同名字那件的話改發史詩，不會讓這次戰鬥白打。
@@ -3212,8 +3208,6 @@ const db = (function () {
       floorDef,
       coinGain,
       expGain,
-      isFirstClear,
-      statPointsGained: leveled.statPointsGained,
       leveledUp: leveled.leveledUp,
       newLevel: leveled.newLevel,
       drop,
@@ -3830,76 +3824,77 @@ const db = (function () {
   }
 
   // 裝備合成:同一個部位、同一個稀有度的裝備湊滿3件，可以嘗試合成升級成下一個稀有度。
-  // 階段三(BUG md 28-3 第一批)改版:
-  //   - 稀有→史詩收 1000 幣、史詩→傳說收 3000 幣(普通→稀有免費)，不管成功失敗都收；
-  //   - 基礎成功率:普通→稀有 50%、稀有→史詩 50%、史詩→傳說 20%；
-  //   - 保底:同一階每連續失敗一次，下次成功率 +10%(最多 +40%)，成功後該階歸零，存在 career_progress.synthesis_pity；
-  //   - 失敗退回 1 件「同稀有度、同部位」的裝備(不再是普通裝備)；
-  //   - 史詩→傳說只會從一般傳說表挑(不含 Boss 限定傳說)，而且不佔傳說名額(不寫進 legendary_slots)，
-  //     會優先挑玩家還沒擁有過的名字，全都有了才會合出重複的。
+  // 成功機率固定(見 CareerFloors.SYNTHESIS_SUCCESS_RATE)，成功拿到下一階裝備，
+  // 失敗只拿回1件隨機部位的普通裝備(等於虧了，賭運氣)。只做得到 普通->稀有->史詩，
+  // 傳說要不要開放合成是「以後可能會做」的事，目前 SYNTHESIS_PATH 沒有 epic 這一項，
+  // 之後真的要開放，直接補上那個 key 就好，這支函式不用改。
   async function synthesizeCareerEquipment(eventId, playerId, slot, rarity) {
     await _assertCareerOpen(eventId);
-    const CF = window.CareerFloors;
+    const CFl = window.CareerFloors;
     const [progress, build] = await Promise.all([
       getOrCreateCareerProgress(eventId, playerId),
       getCareerBuildFor(eventId, playerId),
     ]);
     if (!build) throw new Error("請先選好職業");
-    const nextRarity = CF.SYNTHESIS_PATH[rarity];
-    if (!nextRarity) throw new Error(rarity === "legendary" ? "傳說是合成的最高等級" : "這個稀有度沒辦法合成");
-    const need = CF.SYNTHESIS_INPUT_COUNT;
+    const nextRarity = CFl.SYNTHESIS_PATH[rarity];
+    if (!nextRarity) throw new Error("傳說已經是最高等級，沒辦法再合成");
+    const rule = CFl.SYNTHESIS_RULES[rarity];
+    const need = CFl.SYNTHESIS_INPUT_COUNT;
     const slotName = slot === "weapon" ? "武器" : slot === "armor" ? "防具" : "飾品";
     const matching = (progress.inventory || []).filter((it) => it.slot === slot && it.rarity === rarity);
     if (matching.length < need) {
-      throw new Error(`「${CF.RARITY_LABEL[rarity]}${slotName}」不夠${need}件(目前${matching.length}件)`);
+      throw new Error(`「${CFl.RARITY_LABEL[rarity]}${slotName}」不夠${need}件(目前${matching.length}件)`);
     }
-    const fee = CF.SYNTHESIS_COIN_COST[rarity] || 0;
-    if (progress.coins < fee) throw new Error(`合成要 ${fee} 幣，你的幣不夠`);
+    if (progress.coins < rule.fee) throw new Error(`合成要付 ${rule.fee} 幣，你只有 ${progress.coins} 幣`);
 
-    const pity = { ...(progress.synthesis_pity || {}) };
-    const streak = pity[rarity] || 0;
-    const rate = CF.synthesisRate(rarity, streak);
+    const tableFor = (r) => (slot === "weapon" ? (CFl.WEAPON_TABLE[build.final_class] || CFl.WEAPON_TABLE.novice)[r] : CFl.EQUIPMENT_TABLE[slot][r]);
+    // 合成傳說:只抽「這位玩家還沒擁有過」的一般傳說款(跟商店/抽獎/Boss 掉落共用同一份 legendary_slots，
+    // 同名字不會重複拿到)。款式都有了就在扣任何東西「之前」擋下來，不會讓玩家白白賠掉材料跟幣。
+    // Boss 限定傳說用另外的資料表(BOSS_LEGENDARY_ITEMS)，不會從這裡合成出來。
+    const owned = _ownedLegendaryNames(progress);
+    let legendaryPool = null;
+    if (nextRarity === "legendary") {
+      legendaryPool = (tableFor("legendary") || []).filter((it) => !owned[it.name]);
+      if (!legendaryPool.length) throw new Error(`這個部位的傳說裝備款式你都已經有了，沒辦法再合成新的`);
+    }
 
     const consumeIds = matching.slice(0, need).map((it) => it.id);
     let inventory = (progress.inventory || []).filter((it) => !consumeIds.includes(it.id));
 
-    const tableFor = (r) =>
-      slot === "weapon" ? (CF.WEAPON_TABLE[build.final_class] || CF.WEAPON_TABLE.novice)[r] : CF.EQUIPMENT_TABLE[slot][r];
-
+    const pity = { ...(progress.synthesis_pity || {}) };
+    const rate = CFl.synthesisRate(rarity, pity[rarity] || 0);
     const success = Math.random() < rate;
     let resultItem;
+    const patch = { coins: progress.coins - rule.fee };
     if (success) {
-      const table = tableFor(nextRarity);
-      if (nextRarity === "legendary") {
-        const owned = _ownedLegendaryNames(progress);
-        const notOwned = (table || []).filter((it) => !owned[it.name]);
-        const pool = notOwned.length ? notOwned : table || [];
-        if (!pool.length) throw new Error("這個部位目前沒有可以合成的傳說裝備");
-        resultItem = { slot, ...pool[Math.floor(Math.random() * pool.length)] };
-      } else {
-        resultItem = { slot, ...CF.pickVariant(table) };
-      }
+      const base = nextRarity === "legendary" ? legendaryPool[Math.floor(Math.random() * legendaryPool.length)] : CFl.pickVariant(tableFor(nextRarity));
+      resultItem = { slot, ...base };
       pity[rarity] = 0;
+      if (nextRarity === "legendary") patch.legendary_slots = { ...owned, [resultItem.name]: true };
     } else {
-      resultItem = { slot, ...CF.pickVariant(tableFor(rarity)) }; // 失敗退回 1 件同稀有度、同部位
-      pity[rarity] = streak + 1;
+      // 失敗:退回 1 件同部位、同稀有度的裝備，並累積保底
+      resultItem = { slot, ...CFl.pickVariant(tableFor(rarity)) };
+      pity[rarity] = (pity[rarity] || 0) + 1;
     }
+    patch.synthesis_pity = pity;
     inventory = _addToInventory(inventory, resultItem);
+    patch.inventory = inventory;
 
-    // P0-4修復:合成也要鎖 inventory(同一個原因，見 equipCareerItem 的註解)。幣也一起比對，避免扣錯。
+    // P0-4修復:合成也要鎖 inventory(同一個原因，見 equipCareerItem 的註解)；另外鎖 coins 避免連點重複扣費。
     const { data: updated, error } = await client
       .from("career_progress")
-      .update({ inventory, coins: progress.coins - fee, synthesis_pity: pity })
+      .update(patch)
       .eq("id", progress.id)
       .eq("inventory_rev", progress.inventory_rev) // 樂觀鎖:比對版本號(資料庫 trigger 在 inventory 變動時自動 +1)，不要拿整個 jsonb 當篩選條件
       .eq("coins", progress.coins)
       .select();
-    if (error) {
-      if (/synthesis_pity/.test(error.message || "")) throw new Error("資料庫還沒更新，請先執行 migration-synthesis-pity.sql");
-      throw error;
+    if (error) throw error;
+    if (!updated || !updated.length) throw new Error("背包剛好被別的分頁更新過了，請重新整理後再試一次");
+    if (success && nextRarity === "legendary") {
+      const name = await _playerName(playerId);
+      await broadcastCareerEvent(eventId, "crown", `${name} 合成出了傳說裝備「${resultItem.name}」!`);
     }
-    if (!updated || !updated.length) throw new Error("背包或幣剛好被別的分頁更新過了，請重新整理後再試一次");
-    return { success, item: resultItem, fee, rate, nextStreak: pity[rarity], progress: updated[0] };
+    return { success, item: resultItem, fee: rule.fee, rate, progress: updated[0] };
   }
 
   // 花一點自由數值點(atk/def/spd/hp/luck 其中一項 +1)
@@ -4028,7 +4023,8 @@ const db = (function () {
     };
     if (battle.won) {
       const coinGain = Math.round(floorDef.coinReward * CAREER_AUTO_FARM_EFFICIENCY * _coinMult(skillLevels));
-      const expGain = Math.round(floorDef.expReward * CAREER_AUTO_FARM_EFFICIENCY * CAREER_REPEAT_EXP_MULT * _expMult(skillLevels));
+      // 掛機一定是打已通關的樓層,經驗也套重複挑戰的減半(幣不變)
+      const expGain = Math.round(floorDef.expReward * CAREER_AUTO_FARM_EFFICIENCY * window.CareerFloors.REPEAT_EXP_MULT * _expMult(skillLevels));
       const leveled = _applyExpGain(progress, expGain);
       patch.coins = progress.coins + coinGain;
       patch.exp = leveled.exp;

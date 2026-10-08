@@ -120,19 +120,21 @@ window.CareerFloors = (function () {
 
     // 掉落機率跟稀有度用一致的四級系統(跟夜市拍賣商品清單同一套 common/rare/epic/legendary)：
     // 一般樓層只掉得到 普通/稀有；小關主保底掉 稀有 或 史詩。
-    // P2-2新增:40層、50層Boss額外有機率掉「Boss限定傳說裝備」；P2-4:40層開始一般樓層也有機率掉史詩。
+    // P2-2/P2-4新增:40層、50層Boss額外有機率掉「Boss限定傳說裝備」；40層開始，
+    // 就算不是關主樓層，每一層也都開始有機率掉史詩(機率隨樓層往上小幅提高)。
     let dropChance = isMiniBoss ? 1 : 0.3;
     let dropRarityWeights;
     const isLegendaryBossFloor = n === 40 || n === 50;
     if (isLegendaryBossFloor) {
       dropRarityWeights = { epic: 0.5, legendary: 0.5 };
     } else if (isMiniBoss) {
-      dropRarityWeights = { rare: 0.25, epic: 0.75 }; // 階段三回饋:史詩只從關主來，所以關主史詩比例從 40% 調到 75%
+      dropRarityWeights = { rare: 0.6, epic: 0.4 };
     } else if (n >= 40) {
-      // 使用者回饋(階段三後):一般樓層也要掉史詩，恢復 P2-4 原本的規則——40層開始每層有機率掉史詩。
-      // 想讓更早的樓層也掉史詩，把上面的 `n >= 40` 改小即可。
-      const epicChance = 0.05 + (n - 40) * 0.01; // 40層5%、49層14%，逐層微幅提高
-      dropRarityWeights = { common: 0.5, rare: Math.round((0.5 - epicChance) * 1000) / 1000, epic: epicChance };
+      // 2026-10 收緊掉落:一般樓層(含 40 層以後)不再掉史詩，史詩只從「小關主」與「合成」來，
+      // 這樣樓層變成合成的材料來源，合成才有用(以前 40 層後每層都掉史詩，大家直接刷塔就好)。
+      // 越深的樓層稀有的比例越高，補償拿掉史詩後的深度獎勵感。
+      const rareChance = Math.min(0.7, 0.5 + (n - 40) * 0.02);
+      dropRarityWeights = { common: Math.round((1 - rareChance) * 1000) / 1000, rare: rareChance };
     } else {
       dropRarityWeights = { common: 0.85, rare: 0.15 };
     }
@@ -439,6 +441,24 @@ window.CareerFloors = (function () {
   // 想調整難度只改這個數字，畫面跟購買檢查都會跟著變。
   const STAT_POINT_BUY_CAP = 10;
 
+  // ---- 放慢升級(2026-10 調整,見 BUG 文件 28-1) ----
+  // 以前清到頂樓(上限層)之後,「下一個要打的層」還是頂樓,可以無限連點、每場都拿最高經驗,
+  // 狂刷的人才會到 Lv.139。現在「已經通關過的樓層」(含到頂後重複打、掛機)經驗減半,
+  // 「第一次通關」經驗加倍,讓推進樓層比原地連點划算。想調整只改這三個數字。
+  const REPEAT_EXP_MULT = 0.5; // 重複挑戰(樓層 <= 目前已清到的層)的經驗倍率
+  const FIRST_CLEAR_EXP_MULT = 2; // 第一次通關(樓層 = 已清到的層 + 1)的經驗倍率
+  const REPEAT_COIN_MULT = 0.6; // 重複挑戰的幣倍率(幣太多會讓所有花幣的設計失效)【待模擬確認】
+
+  // ---- 數值遞減(見 BUG 文件 29-3) ----
+  // Lv.100 以前每升一級都給自由數值點與技能點;超過 Lv.100 之後,每 3 級才給一次
+  // (Lv.103、106、109…)。被動升級帶來的數值是依「被動等級」計算,不受這個規則影響。
+  const POINTS_FULL_UNTIL_LEVEL = 100;
+  const POINTS_EVERY_N_LEVELS = 3;
+  function levelUpGivesPoints(newLevel) {
+    if (newLevel <= POINTS_FULL_UNTIL_LEVEL) return true;
+    return (newLevel - POINTS_FULL_UNTIL_LEVEL) % POINTS_EVERY_N_LEVELS === 0;
+  }
+
   // 爬塔排行分:每爬 1 層 +1 分，每 10 層(守關王)再多 +5 分。50 層共 75 分
   // (原本只有每 10 層 +5、最高 25，跟 PVP 比太低)。要改比重只改這兩個數字；
   // 伺服器端 finish_career_match 的積分加權也用同一個公式，改了要一起改 SQL。
@@ -485,23 +505,29 @@ window.CareerFloors = (function () {
 
   // 裝備合成:同部位、同稀有度的裝備湊滿3件就能嘗試合成，成功機率固定，
   // 成功拿到下一個稀有度的裝備、失敗拿回1件隨機部位的普通裝備(等於虧了，賭運氣)。
-  // 階段三起可以一路合成到傳說(史詩→傳說)，並加入收費與失敗保底，見下面的常數。
-  // 階段三:合成開放到傳說(史詩→傳說)。合成出的傳說只會從「一般傳說表」挑，
-  // Boss限定傳說(BOSS_LEGENDARY_ITEMS)不能合成。合成出來的傳說不佔傳說名額。
+  // 只做得到 普通->稀有->史詩，傳說要另外開放合成的話，以後把 SYNTHESIS_PATH.epic 補上就好，
+  // 這裡先照要求不開放。
+  // 2026-10 改版(見 BUG 文件 28-3):
+  //   - 史詩可以合成傳說(只能抽「這位玩家還沒擁有過」的一般傳說款，不含 Boss 限定套裝)
+  //   - 稀有→史詩、史詩→傳說要付幣(費用要跟實際幣收入同量級，不然連點的人完全無感)【待模擬確認】
+  //   - 保底:每失敗一次，下次成功率 +pityStep，最多加到 pityMax，成功後歸零
+  //   - 失敗不再退普通裝備，改退 1 件「同部位、同稀有度」的裝備(3 件換 1 件，虧 2 件但不會掉階)
   const SYNTHESIS_PATH = { common: "rare", rare: "epic", epic: "legendary" };
   const SYNTHESIS_INPUT_COUNT = 3;
-  const SYNTHESIS_SUCCESS_RATE = 0.5; // 保留給舊呼叫端；實際用 SYNTHESIS_BASE_RATE
-  // 各階基礎成功率、花的幣(以「投入的稀有度」為 key)。【待模擬確認】
-  const SYNTHESIS_BASE_RATE = { common: 0.5, rare: 0.5, epic: 0.2 };
-  const SYNTHESIS_COIN_COST = { common: 0, rare: 1000, epic: 3000 };
-  // 保底:同一階每連續失敗一次，下次成功率 +10%，最多加到 +40%；成功後該階歸零。
-  const SYNTHESIS_PITY_STEP = 0.1;
-  const SYNTHESIS_PITY_MAX_BONUS = 0.4;
-  function synthesisRate(rarity, failStreak) {
-    const base = SYNTHESIS_BASE_RATE[rarity] || 0;
-    const bonus = Math.min(SYNTHESIS_PITY_MAX_BONUS, (failStreak || 0) * SYNTHESIS_PITY_STEP);
-    return Math.min(1, Math.round((base + bonus) * 100) / 100);
+  const SYNTHESIS_RULES = {
+    common: { rate: 0.5, fee: 0, pityStep: 0.1, pityMax: 0.3 },
+    rare: { rate: 0.5, fee: 1000, pityStep: 0.1, pityMax: 0.3 },
+    epic: { rate: 0.2, fee: 3000, pityStep: 0.1, pityMax: 0.4 },
+  };
+  // fails = 這個稀有度目前連續失敗幾次(存在 career_progress.synthesis_pity)
+  function synthesisRate(rarity, fails) {
+    const r = SYNTHESIS_RULES[rarity];
+    if (!r) return 0;
+    return Math.min(1, r.rate + Math.min(r.pityMax, (fails || 0) * r.pityStep));
   }
+  // 小關主/Boss 樓層「重複挑戰」時的掉落機率(第一次通關仍然是 100%)。
+  // 不限制的話,重複打關主樓層就能無限拿保底史詩,史詩不稀有、合成也就沒用了。
+  const REPEAT_BOSS_DROP_CHANCE = 0.35;
 
   return {
     FLOORS,
@@ -532,14 +558,15 @@ window.CareerFloors = (function () {
     GACHA_POOL,
     POTIONS,
     STAT_POINT_BUY_CAP,
+    REPEAT_EXP_MULT,
+    FIRST_CLEAR_EXP_MULT,
+    REPEAT_COIN_MULT,
+    levelUpGivesPoints,
     floorScore,
     SYNTHESIS_PATH,
     SYNTHESIS_INPUT_COUNT,
-    SYNTHESIS_SUCCESS_RATE,
-    SYNTHESIS_BASE_RATE,
-    SYNTHESIS_COIN_COST,
-    SYNTHESIS_PITY_STEP,
-    SYNTHESIS_PITY_MAX_BONUS,
+    SYNTHESIS_RULES,
     synthesisRate,
+    REPEAT_BOSS_DROP_CHANCE,
   };
 })();

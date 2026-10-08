@@ -639,7 +639,7 @@
       for (let f = 1; f <= progress.floor; f++) chips.push(f);
       html += `
         <div style="margin-top:10px;">
-          <p style="font-size:11px;color:var(--ink-dim);margin:0 0 6px;">已清樓層，可以重新挑戰穩定 farm:</p>
+          <p style="font-size:11px;color:var(--ink-dim);margin:0 0 6px;">已清樓層，可以重新挑戰(重複挑戰經驗減半、幣 ×0.6;第一次通關的樓層經驗加倍):</p>
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
             ${chips.map((f) => `<button class="btn ghost small" data-retry-floor="${f}">第${f}層</button>`).join("")}
           </div>
@@ -668,7 +668,7 @@
           ${
             b.won
               ? `<p style="font-size:12px;color:var(--ink-dim);margin:0 0 6px;">
-                  +${b.coinGain} 幣 · +${b.expGain} 經驗${b.isFirstClear ? "(首通加倍)" : ""}${b.leveledUp ? ` · 升到 Lv.${b.newLevel}!${b.statPointsGained ? ` 獲得 ${b.statPointsGained} 數值點` : ""}` : ""}
+                  +${b.coinGain} 幣 · +${b.expGain} 經驗${b.leveledUp ? ` · 升到 Lv.${b.newLevel}! 獲得 2 數值點` : ""}
                   ${b.drop ? ` · 掉落「${ui.esc(b.drop.name)}」${rarityTag(b.drop.rarity)}放進背包了` : ""}
                   <br/>剩餘 HP ${effHp}/${battleStats.maxHp}，MP ${effMp}/${battleStats.maxMp}
                 </p>`
@@ -852,7 +852,7 @@
     const CF = CareerFloors;
     const groups = groupInventory();
     const need = CF.SYNTHESIS_INPUT_COUNT;
-    const pity = (progress && progress.synthesis_pity) || {};
+    const pity = progress.synthesis_pity || {};
     const options = [];
     ["weapon", "armor", "accessory"].forEach((slot) => {
       ["common", "rare", "epic"].forEach((rarity) => {
@@ -863,14 +863,19 @@
         );
       });
     });
-
-    // 目前選的這一階:費用、成功率(含保底)
+    // 目前選的這一項:顯示費用、成功機率(含保底加成)
     const [selSlot, selRarity] = synthesisChoice.split(":");
-    const fee = CF.SYNTHESIS_COIN_COST[selRarity] || 0;
-    const streak = pity[selRarity] || 0;
-    const rate = CF.synthesisRate(selRarity, streak);
-    const baseRate = CF.SYNTHESIS_BASE_RATE[selRarity] || 0;
-    const canAfford = !progress || progress.coins >= fee;
+    const rule = CF.SYNTHESIS_RULES[selRarity];
+    const fails = pity[selRarity] || 0;
+    const curRate = Math.round(CF.synthesisRate(selRarity, fails) * 100);
+    const baseRate = Math.round(rule.rate * 100);
+    const selNext = CF.SYNTHESIS_PATH[selRarity];
+    const infoHtml = `
+      <div style="margin:12px auto 0;max-width:340px;padding:10px;border-radius:var(--radius);border:1px solid var(--line);background:var(--panel2);font-size:12px;line-height:1.8;">
+        ${ui.esc(slotLabel(selSlot))}${ui.esc(CF.RARITY_LABEL[selRarity])} → ${ui.esc(CF.RARITY_LABEL[selNext])}<br/>
+        費用:<b style="color:var(--gold);">${rule.fee > 0 ? `${rule.fee} 幣` : "免費"}</b>(你有 ${progress.coins} 幣)<br/>
+        成功機率:<b style="color:var(--gold);">${curRate}%</b>${fails > 0 ? `<span style="color:var(--ink-dim);">(基礎 ${baseRate}% + 保底 ${curRate - baseRate}%,已連續失敗 ${fails} 次)</span>` : `<span style="color:var(--ink-dim);">(基礎機率)</span>`}
+      </div>`;
 
     let resultHtml = "";
     if (lastSynthesisResult) {
@@ -878,7 +883,7 @@
       resultHtml = `
         <div style="margin-top:16px;padding:12px;border-radius:var(--radius);border:1px solid ${r.success ? "var(--gold-d)" : "var(--line)"};background:var(--panel2);text-align:center;">
           ${ui.icon(r.success ? "arrow-big-up" : "circle-x")}
-          <p style="margin:6px 0 0;font-size:12.5px;color:${r.success ? "var(--gold)" : "var(--ink)"};overflow-wrap:anywhere;">${ui.esc(r.text)}</p>
+          <p style="margin:6px 0 0;font-size:12.5px;color:${r.success ? "var(--gold)" : "var(--ink)"};">${ui.esc(r.text)}</p>
         </div>`;
     }
 
@@ -887,19 +892,16 @@
         ${ui.icon("flask-conical", { size: "32px" })}
         <p style="margin:10px 0 4px;font-weight:700;font-size:15px;">裝備合成</p>
         <p style="margin:0 0 16px;font-size:11.5px;color:var(--ink-dim);line-height:1.7;">
-          同部位、同稀有度的裝備湊滿 ${need} 件就能合成一次，<b style="color:var(--ink);">最高合成到傳說</b>(Boss 限定傳說不能合成)。<br/>
-          稀有→史詩收 ${CF.SYNTHESIS_COIN_COST.rare} 幣、史詩→傳說收 ${CF.SYNTHESIS_COIN_COST.epic} 幣，不管成功失敗都會收。<br/>
-          失敗會退回 1 件同稀有度、同部位的裝備；同一階連續失敗，下次成功率每次 +${Math.round(CF.SYNTHESIS_PITY_STEP * 100)}%(最多 +${Math.round(CF.SYNTHESIS_PITY_MAX_BONUS * 100)}%)，成功後歸零。
+          同部位、同稀有度的裝備湊滿 ${need} 件就能合成一次，成功變成下一個稀有度，可以一路合成到${ui.icon("crown", { size: "12px" })}傳說。<br/>
+          稀有、史詩的合成要付幣；失敗會拿回 1 件同稀有度的裝備，並累積保底，下次成功率更高。<br/>
+          合成傳說只會拿到你還沒擁有過的款式，Boss 限定傳說無法合成。
         </p>
         <select id="synthesis-select" style="max-width:320px;width:100%;">
           ${options.join("")}
         </select>
-        <p style="margin:10px 0 0;font-size:12px;color:var(--ink-dim);">
-          這一階：成功率 <b style="color:var(--gold);">${Math.round(rate * 100)}%</b>${streak ? `(基礎 ${Math.round(baseRate * 100)}% + 保底 ${streak} 次)` : ""}
-          ・費用 <b style="color:${canAfford ? "var(--gold)" : "var(--red)"};">${fee ? `${fee} 幣` : "免費"}</b>
-        </p>
+        ${infoHtml}
         <div style="margin-top:14px;">
-          <button class="btn" id="synthesize-btn" ${locked || !canAfford ? "disabled" : ""}>${ui.icon("arrow-big-up")}合成(消耗${need}件${fee ? `、${fee}幣` : ""})</button>
+          <button class="btn" id="synthesize-btn" ${locked ? "disabled" : ""}>${ui.icon("arrow-big-up")}合成(消耗${need}件${rule.fee > 0 ? `+${rule.fee}幣` : ""})</button>
         </div>
         ${resultHtml}
       </div>`;
@@ -1070,19 +1072,20 @@
     return html;
   }
 
-  // 階段二:技能/被動 Lv.4、Lv.5 需要角色等級(CareerData.SKILL_LEVEL_CHAR_REQ)，不夠就把按鈕鎖起來並在下面註明。
-  function skillLvLocked(nextLv) {
-    return !!progress && progress.level < CareerData.skillLevelCharReq(nextLv);
-  }
-  function skillLvNote(nextLv) {
-    if (!skillLvLocked(nextLv)) return "";
-    return `<div style="margin-top:3px;font-size:9.5px;color:var(--ink-dim);">升到 Lv.${nextLv} 需角色 Lv.${CareerData.skillLevelCharReq(nextLv)}</div>`;
-  }
-
   // class_xxx底下的節點(技能候選/大招1/大招2/職業被動)各自要長什麼樣子。
   // activeSkills:這場活動自己的技能/大招投資等級(key是節點後綴)，interactive=false時傳{}就好。
   // equippedSkillA/B:目前裝在技能A、技能B欄位的是哪個節點後綴。
   // interactive=false 時是「候選職業預覽」，強制灰色、不顯示按鈕，不管背後資料實際上是什麼等級。
+  // 升到 Lv.4、Lv.5 要角色等級夠高(CareerData.SKILL_LEVEL_CHAR_REQ)。回傳「還差的等級」字串供按鈕顯示,夠了就回傳空字串。
+  function levelGate(nextLv) {
+    const req = CareerData.skillLevelCharReq(nextLv);
+    return req && (progress.level || 1) < req ? req : 0;
+  }
+  function gateLabel(nextLv) {
+    const req = levelGate(nextLv);
+    return req ? `(需角色 Lv.${req})` : "";
+  }
+
   function skillTreeKitCard(node, chosenClass, activeSkills, canSpend, equippedUltId, equippedSkillA, equippedSkillB, interactive) {
     const CD = CareerData;
     const MAX_LV = node.maxLevel || CD.MAX_SKILL_LEVEL;
@@ -1103,11 +1106,11 @@
         actionHtml =
           (atMax
             ? `<span style="font-size:10px;color:var(--green);font-weight:700;">${ui.icon("check", { size: "12px" })}裝備中(${equippedSlot})・已達最高等級</span>`
-            : `<button class="btn ghost small" data-upgrade-active-skill="${nodeSuffix}" ${canSpend && !skillLvLocked(lv + 1) ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "13px" })}裝備中(${equippedSlot})・升到 Lv.${lv + 1}</button>${skillLvNote(lv + 1)}`) +
+            : `<button class="btn ghost small" data-upgrade-active-skill="${nodeSuffix}" ${canSpend && !levelGate(lv + 1) ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "13px" })}裝備中(${equippedSlot})・升到 Lv.${lv + 1}${gateLabel(lv + 1)}</button>`) +
           `<div style="margin-top:4px;"><button class="btn ghost small" data-equip-skill="${equippedSlot === "A" ? "b" : "a"}:${nodeSuffix}">${ui.icon("refresh-cw", { size: "12px" })}改裝到${equippedSlot === "A" ? "B" : "A"}欄</button></div>`;
       } else {
         actionHtml = `
-          ${!atMax ? `<button class="btn ghost small" data-upgrade-active-skill="${nodeSuffix}" ${canSpend && !skillLvLocked(lv + 1) ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "13px" })}升到 Lv.${lv + 1}</button>${skillLvNote(lv + 1)}` : ""}
+          ${!atMax ? `<button class="btn ghost small" data-upgrade-active-skill="${nodeSuffix}" ${canSpend && !levelGate(lv + 1) ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "13px" })}升到 Lv.${lv + 1}${gateLabel(lv + 1)}</button>` : ""}
           <div style="margin-top:4px;display:flex;gap:4px;justify-content:center;">
             <button class="btn ghost small" data-equip-skill="a:${nodeSuffix}">${ui.icon("wand-sparkles", { size: "12px" })}裝到A欄</button>
             <button class="btn ghost small" data-equip-skill="b:${nodeSuffix}">${ui.icon("wand-sparkles", { size: "12px" })}裝到B欄</button>
@@ -1140,7 +1143,7 @@
       } else if (atMax) {
         actionHtml = `<span style="font-size:10px;color:var(--green);font-weight:700;">${ui.icon("check", { size: "12px" })}裝備中・已達最高等級</span>`;
       } else {
-        actionHtml = `<button class="btn ghost small" data-upgrade-active-skill="${nodeSuffix}" ${canSpend && !skillLvLocked(lv + 1) ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "13px" })}裝備中・升到 Lv.${lv + 1}</button>${skillLvNote(lv + 1)}`;
+        actionHtml = `<button class="btn ghost small" data-upgrade-active-skill="${nodeSuffix}" ${canSpend && !levelGate(lv + 1) ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "13px" })}裝備中・升到 Lv.${lv + 1}${gateLabel(lv + 1)}</button>`;
       }
       return `
         <div class="st-card" style="display:flex;flex-direction:column;position:relative;background:var(--panel2);border:1px solid ${isEquipped ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:10px;text-align:center;${interactive ? "" : "opacity:0.55;"}">
@@ -1171,7 +1174,7 @@
   function passiveCard(key, lv, canSpend) {
     const CD = CareerData;
     const def = CD.PASSIVE_DEFS[key];
-    const MAX_LV = CD.MAX_SKILL_LEVEL;
+    const MAX_LV = def.maxLevel || CD.MAX_SKILL_LEVEL;
     const atMax = lv >= MAX_LV;
     const previewDesc = CD.passiveLevelDesc(key, atMax ? lv : lv + 1); // 沒解鎖時預覽「升上去會變怎樣」，已經最高等級就顯示目前效果
     const statusText = atMax ? "已達最高等級" : lv > 0 ? `目前 Lv.${lv}` : "尚未解鎖";
@@ -1185,7 +1188,7 @@
           ${
             atMax
               ? `<span style="font-size:10.5px;color:var(--green);font-weight:700;">${ui.icon("check", { size: "12px" })}已解鎖到頂</span>`
-              : `<button class="btn ghost small" data-upgrade-skill="${key}" ${canSpend && !skillLvLocked(lv + 1) ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "14px" })}升到 Lv.${lv + 1}</button>${skillLvNote(lv + 1)}`
+              : `<button class="btn ghost small" data-upgrade-skill="${key}" ${canSpend && !levelGate(lv + 1) ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "14px" })}升到 Lv.${lv + 1}${gateLabel(lv + 1)}</button>`
           }
         </div>
       </div>`;
@@ -1214,7 +1217,7 @@
               ? `<span style="font-size:10.5px;color:var(--ink-dim);">選這個職業後才能點</span>`
               : atMax
                 ? `<span style="font-size:10.5px;color:var(--green);font-weight:700;">${ui.icon("check", { size: "12px" })}已解鎖到頂</span>`
-                : `<button class="btn ghost small" data-upgrade-skill="${key}" ${canSpend && !skillLvLocked(effLv + 1) ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "14px" })}升到 Lv.${effLv + 1}</button>${skillLvNote(effLv + 1)}`
+                : `<button class="btn ghost small" data-upgrade-skill="${key}" ${canSpend && !levelGate(effLv + 1) ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "14px" })}升到 Lv.${effLv + 1}${gateLabel(effLv + 1)}</button>`
           }
         </div>
       </div>`;
@@ -1969,7 +1972,7 @@
       };
     }
     const synthesisSelect = document.getElementById("synthesis-select");
-    if (synthesisSelect) synthesisSelect.onchange = () => { synthesisChoice = synthesisSelect.value; render(); };
+    if (synthesisSelect) synthesisSelect.onchange = () => { synthesisChoice = synthesisSelect.value; render(); }; // 換選項要馬上更新下面的費用/機率
     const synthesizeBtn = document.getElementById("synthesize-btn");
     if (synthesizeBtn && !synthesizeBtn.disabled) {
       synthesizeBtn.onclick = async () => {
@@ -1982,8 +1985,8 @@
           lastSynthesisResult = {
             success: result.success,
             text: result.success
-              ? `合成成功!升級成「${result.item.name}」了!${result.fee ? `(花了 ${result.fee} 幣)` : ""}`
-              : `合成失敗，退回 1 件「${result.item.name}」${result.fee ? `(花了 ${result.fee} 幣)` : ""}，下次成功率提高到 ${Math.round(CareerFloors.synthesisRate(synthesisChoice.split(":")[1], result.nextStreak) * 100)}%。`,
+              ? `合成成功!升級成「${result.item.name}」了!(花了 ${result.fee} 幣)`
+              : `合成失敗，拿回 1 件「${result.item.name}」(花了 ${result.fee} 幣)。下次成功率提高了，再試一次吧。`,
           };
           render();
         } catch (e) {
