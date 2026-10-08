@@ -2550,6 +2550,14 @@ const db = (function () {
   const CAREER_TRAIN_EXP_MAX = 5;
   const CAREER_AUTO_FARM_INTERVAL_SEC = 15; // 掛機每隔幾秒背景推進一次(原本25秒感覺太久，縮短一點)
   const CAREER_AUTO_FARM_EFFICIENCY = 0.7; // 掛機效率打七折(企劃書第五、八節)
+  // 放慢升級(BUG md 28-1):已通關過的樓層(含到頂後連點、掛機)經驗減半，首次通關加倍。
+  // 掛機 = 樓層經驗 × 0.7 × 0.5(維持「掛機比手動慢」的相對關係)；掛機的幣仍只打 0.7 折。
+  const CAREER_FIRST_CLEAR_EXP_MULT = 2;
+  const CAREER_REPEAT_EXP_MULT = 0.5;
+  const CAREER_REPEAT_COIN_MULT = 0.6; // 【待模擬確認】重複挑戰的幣，先用暫定值
+  // 數值遞減(BUG md 29-3):超過 Lv.100 之後，每 3 級才給一次自由數值點(+2)與技能點(+1)。
+  const CAREER_LEVEL_DIMINISH_AFTER = 100;
+  const CAREER_LEVEL_DIMINISH_STEP = 3;
 
   function _emptyStatAlloc() {
     return { atk: 0, def: 0, spd: 0, hp: 0, luck: 0, matk: 0, mp: 0 };
@@ -2770,16 +2778,22 @@ const db = (function () {
     let statPoints = progress.stat_points;
     let skillPoints = progress.skill_points || 0;
     let leveledUp = false;
+    const startStatPoints = statPoints;
     const transferLevel = (window.CareerData && window.CareerData.TRANSFER_LEVEL_PATH) || 5;
     const perLevel = (window.CareerData && window.CareerData.SKILL_POINTS_PER_LEVEL) || 1;
     while (exp >= window.CareerFloors.expToNextLevel(level)) {
       exp -= window.CareerFloors.expToNextLevel(level);
       level += 1;
-      statPoints += 2; // 每升一級送2自由數值點(企劃書第三節，見習期也有，跟技能點不一樣)
-      if (level > transferLevel) skillPoints += perLevel; // 升到 Lv.6 以上才逐級送技能點
+      // 數值遞減:Lv.100 以前每級都給；超過 Lv.100 後，只有 (level-100) 是 3 的倍數那一級才給
+      // (Lv.103、106、109…)，自由數值點與技能點在同一個等級給。
+      const givesPoints = level <= CAREER_LEVEL_DIMINISH_AFTER || (level - CAREER_LEVEL_DIMINISH_AFTER) % CAREER_LEVEL_DIMINISH_STEP === 0;
+      if (givesPoints) {
+        statPoints += 2; // 每升一級送2自由數值點(企劃書第三節，見習期也有，跟技能點不一樣)
+        if (level > transferLevel) skillPoints += perLevel; // 升到 Lv.6 以上才逐級送技能點
+      }
       leveledUp = true;
     }
-    return { exp, level, stat_points: statPoints, skill_points: skillPoints, leveledUp, newLevel: level };
+    return { exp, level, stat_points: statPoints, skill_points: skillPoints, leveledUp, newLevel: level, statPointsGained: statPoints - startStatPoints };
   }
 
   async function getOrCreateCareerProgress(eventId, playerId) {
@@ -3113,9 +3127,11 @@ const db = (function () {
   // 跟王戰(手動即時對戰打贏)共用同一套，不用寫兩次。
   // skillLevels 帶進來是為了算「博學被動」(exp_boost)/「財運被動」(coin_boost)的加成，不帶就當作沒有這兩個被動。
   async function _applyFloorWinRewards(eventId, playerId, progress, build, floorDef, floorNumber, endHp, endMp, skillLevels) {
-    const expGain = Math.round(floorDef.expReward * _expMult(skillLevels));
+    // 首次通關(這層比目前進度更高)經驗 ×2；已通關過的樓層(含到頂後連點)經驗 ×0.5、幣 ×0.6。
+    const isFirstClear = floorNumber > progress.floor;
+    const expGain = Math.round(floorDef.expReward * (isFirstClear ? CAREER_FIRST_CLEAR_EXP_MULT : CAREER_REPEAT_EXP_MULT) * _expMult(skillLevels));
     const leveled = _applyExpGain(progress, expGain);
-    const coinGain = Math.round(floorDef.coinReward * _coinMult(skillLevels));
+    const coinGain = Math.round(floorDef.coinReward * (isFirstClear ? 1 : CAREER_REPEAT_COIN_MULT) * _coinMult(skillLevels));
     const isAdvance = floorNumber === progress.floor + 1;
     let drop = window.CareerFloors.rollDrop(floorDef, build.final_class, window.CareerData.passiveValue("drop_luck", (skillLevels && skillLevels.drop_luck) || 0));
     // 使用者二次回饋修改:限制改成「同一件裝備(同名字)不會重複拿到」，不是「這個部位買過任何一件
@@ -3192,6 +3208,8 @@ const db = (function () {
       floorDef,
       coinGain,
       expGain,
+      isFirstClear,
+      statPointsGained: leveled.statPointsGained,
       leveledUp: leveled.leveledUp,
       newLevel: leveled.newLevel,
       drop,
@@ -3987,7 +4005,7 @@ const db = (function () {
     };
     if (battle.won) {
       const coinGain = Math.round(floorDef.coinReward * CAREER_AUTO_FARM_EFFICIENCY * _coinMult(skillLevels));
-      const expGain = Math.round(floorDef.expReward * CAREER_AUTO_FARM_EFFICIENCY * _expMult(skillLevels));
+      const expGain = Math.round(floorDef.expReward * CAREER_AUTO_FARM_EFFICIENCY * CAREER_REPEAT_EXP_MULT * _expMult(skillLevels));
       const leveled = _applyExpGain(progress, expGain);
       patch.coins = progress.coins + coinGain;
       patch.exp = leveled.exp;

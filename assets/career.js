@@ -754,7 +754,7 @@
         <div class="career-queue-box" style="background:var(--panel2);border-radius:var(--radius);border:1px solid var(--line);">
           ${ui.icon(iWon ? "trophy" : "skull")}
           <p style="margin:10px 0 4px;font-weight:700;color:${iWon ? "var(--gold)" : "var(--ink)"};">
-            ${practice ? (iWon ? "獲勝!(練習賽,不計分)" : "戰敗...(練習賽,不計分)") : iWon ? `獲勝!+${reward && reward.scoreGained != null ? reward.scoreGained : 10} 分${reward && reward.afkForfeit ? "(對手棄權,分數打折)" : ""}${reward && reward.capped ? "(已達每小時得分上限)" : ""}` : `戰敗...+${reward && reward.loserScoreGained != null ? reward.loserScoreGained : 2} 分`}
+            ${practice ? (iWon ? "獲勝!(練習賽,不計分)" : "戰敗...(練習賽,不計分)") : iWon ? `獲勝!+${reward && reward.scoreGained != null ? reward.scoreGained : 10} 分${reward && reward.afkForfeit ? "(對手棄權,分數打折)" : ""}` : `戰敗...+${reward && reward.loserScoreGained != null ? reward.loserScoreGained : 2} 分`}
           </p>
           ${rewardLine}
           ${iWon && reward && !practice && CareerStory.streakTitle(reward.winStreak) ? `<p style="font-size:12px;color:var(--gold);margin:6px 0 0;">${ui.icon("award")}${ui.esc("稱號:" + CareerStory.streakTitle(reward.winStreak))}</p>` : ""}

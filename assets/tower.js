@@ -668,7 +668,7 @@
           ${
             b.won
               ? `<p style="font-size:12px;color:var(--ink-dim);margin:0 0 6px;">
-                  +${b.coinGain} 幣 · +${b.expGain} 經驗${b.leveledUp ? ` · 升到 Lv.${b.newLevel}! 獲得 2 數值點` : ""}
+                  +${b.coinGain} 幣 · +${b.expGain} 經驗${b.isFirstClear ? "(首通加倍)" : ""}${b.leveledUp ? ` · 升到 Lv.${b.newLevel}!${b.statPointsGained ? ` 獲得 ${b.statPointsGained} 數值點` : ""}` : ""}
                   ${b.drop ? ` · 掉落「${ui.esc(b.drop.name)}」${rarityTag(b.drop.rarity)}放進背包了` : ""}
                   <br/>剩餘 HP ${effHp}/${battleStats.maxHp}，MP ${effMp}/${battleStats.maxMp}
                 </p>`

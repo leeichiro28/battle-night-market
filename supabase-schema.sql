@@ -1399,7 +1399,7 @@ $$;
 -- 1) cleanup_stale_career_matches:對戰中「有一方真人」超過 p_stale_seconds 秒沒回報在線，
 --    且另一方還在線 -> 判在線的那一方獲勝(走 finish_career_match，積分/連勝/獎勵照正常計算)；
 --    雙方都失聯、或對手是機器人 -> 單純結束，不判勝負不計分(避免被拿來刷分)。
--- 2) finish_career_match(v2 積分規則):對手積分加權、每小時上限、掛網判負打折；只要有機器人參與，這場就是「練習賽」，不給積分、幣、數值點、不動戰績。
+-- 2) finish_career_match(v2 積分規則):對手積分加權、掛網判負打折；只要有機器人參與，這場就是「練習賽」，不給積分、幣、數值點、不動戰績。
 -- 3) 移除「戰功勳章」(用幣買排行分)。已經買過的人的分數會保留在 current_score，如要歸零請看檔案最後的註解。
 
 create or replace function cleanup_stale_career_matches(p_event_id uuid, p_stale_seconds int default 45)
@@ -1449,21 +1449,8 @@ begin
 end;
 $$;
 
--- ===== 積分規則(v2):對手積分加權、每小時 PVP 得分上限、掛網判負打折 =====
+-- ===== 積分規則(v2):對手積分加權、掛網判負打折 =====
 -- 可調整的數字都在下面這個函式最上面的「參數」區。
-create table if not exists career_score_log (
-  id bigserial primary key,
-  event_id uuid not null,
-  player_id uuid not null,
-  points int not null,
-  reason text,
-  created_at timestamptz not null default now()
-);
-create index if not exists career_score_log_idx on career_score_log (event_id, player_id, created_at desc);
-alter table career_score_log enable row level security;
-drop policy if exists "anon all career_score_log" on career_score_log;
-create policy "anon all career_score_log" on career_score_log for all using (true) with check (true);
-
 drop function if exists finish_career_match(uuid, uuid, uuid);
 drop function if exists finish_career_match(uuid, uuid, uuid, text);
 
@@ -1478,7 +1465,6 @@ declare
   WIN_MAX         constant int := 20;   -- 贏的分數上限(贏比自己積分高很多的人)
   RATING_STEP     constant int := 20;   -- 雙方總積分每差 20 分，贏的分數 ±1
   LOSS_POINTS     constant int := 2;    -- 輸的參加分
-  HOURLY_CAP      constant int := 100;  -- 每人「最近 60 分鐘」PVP 最多能拿幾分(輸贏合計)
   AFK_WIN_POINTS  constant int := 3;    -- 對手掛網棄權時，在場玩家拿到的分(不加連勝加成)
   AFK_WIN_COINS   constant int := 5;
   -- ====================================
@@ -1489,7 +1475,6 @@ declare
   win_stat_point_bonus int;
   w_score int; l_score int;
   base_pts int; win_pts int; loss_pts int;
-  w_recent int; l_recent int;
   reward jsonb;
   has_bot boolean;
   is_afk boolean := (p_reason = 'afk');
@@ -1540,14 +1525,6 @@ begin
     win_stat_point_bonus := least(greatest((winner_streak - 1) / 2, 0), 3);
   end if;
 
-  -- 每小時上限:最近 60 分鐘已經拿到的 PVP 分數 + 這次，不能超過 HOURLY_CAP
-  select coalesce(sum(points), 0) into w_recent from career_score_log
-    where event_id = m.event_id and player_id = p_winner_id and created_at > now() - interval '60 minutes';
-  select coalesce(sum(points), 0) into l_recent from career_score_log
-    where event_id = m.event_id and player_id = p_loser_id and created_at > now() - interval '60 minutes';
-  win_pts := least(win_pts, greatest(HOURLY_CAP - w_recent, 0));
-  loss_pts := least(loss_pts, greatest(HOURLY_CAP - l_recent, 0));
-
   reward := jsonb_build_object(
     'winStreak', case when is_afk then 0 else winner_streak end,
     'streakScoreBonus', streak_score_bonus,
@@ -1555,8 +1532,7 @@ begin
     'statPointBonus', win_stat_point_bonus,
     'scoreGained', win_pts,
     'loserScoreGained', loss_pts,
-    'afkForfeit', is_afk,
-    'capped', (win_pts < case when is_afk then AFK_WIN_POINTS else coalesce(base_pts, 0) + streak_score_bonus end)
+    'afkForfeit', is_afk
   );
 
   update career_matches
@@ -1574,13 +1550,6 @@ begin
   update career_pvp_queue
   set status = 'idle', current_score = current_score + loss_pts, losses = losses + 1, win_streak = 0, last_matched_at = now()
   where event_id = m.event_id and player_id = p_loser_id;
-
-  if win_pts > 0 then
-    insert into career_score_log (event_id, player_id, points, reason) values (m.event_id, p_winner_id, win_pts, case when is_afk then 'afk_win' else 'win' end);
-  end if;
-  if loss_pts > 0 then
-    insert into career_score_log (event_id, player_id, points, reason) values (m.event_id, p_loser_id, loss_pts, 'loss');
-  end if;
 
   update career_progress
   set coins = coins + win_coin_reward,
