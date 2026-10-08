@@ -2554,7 +2554,7 @@ const db = (function () {
   // 掛機 = 樓層經驗 × 0.7 × 0.5(維持「掛機比手動慢」的相對關係)；掛機的幣仍只打 0.7 折。
   const CAREER_FIRST_CLEAR_EXP_MULT = 2;
   const CAREER_REPEAT_EXP_MULT = 0.5;
-  const CAREER_REPEAT_COIN_MULT = 0.6; // 【待模擬確認】重複挑戰的幣，先用暫定值
+  const CAREER_REPEAT_COIN_MULT = 1; // 重複挑戰的幣不砍(使用者回饋:幣維持原本收入)；之後要調改這個數字
   // 數值遞減(BUG md 29-3):超過 Lv.100 之後，每 3 級才給一次自由數值點(+2)與技能點(+1)。
   const CAREER_LEVEL_DIMINISH_AFTER = 100;
   const CAREER_LEVEL_DIMINISH_STEP = 3;
@@ -2739,6 +2739,8 @@ const db = (function () {
     const curLevel = levels[skillKey] || 0;
     const maxLevel = window.CareerData.MAX_SKILL_LEVEL;
     if (curLevel >= maxLevel) throw new Error("這個被動已經是目前開放的最高等級了");
+    const reqLv1 = window.CareerData.skillLevelCharReq(curLevel + 1);
+    if (progress.level < reqLv1) throw new Error(`升到 Lv.${curLevel + 1} 需要角色達到 Lv.${reqLv1}`);
 
     // 先扣本場活動的技能點,用樂觀鎖擋手快連點兩下(跟其他花點函式同一套寫法)
     const { data: spent, error: spendErr } = await client
@@ -2859,6 +2861,8 @@ const db = (function () {
     const activeSkills = _activeSkills(progress);
     const curLevel = activeSkills[nodeSuffix] || 0;
     if (curLevel >= window.CareerData.MAX_SKILL_LEVEL) throw new Error("這個技能/大招已經是目前開放的最高等級了");
+    const reqLv2 = window.CareerData.skillLevelCharReq(curLevel + 1);
+    if (progress.level < reqLv2) throw new Error(`升到 Lv.${curLevel + 1} 需要角色達到 Lv.${reqLv2}`);
     const nextActiveSkills = { ...activeSkills, [nodeSuffix]: curLevel + 1 };
     const { data, error } = await client
       .from("career_progress")
@@ -3826,57 +3830,76 @@ const db = (function () {
   }
 
   // 裝備合成:同一個部位、同一個稀有度的裝備湊滿3件，可以嘗試合成升級成下一個稀有度。
-  // 成功機率固定(見 CareerFloors.SYNTHESIS_SUCCESS_RATE)，成功拿到下一階裝備，
-  // 失敗只拿回1件隨機部位的普通裝備(等於虧了，賭運氣)。只做得到 普通->稀有->史詩，
-  // 傳說要不要開放合成是「以後可能會做」的事，目前 SYNTHESIS_PATH 沒有 epic 這一項，
-  // 之後真的要開放，直接補上那個 key 就好，這支函式不用改。
+  // 階段三(BUG md 28-3 第一批)改版:
+  //   - 稀有→史詩收 1000 幣、史詩→傳說收 3000 幣(普通→稀有免費)，不管成功失敗都收；
+  //   - 基礎成功率:普通→稀有 50%、稀有→史詩 50%、史詩→傳說 20%；
+  //   - 保底:同一階每連續失敗一次，下次成功率 +10%(最多 +40%)，成功後該階歸零，存在 career_progress.synthesis_pity；
+  //   - 失敗退回 1 件「同稀有度、同部位」的裝備(不再是普通裝備)；
+  //   - 史詩→傳說只會從一般傳說表挑(不含 Boss 限定傳說)，而且不佔傳說名額(不寫進 legendary_slots)，
+  //     會優先挑玩家還沒擁有過的名字，全都有了才會合出重複的。
   async function synthesizeCareerEquipment(eventId, playerId, slot, rarity) {
     await _assertCareerOpen(eventId);
+    const CF = window.CareerFloors;
     const [progress, build] = await Promise.all([
       getOrCreateCareerProgress(eventId, playerId),
       getCareerBuildFor(eventId, playerId),
     ]);
     if (!build) throw new Error("請先選好職業");
-    const nextRarity = window.CareerFloors.SYNTHESIS_PATH[rarity];
-    if (!nextRarity) throw new Error(rarity === "epic" ? "史詩是目前的合成上限" : "這個稀有度沒辦法合成");
-    const need = window.CareerFloors.SYNTHESIS_INPUT_COUNT;
+    const nextRarity = CF.SYNTHESIS_PATH[rarity];
+    if (!nextRarity) throw new Error(rarity === "legendary" ? "傳說是合成的最高等級" : "這個稀有度沒辦法合成");
+    const need = CF.SYNTHESIS_INPUT_COUNT;
+    const slotName = slot === "weapon" ? "武器" : slot === "armor" ? "防具" : "飾品";
     const matching = (progress.inventory || []).filter((it) => it.slot === slot && it.rarity === rarity);
     if (matching.length < need) {
-      throw new Error(`「${window.CareerFloors.RARITY_LABEL[rarity]}${slot === "weapon" ? "武器" : slot === "armor" ? "防具" : "飾品"}」不夠${need}件(目前${matching.length}件)`);
+      throw new Error(`「${CF.RARITY_LABEL[rarity]}${slotName}」不夠${need}件(目前${matching.length}件)`);
     }
+    const fee = CF.SYNTHESIS_COIN_COST[rarity] || 0;
+    if (progress.coins < fee) throw new Error(`合成要 ${fee} 幣，你的幣不夠`);
+
+    const pity = { ...(progress.synthesis_pity || {}) };
+    const streak = pity[rarity] || 0;
+    const rate = CF.synthesisRate(rarity, streak);
+
     const consumeIds = matching.slice(0, need).map((it) => it.id);
     let inventory = (progress.inventory || []).filter((it) => !consumeIds.includes(it.id));
 
-    const success = Math.random() < window.CareerFloors.SYNTHESIS_SUCCESS_RATE;
+    const tableFor = (r) =>
+      slot === "weapon" ? (CF.WEAPON_TABLE[build.final_class] || CF.WEAPON_TABLE.novice)[r] : CF.EQUIPMENT_TABLE[slot][r];
+
+    const success = Math.random() < rate;
     let resultItem;
     if (success) {
-      resultItem = {
-        slot,
-        ...window.CareerFloors.pickVariant(
-          slot === "weapon" ? (window.CareerFloors.WEAPON_TABLE[build.final_class] || window.CareerFloors.WEAPON_TABLE.novice)[nextRarity] : window.CareerFloors.EQUIPMENT_TABLE[slot][nextRarity]
-        ),
-      };
+      const table = tableFor(nextRarity);
+      if (nextRarity === "legendary") {
+        const owned = _ownedLegendaryNames(progress);
+        const notOwned = (table || []).filter((it) => !owned[it.name]);
+        const pool = notOwned.length ? notOwned : table || [];
+        if (!pool.length) throw new Error("這個部位目前沒有可以合成的傳說裝備");
+        resultItem = { slot, ...pool[Math.floor(Math.random() * pool.length)] };
+      } else {
+        resultItem = { slot, ...CF.pickVariant(table) };
+      }
+      pity[rarity] = 0;
     } else {
-      const randSlot = window.CareerFloors.SLOTS[Math.floor(Math.random() * window.CareerFloors.SLOTS.length)];
-      resultItem = {
-        slot: randSlot,
-        ...window.CareerFloors.pickVariant(
-          randSlot === "weapon" ? (window.CareerFloors.WEAPON_TABLE[build.final_class] || window.CareerFloors.WEAPON_TABLE.novice).common : window.CareerFloors.EQUIPMENT_TABLE[randSlot].common
-        ),
-      };
+      resultItem = { slot, ...CF.pickVariant(tableFor(rarity)) }; // 失敗退回 1 件同稀有度、同部位
+      pity[rarity] = streak + 1;
     }
     inventory = _addToInventory(inventory, resultItem);
 
-    // P0-4修復:合成也要鎖 inventory(同一個原因，見 equipCareerItem 的註解)。
+    // P0-4修復:合成也要鎖 inventory(同一個原因，見 equipCareerItem 的註解)。幣也一起比對，避免扣錯。
     const { data: updated, error } = await client
       .from("career_progress")
-      .update({ inventory })
+      .update({ inventory, coins: progress.coins - fee, synthesis_pity: pity })
       .eq("id", progress.id)
       .eq("inventory_rev", progress.inventory_rev) // 樂觀鎖:比對版本號(資料庫 trigger 在 inventory 變動時自動 +1)，不要拿整個 jsonb 當篩選條件
+      .eq("coins", progress.coins)
       .select();
-    if (error) throw error;
-    if (!updated || !updated.length) throw new Error("背包剛好被別的分頁更新過了，請重新整理後再試一次");
-    return { success, item: resultItem, progress: updated[0] };
+    if (error) {
+      if (/synthesis_pity/.test(error.message || "")) throw new Error("資料庫還沒更新，請先執行 migration-synthesis-pity.sql");
+      throw error;
+    }
+    if (!updated || !updated.length) throw new Error("背包或幣剛好被別的分頁更新過了，請重新整理後再試一次");
+    return { success, item: resultItem, fee, rate, nextStreak: pity[rarity], progress: updated[0] };
   }
 
   // 花一點自由數值點(atk/def/spd/hp/luck 其中一項 +1)

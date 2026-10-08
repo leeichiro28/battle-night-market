@@ -173,14 +173,20 @@ window.CareerData = (function () {
   const SKILL_MANA_COST = 4;
   const SKILL_DMG_MULT = 1.4; // 保留給沒有等級資訊的舊呼叫端當預設值(= Lv.1)
 
-  // 第22點更新:技能／被動不再只有「解鎖／沒解鎖」，改成 Lv.1 → Lv.2 → Lv.3(先開放到這裡，
-  // 之後要開 Lv.4、Lv.5 只要在這幾張表多加一格，不用把玩家進度重新歸零)。
+  // 第22點更新:技能／被動不再只有「解鎖／沒解鎖」，改成 Lv.1 → Lv.2 → Lv.3。
+  // 階段二(BUG md 29-5 第4項):上限提高到 Lv.5。Lv.4 要角色 Lv.50、Lv.5 要角色 Lv.100 才能升
+  // (SKILL_LEVEL_CHAR_REQ，改這裡就能調)。已經練到 Lv.3 的玩家進度不用歸零。
   // 這個等級是「永久繼承」的:存在 career_player_skills，只綁 player_id、不綁 event_id，
   // 所以跨活動、跨賽季都是同一份進度(見 db.js 的 getPlayerSkillLevels / upgradePlayerSkill)。
-  const MAX_SKILL_LEVEL = 3;
+  const MAX_SKILL_LEVEL = 5;
+  // 升到這個等級需要的「角色等級」(Lv.1~3 不限制)。【待你確認/可調】
+  const SKILL_LEVEL_CHAR_REQ = { 4: 50, 5: 100 };
+  function skillLevelCharReq(nextLevel) {
+    return SKILL_LEVEL_CHAR_REQ[nextLevel] || 0;
+  }
 
   // 「戰技」(主動技能)等級 -> 傷害倍率
-  const SKILL_LEVEL_DMG_MULT = { 1: 1.4, 2: 1.55, 3: 1.7 };
+  const SKILL_LEVEL_DMG_MULT = { 1: 1.4, 2: 1.55, 3: 1.7, 4: 1.85, 5: 2.0 };
   function skillDmgMult(level) {
     const lv = Math.max(1, Math.min(MAX_SKILL_LEVEL, level || 1));
     return SKILL_LEVEL_DMG_MULT[lv] || SKILL_DMG_MULT;
@@ -194,67 +200,67 @@ window.CareerData = (function () {
       icon: "crosshair",
       desc: "提升暴擊率(跟幸運力的暴擊加成疊加)",
       format: "percent",
-      levels: { 1: 0.03, 2: 0.04, 3: 0.05 }, // 暴擊率 +3% / +4% / +5%
+      levels: { 1: 0.03, 2: 0.04, 3: 0.05, 4: 0.06, 5: 0.07 }, // 暴擊率 +3% / +4% / +5%
     },
     exp_boost: {
       name: "博學被動",
       icon: "book-open",
       desc: "特訓／爬塔拿到的經驗值提升",
       format: "percent",
-      levels: { 1: 0.05, 2: 0.08, 3: 0.1 }, // 經驗 +5% / +8% / +10%
+      levels: { 1: 0.05, 2: 0.08, 3: 0.1, 4: 0.12, 5: 0.14 }, // 經驗 +5% / +8% / +10%
     },
     idle_cd: {
       name: "勤奮掛機",
       icon: "timer",
       desc: "特訓冷卻時間縮短",
       format: "seconds",
-      levels: { 1: 1, 2: 2, 3: 3 }, // CD -1秒 / -2秒 / -3秒
+      levels: { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5 }, // CD -1秒 / -2秒 / -3秒
     },
     coin_boost: {
       name: "財運被動",
       icon: "coins",
       desc: "特訓／爬塔拿到的金幣提升",
       format: "percent",
-      levels: { 1: 0.05, 2: 0.08, 3: 0.1 }, // 金幣 +5% / +8% / +10%
+      levels: { 1: 0.05, 2: 0.08, 3: 0.1, 4: 0.12, 5: 0.14 }, // 金幣 +5% / +8% / +10%
     },
     mana_regen: {
       name: "魔力充沛",
       icon: "droplets",
       desc: "對戰／爬塔每回合額外回復魔力(用技能或大招的回合也會回，不受「花魔力不回魔」限制)",
       format: "flat",
-      levels: { 1: 1, 2: 2, 3: 3 }, // 每回合多回 +1 / +2 / +3 魔力
+      levels: { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5 }, // 每回合多回 +1 / +2 / +3 魔力
     },
     crit_dmg_boost: {
       name: "爆擊強化",
       icon: "zap",
       desc: "暴擊時的額外傷害倍率提升(跟基礎的x1.5爆擊倍率疊加)",
       format: "percent",
-      levels: { 1: 0.1, 2: 0.15, 3: 0.2 }, // 爆擊倍率額外 +10% / +15% / +20%(基礎x1.5 -> 最高x1.7)
+      levels: { 1: 0.1, 2: 0.15, 3: 0.2, 4: 0.25, 5: 0.3 }, // 爆擊倍率額外 +10% / +15% / +20%(基礎x1.5 -> 最高x1.7)
     },
     drop_luck: {
       name: "鑑定之眼",
       icon: "gem",
       desc: "樓層戰勝利時，取得裝備掉落的機率提升",
       format: "percent",
-      levels: { 1: 0.03, 2: 0.05, 3: 0.08 }, // 掉落機率 +3% / +5% / +8%(直接加在樓層原本的掉落率上)
+      levels: { 1: 0.03, 2: 0.05, 3: 0.08, 4: 0.1, 5: 0.12 }, // 掉落機率 +3% / +5% / +8%(直接加在樓層原本的掉落率上)
     },
     ult_cost: {
       name: "大招精修",
       icon: "flame",
       desc: "大招消耗的魔力降低(最低會留1點魔力的門檻，不會被降到0)",
       format: "flat",
-      levels: { 1: 1, 2: 2, 3: 3 }, // 大招消耗 -1 / -2 / -3 魔力(基礎 CareerData.ULT_MANA_COST = 6)
+      levels: { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5 }, // 大招消耗 -1 / -2 / -3 魔力(基礎 CareerData.ULT_MANA_COST = 6)
     },
     // 數值加成被動(2026-09玩家回饋新增):純粹的固定數值提升，任何職業都能點(跟自己用不用得到無關，
     // 例如戰士點魔攻被動不會有效果，但不影響其他被動照常運作)。統一放在「永久被動」分類，
     // 不像職業被動那樣要看目前是什麼職業才能點。
-    atk_boost: { name: "臂力精研", icon: "sword", desc: "攻擊力固定提升", format: "flat", levels: { 1: 1, 2: 2, 3: 3 } },
-    def_boost: { name: "體魄精研", icon: "shield", desc: "防禦力固定提升", format: "flat", levels: { 1: 1, 2: 2, 3: 3 } },
-    matk_boost: { name: "魔力精研", icon: "sparkles", desc: "魔攻固定提升", format: "flat", levels: { 1: 1, 2: 2, 3: 3 } },
-    spd_boost: { name: "身法精研", icon: "wind", desc: "速度固定提升", format: "flat", levels: { 1: 1, 2: 2, 3: 3 } },
-    luck_boost: { name: "幸運精研", icon: "clover", desc: "幸運力固定提升(順便小幅加成暴擊率)", format: "flat", levels: { 1: 1, 2: 2, 3: 3 } },
-    hp_boost: { name: "體質精研", icon: "heart", desc: "最大HP固定提升", format: "flat", levels: { 1: 5, 2: 10, 3: 15 } },
-    mp_boost: { name: "魔量精研", icon: "droplets", desc: "最大MP固定提升", format: "flat", levels: { 1: 1, 2: 2, 3: 3 } },
+    atk_boost: { name: "臂力精研", icon: "sword", desc: "攻擊力固定提升", format: "flat", levels: { 1: 1, 2: 2, 3: 3, 4: 5, 5: 8 } },
+    def_boost: { name: "體魄精研", icon: "shield", desc: "防禦力固定提升", format: "flat", levels: { 1: 1, 2: 2, 3: 3, 4: 5, 5: 8 } },
+    matk_boost: { name: "魔力精研", icon: "sparkles", desc: "魔攻固定提升", format: "flat", levels: { 1: 1, 2: 2, 3: 3, 4: 5, 5: 8 } },
+    spd_boost: { name: "身法精研", icon: "wind", desc: "速度固定提升", format: "flat", levels: { 1: 1, 2: 2, 3: 3, 4: 5, 5: 8 } },
+    luck_boost: { name: "幸運精研", icon: "clover", desc: "幸運力固定提升(順便小幅加成暴擊率)", format: "flat", levels: { 1: 1, 2: 2, 3: 3, 4: 5, 5: 8 } },
+    hp_boost: { name: "體質精研", icon: "heart", desc: "最大HP固定提升", format: "flat", levels: { 1: 5, 2: 10, 3: 15, 4: 25, 5: 40 } },
+    mp_boost: { name: "魔量精研", icon: "droplets", desc: "最大MP固定提升", format: "flat", levels: { 1: 1, 2: 2, 3: 3, 4: 5, 5: 8 } },
   };
   const PASSIVE_KEYS = Object.keys(PASSIVE_DEFS);
   const STAT_BOOST_KEYS = { atk_boost: "atk", def_boost: "def", matk_boost: "matk", spd_boost: "spd", luck_boost: "luck", hp_boost: "hp", mp_boost: "mp" };
@@ -306,7 +312,7 @@ window.CareerData = (function () {
       effectKey: "ignoreDefRatio",
       desc: "「破防打法」無視防禦比例提升(基礎30%)",
       format: "percent",
-      levels: { 1: 0.05, 2: 0.08, 3: 0.12 },
+      levels: { 1: 0.05, 2: 0.08, 3: 0.12, 4: 0.16, 5: 0.2 },
     },
     guardian: {
       name: "反擊精研",
@@ -314,7 +320,7 @@ window.CareerData = (function () {
       effectKey: "counterChance",
       desc: "「反擊姿態」觸發機率提升(基礎15%)",
       format: "percent",
-      levels: { 1: 0.05, 2: 0.08, 3: 0.12 },
+      levels: { 1: 0.05, 2: 0.08, 3: 0.12, 4: 0.16, 5: 0.2 },
     },
     archer: {
       name: "連射精研",
@@ -322,7 +328,7 @@ window.CareerData = (function () {
       effectKey: "extraHitChance",
       desc: "「連射訓練」追加一擊機率提升(基礎20%)",
       format: "percent",
-      levels: { 1: 0.05, 2: 0.08, 3: 0.12 },
+      levels: { 1: 0.05, 2: 0.08, 3: 0.12, 4: 0.16, 5: 0.2 },
     },
     assassin: {
       name: "暗殺精研",
@@ -330,7 +336,7 @@ window.CareerData = (function () {
       effectKey: "lethalRhythmMax",
       desc: "「致命節奏」暴擊率加成上限提升(基礎30%)",
       format: "percent",
-      levels: { 1: 0.05, 2: 0.08, 3: 0.12 },
+      levels: { 1: 0.05, 2: 0.08, 3: 0.12, 4: 0.16, 5: 0.2 },
     },
     mage: {
       name: "法術精研",
@@ -338,7 +344,7 @@ window.CareerData = (function () {
       effectKey: "magicDmgBonus",
       desc: "所有魔法傷害額外提升",
       format: "percent",
-      levels: { 1: 0.05, 2: 0.08, 3: 0.12 },
+      levels: { 1: 0.05, 2: 0.08, 3: 0.12, 4: 0.16, 5: 0.2 },
     },
     healer: {
       name: "治療精研",
@@ -346,7 +352,7 @@ window.CareerData = (function () {
       effectKey: "healBonus",
       desc: "「完全治癒」跟每回合回血量提升",
       format: "flat",
-      levels: { 1: 1, 2: 2, 3: 3 },
+      levels: { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5 },
     },
   };
 
@@ -519,17 +525,17 @@ window.CareerData = (function () {
 
   // ---- 每個最終職業底下:2個主動技能節點 + 2個大招節點(擇一裝備) + 1個職業被動節點 ----
   // dmgMultByLevel 沿用現有 SKILL_LEVEL_DMG_MULT 的級距(1.4/1.55/1.7)，之後平衡再個別微調。
-  const DEFAULT_SKILL_DMG = { 1: 1.4, 2: 1.55, 3: 1.7 };
+  const DEFAULT_SKILL_DMG = { 1: 1.4, 2: 1.55, 3: 1.7, 4: 1.85, 5: 2.0 };
   // maxLevel也提高到MAX_SKILL_LEVEL了(以前大招固定maxLevel:1，現在大招也能升級，見career-engine.js
   // 的 scaleUltEffect)。技能C(skill3)是2026-09第二輪回饋新增的:每個職業3個技能候選，
   // 玩家自由選2個裝備到技能A/B，不是只有固定的1、2號。
   function _addClassKit(classKey, requires, kit) {
-    _addNode({ id: `${classKey}_skill_1`, type: "active_skill", requires, unlockCharLevel: 15, cost: 1, maxLevel: 3, name: kit.skill1.name, icon: kit.skill1.icon, effect: { dmgMultByLevel: DEFAULT_SKILL_DMG, manaCost: SKILL_MANA_COST, desc: kit.skill1.desc } });
-    _addNode({ id: `${classKey}_skill_2`, type: "active_skill", requires, unlockCharLevel: 15, cost: 1, maxLevel: 3, name: kit.skill2.name, icon: kit.skill2.icon, effect: { dmgMultByLevel: DEFAULT_SKILL_DMG, manaCost: SKILL_MANA_COST, desc: kit.skill2.desc } });
-    _addNode({ id: `${classKey}_skill_3`, type: "active_skill", requires, unlockCharLevel: 15, cost: 1, maxLevel: 3, name: kit.skill3.name, icon: kit.skill3.icon, effect: { dmgMultByLevel: DEFAULT_SKILL_DMG, manaCost: SKILL_MANA_COST, desc: kit.skill3.desc } });
+    _addNode({ id: `${classKey}_skill_1`, type: "active_skill", requires, unlockCharLevel: 15, cost: 1, maxLevel: MAX_SKILL_LEVEL, name: kit.skill1.name, icon: kit.skill1.icon, effect: { dmgMultByLevel: DEFAULT_SKILL_DMG, manaCost: SKILL_MANA_COST, desc: kit.skill1.desc } });
+    _addNode({ id: `${classKey}_skill_2`, type: "active_skill", requires, unlockCharLevel: 15, cost: 1, maxLevel: MAX_SKILL_LEVEL, name: kit.skill2.name, icon: kit.skill2.icon, effect: { dmgMultByLevel: DEFAULT_SKILL_DMG, manaCost: SKILL_MANA_COST, desc: kit.skill2.desc } });
+    _addNode({ id: `${classKey}_skill_3`, type: "active_skill", requires, unlockCharLevel: 15, cost: 1, maxLevel: MAX_SKILL_LEVEL, name: kit.skill3.name, icon: kit.skill3.icon, effect: { dmgMultByLevel: DEFAULT_SKILL_DMG, manaCost: SKILL_MANA_COST, desc: kit.skill3.desc } });
     _addNode({ id: `${classKey}_ult_1`, type: "ultimate", requires, unlockCharLevel: 15, cost: 1, maxLevel: MAX_SKILL_LEVEL, name: kit.ult1.name, icon: kit.ult1.icon, effect: kit.ult1.effect });
     _addNode({ id: `${classKey}_ult_2`, type: "ultimate", requires, unlockCharLevel: 15, cost: 1, maxLevel: MAX_SKILL_LEVEL, name: kit.ult2.name, icon: kit.ult2.icon, effect: kit.ult2.effect });
-    _addNode({ id: `${classKey}_mastery`, type: "passive", requires, unlockCharLevel: 15, cost: 1, maxLevel: 3, name: kit.mastery.name, icon: kit.mastery.icon, effect: { levels: kit.mastery.levels, desc: kit.mastery.desc } });
+    _addNode({ id: `${classKey}_mastery`, type: "passive", requires, unlockCharLevel: 15, cost: 1, maxLevel: MAX_SKILL_LEVEL, name: kit.mastery.name, icon: kit.mastery.icon, effect: { levels: kit.mastery.levels, desc: kit.mastery.desc } });
   }
 
   _addClassKit("warrior", "class_warrior", {
@@ -538,7 +544,7 @@ window.CareerData = (function () {
     skill3: { name: "旋風斬", icon: "wind", desc: "不看對方防禦策略，單純追求高爆發" },
     ult1: { name: "怒吼衝鋒", icon: "flame", effect: { kind: "dmgMult", value: 2, desc: "這回合傷害 x2" } },
     ult2: { name: "血戰怒吼", icon: "heart", effect: { kind: "lifesteal", dmgMult: 1.5, lifestealRatio: 0.3, desc: "傷害 x1.5，並回復造成傷害30%的HP" } },
-    mastery: { name: "破防精研", icon: "sword", levels: { 1: 0.05, 2: 0.08, 3: 0.12 }, desc: "破防打法無視防禦比例提升" },
+    mastery: { name: "破防精研", icon: "sword", levels: { 1: 0.05, 2: 0.08, 3: 0.12, 4: 0.16, 5: 0.2 }, desc: "破防打法無視防禦比例提升" },
   });
   _addClassKit("guardian", "class_guardian", {
     skill1: { name: "盾擊", icon: "shield", desc: "花費魔力，對敵人造成比普通攻擊更高的傷害" },
@@ -546,7 +552,7 @@ window.CareerData = (function () {
     skill3: { name: "格擋反手", icon: "shield-half", desc: "攻守兼具，兼顧輸出跟自身防禦" },
     ult1: { name: "銅牆鐵壁", icon: "shield", effect: { kind: "immune", dmgReduceRatio: 0.9, skipAttack: true, desc: "受到傷害-90%，本回合不出手" } },
     ult2: { name: "剛毅反擊", icon: "shield-alert", effect: { kind: "immune", dmgReduceRatio: 0.5, skipAttack: false, desc: "受到傷害-50%(比銅牆鐵壁少防)，但本回合仍可正常攻擊，不用跳過" } },
-    mastery: { name: "反擊精研", icon: "shield", levels: { 1: 0.05, 2: 0.08, 3: 0.12 }, desc: "反擊姿態觸發機率提升" },
+    mastery: { name: "反擊精研", icon: "shield", levels: { 1: 0.05, 2: 0.08, 3: 0.12, 4: 0.16, 5: 0.2 }, desc: "反擊姿態觸發機率提升" },
   });
   _addClassKit("archer", "class_archer", {
     skill1: { name: "精準射擊", icon: "target", desc: "花費魔力，對敵人造成比普通攻擊更高的傷害" },
@@ -554,7 +560,7 @@ window.CareerData = (function () {
     skill3: { name: "連珠箭", icon: "target", desc: "射速快，魔力花費相同但手感更輕快" },
     ult1: { name: "連環箭", icon: "target", effect: { kind: "multiHit", hits: 2, desc: "連續攻擊2次" } },
     ult2: { name: "貫穿射擊", icon: "crosshair", effect: { kind: "pierce", dmgMult: 2.2, ignoreDefRatio: 1, desc: "單次無視防禦，造成 x2.2 傷害" } },
-    mastery: { name: "連射精研", icon: "target", levels: { 1: 0.05, 2: 0.08, 3: 0.12 }, desc: "連射訓練追加一擊機率提升" },
+    mastery: { name: "連射精研", icon: "target", levels: { 1: 0.05, 2: 0.08, 3: 0.12, 4: 0.16, 5: 0.2 }, desc: "連射訓練追加一擊機率提升" },
   });
   _addClassKit("assassin", "class_assassin", {
     skill1: { name: "突刺", icon: "sword", desc: "花費魔力，對敵人造成比普通攻擊更高的傷害" },
@@ -562,7 +568,7 @@ window.CareerData = (function () {
     skill3: { name: "暗影步", icon: "wind", desc: "欺身近打，講求速戰速決" },
     ult1: { name: "暗殺", icon: "crosshair", effect: { kind: "guaranteedCritBelowHalf", desc: "對方HP過半以下必爆擊" } },
     ult2: { name: "血影連斬", icon: "swords", effect: { kind: "multiHit", hits: 3, dmgMultPerHit: 0.6, desc: "連續攻擊3次，每次傷害x0.6" } },
-    mastery: { name: "暗殺精研", icon: "crosshair", levels: { 1: 0.05, 2: 0.08, 3: 0.12 }, desc: "致命節奏暴擊率上限提升" },
+    mastery: { name: "暗殺精研", icon: "crosshair", levels: { 1: 0.05, 2: 0.08, 3: 0.12, 4: 0.16, 5: 0.2 }, desc: "致命節奏暴擊率上限提升" },
   });
   _addClassKit("mage", "class_mage", {
     skill1: { name: "魔彈", icon: "sparkles", desc: "花費魔力，對敵人造成比普通攻擊更高的傷害" },
@@ -570,7 +576,7 @@ window.CareerData = (function () {
     skill3: { name: "冰霜箭", icon: "snowflake", desc: "魔攻導向，走精準路線的單體魔法" },
     ult1: { name: "魔力爆發", icon: "flame", effect: { kind: "ignoreDef", ignoreDefRatio: 1, desc: "無視防禦，造成大量傷害" } },
     ult2: { name: "寒冰新星", icon: "snowflake", effect: { kind: "dmgMult", value: 1.8, extraCrit: 0.15, desc: "傷害 x1.8，且這回合暴擊率額外+15%" } },
-    mastery: { name: "法術精研", icon: "sparkles", levels: { 1: 0.05, 2: 0.08, 3: 0.12 }, desc: "魔法傷害額外提升" },
+    mastery: { name: "法術精研", icon: "sparkles", levels: { 1: 0.05, 2: 0.08, 3: 0.12, 4: 0.16, 5: 0.2 }, desc: "魔法傷害額外提升" },
   });
   _addClassKit("healer", "class_healer", {
     skill1: { name: "聖光斬", icon: "heart-pulse", desc: "花費魔力，對敵人造成比普通攻擊更高的傷害" },
@@ -578,7 +584,7 @@ window.CareerData = (function () {
     skill3: { name: "淨化打擊", icon: "sparkles", desc: "魔攻導向，走驅邪路線的單體魔法" },
     ult1: { name: "完全治癒", icon: "heart-pulse", effect: { kind: "heal", healRatio: 0.5, skipAttack: true, desc: "回滿一半HP" } },
     ult2: { name: "神聖新星", icon: "sun", effect: { kind: "dmgMult", value: 1.6, desc: "改走攻擊路線，傷害 x1.6(不回血)" } },
-    mastery: { name: "治療精研", icon: "heart", levels: { 1: 1, 2: 2, 3: 3 }, desc: "完全治癒/每回合回血量提升" },
+    mastery: { name: "治療精研", icon: "heart", levels: { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5 }, desc: "完全治癒/每回合回血量提升" },
   });
 
   // ---- 通用被動:不綁系別/職業，Lv.5 技能樹一解鎖就能點(跟現有 PASSIVE_DEFS 8個對應) ----
@@ -617,7 +623,7 @@ window.CareerData = (function () {
   function scaleUltEffect(effect, level) {
     if (!effect) return effect;
     const lv = Math.max(1, Math.min(MAX_SKILL_LEVEL, level || 1));
-    const scale = { 1: 1, 2: 1.1, 3: 1.2 }[lv];
+    const scale = { 1: 1, 2: 1.1, 3: 1.2, 4: 1.3, 5: 1.4 }[lv];
     const round2 = (n) => Math.round(n * 100) / 100;
     const scaled = { ...effect };
     if (effect.kind === "dmgMult") scaled.value = round2((effect.value || 1) * scale);
@@ -689,6 +695,8 @@ window.CareerData = (function () {
     SKILL_MANA_COST,
     SKILL_DMG_MULT,
     MAX_SKILL_LEVEL,
+    SKILL_LEVEL_CHAR_REQ,
+    skillLevelCharReq,
     SKILL_LEVEL_DMG_MULT,
     skillDmgMult,
     PASSIVE_DEFS,

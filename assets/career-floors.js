@@ -120,16 +120,17 @@ window.CareerFloors = (function () {
 
     // 掉落機率跟稀有度用一致的四級系統(跟夜市拍賣商品清單同一套 common/rare/epic/legendary)：
     // 一般樓層只掉得到 普通/稀有；小關主保底掉 稀有 或 史詩。
-    // P2-2/P2-4新增:40層、50層Boss額外有機率掉「Boss限定傳說裝備」；40層開始，
-    // 就算不是關主樓層，每一層也都開始有機率掉史詩(機率隨樓層往上小幅提高)。
+    // P2-2新增:40層、50層Boss額外有機率掉「Boss限定傳說裝備」；P2-4:40層開始一般樓層也有機率掉史詩。
     let dropChance = isMiniBoss ? 1 : 0.3;
     let dropRarityWeights;
     const isLegendaryBossFloor = n === 40 || n === 50;
     if (isLegendaryBossFloor) {
       dropRarityWeights = { epic: 0.5, legendary: 0.5 };
     } else if (isMiniBoss) {
-      dropRarityWeights = { rare: 0.6, epic: 0.4 };
+      dropRarityWeights = { rare: 0.25, epic: 0.75 }; // 階段三回饋:史詩只從關主來，所以關主史詩比例從 40% 調到 75%
     } else if (n >= 40) {
+      // 使用者回饋(階段三後):一般樓層也要掉史詩，恢復 P2-4 原本的規則——40層開始每層有機率掉史詩。
+      // 想讓更早的樓層也掉史詩，把上面的 `n >= 40` 改小即可。
       const epicChance = 0.05 + (n - 40) * 0.01; // 40層5%、49層14%，逐層微幅提高
       dropRarityWeights = { common: 0.5, rare: Math.round((0.5 - epicChance) * 1000) / 1000, epic: epicChance };
     } else {
@@ -484,11 +485,23 @@ window.CareerFloors = (function () {
 
   // 裝備合成:同部位、同稀有度的裝備湊滿3件就能嘗試合成，成功機率固定，
   // 成功拿到下一個稀有度的裝備、失敗拿回1件隨機部位的普通裝備(等於虧了，賭運氣)。
-  // 只做得到 普通->稀有->史詩，傳說要另外開放合成的話，以後把 SYNTHESIS_PATH.epic 補上就好，
-  // 這裡先照要求不開放。
-  const SYNTHESIS_PATH = { common: "rare", rare: "epic" };
+  // 階段三起可以一路合成到傳說(史詩→傳說)，並加入收費與失敗保底，見下面的常數。
+  // 階段三:合成開放到傳說(史詩→傳說)。合成出的傳說只會從「一般傳說表」挑，
+  // Boss限定傳說(BOSS_LEGENDARY_ITEMS)不能合成。合成出來的傳說不佔傳說名額。
+  const SYNTHESIS_PATH = { common: "rare", rare: "epic", epic: "legendary" };
   const SYNTHESIS_INPUT_COUNT = 3;
-  const SYNTHESIS_SUCCESS_RATE = 0.5;
+  const SYNTHESIS_SUCCESS_RATE = 0.5; // 保留給舊呼叫端；實際用 SYNTHESIS_BASE_RATE
+  // 各階基礎成功率、花的幣(以「投入的稀有度」為 key)。【待模擬確認】
+  const SYNTHESIS_BASE_RATE = { common: 0.5, rare: 0.5, epic: 0.2 };
+  const SYNTHESIS_COIN_COST = { common: 0, rare: 1000, epic: 3000 };
+  // 保底:同一階每連續失敗一次，下次成功率 +10%，最多加到 +40%；成功後該階歸零。
+  const SYNTHESIS_PITY_STEP = 0.1;
+  const SYNTHESIS_PITY_MAX_BONUS = 0.4;
+  function synthesisRate(rarity, failStreak) {
+    const base = SYNTHESIS_BASE_RATE[rarity] || 0;
+    const bonus = Math.min(SYNTHESIS_PITY_MAX_BONUS, (failStreak || 0) * SYNTHESIS_PITY_STEP);
+    return Math.min(1, Math.round((base + bonus) * 100) / 100);
+  }
 
   return {
     FLOORS,
@@ -523,5 +536,10 @@ window.CareerFloors = (function () {
     SYNTHESIS_PATH,
     SYNTHESIS_INPUT_COUNT,
     SYNTHESIS_SUCCESS_RATE,
+    SYNTHESIS_BASE_RATE,
+    SYNTHESIS_COIN_COST,
+    SYNTHESIS_PITY_STEP,
+    SYNTHESIS_PITY_MAX_BONUS,
+    synthesisRate,
   };
 })();
