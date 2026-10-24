@@ -1,6 +1,6 @@
 // 職業養成對決 數值模擬器(Node 執行,不需要資料庫)。
 //   node tools/sim.js leveling   升級速度:比較「舊規則」與「新規則」在不同玩法下,60 分鐘後的等級與樓層
-//   node tools/sim.js winrate    勝率表:各等級的玩家(配點、無裝備)打各樓層的勝率
+//   node tools/sim.js winrate    勝率表:各等級的玩家(配點、無裝備)打各樓層的勝率(可加 --mhp 1.38 --matk 1.38 模擬怪物更強)
 // 直接載入 assets/ 底下真正的 career-*.js,所以戰鬥結果跟遊戲裡用的是同一套引擎。
 //
 // 已知限制(解讀結果時要記得):
@@ -58,8 +58,12 @@ function sideFor(classKey, stats) {
     ultCostReduce: 0, mastery: CD.classMasteryBonus(classKey, 0), lifestealOnHit: 0, dmgReduceRatio: 0,
   };
 }
+// --mhp / --matk:怪物 HP、攻擊倍率(模擬今夜主題與「怪物暴動」,例如中元夜+暴動 = 兩者相乘約 1.38)
+const MHP = opt("mhp", 1), MATK = opt("matk", 1);
 function fight(classKey, stats, floorDef) {
-  return PVE.simulateFloorBattle(sideFor(classKey, stats), { classKey: floorDef.classKey, stats: floorDef.stats });
+  const st = floorDef.stats;
+  const mon = MHP === 1 && MATK === 1 ? st : { ...st, hp: Math.round(st.hp * MHP), maxHp: Math.round((st.maxHp || st.hp) * MHP), atk: Math.round(st.atk * MATK), matk: Math.round((st.matk || 0) * MATK) };
+  return PVE.simulateFloorBattle(sideFor(classKey, stats), { classKey: floorDef.classKey, stats: mon });
 }
 
 // ---------- 升級速度 ----------

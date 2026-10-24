@@ -65,7 +65,8 @@ function renderThemeSelect() {
   const sel = document.getElementById("new-theme");
   sel.innerHTML = CareerStory.THEME_ORDER.map((k) => `<option value="${k}">${ui.esc(CareerStory.THEMES[k].label)}</option>`).join("");
   const updateDesc = () => {
-    document.getElementById("new-theme-desc").textContent = CareerStory.getTheme(sel.value).desc;
+    const ruleText = window.CareerModifiers ? CareerModifiers.themeRuleText(sel.value) : "";
+    document.getElementById("new-theme-desc").textContent = CareerStory.getTheme(sel.value).desc + (ruleText ? `(規則:${ruleText})` : "");
   };
   sel.onchange = updateDesc;
   updateDesc();

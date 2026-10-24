@@ -26,10 +26,12 @@
     { key: "synthesis", icon: "flask-conical", label: "合成" },
     { key: "skilltree", icon: "wand-sparkles", label: "技能樹" },
     { key: "backpack", icon: "backpack", label: "背包" },
+    { key: "missions", icon: "target", label: "任務" },
   ];
 
   let ev = null;
   let myId = null;
+  let myQueue = null; // 我在 PVP 排隊表的紀錄(勝場、最高連勝…),任務進度要用
   let myBuild = null;
   let progress = null;
   let skillLevels = {}; // 第22點更新:永久被動等級(通用被動+職業被動，只綁player_id，跨活動/跨賽季都不會重置)
@@ -162,6 +164,9 @@
         const entry = await db.getMyCareerQueueEntry(eventId, myId);
         if (entry && entry.status === "waiting") await db.scanCareerMatchmaking(eventId);
         const fresh = entry ? await db.getMyCareerQueueEntry(eventId, myId) : null;
+        const prevWins = myQueue && myQueue.wins;
+        myQueue = fresh || entry || myQueue;
+        if (myQueue && prevWins != null && myQueue.wins !== prevWins) render(); // 贏了 PVP 就更新任務進度
         let inMatch = false;
         if (fresh && fresh.status === "matched") {
           inMatch = !!(await db.getMyActiveCareerMatch(eventId, myId).catch(() => null));
@@ -241,6 +246,7 @@
   async function loadAndRender() {
     progress = await db.getOrCreateCareerProgress(eventId, myId);
     skillLevels = await db.getPlayerSkillLevels(myId).catch(() => skillLevels || {});
+    myQueue = await db.getMyCareerQueueEntry(eventId, myId).catch(() => myQueue); // 任務進度(PVP 勝場等)要用
     render();
   }
 
@@ -301,7 +307,7 @@
     return `
       <div class="folder-tabs" id="tower-tabs">
         ${tabs.map(
-          (t) => `<div class="folder-tab${activeTab === t.key ? " active" : ""}" data-tab="${t.key}">${ui.icon(t.icon)}${ui.esc(t.label)}</div>`
+          (t) => `<div class="folder-tab${activeTab === t.key ? " active" : ""}" data-tab="${t.key}">${ui.icon(t.icon)}${ui.esc(t.label)}${t.key === "missions" ? missionBadge() : ""}</div>`
         ).join("")}
       </div>`;
   }
@@ -907,6 +913,57 @@
       </div>`;
   }
 
+  // ---------------- 分頁:每場任務 ----------------
+  // 清單與條件在 assets/career-missions.js。進度每次畫面更新都用最新的 progress / myQueue 重算;
+  // 領取時資料庫端還會再算一次(claimCareerMission),畫面上的舊資料不能亂領。
+  function missionCtx() {
+    return CareerMissions.ctxFrom(progress, myQueue);
+  }
+  function missionBadge() {
+    if (!window.CareerMissions || !progress) return "";
+    const n = CareerMissions.claimableCount(missionCtx());
+    return n > 0 ? ` <b style="color:var(--gold);">(${n})</b>` : "";
+  }
+  function renderMissionsTab(locked) {
+    const M = CareerMissions;
+    const ctx = missionCtx();
+    const list = M.visible(ctx);
+    const scoreNow = progress.mission_score || 0;
+    const rows = M.GROUP_ORDER.map((g) => {
+      const items = list.filter((m) => m.group === g);
+      if (!items.length) return "";
+      const body = items
+        .map((m) => {
+          const st = M.status(m, ctx);
+          const pct = Math.round((st.value / st.target) * 100);
+          const btn = st.claimed
+            ? `<span style="color:var(--green);font-size:12px;white-space:nowrap;">${ui.icon("check")}已領取</span>`
+            : st.done
+              ? `<button class="btn small" data-claim-mission="${m.key}" ${locked ? "disabled" : ""}>領取</button>`
+              : `<span style="color:var(--ink-dim);font-size:12px;white-space:nowrap;">${st.value}/${st.target}</span>`;
+          // 每個任務自成一塊(標題 + 右側狀態 / 說明 / 進度條),不用 .shop-row,
+          // 因為它在窄螢幕會把右側元素換行排到名稱上面,看起來會對到別的任務。
+          return `
+            <div style="padding:9px 0;border-bottom:1px dashed var(--line);${st.claimed ? "opacity:0.6;" : ""}">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                <b style="font-size:13.5px;min-width:0;overflow-wrap:anywhere;">${ui.esc(m.name)}</b>
+                <span style="flex-shrink:0;">${btn}</span>
+              </div>
+              <div style="font-size:11.5px;color:var(--ink-dim);margin-top:2px;line-height:1.6;overflow-wrap:anywhere;">${ui.esc(m.desc)}・獎勵:${ui.esc(M.rewardText(m))}</div>
+              <div class="stat-bar" style="margin-top:5px;"><div class="stat-bar-fill exp" style="width:${pct}%;${st.done ? "background:var(--green);" : ""}"></div></div>
+            </div>`;
+        })
+        .join("");
+      return `<div style="margin-top:12px;"><p class="shop-section-title">${ui.icon(M.GROUPS[g].icon)}${ui.esc(M.GROUPS[g].label)}</p>${body}</div>`;
+    }).join("");
+    return `
+      <p style="margin:0 0 4px;font-size:12px;color:var(--ink-dim);line-height:1.7;">
+        完成任務可以領幣、數值點、技能點，部分任務還會加排行分。任務排行分最多 ${M.SCORE_CAP} 分(你目前 ${scoreNow} 分)。
+        對機器人練習不算 PVP 勝場，對手掛網棄權的勝利不算連勝。
+      </p>
+      ${rows}`;
+  }
+
   // ---------------- 分頁:技能樹 ----------------
   // 玩家實測回饋(2026-09)後重做過一次:
   //   1. 以前上面有一份「現況」卡片(普攻/戰技/大招)、下面又有一份「路線圖」卡片，同樣的技能A/大招
@@ -1454,6 +1511,7 @@
     }
 
     html += storyBannerHtml(phase, eventClosed);
+    if (!eventClosed && phase !== "not_started" && window.CareerModifiers) html += CareerModifiers.bannerHtml(ev && ev.rules);
 
     html += `
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
@@ -1499,6 +1557,8 @@
       }
     } else if (activeTab === "backpack") {
       html += renderBackpackTab();
+    } else if (activeTab === "missions") {
+      html += renderMissionsTab(locked);
     }
     html += `</div>`;
 
@@ -1971,6 +2031,25 @@
         }
       };
     }
+    app.querySelectorAll("[data-claim-mission]").forEach((btn) => {
+      btn.onclick = async () => {
+        if (busy) return;
+        busy = true;
+        btn.disabled = true;
+        try {
+          const r = await db.claimCareerMission(eventId, myId, btn.dataset.claimMission);
+          progress = r.progress;
+          await ui.alert(`「${r.mission.name}」完成!獎勵:${CareerMissions.rewardText(r.mission)}${r.capped ? `\n(任務排行分已達上限 ${CareerMissions.SCORE_CAP} 分，這次沒有加分)` : ""}`, { title: "任務完成" });
+          render();
+        } catch (e) {
+          await ui.alert(e.message || "領取失敗", { title: "操作失敗", tone: "danger" });
+          await loadAndRender();
+        } finally {
+          busy = false;
+        }
+      };
+    });
+
     const synthesisSelect = document.getElementById("synthesis-select");
     if (synthesisSelect) synthesisSelect.onchange = () => { synthesisChoice = synthesisSelect.value; render(); }; // 換選項要馬上更新下面的費用/機率
     const synthesizeBtn = document.getElementById("synthesize-btn");

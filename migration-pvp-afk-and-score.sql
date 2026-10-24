@@ -1,6 +1,9 @@
 -- PVP 掛網判負 + 積分防刷。在 Supabase SQL Editor 執行一次即可(可重複執行)。
 -- 內容也已附加在 supabase-schema.sql 最後面，重跑整份 schema 效果相同。
 --
+alter table career_pvp_queue add column if not exists best_streak int not null default 0;
+alter table career_pvp_queue add column if not exists beat_higher int not null default 0;
+
 -- 1) cleanup_stale_career_matches:對戰中「有一方真人」超過 p_stale_seconds 秒沒回報在線，
 --    且另一方還在線 -> 判在線的那一方獲勝(走 finish_career_match，積分/連勝/獎勵照正常計算)；
 --    雙方都失聯、或對手是機器人 -> 單純結束，不判勝負不計分(避免被拿來刷分)。
@@ -13,30 +16,30 @@ language plpgsql
 as $$
 declare
   n int;
-  m record;
+  mt record;
   s1 timestamptz; s2 timestamptz;
   bot1 boolean; bot2 boolean;
   stale1 boolean; stale2 boolean;
 begin
-  for m in
+  for mt in
     select * from career_matches where event_id = p_event_id and status = 'active'
   loop
     select q.last_seen_at, pl.is_bot into s1, bot1
       from career_pvp_queue q join players pl on pl.id = q.player_id
-      where q.event_id = m.event_id and q.player_id = m.player1_id;
+      where q.event_id = mt.event_id and q.player_id = mt.player1_id;
     select q.last_seen_at, pl.is_bot into s2, bot2
       from career_pvp_queue q join players pl on pl.id = q.player_id
-      where q.event_id = m.event_id and q.player_id = m.player2_id;
+      where q.event_id = mt.event_id and q.player_id = mt.player2_id;
 
     stale1 := coalesce(not bot1, false) and s1 is not null and s1 < now() - make_interval(secs => p_stale_seconds);
     stale2 := coalesce(not bot2, false) and s2 is not null and s2 < now() - make_interval(secs => p_stale_seconds);
 
     if stale1 and not stale2 and not coalesce(bot2, false) then
-      perform finish_career_match(m.id, m.player2_id, m.player1_id, 'afk');   -- P1 掛網，P2 勝
+      perform finish_career_match(mt.id, mt.player2_id, mt.player1_id, 'afk');   -- P1 掛網，P2 勝
     elsif stale2 and not stale1 and not coalesce(bot1, false) then
-      perform finish_career_match(m.id, m.player1_id, m.player2_id, 'afk');   -- P2 掛網，P1 勝
+      perform finish_career_match(mt.id, mt.player1_id, mt.player2_id, 'afk');   -- P2 掛網，P1 勝
     elsif stale1 or stale2 then
-      update career_matches set status = 'done' where id = m.id and status = 'active';  -- 雙方失聯/對手是機器人
+      update career_matches set status = 'done' where id = mt.id and status = 'active';  -- 雙方失聯/對手是機器人
     end if;
   end loop;
 
@@ -72,6 +75,11 @@ declare
   LOSS_POINTS     constant int := 2;    -- 輸的參加分
   AFK_WIN_POINTS  constant int := 3;    -- 對手掛網棄權時，在場玩家拿到的分(不加連勝加成)
   AFK_WIN_COINS   constant int := 5;
+  -- 時段事件「擂台加碼」:活動開始後第 33～41 分鐘內結算的 PVP 積分 ×1.5。
+  -- 要跟前端 assets/career-modifiers.js 的 WINDOWS(key = arena)一起改。
+  ARENA_START_MIN constant numeric := 33;
+  ARENA_END_MIN   constant numeric := 41;
+  ARENA_BONUS_X   constant numeric := 1.5;
   -- ====================================
   m record;
   winner_streak int;
@@ -82,7 +90,10 @@ declare
   base_pts int; win_pts int; loss_pts int;
   reward jsonb;
   has_bot boolean;
-  is_afk boolean := (p_reason = 'afk');
+  is_afk boolean := coalesce(p_reason = 'afk', false); -- p_reason 沒傳時是 NULL,NULL = 'afk' 會是 NULL 而不是 false,所以一定要 coalesce
+  ev_rules jsonb;
+  mins numeric;
+  arena_mult numeric := 1;
 begin
   select * into m from career_matches where id = p_match_id and status = 'active';
   if m is null then
@@ -130,6 +141,19 @@ begin
     win_stat_point_bonus := least(greatest((winner_streak - 1) / 2, 0), 3);
   end if;
 
+  -- 擂台加碼:依活動經過的分鐘數判斷(activityEndsAt 往前推 60 分鐘 = 活動開始)
+  select rules into ev_rules from events where id = m.event_id;
+  if ev_rules is not null and ev_rules ? 'activityEndsAt' then
+    mins := extract(epoch from (now() - ((ev_rules->>'activityEndsAt')::timestamptz - interval '60 minutes'))) / 60;
+    if mins >= ARENA_START_MIN and mins < ARENA_END_MIN then
+      arena_mult := ARENA_BONUS_X;
+    end if;
+  end if;
+  if arena_mult > 1 then
+    win_pts := round(win_pts * arena_mult)::int;
+    loss_pts := round(loss_pts * arena_mult)::int;
+  end if;
+
   reward := jsonb_build_object(
     'winStreak', case when is_afk then 0 else winner_streak end,
     'streakScoreBonus', streak_score_bonus,
@@ -137,18 +161,22 @@ begin
     'statPointBonus', win_stat_point_bonus,
     'scoreGained', win_pts,
     'loserScoreGained', loss_pts,
-    'afkForfeit', is_afk
+    'afkForfeit', is_afk,
+    'arenaBonus', case when arena_mult > 1 then arena_mult else null end
   );
 
   update career_matches
   set status = 'done', winner_id = p_winner_id, state = coalesce(state, '{}'::jsonb) || jsonb_build_object('pvpReward', reward)
   where id = p_match_id;
 
+  -- best_streak / beat_higher 給「每場任務」用:掛網棄權的勝利不算連勝、不算贏過積分比自己高的人
   update career_pvp_queue
   set status = 'idle',
       current_score = current_score + win_pts,
       wins = wins + 1,
       win_streak = case when is_afk then win_streak else winner_streak end,
+      best_streak = greatest(coalesce(best_streak, 0), case when is_afk then 0 else winner_streak end),
+      beat_higher = coalesce(beat_higher, 0) + case when not is_afk and l_score > w_score then 1 else 0 end,
       last_matched_at = now()
   where event_id = m.event_id and player_id = p_winner_id;
 

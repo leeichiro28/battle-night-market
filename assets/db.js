@@ -2891,6 +2891,73 @@ const db = (function () {
     return ev;
   }
 
+  // ---------------- 每場任務(見 assets/career-missions.js) ----------------
+  // 沒載入 CareerMissions 的頁面(例如 PVP 頁)這些輔助函式都是原樣回傳,不會出錯。
+  // 還沒執行任務的 SQL(career_progress 沒有 mission_state 欄位)時，不能讓整個爬塔壞掉:
+  // 偵測到是這個欄位不存在就把它拿掉重送一次，只是任務計數暫時不會累積。
+  function _missingMissionColumn(error) {
+    return !!error && /mission_state|mission_score/.test(error.message || "") && (error.code === "PGRST204" || error.code === "42703" || /column|schema cache/i.test(error.message || ""));
+  }
+  function _bumpMission(state, name) {
+    return window.CareerMissions ? window.CareerMissions.bump(state, name, 1) : state;
+  }
+  // 遇到一種新事件就記一筆(已經記過就不寫資料庫)。失敗不影響爬塔本身。
+  async function _noteEventSeen(progress, eventKey) {
+    if (!window.CareerMissions) return;
+    const next = window.CareerMissions.noteSeen(progress.mission_state, "eventsSeen", eventKey);
+    if (next === progress.mission_state || next === (progress.mission_state || {})) return;
+    try {
+      await client.from("career_progress").update({ mission_state: next }).eq("id", progress.id);
+    } catch (e) {
+      console.error("記錄事件失敗", e);
+    }
+  }
+
+  // 領取任務獎勵。進度與是否已領都以資料庫最新資料重算,不信畫面上的舊資料;
+  // 排行分有總上限(SCORE_CAP);用 coins / 任務分 / 數值點 / 技能點當樂觀鎖,連點或兩個分頁同時領不會重複發。
+  async function claimCareerMission(eventId, playerId, missionKey) {
+    await _assertCareerOpen(eventId);
+    const M = window.CareerMissions;
+    const mission = M && M.get(missionKey);
+    if (!mission) throw new Error("找不到這個任務");
+    const [progress, queue] = await Promise.all([getOrCreateCareerProgress(eventId, playerId), getMyCareerQueueEntry(eventId, playerId).catch(() => null)]);
+    const ctx = M.ctxFrom(progress, queue);
+    if (mission.available && !mission.available(ctx)) throw new Error("這個任務目前還沒開放");
+    const st = M.status(mission, ctx);
+    if (st.claimed) throw new Error("這個任務的獎勵已經領過了");
+    if (!st.done) throw new Error("還沒完成這個任務");
+    const r = mission.reward || {};
+    const state = progress.mission_state || {};
+    const scoreNow = progress.mission_score || 0;
+    const scoreGain = Math.min(r.score || 0, Math.max(0, M.SCORE_CAP - scoreNow));
+    const patch = {
+      mission_state: { ...state, claimed: { ...(state.claimed || {}), [missionKey]: true } },
+      mission_score: scoreNow + scoreGain,
+      coins: progress.coins + (r.coins || 0),
+      stat_points: progress.stat_points + (r.statPoints || 0),
+      skill_points: progress.skill_points + (r.skillPoints || 0),
+    };
+    const { data: updated, error } = await client
+      .from("career_progress")
+      .update(patch)
+      .eq("id", progress.id)
+      .eq("coins", progress.coins)
+      .eq("mission_score", scoreNow)
+      .eq("stat_points", progress.stat_points)
+      .eq("skill_points", progress.skill_points)
+      .select();
+    if (error) throw error;
+    if (!updated || !updated.length) throw new Error("手慢了，請再按一次");
+    return { mission, scoreGain, capped: scoreGain < (r.score || 0), progress: updated[0] };
+  }
+
+  // 今夜主題規則 + 時段事件(見 assets/career-modifiers.js)套到樓層資料上。所有戰鬥/獎勵都讀 floorDef，
+  // 所以在「取得 floorDef 的地方」換成這一份就好。沒載入 CareerModifiers 或沒有任何加成就原樣回傳。
+  function _modFloorDef(rules, floorDef) {
+    if (!window.CareerModifiers || !floorDef) return floorDef;
+    return window.CareerModifiers.applyToFloor(floorDef, window.CareerModifiers.activeFor(rules));
+  }
+
   async function trainForCareerCoins(eventId, playerId) {
     await _assertCareerOpen(eventId);
     const [progress, skillLevels] = await Promise.all([getOrCreateCareerProgress(eventId, playerId), getPlayerSkillLevels(playerId)]);
@@ -3178,13 +3245,18 @@ const db = (function () {
       patch.auto_farm_floor = newFloor;
     }
     if (legendaryOwnedPatch) patch.legendary_slots = legendaryOwnedPatch;
+    patch.mission_state = _bumpMission(progress.mission_state, "pveWins"); // 任務:累計打贏場數
 
-    const { data: updated, error } = await client
+    let { data: updated, error } = await client
       .from("career_progress")
       .update(patch)
       .eq("id", progress.id)
       .select()
       .single();
+    if (_missingMissionColumn(error)) {
+      delete patch.mission_state;
+      ({ data: updated, error } = await client.from("career_progress").update(patch).eq("id", progress.id).select().single());
+    }
     if (error) throw error;
 
     // 夜記:打贏有劇情對話的關主(10/20/30/40/50 層)才記,一般樓層不記
@@ -3217,7 +3289,7 @@ const db = (function () {
   }
 
   async function challengeCareerFloor(eventId, playerId, floorNumber) {
-    await _assertCareerOpen(eventId);
+    const openEvent = await _assertCareerOpen(eventId);
     const [progress, build, skillLevels] = await Promise.all([
       getOrCreateCareerProgress(eventId, playerId),
       getCareerBuildFor(eventId, playerId),
@@ -3227,7 +3299,7 @@ const db = (function () {
     if (progress.pending_event) throw new Error("有一個夜市事件還沒處理完，請先選擇要怎麼應對");
     if (progress.active_boss_battle) throw new Error("還有一場王戰在進行中，先打完再繼續");
     if (floorNumber > progress.floor + 1) throw new Error("還沒清到這一層，請先按順序往上爬");
-    const floorDef = window.CareerFloors.getFloor(floorNumber);
+    const floorDef = _modFloorDef(openEvent.rules, window.CareerFloors.getFloor(floorNumber));
     if (!floorDef) throw new Error("找不到這一層的資料");
 
     const playerStatsForHp = window.CareerData.applyProgress(build.final_class, progress.stat_alloc, progress.equipment);
@@ -3268,6 +3340,7 @@ const db = (function () {
     }
     if (rolledEvent) {
       const eventDef = rolledEvent;
+      await _noteEventSeen(progress, eventDef.key); // 任務:遇過幾種事件
       // 夜記:遇到四個「疑似有關」的角色就記一筆(出現就算,不管玩家之後怎麼選)
       if (JOURNAL_NPC_BY_EVENT[eventDef.key]) _noteJournal(eventId, playerId, JOURNAL_NPC_BY_EVENT[eventDef.key]);
 
@@ -3397,7 +3470,7 @@ const db = (function () {
   // 直接算這一回合(不用像PVP等對方回合，因為怪物不是真人，不用等)。沒分出勝負就把
   // 進行中的狀態存回 active_boss_battle，分出勝負就結算獎勵、清空 active_boss_battle。
   async function submitCareerBossMove(eventId, playerId, action) {
-    await _assertCareerOpen(eventId);
+    const openEvent = await _assertCareerOpen(eventId);
     const [progress, build, skillLevels] = await Promise.all([
       getOrCreateCareerProgress(eventId, playerId),
       getCareerBuildFor(eventId, playerId),
@@ -3405,7 +3478,7 @@ const db = (function () {
     ]);
     const active = progress.active_boss_battle;
     if (!active) throw new Error("目前沒有進行中的王戰");
-    const floorDef = window.CareerFloors.getFloor(active.floor);
+    const floorDef = _modFloorDef(openEvent.rules, window.CareerFloors.getFloor(active.floor));
     if (!floorDef) throw new Error("找不到這一層的資料");
 
     const state = { ...active.state, m1: { action } };
@@ -3870,6 +3943,7 @@ const db = (function () {
       const base = nextRarity === "legendary" ? legendaryPool[Math.floor(Math.random() * legendaryPool.length)] : CFl.pickVariant(tableFor(nextRarity));
       resultItem = { slot, ...base };
       pity[rarity] = 0;
+      patch.mission_state = _bumpMission(progress.mission_state, "synthSuccess"); // 任務:合成成功次數
       if (nextRarity === "legendary") patch.legendary_slots = { ...owned, [resultItem.name]: true };
     } else {
       // 失敗:退回 1 件同部位、同稀有度的裝備，並累積保底
@@ -4031,6 +4105,7 @@ const db = (function () {
       patch.level = leveled.level;
       patch.stat_points = leveled.stat_points;
       patch.skill_points = leveled.skill_points;
+      patch.mission_state = _bumpMission(progress.mission_state, "pveWins");
       patch.auto_farm_last_result.coinGain = coinGain;
       patch.auto_farm_last_result.expGain = expGain;
     }
@@ -4040,7 +4115,7 @@ const db = (function () {
   // 開關練功掛機。floorNumber=null 表示關閉；開啟時樓層必須是已經清過的(<=目前floor)。
   // 開啟的當下就馬上打一場給玩家看(不用乾等第一次背景 tick 的間隔)，之後才交給背景定期推進。
   async function toggleCareerAutoFarm(eventId, playerId, floorNumber) {
-    if (floorNumber != null) await _assertCareerOpen(eventId); // 開始掛機要活動還開著；停止掛機隨時可以
+    const openEvent = floorNumber != null ? await _assertCareerOpen(eventId) : null; // 開始掛機要活動還開著；停止掛機隨時可以
     const progress = await getOrCreateCareerProgress(eventId, playerId);
     if (floorNumber != null && floorNumber > progress.floor) {
       throw new Error("只有已經清過的樓層才能開自動掛機");
@@ -4048,7 +4123,7 @@ const db = (function () {
     let patch = { auto_farm_floor: floorNumber, auto_farm_last_at: new Date().toISOString() };
     if (floorNumber != null) {
       const build = await getCareerBuildFor(eventId, playerId);
-      const floorDef = window.CareerFloors.getFloor(floorNumber);
+      const floorDef = _modFloorDef(openEvent && openEvent.rules, window.CareerFloors.getFloor(floorNumber));
       if (build && floorDef) {
         const skillLevels = await getPlayerSkillLevels(playerId);
         patch = { ...patch, ..._simulateFarmTick(progress, build, floorDef, skillLevels) };
@@ -4093,16 +4168,20 @@ const db = (function () {
       try {
         const build = await getCareerBuildFor(eventId, progress.player_id);
         if (!build) continue;
-        const floorDef = window.CareerFloors.getFloor(progress.auto_farm_floor);
+        const floorDef = _modFloorDef(event.rules, window.CareerFloors.getFloor(progress.auto_farm_floor));
         if (!floorDef) continue;
         const skillLevels = await getPlayerSkillLevels(progress.player_id);
         const patch = _simulateFarmTick(progress, build, floorDef, skillLevels);
-        const { data: updated, error: updErr } = await client
+        let { data: updated, error: updErr } = await client
           .from("career_progress")
           .update(patch)
           .eq("id", progress.id)
           .eq("auto_farm_last_at", progress.auto_farm_last_at)
           .select();
+        if (_missingMissionColumn(updErr)) {
+          delete patch.mission_state;
+          ({ data: updated, error: updErr } = await client.from("career_progress").update(patch).eq("id", progress.id).eq("auto_farm_last_at", progress.auto_farm_last_at).select());
+        }
         if (updErr) throw updErr;
         if (updated && updated.length) results.push({ playerId: progress.player_id, won: patch.auto_farm_last_result.won });
       } catch (e) {
@@ -4205,10 +4284,14 @@ const db = (function () {
   // (只要碰過爬塔就會有這筆)為準，PVP佇列資料用player_id對應貼上去，沒排過隊的人
   // 就當作PVP戰績是0，一樣會出現在排行榜上(只是分數只有爬塔加成)。
   async function computeCareerStandings(eventId) {
-    const [queueRows, progressRows] = await Promise.all([
+    let [queueRows, progressRows] = await Promise.all([
       client.from("career_pvp_queue").select("*, player:player_id(name)").eq("event_id", eventId),
-      client.from("career_progress").select("player_id, floor, player:player_id(name)").eq("event_id", eventId),
+      client.from("career_progress").select("player_id, floor, mission_score, player:player_id(name)").eq("event_id", eventId),
     ]);
+    // 還沒執行任務的 SQL(沒有 mission_score 欄位)時退回舊的查法,排行榜不會整個壞掉
+    if (progressRows.error) {
+      progressRows = await client.from("career_progress").select("player_id, floor, player:player_id(name)").eq("event_id", eventId);
+    }
     if (queueRows.error) throw queueRows.error;
     if (progressRows.error) throw progressRows.error;
     // 玩家回饋:排行榜要能看到參加者的職業、等級、數值，不是只有分數跟樓層。
@@ -4221,7 +4304,7 @@ const db = (function () {
     (queueRows.data || []).forEach((q) => (queueByPlayer[q.player_id] = q));
     const rows = (progressRows.data || []).map((p) => {
       const q = queueByPlayer[p.player_id];
-      const floorBonus = window.CareerFloors.floorScore(p.floor || 0);
+      const floorBonus = window.CareerFloors.floorScore(p.floor || 0) + (p.mission_score || 0); // 爬塔分 + 任務分
       const queueEntry = q || {
         player_id: p.player_id,
         player: p.player,
@@ -4443,6 +4526,7 @@ const db = (function () {
     listCareerBroadcasts,
     allocateCareerStatPoint,
     allocateCareerStatPoints,
+    claimCareerMission,
     clearCareerEventAutoChoice,
     unlockCareerSkill,
     getPlayerSkillLevels,
