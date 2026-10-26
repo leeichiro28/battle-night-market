@@ -2907,6 +2907,16 @@ const db = (function () {
   function _bumpMission(state, name) {
     return window.CareerMissions ? window.CareerMissions.bump(state, name, 1) : state;
   }
+  // 記「本場被救起 +1」(頒獎典禮「最常被救起」用)。夜記的 revive 是跨活動累計,算不出單場,所以另外記在 mission_state。
+  // 要 await:下一次挑戰會讀同一欄再寫回去,不等它寫完可能互相覆蓋。失敗不影響爬塔本身。
+  async function _noteRevive(progress) {
+    if (!window.CareerMissions || !progress) return;
+    try {
+      await client.from("career_progress").update({ mission_state: window.CareerMissions.bump(progress.mission_state, "revives", 1) }).eq("id", progress.id);
+    } catch (e) {
+      console.error("記錄被救起失敗", e);
+    }
+  }
   // 遇到一種新事件就記一筆(已經記過就不寫資料庫)。失敗不影響爬塔本身。
   async function _noteEventSeen(progress, eventKey) {
     if (!window.CareerMissions) return;
@@ -3654,6 +3664,7 @@ const db = (function () {
       if (error) throw error;
       _noteJournal(eventId, playerId, "revive"); // 夜記:被救起一次(只記次數,不記是誰救的)
       codexNoteStat(eventId, playerId, "revive", 1, updated);
+      await _noteRevive(updated);
       return { won: false, log: battle.log, progress: updated, floorDef };
     }
 
@@ -3693,6 +3704,7 @@ const db = (function () {
         if (error) throw error;
         _noteJournal(eventId, playerId, "revive"); // 夜記:被救起一次
         codexNoteStat(eventId, playerId, "revive", 1, updated);
+        await _noteRevive(updated);
         return { bossBattle: true, done: true, won: false, log: newState.log, floorDef, progress: updated };
       }
       const result = await _applyFloorWinRewards(eventId, playerId, progress, build, floorDef, active.floor, newState.hp1, newState.mp1, skillLevels);
@@ -4521,10 +4533,72 @@ const db = (function () {
     return rows;
   }
 
+  // ---------- 收攤頒獎典禮(獎項名稱與廣播句在 career-story.js 的 AWARDS) ----------
+  // 不另外存資料:每次都用這一場的資料現算(結算時廣播一次、活動結束後的排行榜頁再算一次顯示),
+  // 所以舊活動、沒跑過新 SQL 的活動也能顯示,算出來的結果永遠一致。
+  // 每個獎項取數值最高的人,同分就看總排名高的;沒達到門檻(AWARDS 的 min)就不頒,不會因為「全場都 0」硬頒給某人。
+  // 目前沒有統計所以還沒做的獎項:最幸運(掉稀有以上最多)、翻盤王(落後後逆轉)。
+  async function computeCareerAwards(eventId, standings) {
+    const S = window.CareerStory;
+    if (!S || !S.AWARDS) return [];
+    const rows = standings || (await computeCareerStandings(eventId));
+    if (!rows.length) return [];
+    let progRes = await client.from("career_progress").select("player_id, floor, mission_state").eq("event_id", eventId);
+    if (progRes.error) progRes = await client.from("career_progress").select("player_id, floor").eq("event_id", eventId);
+    const progByPlayer = {};
+    (progRes.data || []).forEach((p) => (progByPlayer[p.player_id] = p));
+    const metric = (row, key) => {
+      const pid = row.queueEntry.player_id;
+      const p = progByPlayer[pid] || {};
+      const counters = (p.mission_state && p.mission_state.counters) || {};
+      if (key === "climber") return p.floor || row.floor || 0;
+      if (key === "revived") return counters.revives || 0;
+      if (key === "streak") return row.queueEntry.best_streak || 0;
+      if (key === "stroller") return Object.keys(counters.eventsSeen || {}).length;
+      return 0;
+    };
+    const out = [];
+    S.AWARDS.forEach((a) => {
+      let best = null; // rows 已依總積分排序,所以同分時先出現的(名次高的)會留下來
+      rows.forEach((row) => {
+        const v = metric(row, a.key);
+        if (v >= a.min && (!best || v > best.value)) best = { row, value: v };
+      });
+      if (best) {
+        out.push({
+          key: a.key,
+          icon: a.icon,
+          title: a.title,
+          playerId: best.row.queueEntry.player_id,
+          name: (best.row.queueEntry.player && best.row.queueEntry.player.name) || "神秘玩家",
+          value: best.value,
+          line: a.line(best.value),
+        });
+      }
+    });
+    return out;
+  }
+  // 結算時由夜市老闆廣播念出來(每個獎項一則)。失敗不影響結算。
+  async function _broadcastCeremony(eventId, standings) {
+    try {
+      const S = window.CareerStory;
+      const awards = await computeCareerAwards(eventId, standings);
+      if (!awards.length) {
+        await broadcastCareerEvent(eventId, "megaphone", S.CEREMONY_NONE);
+        return;
+      }
+      await broadcastCareerEvent(eventId, "megaphone", S.CEREMONY_OPEN);
+      for (const a of awards) await broadcastCareerEvent(eventId, a.icon, `【${a.title}】${a.name}。${a.line}`);
+    } catch (e) {
+      console.error("頒獎典禮廣播失敗(不影響結算)", e);
+    }
+  }
+
   // 職業養成對決結束時呼叫:結算名次、套用 reward_plan、順便判定稱號。
   async function closeCareerEvent(eventId) {
     const standings = await computeCareerStandings(eventId);
     const ev = await getEvent(eventId);
+    const alreadyClosed = ev && ev.status === "closed"; // 兩個分頁同時收攤時,頒獎只念一次
     for (let i = 0; i < standings.length; i++) {
       const rank = i + 1;
       const row = standings[i];
@@ -4551,6 +4625,7 @@ const db = (function () {
     await awardCareerTitles(eventId, standings);
     // 夜記:收攤那一聲「逼——」,每位參加者聽一次(_noteJournal 不會丟錯,不影響結算)
     await Promise.all(standings.map((row) => _noteJournal(eventId, row.queueEntry.player_id, "closing_bell")));
+    if (!alreadyClosed) await _broadcastCeremony(eventId, standings);
     return standings;
   }
 
@@ -4729,6 +4804,7 @@ const db = (function () {
     allocateCareerStatPoint,
     allocateCareerStatPoints,
     claimCareerMission,
+    computeCareerAwards,
     codexSyncProgress,
     codexNoteFloorWin,
     codexNoteStat,

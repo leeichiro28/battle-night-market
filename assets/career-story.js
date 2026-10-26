@@ -1,6 +1,6 @@
 // 職業養成對決 · 劇情文案(世界觀第一階段)
 //
-// 對應文件:逼逼夜市_活動職業養成對決_世界觀與劇情.md
+// 對應文件:docs/worldview-and-story.md
 // 這支檔案只放「文字」，不碰任何數值或戰鬥邏輯。畫面要用的時候呼叫下面的函式，回傳的都是
 // 純文字(插進 innerHTML 前呼叫端要自己 ui.esc())。
 //
@@ -257,6 +257,19 @@ window.CareerStory = (function () {
   // entry_key 對照(由 db.js 在爬塔/結算時寫入):
   //   boss:10/20/30/40/50  打贏該層關主    npc:cloak/master/benefactor/lost_child  遇到該事件
   //   revive               倒下被救起(只記次數)   closing_bell  活動結算收攤
+  // ---------------- 收攤頒獎典禮(世界觀十四之 1) ----------------
+  // 每個獎項:key 對應 db.js computeCareerAwards 的算法;min = 至少要達到才頒(避免全場都 0 還硬頒);
+  // line(n) = 夜市老闆廣播的那一句,n 是得獎的數字。要改文案、調門檻只改這裡。
+  // 還沒做的獎項:最幸運(掉稀有以上最多)、翻盤王(落後後逆轉)——目前沒有對應的統計資料。
+  const AWARDS = [
+    { key: "climber", icon: "mountain", title: "最會爬", min: 1, line: (n) => `爬最高的是你,第 ${n} 層。至於上面有什麼,老闆說他忘了。` },
+    { key: "revived", icon: "heart-pulse", title: "最常被救起", min: 2, line: (n) => `你一共被救起 ${n} 次。我們還是不知道是誰。` },
+    { key: "streak", icon: "flame", title: "連勝王", min: 2, line: (n) => `連贏 ${n} 場,老闆決定把你的名字寫在牆上。` },
+    { key: "stroller", icon: "compass", title: "夜市散步達人", min: 3, line: (n) => `你逛過 ${n} 種攤位,比攤販自己還多。` },
+  ];
+  const CEREMONY_OPEN = "逼——。收攤了,老闆要念今晚的獎項。";
+  const CEREMONY_NONE = "逼——。收攤了。今晚沒有人拿到獎項,明天再來。";
+
   const JOURNAL = {
     // 關主的名字與戰後對話直接讀 career-floors.js(CareerFloors.getFloor(n)),不在這裡重複存一份
     bossFloors: [10, 20, 30, 40, 50],
@@ -328,6 +341,9 @@ window.CareerStory = (function () {
     getTheme,
     pickRevive,
     JOURNAL,
+    AWARDS,
+    CEREMONY_OPEN,
+    CEREMONY_NONE,
     pathQuote,
     masterQuote,
     // 第二個參數是今夜主題 key(可省略)，主題的 PVP 句子會「加進」基本句子池一起挑

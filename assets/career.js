@@ -204,8 +204,33 @@
       })
       .join("");
 
+    // 收攤頒獎典禮:用這一場的資料現算,失敗就不顯示這一塊(不影響排行榜)
+    let ceremonyHtml = "";
+    try {
+      const awards = await db.computeCareerAwards(eventId, standings);
+      if (awards.length) {
+        ceremonyHtml = `
+          <div style="background:var(--panel2);border:1px solid var(--gold-d);border-radius:var(--radius);padding:14px;margin-bottom:16px;">
+            <p style="margin:0 0 4px;font-weight:700;color:var(--gold);display:flex;align-items:center;gap:6px;">${ui.icon("megaphone")}收攤頒獎典禮</p>
+            <p style="margin:0 0 8px;font-size:12px;color:var(--ink-dim);">${ui.esc(CareerStory.CEREMONY_OPEN)}</p>
+            ${awards
+              .map(
+                (a) => `
+              <div style="padding:8px 0;border-top:1px dashed var(--line);">
+                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">${ui.icon(a.icon)}<b>${ui.esc(a.title)}</b><span style="color:var(--gold);overflow-wrap:anywhere;">${ui.esc(a.name)}${myId && a.playerId === myId ? "(你)" : ""}</span></div>
+                <div style="font-size:12.5px;color:var(--ink-dim);line-height:1.7;margin-top:2px;overflow-wrap:anywhere;">${ui.esc(a.line)}</div>
+              </div>`
+              )
+              .join("")}
+          </div>`;
+      }
+    } catch (e) {
+      console.warn("頒獎典禮顯示失敗(不影響排行榜)", e);
+    }
+
     app.innerHTML = `
       ${emptyMsg("這場活動已經結束了，以下是最終排行榜。", "flag")}
+      ${ceremonyHtml}
       ${bioHtml}
       <div style="margin-top:10px;">${rows || emptyMsg("還沒有人排隊過。", "users")}</div>`;
   }

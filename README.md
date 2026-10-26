@@ -42,7 +42,7 @@ v2 只有骰子對戰、五手勢對戰、夜市拍賣三種遊戲；v3 新增 *
 
 **v3 要做的事**
 - **重新執行 `supabase-schema.sql`**:新增 `career_builds`、`career_pvp_queue`、`career_matches`、`career_progress`、`career_player_skills`、`career_broadcasts` 等表，`career_progress` 另外有 `equipped_ult`、`active_skills`、`equipped_skill_a`、`equipped_skill_b` 等欄位；`events.game_type` 的 check 也已改成可重複執行(原本對已有 career 活動的資料庫會噴 `23514`)。全部是 `if not exists`，不會刪既有資料
-- 職業養成對決的詳細修改紀錄請看 `BUG_功能優化完整需求與修改順序.md`(P0~P4 全部項目)
+- 職業養成對決的詳細修改紀錄請看 `docs/bug-optimization-requirements.md`(P0~P4 全部項目)
 
 ---
 
