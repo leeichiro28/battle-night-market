@@ -1473,6 +1473,7 @@
   // ---------------- 主 render ----------------
 
   function render() {
+    if (window.db && db.codexSyncProgress && progress) db.codexSyncProgress(eventId, myId, progress); // 成就圖鑑:同步裝備、事件並判斷成就(沒變動會自動略過)
     if (!progress) return;
     const info = CareerData.CLASS_INFO[myBuild.final_class];
     const stats = CareerData.applyStatBoostPassives(CareerData.applyProgress(myBuild.final_class, progress.stat_alloc, progress.equipment), skillLevels);

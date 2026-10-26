@@ -229,6 +229,12 @@ const db = (function () {
     { key: "auction_tycoon", name: "夜市大戶", desc: "夜市拍賣拿下第一名", icon: "gem" },
     { key: "career_champion", name: "夜市擂台之王", desc: "職業養成對決積分排行拿下第一名", icon: "crown" },
     { key: "tower_conqueror", name: "爬塔霸主", desc: "本場已經爬完目前開放的所有樓層", icon: "mountain" },
+    // 成就與圖鑑(見 career-codex.js 的 COUNT_TITLES):累計到某個數量給稱號
+    { key: "codex_ach10", name: "初窺門徑", desc: "累計達成 10 個成就", icon: "award" },
+    { key: "codex_ach20", name: "夜市達人", desc: "累計達成 20 個成就", icon: "award" },
+    { key: "codex_ach_all", name: "夜市百科", desc: "達成全部成就", icon: "trophy" },
+    { key: "codex_half", name: "圖鑑收藏家", desc: "圖鑑(怪物、裝備、事件)收集過半", icon: "book-open" },
+    { key: "codex_all", name: "圖鑑館長", desc: "圖鑑(怪物、裝備、事件)全部收集", icon: "book-marked" },
   ];
 
   async function getOrCreatePlayerProfile(playerId) {
@@ -3123,6 +3129,194 @@ const db = (function () {
     return { hp, mp };
   }
 
+  // ---------- 成就與圖鑑(見 assets/career-codex.js、supabase-schema.sql 的 career_codex) ----------
+  // 永久、記在玩家帳號上。跟夜記一樣是「附帶動作」:資料表還沒建(沒重跑 SQL)、網路抖一下，
+  // 都只在 console 警告一次，絕對不能影響爬塔本身。
+  // 寫入方式:本機先記一份快取(馬上能判斷成就),再批次寫進資料庫——
+  //   一般累計(打贏幾次怪、累計場數)每 8 秒合併成一次 RPC;成就達成、PVP 場次結果則馬上寫。
+  const _cx = {};
+  function _cxState(playerId) {
+    if (!_cx[playerId]) {
+      _cx[playerId] = { ready: null, disabled: false, ach: {}, mon: {}, item: {}, event: {}, stat: {}, pvpm: {}, pending: {}, timer: null, eventId: null, sig: "", titles: null };
+    }
+    return _cx[playerId];
+  }
+  function _cxLoad(playerId) {
+    const st = _cxState(playerId);
+    if (!st.ready) {
+      st.ready = (async () => {
+        try {
+          const { data, error } = await client.from("career_codex").select("kind, entry_key, times").eq("player_id", playerId).in("kind", ["ach", "mon", "item", "event", "stat"]);
+          if (error) throw error;
+          (data || []).forEach((r) => { if (st[r.kind]) st[r.kind][r.entry_key] = r.times; });
+        } catch (e) {
+          st.disabled = true;
+          console.warn("成就圖鑑讀取失敗(不影響遊戲，可能還沒執行 migration-codex.sql):", e && e.message);
+        }
+        return st;
+      })();
+    }
+    return st.ready;
+  }
+  async function _cxFlush(playerId) {
+    const st = _cxState(playerId);
+    if (st.timer) { clearTimeout(st.timer); st.timer = null; }
+    const items = Object.values(st.pending);
+    st.pending = {};
+    if (!items.length || st.disabled) return null;
+    try {
+      const { data, error } = await client.rpc("record_career_codex", { p_player_id: playerId, p_event_id: st.eventId || null, p_items: items });
+      if (error) throw error;
+      return data || [];
+    } catch (e) {
+      console.warn("成就圖鑑寫入失敗(不影響遊戲):", e && e.message);
+      return null;
+    }
+  }
+  // 記一筆。once=true:已經有就略過(回傳 false 表示沒有新增)。一般累計回傳 true。
+  function _cxQueue(playerId, eventId, kind, key, inc, once, now) {
+    const st = _cxState(playerId);
+    if (st.disabled) return false;
+    key = String(key);
+    if (once && st[kind][key]) return false;
+    st[kind][key] = once ? 1 : (st[kind][key] || 0) + (inc || 1);
+    st.eventId = eventId || st.eventId;
+    const id = kind + "|" + key;
+    const cur = st.pending[id];
+    st.pending[id] = { kind, key, inc: ((cur && cur.inc) || 0) + (inc || 1), once: !!once };
+    if (now) _cxFlush(playerId);
+    else if (!st.timer) st.timer = setTimeout(() => _cxFlush(playerId), 8000);
+    return true;
+  }
+  function _cxCounts(st) {
+    const totals = window.CareerCodex.totals();
+    const set = { mon: Object.keys(st.mon).length, item: Object.keys(st.item).length, event: Object.keys(st.event).length };
+    return { totals, set, ach: Object.keys(st.ach).length };
+  }
+  async function _cxCheckTitles(playerId, st) {
+    const C = window.CareerCodex;
+    const { totals, set, ach } = _cxCounts(st);
+    const codexDone = set.mon + set.item + set.event;
+    const codexAll = totals.mon + totals.item + totals.event;
+    const want = [];
+    C.COUNT_TITLES.forEach((t) => {
+      const have = t.type === "ach" ? ach : codexDone;
+      const full = t.type === "ach" ? C.ACHIEVEMENTS.length : codexAll;
+      const need = t.need === "all" ? full : t.need === "half" ? Math.ceil(full / 2) : t.need;
+      if (full > 0 && have >= need) want.push(t.title);
+    });
+    if (!want.length) return;
+    if (!st.titles) {
+      const profile = await getPlayerProfile(playerId).catch(() => null);
+      st.titles = new Set((profile && profile.titles) || []);
+    }
+    const fresh = want.filter((k) => !st.titles.has(k));
+    if (!fresh.length) return;
+    fresh.forEach((k) => st.titles.add(k));
+    await grantTitleAndStats(playerId, fresh, {});
+    fresh.forEach((k) => { const m = TITLE_CATALOG.find((t) => t.key === k); if (m) C.titleToast(m.name); });
+  }
+  // 依目前資料判斷哪些成就達成了。progress = 這場活動的 career_progress;pvp = 剛打完的 PVP 結果(可省略)
+  async function _cxEvaluate(eventId, playerId, progress, pvp) {
+    const C = window.CareerCodex;
+    const st = _cxState(playerId);
+    if (st.disabled || !progress) return;
+    const { totals, set } = _cxCounts(st);
+    const M = window.CareerMissions;
+    let missionsAllClaimed = false;
+    if (M) {
+      const mc = M.ctxFrom(progress, {});
+      const vis = M.visible(mc);
+      missionsAllClaimed = vis.length > 0 && vis.every((m) => mc.claimed[m.key]);
+    }
+    const ctx = { p: progress, stat: st.stat, set, cat: totals, ev: st.event, pvp: pvp || null, missionsAllClaimed, achDoneOthers: false };
+    let any = false;
+    const unlock = (a) => {
+      if (st.ach[a.key]) return;
+      if (_cxQueue(playerId, eventId, "ach", a.key, 1, true, true)) { any = true; C.unlockToast(a); }
+    };
+    C.ACHIEVEMENTS.filter((a) => a.key !== "allDone").forEach((a) => {
+      try { if (!st.ach[a.key] && a.test(ctx)) unlock(a); } catch (e) {}
+    });
+    const others = C.ACHIEVEMENTS.filter((a) => a.key !== "allDone");
+    ctx.achDoneOthers = others.every((a) => st.ach[a.key]);
+    const last = C.get("allDone");
+    if (last && !st.ach.allDone && ctx.achDoneOthers) unlock(last);
+    if (any) await _cxCheckTitles(playerId, st);
+  }
+  // 包起來:任何錯誤都不往外丟
+  async function _cxSafe(fn) {
+    try { if (window.CareerCodex && window.CareerFloors && window.CareerEvents) await fn(); }  // 清單檔沒載入就整個略過(否則圖鑑總數會算錯)
+    catch (e) { console.warn("成就圖鑑處理失敗(不影響遊戲):", e && e.message); }
+  }
+
+  // 畫面每次拿到最新進度時呼叫:把背包/身上的裝備、遇過的事件記進圖鑑,並判斷成就。
+  // 用簽名略過「沒有任何變動」的重複呼叫,所以放在 render 裡也不會浪費資料庫查詢。
+  function codexSyncProgress(eventId, playerId, progress) {
+    return _cxSafe(async () => {
+      if (!playerId || !progress) return;
+      const st = await _cxLoad(playerId);
+      if (st.disabled) return;
+      const sig = [progress.inventory_rev, progress.floor, progress.level, progress.coins, Object.keys(progress.legendary_slots || {}).length,
+        JSON.stringify(progress.equipment || {}).length, JSON.stringify(progress.mission_state || {}).length].join("|");
+      if (sig === st.sig) return;
+      st.sig = sig;
+      let changed = false;
+      const names = [];
+      (progress.inventory || []).forEach((it) => it && it.name && names.push(it.name));
+      Object.values(progress.equipment || {}).forEach((it) => it && it.name && names.push(it.name));
+      names.forEach((n) => { if (_cxQueue(playerId, eventId, "item", n, 1, true)) changed = true; });
+      const seen = ((progress.mission_state || {}).counters || {}).eventsSeen || {};
+      Object.keys(seen).forEach((k) => { if (_cxQueue(playerId, eventId, "event", k, 1, true)) changed = true; });
+      await _cxEvaluate(eventId, playerId, progress);
+      if (changed) await _cxCheckTitles(playerId, st);
+    });
+  }
+  // 打贏一層(手動、王戰、掛機都用):怪物圖鑑 +1、永久累計場數 +1
+  function codexNoteFloorWin(eventId, playerId, floorNumber, progress) {
+    return _cxSafe(async () => {
+      const st = await _cxLoad(playerId);
+      if (st.disabled) return;
+      const newMon = !st.mon[String(floorNumber)];
+      _cxQueue(playerId, eventId, "mon", floorNumber, 1, false, newMon);
+      _cxQueue(playerId, eventId, "stat", "pveWins", 1, false);
+      if (progress) { st.sig = ""; await _cxEvaluate(eventId, playerId, progress); }
+      if (newMon) await _cxCheckTitles(playerId, st);
+    });
+  }
+  // 永久累計數字 +inc(合成成功、被救起…),並重新判斷成就
+  function codexNoteStat(eventId, playerId, name, inc, progress) {
+    return _cxSafe(async () => {
+      const st = await _cxLoad(playerId);
+      if (st.disabled) return;
+      _cxQueue(playerId, eventId, "stat", name, inc || 1, false);
+      if (progress) { st.sig = ""; await _cxEvaluate(eventId, playerId, progress); }
+    });
+  }
+  // PVP 結果卡出現時由畫面呼叫。同一場只算一次(先用 pvpm 記號防重複,資料庫那邊也有 once 保護)。
+  // 對機器人的練習賽不算;對手掛網棄權的勝利算一場勝利,但不算連勝(winStreak 在資料庫已被設成 0)。
+  function noteCareerPvpResult(eventId, playerId, matchId, reward, iWon) {
+    return _cxSafe(async () => {
+      if (!matchId || (reward && reward.practice)) return;
+      const st = await _cxLoad(playerId);
+      if (st.disabled || st.pvpm[matchId]) return;
+      st.pvpm[matchId] = 1;
+      if (iWon) _cxQueue(playerId, eventId, "stat", "pvpWins", 1, false);
+      _cxQueue(playerId, eventId, "pvpm", matchId, 1, true, true);
+      if (!iWon) return;
+      const progress = await getOrCreateCareerProgress(eventId, playerId);
+      await _cxEvaluate(eventId, playerId, progress, { won: true, winStreak: (reward && reward.winStreak) || 0 });
+    });
+  }
+  // 圖鑑頁用:這個玩家所有記錄
+  async function getCareerCodex(playerId) {
+    const { data, error } = await client.from("career_codex").select("kind, entry_key, times, first_at").eq("player_id", playerId);
+    if (error) throw error;
+    const out = { ach: {}, mon: {}, item: {}, event: {}, stat: {} };
+    (data || []).forEach((r) => { if (out[r.kind]) out[r.kind][r.entry_key] = { times: r.times, first_at: r.first_at }; });
+    return out;
+  }
+
   // ---------- 夜記(世界觀第二階段,見 career-story.js 的 JOURNAL、supabase-schema.sql 的 career_journal) ----------
   // 夜記只記「看過什麼」，不記答案。這裡的記錄是附帶動作，絕對不能影響爬塔本身:
   // 資料表還沒建(沒重跑 schema)、網路抖一下、RPC 失敗，都只在 console 警告，不丟錯、不擋住畫面。
@@ -3261,6 +3455,7 @@ const db = (function () {
 
     // 夜記:打贏有劇情對話的關主(10/20/30/40/50 層)才記,一般樓層不記
     if (floorDef.story) _noteJournal(eventId, playerId, `boss:${floorNumber}`);
+    codexNoteFloorWin(eventId, playerId, floorNumber, updated); // 成就圖鑑:怪物圖鑑 +1、累計場數 +1
 
     if (isTopFloor) {
       const name = await _playerName(playerId);
@@ -3458,6 +3653,7 @@ const db = (function () {
       const { data: updated, error } = await client.from("career_progress").update(hpMpPatch).eq("id", progress.id).select().single();
       if (error) throw error;
       _noteJournal(eventId, playerId, "revive"); // 夜記:被救起一次(只記次數,不記是誰救的)
+      codexNoteStat(eventId, playerId, "revive", 1, updated);
       return { won: false, log: battle.log, progress: updated, floorDef };
     }
 
@@ -3496,6 +3692,7 @@ const db = (function () {
           .single();
         if (error) throw error;
         _noteJournal(eventId, playerId, "revive"); // 夜記:被救起一次
+        codexNoteStat(eventId, playerId, "revive", 1, updated);
         return { bossBattle: true, done: true, won: false, log: newState.log, floorDef, progress: updated };
       }
       const result = await _applyFloorWinRewards(eventId, playerId, progress, build, floorDef, active.floor, newState.hp1, newState.mp1, skillLevels);
@@ -3964,6 +4161,10 @@ const db = (function () {
       .select();
     if (error) throw error;
     if (!updated || !updated.length) throw new Error("背包剛好被別的分頁更新過了，請重新整理後再試一次");
+    if (success) {
+      codexNoteStat(eventId, playerId, "synthSuccess", 1, updated[0]);
+      if (nextRarity === "legendary") codexNoteStat(eventId, playerId, "synthLegend", 1, updated[0]);
+    }
     if (success && nextRarity === "legendary") {
       const name = await _playerName(playerId);
       await broadcastCareerEvent(eventId, "crown", `${name} 合成出了傳說裝備「${resultItem.name}」!`);
@@ -4184,6 +4385,7 @@ const db = (function () {
         }
         if (updErr) throw updErr;
         if (updated && updated.length) results.push({ playerId: progress.player_id, won: patch.auto_farm_last_result.won });
+        if (updated && updated.length && patch.auto_farm_last_result.won) codexNoteFloorWin(eventId, progress.player_id, progress.auto_farm_floor, updated[0]);
       } catch (e) {
         console.error("processCareerAutoFarmTicks row failed", e);
       }
@@ -4527,6 +4729,11 @@ const db = (function () {
     allocateCareerStatPoint,
     allocateCareerStatPoints,
     claimCareerMission,
+    codexSyncProgress,
+    codexNoteFloorWin,
+    codexNoteStat,
+    noteCareerPvpResult,
+    getCareerCodex,
     clearCareerEventAutoChoice,
     unlockCareerSkill,
     getPlayerSkillLevels,

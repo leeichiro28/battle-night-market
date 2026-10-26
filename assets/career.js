@@ -744,6 +744,7 @@
 
     if (isDone) {
       const reward = s.pvpReward; // P1-7/P1-8:贏家的幣/連勝加成明細，見 finish_career_match RPC
+      if (match.id && window.db && db.noteCareerPvpResult) db.noteCareerPvpResult(eventId, myId, match.id, reward, iWon); // 成就圖鑑(同一場只會記一次)
       let rewardLine = "";
       const practice = !!(reward && reward.practice);
       if (iWon && reward && !practice) {
