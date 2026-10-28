@@ -2224,10 +2224,27 @@ const db = (function () {
     const alloc = { ...progress.stat_alloc };
     Object.keys(bonus).forEach((k) => (alloc[k] = (alloc[k] || 0) + bonus[k]));
 
+    const prevBuild = await getCareerBuildFor(eventId, playerId);
+    const prevClass = prevBuild && prevBuild.final_class; // 先記下來,存新 build 之後才拿來比較
     const build = await saveCareerBuild(eventId, playerId, { path: pathKey, finalClass, skillKeys });
+    const patch = { stat_alloc: alloc };
+    // 專精是綁職業的(A/B 分支每個職業不一樣):換了職業就把專精清掉,已花的技能點退還,
+    // 裝備欄裡的專精技能換回預設技能,不然舊職業的分支選擇會殘留、被誤套到新職業上。
+    if (prevClass && prevClass !== finalClass) {
+      const active = progress.active_skills || {};
+      const specKeys = Object.keys(active).filter((k) => /^spec_/.test(k));
+      if (specKeys.length) {
+        const next = { ...active };
+        specKeys.forEach((k) => delete next[k]);
+        patch.active_skills = next;
+        patch.skill_points = (progress.skill_points || 0) + specKeys.reduce((n, k) => n + (active[k] || 0), 0);
+        if (/^spec_/.test(progress.equipped_skill_a || "")) patch.equipped_skill_a = "skill_1";
+        if (/^spec_/.test(progress.equipped_skill_b || "")) patch.equipped_skill_b = "skill_2";
+      }
+    }
     const { data: updatedProgress, error } = await client
       .from("career_progress")
-      .update({ stat_alloc: alloc })
+      .update(patch)
       .eq("id", progress.id)
       .select()
       .single();
@@ -2480,8 +2497,8 @@ const db = (function () {
       ? window.CareerData.applyProgress(build2.final_class, progress2.stat_alloc, progress2.equipment)
       : window.CareerData.computeStats(build2.final_class);
     const initState = window.CareerEngine.initialMatchState(
-      _engineSide(build1.final_class, stats1, skillLevels1, _activeSkills(progress1), progress1 && progress1.equipped_skill_a, progress1 && progress1.equipped_skill_b, progress1 && progress1.equipped_ult, progress1 && progress1.equipment),
-      _engineSide(build2.final_class, stats2, skillLevels2, _activeSkills(progress2), progress2 && progress2.equipped_skill_a, progress2 && progress2.equipped_skill_b, progress2 && progress2.equipped_ult, progress2 && progress2.equipment)
+      _engineSide(build1.final_class, stats1, skillLevels1, _activeSkills(progress1), progress1 && progress1.equipped_skill_a, progress1 && progress1.equipped_skill_b, progress1 && progress1.equipped_ult, progress1 && progress1.equipment, progress1 && progress1.level),
+      _engineSide(build2.final_class, stats2, skillLevels2, _activeSkills(progress2), progress2 && progress2.equipped_skill_a, progress2 && progress2.equipped_skill_b, progress2 && progress2.equipped_ult, progress2 && progress2.equipment, progress2 && progress2.level)
     );
     const { data, error } = await client
       .from("career_matches")
@@ -2620,7 +2637,7 @@ const db = (function () {
     return bonus;
   }
 
-  function _engineSide(classKey, stats, skillLevels, activeSkills, equippedSkillA, equippedSkillB, equippedUltId, equipment) {
+  function _engineSide(classKey, stats, skillLevels, activeSkills, equippedSkillA, equippedSkillB, equippedUltId, equipment, charLevel) {
     const levels = skillLevels || {};
     const active = activeSkills || { ult_1: 1 };
     const treeUnlocked = classKey !== "novice";
@@ -2635,8 +2652,21 @@ const db = (function () {
     const nodeA = treeUnlocked ? window.CareerData.SKILL_TREE_NODES[`${classKey}_${slotA}`] : null;
     const nodeB = treeUnlocked ? window.CareerData.SKILL_TREE_NODES[`${classKey}_${slotB}`] : null;
     const equipBonus = _equipEffectBonus(equipment);
+    // 專精(第二轉職):這場活動選了分支才有被動;裝備的技能是專精技能時,帶上它的附帶效果(中毒、減益、多段...)。
+    // 沒帶 CareerSpec 的頁面、沒選專精的玩家、機器人與怪物都是 null,引擎會當作沒有專精。
+    const SP = window.CareerSpec;
+    let spec = null, skillEffectA = null, skillEffectB = null;
+    if (SP && treeUnlocked) {
+      const branch = SP.chosenBranch(classKey, active);
+      if (branch) spec = SP.resolvePassive(classKey, branch, charLevel || 1);
+      if (/^spec_/.test(slotA)) skillEffectA = SP.resolveSkill(classKey, slotA, active[slotA] || 0, charLevel || 1);
+      if (/^spec_/.test(slotB)) skillEffectB = SP.resolveSkill(classKey, slotB, active[slotB] || 0, charLevel || 1);
+    }
     return {
       classKey,
+      spec,
+      skillEffectA,
+      skillEffectB,
       stats: boostedStats,
       skillLevel: treeUnlocked ? active[slotA] || 0 : 0,
       skill2Level: treeUnlocked ? active[slotB] || 0 : 0,
@@ -2684,7 +2714,9 @@ const db = (function () {
     const cls = build.final_class;
     const nodeId = `${cls}_${nodeSuffix}`;
     const node = window.CareerData.SKILL_TREE_NODES[nodeId];
-    if (!node || node.type !== "active_skill" || node.requires !== `class_${cls}`) throw new Error("這不是你目前職業可以裝備的技能");
+    const isSpecSkill = /^spec_(a|b)_skill_(1|2)$/.test(nodeSuffix); // 專精技能:節點掛在分支底下,不是直接掛在職業底下
+    const belongsToClass = node && (node.requires === `class_${cls}` || (isSpecSkill && node.requires === `${cls}_spec_${nodeSuffix[5]}`));
+    if (!node || node.type !== "active_skill" || !belongsToClass) throw new Error("這不是你目前職業可以裝備的技能");
     const progress = await getOrCreateCareerProgress(eventId, playerId);
     const activeSkills = _activeSkills(progress);
     if (!(activeSkills[nodeSuffix] > 0)) throw new Error("要先花技能點解鎖這個技能才能裝備");
@@ -2852,12 +2884,31 @@ const db = (function () {
   // 下一個賽季會自動歸零重新來(因為career_progress本來就是每場活動重新insert一筆)。
   // nodeSuffix 是節點後綴，例如 "skill_3"、"ult_2"(不是完整節點id，也不是裝備欄位a/b)。
   async function upgradeActiveSkill(eventId, playerId, nodeSuffix) {
-    if (!["skill_1", "skill_2", "skill_3", "ult_1", "ult_2"].includes(nodeSuffix)) throw new Error("不認識的技能欄位");
+    // 專精(第二轉職,見 career-spec.js):spec_a/spec_b = 選分支(等級只有 0/1),spec_a_skill_1 ... = 分支底下的專精技能
+    const specMatch = /^spec_(a|b)(_skill_(1|2))?$/.exec(nodeSuffix);
+    if (!specMatch && !["skill_1", "skill_2", "skill_3", "ult_1", "ult_2"].includes(nodeSuffix)) throw new Error("不認識的技能欄位");
     const progress = await getOrCreateCareerProgress(eventId, playerId);
     if (progress.skill_points <= 0) throw new Error("沒有可以花的技能點了");
     const activeSkills = _activeSkills(progress);
     const curLevel = activeSkills[nodeSuffix] || 0;
-    if (curLevel >= window.CareerData.MAX_SKILL_LEVEL) throw new Error("這個技能/大招已經是目前開放的最高等級了");
+    let maxLevel = window.CareerData.MAX_SKILL_LEVEL;
+    if (specMatch) {
+      const SP = window.CareerSpec;
+      if (!SP) throw new Error("專精資料還沒載入，請重新整理頁面再試");
+      const build = await getCareerBuildFor(eventId, playerId);
+      if (!build || !SP.SPECS[build.final_class]) throw new Error("你目前的職業還沒有專精");
+      if ((progress.level || 1) < SP.SPEC_LEVEL) throw new Error(`專精要角色 Lv.${SP.SPEC_LEVEL} 才能選(你現在 Lv.${progress.level || 1})`);
+      const branch = specMatch[1];
+      const isBranch = !specMatch[2];
+      if (isBranch) {
+        if (curLevel > 0) throw new Error("這場活動已經選過這條專精了");
+        if (activeSkills[`spec_${branch === "a" ? "b" : "a"}`] > 0) throw new Error("這場活動已經選了另一條專精，每場只能選一條、不能改選(下一場活動可以重新選)");
+        maxLevel = 1;
+      } else if (!(activeSkills[`spec_${branch}`] > 0)) {
+        throw new Error("要先選擇這條專精分支，才能學它的技能");
+      }
+    }
+    if (curLevel >= maxLevel) throw new Error("這個技能/大招已經是目前開放的最高等級了");
     // 解鎖(Lv.0→1)與 Lv.2~3 不限制;升到 Lv.4、Lv.5 要角色等級夠高
     const charReq = window.CareerData.skillLevelCharReq(curLevel + 1);
     if (charReq && (progress.level || 1) < charReq) throw new Error(`升到 Lv.${curLevel + 1} 需要角色等級 Lv.${charReq}(你現在 Lv.${progress.level || 1})`);
@@ -3519,7 +3570,7 @@ const db = (function () {
     // 這裡是玩家自己主動按「重新挑戰」，只是不用再手動選招而已)。
     if (floorDef.isMiniBoss && floorNumber > progress.floor) {
       const state = window.CareerEngine.initialMatchState(
-        _engineSide(build.final_class, playerStatsForHp, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment),
+        _engineSide(build.final_class, playerStatsForHp, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment, progress.level),
         { classKey: floorDef.classKey, stats: floorDef.stats },
         { hp1: startHp, mp1: startMp }
       );
@@ -3598,7 +3649,7 @@ const db = (function () {
         const playerStats = window.CareerData.applyProgress(build.final_class, progress.stat_alloc, progress.equipment);
         const opponentClass = window.CareerFloors.CLASS_KEYS[Math.floor(Math.random() * window.CareerFloors.CLASS_KEYS.length)];
         const battle = window.CareerPve.simulateFloorBattle(
-          _engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment),
+          _engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment, progress.level),
           { classKey: opponentClass, stats: floorDef.stats }
         );
         if (!battle.won) {
@@ -3652,7 +3703,7 @@ const db = (function () {
     const { hp: battleStartHpRaw, mp: battleStartMp } = _effectiveHpMp(progress, playerStats);
     const battleStartHp = _respawnHpIfNeeded(battleStartHpRaw, playerStats.maxHp);
     const battle = window.CareerPve.simulateFloorBattle(
-      _engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment),
+      _engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment, progress.level),
       { classKey: floorDef.classKey, stats: floorDef.stats },
       { startHp: battleStartHp, startMp: battleStartMp }
     );
@@ -4298,7 +4349,7 @@ const db = (function () {
     const { hp: startHpRaw, mp: startMp } = _effectiveHpMp(progress, playerStats);
     const startHp = _respawnHpIfNeeded(startHpRaw, playerStats.maxHp);
     const battle = window.CareerPve.simulateFloorBattle(
-      _engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment),
+      _engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment, progress.level),
       { classKey: floorDef.classKey, stats: floorDef.stats },
       { startHp, startMp }
     );

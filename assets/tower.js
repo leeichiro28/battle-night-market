@@ -1069,12 +1069,17 @@
       const equippedUltId = progress.equipped_ult || `${chosenClass}_ult_1`;
       const equippedSkillA = progress.equipped_skill_a || "skill_1";
       const equippedSkillB = progress.equipped_skill_b || "skill_2";
+      // 專精(第二轉職):選了分支之後,分支底下的 2 個專精技能也進技能池,變成 5 選 2
+      const SP = window.CareerSpec;
+      const specBranch = SP ? SP.chosenBranch(chosenClass, activeSkills) : null;
+      const specSkillNodes = specBranch ? [1, 2].map((i) => CD.SKILL_TREE_NODES[`${chosenClass}_spec_${specBranch}_skill_${i}`]).filter(Boolean) : [];
       let html = group(
-        "主動技能・3選2自由裝備(這場活動自己的等級，換下一場活動會重新歸零)",
+        `主動技能・${specBranch ? 5 : 3}選2自由裝備(這場活動自己的等級，換下一場活動會重新歸零)`,
         "wand-sparkles",
-        atkCard + skillNodes.map((n) => skillTreeKitCard(n, chosenClass, activeSkills, canSpend, equippedUltId, equippedSkillA, equippedSkillB, true)).join("")
+        atkCard + skillNodes.concat(specSkillNodes).map((n) => skillTreeKitCard(n, chosenClass, activeSkills, canSpend, equippedUltId, equippedSkillA, equippedSkillB, true)).join("")
       );
       html += group("大招・2選1自由裝備(免費隨時換裝，但等級一樣是這場活動自己的)", "flame", ultNodes.map((n) => skillTreeKitCard(n, chosenClass, activeSkills, canSpend, equippedUltId, equippedSkillA, equippedSkillB, true)).join(""));
+      html += renderSpecSection(chosenClass, activeSkills, canSpend);
       return html;
     }
 
@@ -1092,6 +1097,45 @@
       html += `<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">${ultNodes.map((n) => skillTreeKitCard(n, previewClass, {}, false, `${previewClass}_ult_1`, "skill_1", "skill_2", false)).join("")}</div>`;
     });
     return html;
+  }
+
+  // 專精(第二轉職):Lv.50 兩條分支擇一(花 1 技能點,這場活動選了就不能改,下一場重選),Lv.100 自動升階。
+  // 選分支之後,分支的被動立刻生效、2 個專精技能會出現在上面的「主動技能」區(5選2)。資料與數字在 career-spec.js。
+  function renderSpecSection(cls, activeSkills, canSpend) {
+    const SP = window.CareerSpec;
+    if (!SP || !SP.SPECS[cls]) return "";
+    const lvl = progress.level || 1;
+    const chosen = SP.chosenBranch(cls, activeSkills);
+    const upgraded = lvl >= SP.SPEC_UPGRADE_LEVEL;
+    const cards = ["a", "b"]
+      .map((br) => {
+        const sp = SP.SPECS[cls][br];
+        const isChosen = chosen === br;
+        const blocked = !!chosen && !isChosen;
+        const lockedByLevel = lvl < SP.SPEC_LEVEL;
+        let action;
+        if (isChosen) action = `<span style="font-size:11px;color:var(--green);font-weight:700;">${ui.icon("check", { size: "12px" })}本場已選擇</span>`;
+        else if (blocked) action = `<span style="font-size:11px;color:var(--ink-dim);">本場已選另一條，不能改選</span>`;
+        else if (lockedByLevel) action = `<span style="font-size:11px;color:var(--ink-dim);">${ui.icon("lock", { size: "12px" })}需角色 Lv.${SP.SPEC_LEVEL}(你現在 Lv.${lvl})</span>`;
+        else action = `<button class="btn small" data-choose-spec="spec_${br}" ${canSpend ? "" : "disabled"}>${ui.icon("git-merge", { size: "13px" })}花1點選擇這條${canSpend ? "" : "(沒有技能點)"}</button>`;
+        const p = sp.passive;
+        return `
+          <div class="st-card" style="flex:1 1 240px;max-width:340px;background:var(--panel2);border:1px solid ${isChosen ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:12px;${blocked ? "opacity:0.5;" : ""}">
+            <div style="display:flex;align-items:center;gap:6px;justify-content:center;">${ui.icon(sp.icon, { size: "18px" })}<b style="font-size:14px;">${ui.esc(sp.name)}</b></div>
+            <p style="margin:4px 0 8px;font-size:11px;color:var(--ink-dim);text-align:center;line-height:1.6;">${ui.esc(sp.desc)}</p>
+            <div style="font-size:11.5px;line-height:1.7;overflow-wrap:anywhere;">
+              <div>${ui.icon("sparkles", { size: "12px" })}<b>被動「${ui.esc(p.name)}」</b>：${ui.esc(p.fmt(p.t1))}</div>
+              <div style="color:${isChosen && upgraded ? "var(--green)" : "var(--ink-dim)"};">${ui.icon("chevrons-up", { size: "12px" })}Lv.${SP.SPEC_UPGRADE_LEVEL} 升階：${ui.esc(p.fmt(p.t2))}${isChosen && upgraded ? "(已升階)" : ""}</div>
+              ${sp.skills.map((sk) => `<div>${ui.icon(sk.icon, { size: "12px" })}<b>${ui.esc(sk.name)}</b>：${ui.esc(sk.desc)}</div>`).join("")}
+            </div>
+            <div style="margin-top:10px;text-align:center;">${action}</div>
+          </div>`;
+      })
+      .join("");
+    return `
+      <p style="text-align:center;margin:20px 0 4px;font-size:12px;font-weight:700;color:var(--ink-dim);">${ui.icon("git-merge", { size: "13px" })}專精(第二轉職)・Lv.${SP.SPEC_LEVEL} 兩條擇一，Lv.${SP.SPEC_UPGRADE_LEVEL} 升階</p>
+      <p style="text-align:center;margin:0 0 10px;font-size:11px;color:var(--ink-dim);line-height:1.7;">選了之後立刻有被動，分支的 2 個技能要再各花 1 點才能學(可升到 Lv.${CareerData.MAX_SKILL_LEVEL})，學了就能跟原本的技能一起 5 選 2 裝備。專精跟技能等級一樣只在這場活動有效，下一場活動可以重新選。</p>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">${cards}</div>`;
   }
 
   // 子分頁3:被動(通用被動8個 + 職業被動)。職業被動的預覽規則跟技能・大招分頁一樣。
@@ -1870,6 +1914,29 @@
           render();
         } catch (e) {
           await ui.alert(e.message || "升級失敗", { title: "操作失敗", tone: "danger" });
+          await loadAndRender();
+        } finally {
+          busy = false;
+        }
+      };
+    });
+
+    app.querySelectorAll("[data-choose-spec]").forEach((btn) => {
+      btn.onclick = async () => {
+        if (busy) return;
+        const suffix = btn.dataset.chooseSpec; // "spec_a" / "spec_b"
+        const sp = CareerSpec.SPECS[myBuild.final_class][suffix.slice(5)];
+        const ok = await ui.confirm(`確定要在這場活動選擇專精「${sp.name}」嗎?\n花 1 點技能點，這場活動選了就不能改選另一條(下一場活動可以重新選)。`, { title: "選擇專精" });
+        if (!ok) return;
+        busy = true;
+        btn.disabled = true;
+        try {
+          const result = await db.upgradeActiveSkill(eventId, myId, suffix);
+          progress = result.progress;
+          highlight = { icon: sp.icon, title: `專精「${sp.name}」選好了!`, text: `被動「${sp.passive.name}」已經生效。到上面的主動技能區，花點數學這條專精的 2 個技能吧。` };
+          render();
+        } catch (e) {
+          await ui.alert(e.message || "選擇失敗", { title: "操作失敗", tone: "danger" });
           await loadAndRender();
         } finally {
           busy = false;

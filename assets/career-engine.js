@@ -23,6 +23,16 @@
 window.CareerEngine = (function () {
   const CD = window.CareerData;
 
+  // 專精(第二轉職,見 career-spec.js)被動合併:把 spec.masteryAdd 疊進職業被動 mastery(逐欄位相加)
+  function mergeMastery(base, add) {
+    const out = { ...(base || {}) };
+    Object.keys(add || {}).forEach((k) => (out[k] = (out[k] || 0) + add[k]));
+    return out;
+  }
+  function combineReduce(a, b) {
+    return 1 - (1 - (a || 0)) * (1 - (b || 0));
+  }
+
   function randFloat() {
     return 1 + Math.floor(Math.random() * 3); // 隨機浮動 1~3
   }
@@ -69,24 +79,37 @@ window.CareerEngine = (function () {
       skillAName2: p2.skillAName || CD.SKILL_NAME[p2.classKey] || "戰技",
       skillBName1: p1.skillBName || "技能B",
       skillBName2: p2.skillBName || "技能B",
-      critBonus1: p1.critBonus || 0,
-      critBonus2: p2.critBonus || 0,
-      critDmgBonus1: p1.critDmgBonus || 0, // 「爆擊強化」被動:暴擊傷害倍率額外加成(跟基礎x1.5疊加)
-      critDmgBonus2: p2.critDmgBonus || 0,
+      // 專精(第二轉職,見 career-spec.js):p.spec = 已解析的專精被動、p.skillEffectA/B = 專精技能的效果。
+      // 被動裡能直接併進現有欄位的(mastery/暴擊/減傷)在這裡合併,不用在每個計算點各寫一次;
+      // 其餘(berserk/reflect/中毒加成...)留在 spec1/spec2 給回合結算讀。沒帶專精就跟以前完全一樣。
+      spec1: p1.spec || null,
+      spec2: p2.spec || null,
+      skillEffectA1: p1.skillEffectA || null,
+      skillEffectA2: p2.skillEffectA || null,
+      skillEffectB1: p1.skillEffectB || null,
+      skillEffectB2: p2.skillEffectB || null,
+      poison1: null, // 中毒:{ dmg, rounds },施加在被打的那一側,每回合結束扣血
+      poison2: null,
+      debuffs1: [], // 減益:[{ stat:'atk'|'def', ratio, rounds, fresh }],下一回合開始生效
+      debuffs2: [],
+      critBonus1: (p1.critBonus || 0) + ((p1.spec && p1.spec.critBonus) || 0),
+      critBonus2: (p2.critBonus || 0) + ((p2.spec && p2.spec.critBonus) || 0),
+      critDmgBonus1: (p1.critDmgBonus || 0) + ((p1.spec && p1.spec.critDmgBonus) || 0), // 「爆擊強化」被動:暴擊傷害倍率額外加成(跟基礎x1.5疊加)
+      critDmgBonus2: (p2.critDmgBonus || 0) + ((p2.spec && p2.spec.critDmgBonus) || 0),
       // P2-2/P2-3新增:傳說裝備特殊效果統一走這兩個通用管道，不分職業都吃得到(跟上面
       // critBonus/critDmgBonus同一種設計，不像 mastery 是特定職業才會讀取的專屬被動)。
       // lifestealOnHit:每次攻擊命中(不管普攻/技能/大招)都按造成傷害的比例回血。
       // dmgReduceRatio:被打的時候固定按比例減傷，見 computeAttackHit 的 defenderDmgReduceRatio。
       lifestealOnHit1: p1.lifestealOnHit || 0,
       lifestealOnHit2: p2.lifestealOnHit || 0,
-      dmgReduceRatio1: p1.dmgReduceRatio || 0,
-      dmgReduceRatio2: p2.dmgReduceRatio || 0,
+      dmgReduceRatio1: combineReduce(p1.dmgReduceRatio, p1.spec && p1.spec.dmgReduce),
+      dmgReduceRatio2: combineReduce(p2.dmgReduceRatio, p2.spec && p2.spec.dmgReduce),
       manaRegenBonus1: p1.manaRegenBonus || 0, // 「魔力充沛」被動:每回合結束多回幾點魔力
       manaRegenBonus2: p2.manaRegenBonus || 0,
       ultCostReduce1: p1.ultCostReduce || 0, // 「大招精修」被動:大招消耗魔力降低
       ultCostReduce2: p2.ultCostReduce || 0,
-      mastery1: p1.mastery || {}, // 職業限定被動(第22點更新第二段):{ [effectKey]: 加成值 }
-      mastery2: p2.mastery || {},
+      mastery1: mergeMastery(p1.mastery, p1.spec && p1.spec.masteryAdd), // 職業限定被動(第22點更新第二段):{ [effectKey]: 加成值 }
+      mastery2: mergeMastery(p2.mastery, p2.spec && p2.spec.masteryAdd),
       atk1: p1.stats.atk,
       def1: p1.stats.def,
       spd1: p1.stats.spd,
@@ -118,8 +141,11 @@ window.CareerEngine = (function () {
   // actionType: 'attack' | 'skill1' | 'skill2' | 'ult'。skillLevel 是這次用的技能等級(只有
   // isSkill 時有意義)，critBonus/critDmgBonus/mastery 意思跟以前一樣。
   // ultEffect 只有 actionType==='ult' 時有意義，是目前裝備的大招節點效果(見 initialMatchState 註解)。
-  function computeAttackHit(atkStats, defStats, attackerClass, actionType, hpRatio, defenderImmuneRatio, skillLevel, critBonus, critDmgBonus, mastery, ultEffect, defenderDmgReduceRatio) {
+  function computeAttackHit(atkStats, defStats, attackerClass, actionType, hpRatio, defenderImmuneRatio, skillLevel, critBonus, critDmgBonus, mastery, ultEffect, defenderDmgReduceRatio, extra) {
     mastery = mastery || {};
+    extra = extra || {};
+    const skillEff = extra.skillEffect || null; // 專精技能的附帶效果(沒帶就是舊行為)
+    const spec = extra.spec || null;
     const eff = CD.CLASS_EFFECTS[attackerClass];
     let ignoreDefRatio = (eff.ignoreDefRatio || 0) + (attackerClass === "warrior" ? mastery.ignoreDefRatio || 0 : 0); // 戰士線「破防打法」被動,普通攻擊也吃得到
     let dmgMult = 1;
@@ -149,6 +175,14 @@ window.CareerEngine = (function () {
         dmgMult = 1;
         forceCrit = typeof hpRatio === "number" && hpRatio <= 0.5; // 對方HP過半以下必定爆擊
       }
+    } else if (isSkill && skillEff) {
+      // 專精技能:倍率已經依技能等級算好(career-spec.js resolveSkill),這裡處理附帶效果
+      dmgMult = skillEff.mult || 1;
+      if (skillEff.ignoreDef) ignoreDefRatio = Math.min(1, ignoreDefRatio + skillEff.ignoreDef);
+      if (skillEff.extraCrit) extraCrit += skillEff.extraCrit;
+      if (skillEff.forceCritBelow && typeof hpRatio === "number" && hpRatio <= skillEff.forceCritBelow) forceCrit = true;
+      if (skillEff.lowHp && typeof hpRatio === "number" && hpRatio <= skillEff.lowHp.below) dmgMult = skillEff.lowHp.mult;
+      if (skillEff.missingHpBonusMax) dmgMult *= 1 + skillEff.missingHpBonusMax * (1 - (extra.selfHpRatio == null ? 1 : extra.selfHpRatio));
     } else if (isSkill) {
       dmgMult = CD.skillDmgMult ? CD.skillDmgMult(skillLevel) : CD.SKILL_DMG_MULT || 1.4; // 技能A/B:等級查表，等級越高倍率越高，兩個技能用同一張表
     }
@@ -159,6 +193,12 @@ window.CareerEngine = (function () {
     const primaryAtk = isMagic ? atkStats.matk : atkStats.atk;
     let dmg = baseDamage(primaryAtk, defStats.def, ignoreDefRatio);
     dmg *= dmgMult;
+    if (spec) {
+      // 專精被動(只有選了對應分支才會有這些欄位)
+      if (spec.berserk && extra.selfHpRatio != null) dmg *= 1 + Math.min(spec.berserk.max, Math.floor((1 - extra.selfHpRatio) * 10) * spec.berserk.perTen); // 狂戰:越痛越強
+      if (spec.singleSkillBonus && isSkill && (extra.hits || 1) === 1) dmg *= 1 + spec.singleSkillBonus; // 爆裂:單次技能
+      if (spec.multiHitBonus && ((isSkill && (extra.hits || 1) > 1) || (isUlt && ultEffect && ultEffect.kind === "multiHit"))) dmg *= 1 + spec.multiHitBonus; // 連鎖:多段
+    }
     if (isMagic && attackerClass === "mage") dmg *= 1 + (mastery.magicDmgBonus || 0); // 「法術精研」職業被動:只有正式轉職法師才有
 
     let crit = false;
@@ -214,8 +254,18 @@ window.CareerEngine = (function () {
     let took1 = false;
     let took2 = false;
 
-    const stats1 = { atk: s.atk1, def: s.def1, spd: s.spd1, luck: s.luck1, matk: s.matk1 || 0 };
-    const stats2 = { atk: s.atk2, def: s.def2, spd: s.spd2, luck: s.luck2, matk: s.matk2 || 0 };
+    // 減益(詛咒):已經生效的(不是這回合剛施加的 fresh)才會降低這回合的攻擊/防禦
+    const activeDebuff = (side, stat) => ((side === 1 ? s.debuffs1 : s.debuffs2) || []).filter((d) => d.stat === stat && !d.fresh && d.rounds > 0).reduce((m, d) => Math.max(m, d.ratio), 0);
+    const atkMul1 = 1 - activeDebuff(1, "atk");
+    const atkMul2 = 1 - activeDebuff(2, "atk");
+    const stats1 = { atk: s.atk1 * atkMul1, def: s.def1 * (1 - activeDebuff(1, "def")), spd: s.spd1, luck: s.luck1, matk: (s.matk1 || 0) * atkMul1 };
+    const stats2 = { atk: s.atk2 * atkMul2, def: s.def2 * (1 - activeDebuff(2, "def")), spd: s.spd2, luck: s.luck2, matk: (s.matk2 || 0) * atkMul2 };
+    let poisonNew1 = s.poison1 ? { ...s.poison1 } : null; // 對方施加給自己的中毒(這回合可能被新的覆蓋)
+    let poisonNew2 = s.poison2 ? { ...s.poison2 } : null;
+    const debuffsNew1 = ((s.debuffs1 || []).map((d) => ({ ...d })));
+    const debuffsNew2 = ((s.debuffs2 || []).map((d) => ({ ...d })));
+    const skillEffectOf = (side, slot) => (slot === 1 ? (side === 1 ? s.skillEffectA1 : s.skillEffectA2) : side === 1 ? s.skillEffectB1 : s.skillEffectB2) || null;
+    const skillCost = (side, slot) => (skillEffectOf(side, slot) && skillEffectOf(side, slot).manaCost) || CD.SKILL_MANA_COST;
 
     // 這回合真的能不能用大招:選了 ult 而且魔力夠(伺服器端也擋一次，不是只靠前端disable按鈕)
     // 大招實際花費會被「大招精修」被動降低，但最低留1點魔力的門檻，不會被壓到0(不然大招變不用錢)
@@ -235,7 +285,7 @@ window.CareerEngine = (function () {
       const m = side === 1 ? m1 : m2;
       const lvl = slot === 1 ? (side === 1 ? s.skillLevel1 : s.skillLevel2) : (side === 1 ? s.skill2Level1 : s.skill2Level2);
       const mp = side === 1 ? mp1 : mp2;
-      return m && m.action === `skill${slot}` && lvl > 0 && mp >= CD.SKILL_MANA_COST;
+      return m && m.action === `skill${slot}` && lvl > 0 && mp >= skillCost(side, slot);
     }
     function spendMana(side, amount) {
       if (side === 1) {
@@ -281,7 +331,8 @@ window.CareerEngine = (function () {
         const matk = side === 1 ? s.matk1 : s.matk2;
         const mastery = side === 1 ? s.mastery1 : s.mastery2;
         const healRatio = ultEffect.healRatio != null ? ultEffect.healRatio : 0.5;
-        const heal = Math.round(maxHp * healRatio) + (CD.CLASS_EFFECTS.healer.healBonus || 0) + (mastery.healBonus || 0) + Math.round((matk || 0) * 1.5);
+        const healSpec = (side === 1 ? s.spec1 : s.spec2) || null;
+        const heal = Math.round((Math.round(maxHp * healRatio) + (CD.CLASS_EFFECTS.healer.healBonus || 0) + (mastery.healBonus || 0) + Math.round((matk || 0) * 1.5)) * (1 + ((healSpec && healSpec.healPct) || 0)));
         const willSkip = ultEffect.skipAttack !== false;
         if (side === 1) {
           hp1 = Math.min(s.maxhp1, hp1 + heal);
@@ -295,6 +346,23 @@ window.CareerEngine = (function () {
     }
     handleNonAttackUlt(1);
     handleNonAttackUlt(2);
+
+    // 專精技能的「這回合」防禦類效果:選了這個技能而且魔力夠,整回合都有效(跟先攻順序無關)
+    const roundReduce = { 1: 0, 2: 0 }; // 固守/聖盾術:這回合受到傷害減免
+    const roundReflectBonus = { 1: 0, 2: 0 }; // 震盪盾擊
+    const roundCounterBonus = { 1: 0, 2: 0 }; // 怒目反擊
+    [1, 2].forEach((side) => {
+      [1, 2].forEach((slot) => {
+        if (!canSkillSlot(side, slot)) return;
+        const m = side === 1 ? m1 : m2;
+        if (m.action !== `skill${slot}`) return;
+        const eff = skillEffectOf(side, slot);
+        if (!eff) return;
+        roundReduce[side] = combineReduce(roundReduce[side], eff.selfReduce);
+        roundReflectBonus[side] += eff.reflectBonus || 0;
+        roundCounterBonus[side] += eff.counterBonus || 0;
+      });
+    });
 
     // ---- 先攻順序:速度高的先手,同速 50/50 隨機決定(不是固定某一方永遠先手)
     let first = s.spd1 === s.spd2 ? (Math.random() < 0.5 ? 1 : 2) : s.spd1 > s.spd2 ? 1 : 2;
@@ -315,7 +383,11 @@ window.CareerEngine = (function () {
       const critBonus = side === 1 ? s.critBonus1 : s.critBonus2;
       const critDmgBonus = side === 1 ? s.critDmgBonus1 : s.critDmgBonus2;
       const lifestealOnHit = side === 1 ? s.lifestealOnHit1 : s.lifestealOnHit2;
-      const defenderDmgReduceRatio = side === 1 ? s.dmgReduceRatio2 : s.dmgReduceRatio1;
+      const defSide = side === 1 ? 2 : 1;
+      // 被打的那一側:裝備/專精的固定減傷 + 這回合技能(固守/聖盾術)的減傷,連乘
+      const defenderDmgReduceRatio = combineReduce(side === 1 ? s.dmgReduceRatio2 : s.dmgReduceRatio1, roundReduce[defSide]);
+      const attackerSpec = (side === 1 ? s.spec1 : s.spec2) || null;
+      const defenderSpec = (side === 1 ? s.spec2 : s.spec1) || null;
       const mastery = side === 1 ? s.mastery1 : s.mastery2;
       const defenderMastery = side === 1 ? s.mastery2 : s.mastery1;
       const ultEffect = side === 1 ? s.ultEffect1 : s.ultEffect2;
@@ -332,14 +404,16 @@ window.CareerEngine = (function () {
 
       // 大招是「多打幾次」型(弓箭手「連環箭」預設2次、刺客「血影連斬」預設3次)才會跑多次迴圈,
       // 每次傷害倍率看 ultEffect.dmgMultPerHit(computeAttackHit 裡面會用到)
-      const hits = wantsUlt && ultEffect.kind === "multiHit" ? ultEffect.hits || 1 : 1;
+      const slotUsed = actionType === "skill1" ? 1 : actionType === "skill2" ? 2 : 0;
+      const skillEff = slotUsed ? skillEffectOf(side, slotUsed) : null;
+      const hits = wantsUlt && ultEffect.kind === "multiHit" ? ultEffect.hits || 1 : skillEff && skillEff.hits ? skillEff.hits : 1;
       if (wantsUlt) {
         spendMana(side, ultCost(side));
         if (side === 1) ultUsed1 = true;
         else ultUsed2 = true;
         events.push({ side, type: "ult_attack", text: `${side === 1 ? "你" : "對方"}使出「${ultName}」!` });
       } else if (wantsSkill1 || wantsSkill2) {
-        spendMana(side, CD.SKILL_MANA_COST);
+        spendMana(side, skillCost(side, wantsSkill1 ? 1 : 2));
         const skillName = wantsSkill1 ? (side === 1 ? s.skillAName1 : s.skillAName2) : side === 1 ? s.skillBName1 : s.skillBName2;
         events.push({ side, type: "skill_attack", text: `${side === 1 ? "你" : "對方"}使出技能「${skillName}」!` });
       }
@@ -350,11 +424,25 @@ window.CareerEngine = (function () {
         const curDefHp = side === 1 ? hp2 : hp1;
         if (curDefHp <= 0) break;
         const curHpRatio = curDefHp / defMaxHp;
-        const { dmg, crit } = computeAttackHit(atkStats, defStats, cls, actionType, curHpRatio, defenderImmuneRatio, skillLevel, critBonus, critDmgBonus, mastery, ultEffect, defenderDmgReduceRatio);
+        const selfHpRatio = (side === 1 ? hp1 / s.maxhp1 : hp2 / s.maxhp2);
+        const { dmg, crit } = computeAttackHit(atkStats, defStats, cls, actionType, curHpRatio, defenderImmuneRatio, skillLevel, critBonus, critDmgBonus, mastery, ultEffect, defenderDmgReduceRatio, { skillEffect: skillEff, spec: attackerSpec, selfHpRatio, hits });
         if (side === 1) hp2 = Math.max(0, hp2 - dmg);
         else hp1 = Math.max(0, hp1 - dmg);
         lastDmg = dmg;
         totalDmgThisAction += dmg;
+        // 雷暴:每下命中回魔
+        if (skillEff && skillEff.manaPerHit && dmg > 0) {
+          if (side === 1) mp1 = Math.min(s.maxmp1 || 0, mp1 + skillEff.manaPerHit);
+          else mp2 = Math.min(s.maxmp2 || 0, mp2 + skillEff.manaPerHit);
+        }
+        // 反震:被打的人(有反震被動/這回合用了震盪盾擊)把一部分傷害反彈回來
+        const reflectRatio = ((defenderSpec && defenderSpec.reflect) || 0) + roundReflectBonus[defSide];
+        if (reflectRatio > 0 && dmg > 0) {
+          const back = Math.max(1, Math.round(dmg * reflectRatio));
+          if (side === 1) hp1 = Math.max(0, hp1 - back);
+          else hp2 = Math.max(0, hp2 - back);
+          events.push({ side: defSide, type: "reflect", dmg: back, text: `${side === 1 ? "對方" : "你"}反震,把 ${back} 點傷害彈了回去!` });
+        }
 
         events.push({
           side,
@@ -398,6 +486,39 @@ window.CareerEngine = (function () {
         }
       }
 
+      // 專精技能的附帶效果(只有專精技能才有 skillEff)
+      if (skillEff && totalDmgThisAction > 0) {
+        const selfMax = side === 1 ? s.maxhp1 : s.maxhp2;
+        const healPct = 1 + ((attackerSpec && attackerSpec.healPct) || 0);
+        let healed = 0;
+        if (skillEff.lifesteal) healed += Math.round(totalDmgThisAction * skillEff.lifesteal);
+        if (skillEff.healMaxHp) healed += Math.round(selfMax * skillEff.healMaxHp * healPct);
+        if (healed > 0) {
+          if (side === 1) hp1 = Math.min(s.maxhp1, hp1 + healed);
+          else hp2 = Math.min(s.maxhp2, hp2 + healed);
+          events.push({ side, type: "skill_heal", dmg: healed, text: `${side === 1 ? "你" : "對方"}回復了 ${healed} 點HP!` });
+        }
+      }
+      if (skillEff && (side === 1 ? hp2 : hp1) > 0) {
+        if (skillEff.poison) {
+          const mainAtk = (CD.CLASS_INFO[cls] && CD.CLASS_INFO[cls].path === "magic") ? atkStats.matk : atkStats.atk;
+          const pdmg = Math.max(1, Math.round(mainAtk * skillEff.poison.atkRatio * (1 + ((attackerSpec && attackerSpec.poisonBonus) || 0))));
+          const np = { dmg: pdmg, rounds: skillEff.poison.rounds };
+          if (side === 1) poisonNew2 = np;
+          else poisonNew1 = np;
+          events.push({ side, type: "poison", text: `${side === 1 ? "對方" : "你"}中毒了!每回合損失 ${pdmg} 點HP,持續 ${np.rounds} 回合。` });
+        }
+        if (skillEff.debuff) {
+          const rounds = skillEff.debuff.rounds + ((attackerSpec && attackerSpec.debuffRoundsAdd) || 0);
+          const list = side === 1 ? debuffsNew2 : debuffsNew1;
+          const keep = list.filter((d) => d.stat !== skillEff.debuff.stat);
+          keep.push({ stat: skillEff.debuff.stat, ratio: skillEff.debuff.ratio, rounds, fresh: true });
+          list.length = 0;
+          keep.forEach((d) => list.push(d));
+          events.push({ side, type: "debuff", text: `${side === 1 ? "對方" : "你"}的${skillEff.debuff.stat === "atk" ? "攻擊力" : "防禦力"}被削弱了 ${Math.round(skillEff.debuff.ratio * 100)}%,持續 ${rounds} 回合!` });
+        }
+      }
+
       // P2-2/P2-3新增:傳說裝備的吸血特殊效果，不管這次出的是普攻/技能/大招都算(用這次動作
       // 造成的總傷害去算)，跟上面戰士大招的吸血是兩件獨立的事，可以疊加。
       if (lifestealOnHit > 0 && totalDmgThisAction > 0) {
@@ -417,7 +538,7 @@ window.CareerEngine = (function () {
       const defenderAliveNow = (side === 1 ? hp2 : hp1) > 0; // 守衛已經被這一擊打倒就不能反擊
       if (actionType === "attack" && defenderClass === "guardian" && defenderAliveNow && !(defenderOwnImmuneRatio > 0)) {
         const lastEvent = events[events.length - 1];
-        if (lastEvent && lastEvent.type === "attack" && lastEvent.dmg > 0 && Math.random() < (CD.CLASS_EFFECTS.guardian.counterChance || 0) + (defenderMastery.counterChance || 0)) {
+        if (lastEvent && lastEvent.type === "attack" && lastEvent.dmg > 0 && Math.random() < (CD.CLASS_EFFECTS.guardian.counterChance || 0) + (defenderMastery.counterChance || 0) + roundCounterBonus[defSide]) {
           const counterDmg = lastEvent.dmg;
           if (side === 1) {
             hp1 = Math.max(0, hp1 - counterDmg);
@@ -435,6 +556,29 @@ window.CareerEngine = (function () {
 
     performAttack(order[0]);
     performAttack(order[1]);
+
+    // 中毒:回合結束扣血(固定傷害,不吃防禦),扣完回合數 -1,歸零就消失
+    [1, 2].forEach((side) => {
+      const p = side === 1 ? poisonNew1 : poisonNew2;
+      if (!p) return;
+      const alive = (side === 1 ? hp1 : hp2) > 0;
+      if (alive) {
+        if (side === 1) hp1 = Math.max(0, hp1 - p.dmg);
+        else hp2 = Math.max(0, hp2 - p.dmg);
+        events.push({ side, type: "poison_tick", dmg: p.dmg, text: `${side === 1 ? "你" : "對方"}受到毒傷,損失 ${p.dmg} 點HP!` });
+      }
+      p.rounds -= 1;
+      if (side === 1) poisonNew1 = p.rounds > 0 ? p : null;
+      else poisonNew2 = p.rounds > 0 ? p : null;
+    });
+    // 減益倒數:已經生效的回合數 -1,歸零移除;這回合剛施加的(fresh)從下一回合開始生效
+    function tickDebuffs(list) {
+      return list
+        .map((d) => (d.fresh ? { ...d, fresh: false } : { ...d, rounds: d.rounds - 1 }))
+        .filter((d) => d.rounds > 0);
+    }
+    const debuffsOut1 = tickDebuffs(debuffsNew1);
+    const debuffsOut2 = tickDebuffs(debuffsNew2);
 
     // 魔法系「延壽術」被動:巫醫每回合結束小量回血(即使這回合沒用大招也生效)
     if (s.class1 === "healer" && hp1 > 0) hp1 = Math.min(s.maxhp1, hp1 + (CD.CLASS_EFFECTS.healer.regenPerRound || 0) + (s.mastery1.regenBonus || 0));
@@ -479,6 +623,10 @@ window.CareerEngine = (function () {
       mp2,
       ultCharge1,
       ultCharge2,
+      poison1: poisonNew1,
+      poison2: poisonNew2,
+      debuffs1: debuffsOut1,
+      debuffs2: debuffsOut2,
       round: s.round + 1,
       m1: null,
       m2: null,

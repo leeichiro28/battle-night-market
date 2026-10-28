@@ -729,9 +729,11 @@
     const myUltCost = Math.max(1, (CareerData.ULT_MANA_COST || 0) - ((mySlot === 1 ? s.ultCostReduce1 : s.ultCostReduce2) || 0));
     const ultAffordable = ultCharged && myMp >= myUltCost;
     const mySkillUnlocked = !!(mySlot === 1 ? s.skillUnlocked1 : s.skillUnlocked2);
-    const skillAffordable = mySkillUnlocked && myMp >= (CareerData.SKILL_MANA_COST || 0);
+    const mySkillCost = ((mySlot === 1 ? s.skillEffectA1 : s.skillEffectA2) || {}).manaCost || CareerData.SKILL_MANA_COST || 0;
+    const mySkill2Cost = ((mySlot === 1 ? s.skillEffectB1 : s.skillEffectB2) || {}).manaCost || CareerData.SKILL_MANA_COST || 0;
+    const skillAffordable = mySkillUnlocked && myMp >= mySkillCost;
     const mySkill2Unlocked = !!(mySlot === 1 ? s.skill2Unlocked1 : s.skill2Unlocked2);
-    const skill2Affordable = mySkill2Unlocked && myMp >= (CareerData.SKILL_MANA_COST || 0);
+    const skill2Affordable = mySkill2Unlocked && myMp >= mySkill2Cost;
     const myUltName = (mySlot === 1 ? s.ultName1 : s.ultName2) || null; // Phase 4:大招可能被換成大招2，優先用state裡實際裝備的名字
     const myInfo = CareerData.CLASS_INFO[myClass];
     const oppInfo = CareerData.CLASS_INFO[oppClass];
@@ -745,11 +747,21 @@
     const myMoveIn = !!s[`m${mySlot}`];
     if (myMoveIn) submittedThisRound = true;
 
+    // 專精與持續狀態(中毒、減益):沒有就不顯示。減益顯示「下回合開始生效」的是剛施加的(fresh)
+    const statusHtml = (slot) => {
+      const sp = s[`spec${slot}`], poison = s[`poison${slot}`], debuffs = s[`debuffs${slot}`] || [];
+      const tags = [];
+      if (sp && sp.name) tags.push(`<span class="tag">${ui.icon("git-merge")}${ui.esc(sp.name)}${sp.tier === 2 ? "(升階)" : ""}</span>`);
+      if (poison) tags.push(`<span class="tag" style="color:var(--red,#e0594a);">${ui.icon("flask-conical")}中毒 ${poison.rounds} 回合(每回合 -${poison.dmg})</span>`);
+      debuffs.forEach((d) => tags.push(`<span class="tag" style="color:var(--red,#e0594a);">${ui.icon("arrow-big-down")}${d.stat === "atk" ? "攻擊" : "防禦"} -${Math.round(d.ratio * 100)}%(${d.fresh ? "下回合起 " : "剩 "}${d.rounds} 回合)</span>`));
+      return tags.length ? `<div class="tag-row" style="margin-top:4px;">${tags.join("")}</div>` : "";
+    };
     let html = `
       <div class="career-vs-row">
         <div class="career-side">
           <div class="cs-name">${ui.icon(myInfo.icon)}${ui.esc(myName || "你")}</div>
           <div class="cs-sub">${ui.esc(myInfo.name)} · 速度 ${mySpd}</div>
+          ${statusHtml(mySlot)}
           ${statBarHtml("HP", myHp, myMaxHp, "hp")}
           ${statBarHtml("MP", myMp, myMaxMp, "mp")}
           ${statBarHtml("大招點", myUltCharge, ultChargeMax, "ult")}
@@ -759,6 +771,7 @@
         <div class="career-side right">
           <div class="cs-name">${ui.esc(oppName || "對手")}${ui.icon(oppInfo.icon)}</div>
           <div class="cs-sub">${ui.esc(oppInfo.name)} · 速度 ${oppSpd}</div>
+          ${statusHtml(mySlot === 1 ? 2 : 1)}
           ${statBarHtml("HP", oppHp, oppMaxHp, "hp")}
           ${statBarHtml("MP", oppMp, oppMaxMp, "mp")}
           ${statBarHtml("大招點", oppUltCharge, ultChargeMax, "ult")}
@@ -796,14 +809,14 @@
           ${
             mySkillUnlocked
               ? `<button class="btn ghost" id="skill-btn" style="flex:1 1 28%;" ${iActed || !skillAffordable ? "disabled" : ""}>
-                  ${ui.icon("wand-sparkles")}${ui.esc((mySlot === 1 ? s.skillAName1 : s.skillAName2) || CareerData.SKILL_NAME[myClass] || "戰技")}(${CareerData.SKILL_MANA_COST || 0}魔力)
+                  ${ui.icon("wand-sparkles")}${ui.esc((mySlot === 1 ? s.skillAName1 : s.skillAName2) || CareerData.SKILL_NAME[myClass] || "戰技")}(${mySkillCost}魔力)
                 </button>`
               : ""
           }
           ${
             mySkill2Unlocked
               ? `<button class="btn ghost" id="skill2-btn" style="flex:1 1 28%;" ${iActed || !skill2Affordable ? "disabled" : ""}>
-                  ${ui.icon("sparkles")}${ui.esc((mySlot === 1 ? s.skillBName1 : s.skillBName2) || "技能B")}(${CareerData.SKILL_MANA_COST || 0}魔力)
+                  ${ui.icon("sparkles")}${ui.esc((mySlot === 1 ? s.skillBName1 : s.skillBName2) || "技能B")}(${mySkill2Cost}魔力)
                 </button>`
               : ""
           }

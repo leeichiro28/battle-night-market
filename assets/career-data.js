@@ -31,12 +31,12 @@ window.CareerData = (function () {
       lines: {
         attack: {
           tier1: { key: "power_strike", name: "猛力揮擊", desc: "攻擊+2" },
-          tier2: { key: "armor_break", name: "破防打法", desc: "普通攻擊無視 30% 防禦" },
+          tier2: { key: "armor_break", name: "破防打法", desc: "普通攻擊無視 20% 防禦" },
           final: { key: "warrior", name: "戰士", icon: "swords", ultName: "怒吼衝鋒", ultDesc: "這回合傷害 x2" },
         },
         defense: {
-          tier1: { key: "iron_body", name: "鐵皮肉身", desc: "HP+3" },
-          tier2: { key: "counter_stance", name: "反擊姿態", desc: "被普通攻擊命中有 15% 機率反傷" },
+          tier1: { key: "iron_body", name: "鐵皮肉身", desc: "HP+9" },
+          tier2: { key: "counter_stance", name: "反擊姿態", desc: "被普通攻擊命中有 30% 機率反傷" },
           final: { key: "guardian", name: "守衛", icon: "shield", ultName: "銅牆鐵壁", ultDesc: "這回合受到的傷害 -90%,但這回合不出手攻擊" },
         },
       },
@@ -47,12 +47,12 @@ window.CareerData = (function () {
       lines: {
         speed: {
           tier1: { key: "swift_step", name: "疾風步", desc: "速度+2" },
-          tier2: { key: "rapid_fire", name: "連射訓練", desc: "普通攻擊有 20% 機率追加一擊" },
-          final: { key: "archer", name: "弓箭手", icon: "target", ultName: "連環箭", ultDesc: "連續攻擊 2 次(第二次攻擊前會先確認對方是否已陣亡)" },
+          tier2: { key: "rapid_fire", name: "連射訓練", desc: "普通攻擊有 10% 機率追加一擊" },
+          final: { key: "archer", name: "弓箭手", icon: "target", ultName: "連環箭", ultDesc: "連續攻擊 2 次，每次傷害 x0.75(第二次攻擊前會先確認對方是否已陣亡)" },
         },
         crit: {
-          tier1: { key: "deft_hands", name: "巧手", desc: "爆擊率+10%(幸運+5)" },
-          tier2: { key: "lethal_rhythm", name: "致命節奏", desc: "HP 越低,爆擊率越高(最多再+30%)" },
+          tier1: { key: "deft_hands", name: "巧手", desc: "爆擊率+16%(幸運+8、攻擊+1)" },
+          tier2: { key: "lethal_rhythm", name: "致命節奏", desc: "HP 越低,爆擊率越高(最多再+40%)" },
           final: { key: "assassin", name: "刺客", icon: "sword", ultName: "暗殺", ultDesc: "對方 HP 過半以下時,這一擊必定爆擊" },
         },
       },
@@ -62,7 +62,7 @@ window.CareerData = (function () {
       icon: "sparkles",
       lines: {
         damage: {
-          tier1: { key: "mana_infusion", name: "魔力灌注", desc: "技能傷害+2" },
+          tier1: { key: "mana_infusion", name: "魔力灌注", desc: "魔攻+4" },
           tier2: { key: "arcane_breach", name: "破魔法陣", desc: "大招額外無視防禦(本來就無視,這是加成保底)" },
           final: { key: "mage", name: "法師", icon: "flame", ultName: "魔力爆發", ultDesc: "無視防禦,造成大量傷害" },
         },
@@ -98,12 +98,12 @@ window.CareerData = (function () {
 
   // 每個最終職業的數值加成與被動效果(對應企劃書第二、三節的加點回報 + 第十三節判定順序表)
   const CLASS_EFFECTS = {
-    warrior: { statBonus: { atk: 2 }, ignoreDefRatio: 0.3 },
-    guardian: { statBonus: { hp: 3 }, counterChance: 0.15 },
-    archer: { statBonus: { spd: 2 }, extraHitChance: 0.2 },
-    assassin: { statBonus: { luck: 5 }, lethalRhythmMax: 0.3 },
-    mage: { statBonus: { matk: 3 } },
-    healer: { statBonus: { matk: 2 }, healBonus: 2, regenPerRound: 1 },
+    warrior: { statBonus: { atk: 2 }, ignoreDefRatio: 0.2 },
+    guardian: { statBonus: { hp: 9 }, counterChance: 0.3 },
+    archer: { statBonus: { spd: 2 }, extraHitChance: 0.1 },
+    assassin: { statBonus: { luck: 8, atk: 1 }, lethalRhythmMax: 0.4 },
+    mage: { statBonus: { matk: 4 } },
+    healer: { statBonus: {}, healBonus: 2, regenPerRound: 1 },
     novice: { statBonus: {}, ultDamageMult: 1.3 },
     novice_strength: { statBonus: { atk: 1, hp: 2 }, ultDamageMult: 1.35 },
     novice_agility: { statBonus: { spd: 1, luck: 1 }, ultDamageMult: 1.35 },
@@ -312,7 +312,7 @@ window.CareerData = (function () {
       name: "破防精研",
       icon: "sword",
       effectKey: "ignoreDefRatio",
-      desc: "「破防打法」無視防禦比例提升(基礎30%)",
+      desc: "「破防打法」無視防禦比例提升(基礎20%)",
       format: "percent",
       levels: { 1: 0.05, 2: 0.08, 3: 0.12, 4: 0.15, 5: 0.18 },
     },
@@ -320,7 +320,7 @@ window.CareerData = (function () {
       name: "反擊精研",
       icon: "shield",
       effectKey: "counterChance",
-      desc: "「反擊姿態」觸發機率提升(基礎15%)",
+      desc: "「反擊姿態」觸發機率提升(基礎30%)",
       format: "percent",
       levels: { 1: 0.05, 2: 0.08, 3: 0.12, 4: 0.15, 5: 0.18 },
     },
@@ -328,7 +328,7 @@ window.CareerData = (function () {
       name: "連射精研",
       icon: "target",
       effectKey: "extraHitChance",
-      desc: "「連射訓練」追加一擊機率提升(基礎20%)",
+      desc: "「連射訓練」追加一擊機率提升(基礎10%)",
       format: "percent",
       levels: { 1: 0.05, 2: 0.08, 3: 0.12, 4: 0.15, 5: 0.18 },
     },
@@ -336,7 +336,7 @@ window.CareerData = (function () {
       name: "暗殺精研",
       icon: "crosshair",
       effectKey: "lethalRhythmMax",
-      desc: "「致命節奏」暴擊率加成上限提升(基礎30%)",
+      desc: "「致命節奏」暴擊率加成上限提升(基礎40%)",
       format: "percent",
       levels: { 1: 0.05, 2: 0.08, 3: 0.12, 4: 0.15, 5: 0.18 },
     },
@@ -560,7 +560,7 @@ window.CareerData = (function () {
     skill1: { name: "精準射擊", icon: "target", desc: "花費魔力，對敵人造成比普通攻擊更高的傷害" },
     skill2: { name: "毒箭", icon: "flask-conical", desc: "額外附加小量無視防禦傷害" },
     skill3: { name: "連珠箭", icon: "target", desc: "射速快，魔力花費相同但手感更輕快" },
-    ult1: { name: "連環箭", icon: "target", effect: { kind: "multiHit", hits: 2, desc: "連續攻擊2次" } },
+    ult1: { name: "連環箭", icon: "target", effect: { kind: "multiHit", hits: 2, dmgMultPerHit: 0.75, desc: "連續攻擊2次，每次傷害x0.75" } },
     ult2: { name: "貫穿射擊", icon: "crosshair", effect: { kind: "pierce", dmgMult: 2.2, ignoreDefRatio: 1, desc: "單次無視防禦，造成 x2.2 傷害" } },
     mastery: { name: "連射精研", icon: "target", levels: { 1: 0.05, 2: 0.08, 3: 0.12, 4: 0.15, 5: 0.18 }, desc: "連射訓練追加一擊機率提升" },
   });
