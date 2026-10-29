@@ -255,7 +255,7 @@ window.CareerStory = (function () {
   // 要顯示的文字全部在這裡，之後改文案、加條目都不用動資料庫。
   //
   // entry_key 對照(由 db.js 在爬塔/結算時寫入):
-  //   boss:10/20/30/40/50  打贏該層關主    npc:cloak/master/benefactor/lost_child  遇到該事件
+  //   boss:10/20/30/40/50/60/70  打贏該層關主    npc:cloak/master/benefactor/lost_child  遇到該事件
   //   revive               倒下被救起(只記次數)   closing_bell  活動結算收攤
   // ---------------- 收攤頒獎典禮(世界觀十四之 1) ----------------
   // 每個獎項:key 對應 db.js computeCareerAwards 的算法;min = 至少要達到才頒(避免全場都 0 還硬頒);
@@ -272,7 +272,7 @@ window.CareerStory = (function () {
 
   const JOURNAL = {
     // 關主的名字與戰後對話直接讀 career-floors.js(CareerFloors.getFloor(n)),不在這裡重複存一份
-    bossFloors: [10, 20, 30, 40, 50],
+    bossFloors: [10, 20, 30, 40, 50, 60, 70],
     // 四個高伏筆角色。只標「疑似有關」，不說是不是同一批人。
     people: [
       { key: "npc:cloak", icon: "hat-glasses", name: "斗笠人", note: "他出招很熟練，像在回憶什麼。" },
@@ -287,6 +287,10 @@ window.CareerStory = (function () {
         text: "號碼牌背面有被刮掉的舊數字。看起來不是第一次發出去。" },
       { key: "clue:photo_half", from: "boss:30", icon: "image", title: "半張舊照片", hint: "有人遞給你一樣被撕開的東西。",
         text: "照片被撕掉了一半。留下來的這一半，有人站在邊邊，旁邊的位置是空的。" },
+      { key: "clue:photo_whole", from: "boss:60", icon: "image", title: "拼起來的照片", hint: "有人把另一半給了你。",
+        text: "兩半照片拼在一起，年輕的夜市老闆旁邊站著另一個人。老闆說他會回來拿。有人等到了打烊。" },
+      { key: "clue:next", from: "boss:70", icon: "megaphone", title: "「下一位」", hint: "最深的地方，有人在喊話。",
+        text: "你每次聽到的「逼」，不是收攤，是有人在喊「下一位」。你開始分不清，是在喊你，還是在等你。" },
       { key: "clue:cloak_style", from: "npc:cloak", icon: "sword", title: "斗笠人的刀法", hint: "有個人的出招，你好像看過。",
         text: "他的出招，你好像在哪裡看過。想不起來。" },
       { key: "clue:child_point", from: "npc:lost_child", icon: "footprints", title: "走失小孩的指向", hint: "有人指了一個方向。",

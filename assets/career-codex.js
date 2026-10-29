@@ -34,7 +34,9 @@
     { key: "floor20", group: "climb", icon: "ticket", name: "走進深處", desc: "清到 20 層", test: (c) => floor(c.p) >= 20 },
     { key: "floor30", group: "climb", icon: "ticket", name: "廟口熟客", desc: "清到 30 層", test: (c) => floor(c.p) >= 30 },
     { key: "floor40", group: "climb", icon: "crown", name: "見過夜市之王", desc: "清到 40 層", test: (c) => floor(c.p) >= 40 },
-    { key: "floor50", group: "climb", icon: "mountain", name: "摸到塔頂", desc: "清到 50 層", test: (c) => floor(c.p) >= 50 },
+    { key: "floor50", group: "climb", icon: "mountain", name: "站到夜市之神面前", desc: "清到 50 層", test: (c) => floor(c.p) >= 50 },
+    { key: "floor60", group: "climb", icon: "image", name: "拼起來的照片", desc: "清到 60 層", test: (c) => floor(c.p) >= 60 },
+    { key: "floor70", group: "climb", icon: "mountain", name: "摸到塔頂", desc: "清到 70 層", test: (c) => floor(c.p) >= 70 },
     { key: "pve100", group: "climb", icon: "swords", name: "打到手軟", desc: "累計打贏 100 場樓層戰鬥(含掛機，跨活動)", test: (c) => stat(c, "pveWins") >= 100, progress: (c) => stat(c, "pveWins"), target: 100 },
     { key: "pve1000", group: "climb", icon: "swords", name: "樓層常客", desc: "累計打贏 1,000 場樓層戰鬥", test: (c) => stat(c, "pveWins") >= 1000, progress: (c) => stat(c, "pveWins"), target: 1000 },
     { key: "pve5000", group: "climb", icon: "house", name: "塔裡的住戶", desc: "累計打贏 5,000 場樓層戰鬥", test: (c) => stat(c, "pveWins") >= 5000, progress: (c) => stat(c, "pveWins"), target: 5000 },
@@ -101,6 +103,11 @@
     });
     Object.keys(CF.EQUIPMENT_TABLE).forEach((slot) => {
       CF.RARITIES.forEach((r) => (CF.EQUIPMENT_TABLE[slot][r] || []).forEach((it) => add(it.name, r, slot, "all")));
+    });
+    // 51 層以後的階級裝備(招牌階/塔心階)
+    [2, 3].forEach((tier) => {
+      Object.keys(CF.WEAPON_TABLE_TIER[tier]).forEach((cls) => CF.RARITIES.forEach((r) => (CF.WEAPON_TABLE_TIER[tier][cls][r] || []).forEach((it) => add(it.name, r, "weapon", cls, { tier }))));
+      Object.keys(CF.EQUIPMENT_TABLE_TIER[tier]).forEach((slot) => CF.RARITIES.forEach((r) => (CF.EQUIPMENT_TABLE_TIER[tier][slot][r] || []).forEach((it) => add(it.name, r, slot, "all", { tier }))));
     });
     Object.keys(CF.BOSS_LEGENDARY_ITEMS).forEach((fl) => {
       const set = CF.BOSS_LEGENDARY_ITEMS[fl];

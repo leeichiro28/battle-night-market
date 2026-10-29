@@ -84,6 +84,14 @@ window.CareerEngine = (function () {
       // 其餘(berserk/reflect/中毒加成...)留在 spec1/spec2 給回合結算讀。沒帶專精就跟以前完全一樣。
       spec1: p1.spec || null,
       spec2: p2.spec || null,
+      // 套裝效果(60/70 層 Boss 套裝,見 career-floors.js SET_BONUSES):舊相片套裝「致命傷害保留 1 點 HP(每場一次)」、
+      // 第零攤套裝「第一回合必定暴擊」。surviveUsed = 這場是否已經用掉保命機會。
+      surviveOnce1: !!p1.surviveOnce,
+      surviveOnce2: !!p2.surviveOnce,
+      surviveUsed1: false,
+      surviveUsed2: false,
+      firstRoundCrit1: !!p1.firstRoundCrit,
+      firstRoundCrit2: !!p2.firstRoundCrit,
       skillEffectA1: p1.skillEffectA || null,
       skillEffectA2: p2.skillEffectA || null,
       skillEffectB1: p1.skillEffectB || null,
@@ -146,13 +154,14 @@ window.CareerEngine = (function () {
     extra = extra || {};
     const skillEff = extra.skillEffect || null; // 專精技能的附帶效果(沒帶就是舊行為)
     const spec = extra.spec || null;
+    // 第零攤套裝:第一回合的每一次攻擊(普攻/技能/大招)必定暴擊
     const eff = CD.CLASS_EFFECTS[attackerClass];
     let ignoreDefRatio = (eff.ignoreDefRatio || 0) + (attackerClass === "warrior" ? mastery.ignoreDefRatio || 0 : 0); // 戰士線「破防打法」被動,普通攻擊也吃得到
     let dmgMult = 1;
     const isUlt = actionType === "ult";
     const isSkill = actionType === "skill1" || actionType === "skill2";
     let extraCrit = 0;
-    let forceCrit = false;
+    let forceCrit = !!extra.forceCrit; // 第零攤套裝:第一回合必定暴擊(其他情況由各技能自己決定)
 
     if (isUlt) {
       const kind = (ultEffect && ultEffect.kind) || "dmgMult";
@@ -237,6 +246,22 @@ window.CareerEngine = (function () {
 
     let hp1 = s.hp1;
     let hp2 = s.hp2;
+    // 保命:套裝「致命傷害保留 1 點 HP(每場一次)」。每個扣血的地方之後都要呼叫,這樣「被打到 0 就不能出手」之類的
+    // 判斷看到的已經是撐住之後的 HP。沒有這個套裝(或已經用過)就什麼都不做,跟以前完全一樣。
+    let surviveUsed1 = !!s.surviveUsed1;
+    let surviveUsed2 = !!s.surviveUsed2;
+    function lethalGuard() {
+      if (hp1 <= 0 && s.surviveOnce1 && !surviveUsed1) {
+        hp1 = 1;
+        surviveUsed1 = true;
+        events.push({ side: 1, type: "survive", text: "致命一擊!舊相片替你擋住了,你只剩 1 點HP!" });
+      }
+      if (hp2 <= 0 && s.surviveOnce2 && !surviveUsed2) {
+        hp2 = 1;
+        surviveUsed2 = true;
+        events.push({ side: 2, type: "survive", text: "致命一擊!對方被舊相片擋住了,只剩 1 點HP!" });
+      }
+    }
     let mp1 = s.mp1 || 0;
     let mp2 = s.mp2 || 0;
     let immuneRatio1 = 0; // >0 表示這回合受到的傷害按比例減免(銅牆鐵壁0.9/剛毅反擊0.5)
@@ -425,7 +450,7 @@ window.CareerEngine = (function () {
         if (curDefHp <= 0) break;
         const curHpRatio = curDefHp / defMaxHp;
         const selfHpRatio = (side === 1 ? hp1 / s.maxhp1 : hp2 / s.maxhp2);
-        const { dmg, crit } = computeAttackHit(atkStats, defStats, cls, actionType, curHpRatio, defenderImmuneRatio, skillLevel, critBonus, critDmgBonus, mastery, ultEffect, defenderDmgReduceRatio, { skillEffect: skillEff, spec: attackerSpec, selfHpRatio, hits });
+        const { dmg, crit } = computeAttackHit(atkStats, defStats, cls, actionType, curHpRatio, defenderImmuneRatio, skillLevel, critBonus, critDmgBonus, mastery, ultEffect, defenderDmgReduceRatio, { skillEffect: skillEff, spec: attackerSpec, selfHpRatio, hits, forceCrit: s.round === 1 && !!(side === 1 ? s.firstRoundCrit1 : s.firstRoundCrit2) });
         if (side === 1) hp2 = Math.max(0, hp2 - dmg);
         else hp1 = Math.max(0, hp1 - dmg);
         lastDmg = dmg;
@@ -452,6 +477,7 @@ window.CareerEngine = (function () {
           multi: hits > 1 ? i + 1 : null,
           text: `${side === 1 ? "你" : "對方"}${crit ? "爆擊" : ""}造成 ${dmg} 點傷害!`,
         });
+        lethalGuard(); // 保命要放在「造成傷害」的事件之後,對戰紀錄的順序才會是「被打 → 撐住了」
 
         // 敏捷系「連射訓練」被動:普通攻擊(非大招/技能)才有機會觸發追加一擊,跟連環箭是兩回事
         if (actionType === "attack" && cls === "archer" && Math.random() < (CD.CLASS_EFFECTS.archer.extraHitChance || 0) + (mastery.extraHitChance || 0)) {
@@ -462,6 +488,7 @@ window.CareerEngine = (function () {
             else hp1 = Math.max(0, hp1 - extra.dmg);
             totalDmgThisAction += extra.dmg;
             events.push({ side, type: "extra_hit", dmg: extra.dmg, text: `${side === 1 ? "你" : "對方"}的連射訓練觸發,追加造成 ${extra.dmg} 點傷害!` });
+            lethalGuard();
           }
         }
       }
@@ -550,6 +577,7 @@ window.CareerEngine = (function () {
             took2 = true;
           }
           events.push({ side: side === 1 ? 2 : 1, type: "counter", dmg: counterDmg, text: `${side === 1 ? "對方" : "你"}觸發反擊姿態,反彈了 ${counterDmg} 點傷害!` });
+          lethalGuard();
         }
       }
     }
@@ -566,6 +594,7 @@ window.CareerEngine = (function () {
         if (side === 1) hp1 = Math.max(0, hp1 - p.dmg);
         else hp2 = Math.max(0, hp2 - p.dmg);
         events.push({ side, type: "poison_tick", dmg: p.dmg, text: `${side === 1 ? "你" : "對方"}受到毒傷,損失 ${p.dmg} 點HP!` });
+        lethalGuard();
       }
       p.rounds -= 1;
       if (side === 1) poisonNew1 = p.rounds > 0 ? p : null;
@@ -623,6 +652,8 @@ window.CareerEngine = (function () {
       mp2,
       ultCharge1,
       ultCharge2,
+      surviveUsed1,
+      surviveUsed2,
       poison1: poisonNew1,
       poison2: poisonNew2,
       debuffs1: debuffsOut1,

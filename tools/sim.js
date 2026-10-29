@@ -3,6 +3,8 @@
 //   node tools/sim.js winrate    勝率表:各等級的玩家(配點、無裝備)打各樓層的勝率(可加 --mhp 1.38 --matk 1.38 模擬怪物更強)
 //   node tools/sim.js classes    職業平衡:6 個職業(各用典型配點)兩兩對打的勝率矩陣,看職業之間強弱(--gear 0.3 --n 300;--alloc 1 改用各職業典型配點)
 //   任何指令都可加 --tweak 檔案.json:不改遊戲檔,臨時覆蓋 CareerData 的數值來試調整,例如 {"CLASS_EFFECTS.healer.regenPerRound": 0}
+//   node tools/sim.js towers     爬塔難度:建議等級的玩家(統一配點+對應階的裝備,含/不含專精)打指定樓層的勝率(--floors 51,60,70 --n 200)
+//   node tools/sim.js calibrate  校準 51 層以後的怪物:找出讓建議等級玩家勝率 ≈ --target 的怪物強度倍率(--floors 51,60,70 --target 0.65)
 //   node tools/sim.js spec       專精平衡:12 條專精分支 vs 6 個沒專精的基準,爬塔勝率與互打勝率(--level 60 --slv 3 --n 150 --gear 0.3)
 // 直接載入 assets/ 底下真正的 career-*.js,所以戰鬥結果跟遊戲裡用的是同一套引擎。
 //
@@ -266,4 +268,73 @@ function classes() {
   console.log("各等級平均:" + keys.map((c) => `${name(c)} ${Math.round((total[c] / levels.length) * 100)}%`).join("  "));
   console.log("理想:每個職業都落在 45%~55%(完全平衡是 50%);石頭剪刀布式的相剋沒問題,但整體平均不要偏離太多。");
 }
-({ leveling, winrate, spec, classes })[cmd]();
+// ---------- 爬塔難度(51 層以後) ----------
+// 設計目標(docs 28-2):51 層建議約 Lv.90(Lv.50~70 的一般玩家過不去)、60 層約 Lv.120、70 層約 Lv.160。
+// 玩家 = 統一配點 + 該樓層那一階的「史詩」裝備三件(實際數值,不是百分比加成)+ 大招 Lv.3 + 技能 Lv.5;
+// 「含專精」= 12 條專精分支平均,「不含專精」= 沒選專精(Lv.50 以後大多數人會選,所以以含專精為主要目標)。
+const TOWER_LEVEL = [[51, 90], [60, 120], [70, 160]]; // 樓層 -> 建議等級(中間線性內插)
+function recLevel(f) {
+  if (f <= 51) return 90 - (51 - f) * 3;
+  for (let i = 1; i < TOWER_LEVEL.length; i++) if (f <= TOWER_LEVEL[i][0]) { const [f0, l0] = TOWER_LEVEL[i - 1], [f1, l1] = TOWER_LEVEL[i]; return Math.round(l0 + ((f - f0) / (f1 - f0)) * (l1 - l0)); }
+  return 160;
+}
+const GEAR_BY_TIER = { 1: { w: 4, def: 3, hp: 7, luck: 4 }, 2: { w: 9, def: 8, hp: 18, luck: 8 }, 3: { w: 13, def: 12, hp: 26, luck: 12 } }; // 該階史詩三件(見 career-floors.js)
+function towerSide(c, L, branch, floorN) {
+  const g = GEAR_BY_TIER[opt("tier", 0) || (floorN >= 61 ? 3 : floorN >= 51 ? 2 : 1)]; // --tier 1 可以模擬「還沒換到新階裝備」
+  const st = { ...buildStats(c, L, "new") };
+  const magic = CD.CLASS_INFO[c].path === "magic";
+  st[magic ? "matk" : "atk"] += g.w; st.def += g.def; st.maxHp += g.hp; st.hp = st.maxHp; st.luck += g.luck;
+  return specSide(c, st, branch, L, 5);
+}
+function towerRates(f, monStats, N, L) {
+  L = L || opt("level", 0) || recLevel(f); // --level 可以指定玩家等級(例如測 Lv.60 的人打 51 層)
+  const per = { base: 0, spec: 0 }, perClass = {};
+  CF.CLASS_KEYS.forEach((c, ci) => {
+    const mc = CF.CLASS_KEYS[f % CF.CLASS_KEYS.length];
+    const run = (br, seedN) => { let w = 0; seed(seedN); for (let i = 0; i < N; i++) if (PVE.simulateFloorBattle(towerSide(c, L, br, f), { classKey: mc, stats: { ...monStats } }).won) w++; return w / N; };
+    const b = run(null, 11 + ci), a = run("a", 21 + ci), bb = run("b", 31 + ci);
+    perClass[c] = { base: b, spec: (a + bb) / 2 };
+    per.base += b / CF.CLASS_KEYS.length; per.spec += ((a + bb) / 2) / CF.CLASS_KEYS.length;
+  });
+  return { ...per, perClass, L };
+}
+function refStats(L) { // 這個等級玩家的平均「主屬性/防禦/速度/血量/幸運」,當怪物強度的基準
+  const arr = CF.CLASS_KEYS.map((c) => buildStats(c, L, "new")), avg = (fn) => arr.reduce((n, x) => n + fn(x), 0) / arr.length;
+  return { atk: avg((x) => (CD.CLASS_INFO[arr.indexOf(x) >= 0 ? CF.CLASS_KEYS[arr.indexOf(x)] : "warrior"].path === "magic" ? x.matk : x.atk)), def: avg((x) => x.def), spd: avg((x) => x.spd), hp: avg((x) => x.maxHp), luck: avg((x) => x.luck) };
+}
+function monsterFrom(ref, m) { // m = {atk,def,hp} 倍率
+  const atk = Math.round(ref.atk * m.atk);
+  return { atk, matk: atk, def: Math.round(ref.def * m.def), spd: Math.round(ref.spd * (m.spd || 0.8)), hp: Math.round(ref.hp * m.hp), maxHp: Math.round(ref.hp * m.hp), luck: Math.round(ref.luck * 0.5) };
+}
+function towers() {
+  GEAR = 0;
+  const N = opt("n", 200), floors = (args[args.indexOf("--floors") + 1] || "50,51,55,60,65,70").split(",").map(Number);
+  console.log(`爬塔勝率(建議等級玩家,統一配點+該階史詩裝備,技能 Lv.5,每格 ${N} 場 × 6 職業 × 3 種專精設定)\n`);
+  console.log("樓層".padEnd(8) + "建議Lv".padStart(7) + "不含專精".padStart(10) + "含專精".padStart(9) + "   各職業(含專精)");
+  floors.forEach((f) => {
+    const fd = CF.getFloor(f); if (!fd) { console.log(String(f).padEnd(8) + "  (這層還沒開放)"); return; }
+    const r = towerRates(f, fd.stats, N);
+    console.log(String(f).padEnd(8) + String(r.L).padStart(7) + (Math.round(r.base * 100) + "%").padStart(10) + (Math.round(r.spec * 100) + "%").padStart(9) + "   " + CF.CLASS_KEYS.map((c) => CD.CLASS_INFO[c].name + " " + Math.round(r.perClass[c].spec * 100) + "%").join("  "));
+  });
+  if (floors.some((f) => f > 50 && !CF.getFloor(f))) console.log("\n(提示:51 層以後還沒開放時,用 calibrate 指令找怪物強度)");
+}
+function calibrate() {
+  GEAR = 0;
+  const N = opt("n", 120), target = opt("target", 0.65), floors = (args[args.indexOf("--floors") + 1] || "51,60,70").split(",").map(Number);
+  console.log(`校準:找出讓「含專精」勝率 ≈ ${Math.round(target * 100)}% 的怪物強度(相對於同等級玩家的倍率;HP/攻擊/防禦等比放大),每次 ${N} 場\n`);
+  floors.forEach((f) => {
+    const L = recLevel(f), ref = refStats(L), boss = f % 10 === 0;
+    let lo = 0.2, hi = 6, best = null;
+    for (let it = 0; it < 12; it++) {
+      const mid = (lo + hi) / 2;
+      const mon = monsterFrom(ref, { atk: mid, def: mid, hp: mid * 1.6 }); // 怪物血量比同等玩家多一點(玩家有技能/大招/專精,怪物只會普攻)
+      if (boss) { mon.hp = Math.round(mon.hp / 1.3); mon.maxHp = mon.hp; } // 關主有 ×1.3 的成長,這裡先還原,實際值再乘回去
+      const r = towerRates(f, boss ? { ...mon, atk: Math.round(mon.atk * 1.3), def: Math.round(mon.def * 1.3), hp: Math.round(mon.hp * 1.3), maxHp: Math.round(mon.hp * 1.3), matk: Math.round(mon.atk * 1.3) } : mon, N, L);
+      best = { mid, mon, r };
+      if (r.spec > target) lo = mid; else hi = mid;
+    }
+    console.log(`第 ${f} 層(建議 Lv.${L}):倍率 ×${best.mid.toFixed(2)} → 勝率 含專精 ${Math.round(best.r.spec * 100)}% / 不含 ${Math.round(best.r.base * 100)}%`);
+    console.log(`   一般怪(非關主)建議數值:atk ${best.mon.atk}  def ${best.mon.def}  spd ${best.mon.spd}  hp ${best.mon.hp}  luck ${best.mon.luck}   (玩家參考:atk ${Math.round(ref.atk)} def ${Math.round(ref.def)} spd ${Math.round(ref.spd)} hp ${Math.round(ref.hp)})`);
+  });
+}
+({ leveling, winrate, spec, classes, towers, calibrate })[cmd]();

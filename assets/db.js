@@ -2613,7 +2613,7 @@ const db = (function () {
   // P2-10新增:三個部位如果剛好是同一套(setKey一樣)，額外疊加套裝效果(見career-floors.js的
   // SET_BONUSES)，鼓勵玩家湊齊全套。
   function _equipEffectBonus(equipment) {
-    const bonus = { critBonus: 0, critDmgBonus: 0, lifestealOnHit: 0, dmgReduceRatio: 0 };
+    const bonus = { critBonus: 0, critDmgBonus: 0, lifestealOnHit: 0, dmgReduceRatio: 0, surviveOnce: 0, firstRoundCrit: 0 }; // 後兩個是 60/70 層套裝效果(舊相片/第零攤),值 > 0 就代表有
     if (!equipment) return bonus;
     let setKey = undefined;
     let setKeyConsistent = true;
@@ -2681,6 +2681,8 @@ const db = (function () {
       mastery: window.CareerData.classMasteryBonus(classKey, levels["class_mastery:" + classKey] || 0),
       lifestealOnHit: equipBonus.lifestealOnHit,
       dmgReduceRatio: equipBonus.dmgReduceRatio,
+      surviveOnce: equipBonus.surviveOnce > 0, // 舊相片套裝:致命傷害保留 1 點 HP(每場一次)
+      firstRoundCrit: equipBonus.firstRoundCrit > 0, // 第零攤套裝:第一回合必定暴擊
     };
   }
 
@@ -3514,7 +3516,7 @@ const db = (function () {
     }
     if (error) throw error;
 
-    // 夜記:打贏有劇情對話的關主(10/20/30/40/50 層)才記,一般樓層不記
+    // 夜記:打贏有劇情對話的關主(10/20/30/40/50/60/70 層)才記,一般樓層不記
     if (floorDef.story) _noteJournal(eventId, playerId, `boss:${floorNumber}`);
     codexNoteFloorWin(eventId, playerId, floorNumber, updated); // 成就圖鑑:怪物圖鑑 +1、累計場數 +1
 
@@ -4174,13 +4176,16 @@ const db = (function () {
     const rule = CFl.SYNTHESIS_RULES[rarity];
     const need = CFl.SYNTHESIS_INPUT_COUNT;
     const slotName = slot === "weapon" ? "武器" : slot === "armor" ? "防具" : "飾品";
-    const matching = (progress.inventory || []).filter((it) => it.slot === slot && it.rarity === rarity);
+    // 51 層以後的裝備有階級(招牌階/塔心階,見 career-floors.js):先用掉階級最低的 3 件,合成結果的階級 = 用掉的那幾件裡最高的,
+    // 這樣不會因為混了一件低階的就把高階材料降級,也不會用高階材料偷偷升級低階裝備。
+    const matching = (progress.inventory || []).filter((it) => it.slot === slot && it.rarity === rarity).sort((a, b) => (a.tier || 1) - (b.tier || 1));
     if (matching.length < need) {
       throw new Error(`「${CFl.RARITY_LABEL[rarity]}${slotName}」不夠${need}件(目前${matching.length}件)`);
     }
     if (progress.coins < rule.fee) throw new Error(`合成要付 ${rule.fee} 幣，你只有 ${progress.coins} 幣`);
 
-    const tableFor = (r) => (slot === "weapon" ? (CFl.WEAPON_TABLE[build.final_class] || CFl.WEAPON_TABLE.novice)[r] : CFl.EQUIPMENT_TABLE[slot][r]);
+    const outTier = matching.slice(0, need).reduce((m, it) => Math.max(m, it.tier || 1), 1);
+    const tableFor = (r) => CFl.itemList(slot, build.final_class, r, outTier); // 傳說不分階,itemList 會自己回傳原本的傳說款
     // 合成傳說:只抽「這位玩家還沒擁有過」的一般傳說款(跟商店/抽獎/Boss 掉落共用同一份 legendary_slots，
     // 同名字不會重複拿到)。款式都有了就在扣任何東西「之前」擋下來，不會讓玩家白白賠掉材料跟幣。
     // Boss 限定傳說用另外的資料表(BOSS_LEGENDARY_ITEMS)，不會從這裡合成出來。

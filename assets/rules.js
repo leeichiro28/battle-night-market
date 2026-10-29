@@ -147,6 +147,15 @@
         });
       });
     });
+    // 51 層以後的階級裝備(招牌階 51~60 層掉、塔心階 61~70 層掉;稀有度只有普通/稀有/史詩)
+    [2, 3].forEach((tier) => {
+      Object.keys(CF.WEAPON_TABLE_TIER[tier]).forEach((cls) => {
+        const clsName = (CD.CLASS_INFO[cls] && CD.CLASS_INFO[cls].name) || cls;
+        CF.RARITIES.forEach((rarity) => {
+          (CF.WEAPON_TABLE_TIER[tier][cls][rarity] || []).forEach((item) => rows.push(rowHtml(item, `武器(${clsName}・${CF.TIER_LABEL[tier]})`, rarity, tier === 2 ? "51~60層" : "61~70層")));
+        });
+      });
+    });
     return rows.join("");
   }
 
@@ -157,13 +166,18 @@
         rows.push(rowHtml(item, label, rarity, CF.RARITY_REQ_LEVEL[rarity]));
       });
     });
+    [2, 3].forEach((tier) => {
+      CF.RARITIES.forEach((rarity) => {
+        ((CF.EQUIPMENT_TABLE_TIER[tier][slot] || {})[rarity] || []).forEach((item) => rows.push(rowHtml(item, `${label}・${CF.TIER_LABEL[tier]}`, rarity, tier === 2 ? "51~60層" : "61~70層")));
+      });
+    });
     return rows.join("");
   }
 
   function bossRows() {
     const rows = [];
     const slotLabel = { weapon: "武器", armor: "防具", accessory: "飾品" };
-    [40, 50].forEach((floor) => {
+    [40, 50, 60, 70].forEach((floor) => {
       const set = CF.BOSS_LEGENDARY_ITEMS[floor];
       const setBonus = CF.SET_BONUSES["boss" + floor];
       Object.keys(set).forEach((slot) => {
@@ -212,7 +226,7 @@
           <tbody>${rowsHtml}</tbody>
         </table>
       </div>
-      ${tab === "boss" ? `<p style="font-size:11px;color:var(--ink-dim);margin-top:6px;">※ Boss限定裝備只有打贏對應樓層的Boss才會機率掉落(40層/50層)，「等級」欄位就是樓層數，也是要穿上的最低等級。</p>` : ""}`;
+      ${tab === "boss" ? `<p style="font-size:11px;color:var(--ink-dim);margin-top:6px;">※ Boss限定裝備只有打贏對應樓層的Boss才會機率掉落(40/50/60/70層)，「等級」欄位就是樓層數，也是要穿上的最低等級。</p>` : ""}`;
   }
 
   tabsEl.querySelectorAll("[data-eq-tab]").forEach((tab) => {

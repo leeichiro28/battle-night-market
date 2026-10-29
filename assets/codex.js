@@ -95,6 +95,7 @@
             const tags = [CF.RARITY_LABEL[r], SLOT_LABEL[it.slot]];
             if (it.group !== "all" && CareerData.CLASS_INFO[it.group]) tags.push(CareerData.CLASS_INFO[it.group].name);
             if (it.bossFloor) tags.push(`${it.bossFloor} 層 Boss`);
+            if (it.tier > 1) tags.push(CF.TIER_LABEL[it.tier]);
             return card({ icon: CF.RARITY_ICON[r], title: it.name, tags });
           })
           .join("");
