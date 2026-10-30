@@ -3023,8 +3023,26 @@ const db = (function () {
   // 今夜主題規則 + 時段事件(見 assets/career-modifiers.js)套到樓層資料上。所有戰鬥/獎勵都讀 floorDef，
   // 所以在「取得 floorDef 的地方」換成這一份就好。沒載入 CareerModifiers 或沒有任何加成就原樣回傳。
   function _modFloorDef(rules, floorDef) {
-    if (!window.CareerModifiers || !floorDef) return floorDef;
-    return window.CareerModifiers.applyToFloor(floorDef, window.CareerModifiers.activeFor(rules));
+    if (!floorDef) return floorDef;
+    let out = floorDef;
+    if (window.CareerModifiers) out = window.CareerModifiers.applyToFloor(out, window.CareerModifiers.activeFor(rules));
+    // 樓層詞條(career-affixes.js):每個非關主樓層、每 10 分鐘時段有一個固定詞條。沒載入這支檔案的頁面就沒有詞條。
+    if (window.CareerAffixes) out = window.CareerAffixes.applyForRules(rules, out);
+    return out;
+  }
+  // 詞條/攤販帶來的「怪物那一側」額外欄位(暴擊、減傷、反彈、術法倍率)與「玩家那一側」額外欄位,
+  // 都是引擎本來就認得的 side 欄位,所以只要合併進去就好。沒有詞條時兩個函式都等於原樣回傳。
+  function _monsterSide(floorDef) {
+    return { classKey: floorDef.classKey, stats: floorDef.stats, ...(floorDef.monsterExtra || {}) };
+  }
+  function _withPlayerExtra(side, floorDef) {
+    const ex = floorDef && floorDef.playerExtra;
+    if (!ex) return side;
+    const out = { ...side };
+    if (ex.critBonus) out.critBonus = (out.critBonus || 0) + ex.critBonus;
+    if (ex.dmgReduceRatio) out.dmgReduceRatio = 1 - (1 - (out.dmgReduceRatio || 0)) * (1 - ex.dmgReduceRatio);
+    if (ex.magicMult != null) out.magicMult = ex.magicMult;
+    return out;
   }
 
   async function trainForCareerCoins(eventId, playerId) {
@@ -3466,15 +3484,12 @@ const db = (function () {
     if (drop && drop.rarity === "legendary") {
       const owned = _ownedLegendaryNames(progress);
       if (owned[drop.name]) {
-        const epicBase = window.CareerFloors.pickVariant(
-          drop.slot === "weapon"
-            ? (window.CareerFloors.WEAPON_TABLE[build.final_class] || window.CareerFloors.WEAPON_TABLE.novice).epic
-            : window.CareerFloors.EQUIPMENT_TABLE[drop.slot].epic
-        );
+        // 已經有這件傳說就改發「這一層該階」的史詩(51 層以後是招牌階/塔心階,不會退回夜市階)
+        const epicBase = window.CareerFloors.pickVariant(window.CareerFloors.itemList(drop.slot, build.final_class, "epic", window.CareerFloors.floorTier(floorNumber)));
         drop = { slot: drop.slot, ...epicBase, reqLevel: drop.reqLevel };
       } else {
         legendaryOwnedPatch = { ...owned, [drop.name]: true };
-        bossLegendaryWon = true;
+        bossLegendaryWon = !drop.fromAffix; // 詞條「夜市之神路過」掉出的傳說不是 Boss 限定,不要廣播成 Boss 掉落
       }
     }
     const inventory = _addToInventory(progress.inventory, drop);
@@ -3528,6 +3543,10 @@ const db = (function () {
       const name = await _playerName(playerId);
       await broadcastCareerEvent(eventId, "swords", `${name} 打贏了第${floorNumber}層的關主「${floorDef.name}」!`);
     }
+    if (drop && drop.fromAffix && drop.rarity === "legendary" && !bossLegendaryWon) {
+      const name = await _playerName(playerId);
+      await broadcastCareerEvent(eventId, "crown", `${name} 在第${floorNumber}層遇到「夜市之神路過」，撿到了傳說裝備「${drop.name}」!`);
+    }
     if (bossLegendaryWon) {
       const name = await _playerName(playerId);
       await broadcastCareerEvent(eventId, "crown", `${name} 打贏「${floorDef.name}」，掉落了Boss限定傳說裝備「${drop.name}」!`);
@@ -3573,7 +3592,7 @@ const db = (function () {
     if (floorDef.isMiniBoss && floorNumber > progress.floor) {
       const state = window.CareerEngine.initialMatchState(
         _engineSide(build.final_class, playerStatsForHp, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment, progress.level),
-        { classKey: floorDef.classKey, stats: floorDef.stats },
+        _monsterSide(floorDef),
         { hp1: startHp, mp1: startMp }
       );
       const { data: updated, error } = await client
@@ -3701,13 +3720,25 @@ const db = (function () {
       return { event: true, eventDef, text, drop, progress: updated };
     }
 
+    // 稀有攤販(career-affixes.js):沒有觸發事件、也不是關主的樓層,有小機率遇到特殊攤販(比平常難打,必掉稀有以上)。
+    // 每次挑戰各自抽,掛機不會遇到。兩者疊加時詞條與攤販的效果都有效。
+    let battleFloorDef = floorDef;
+    if (window.CareerAffixes) {
+      const vendor = window.CareerAffixes.rollVendor(floorDef);
+      if (vendor) battleFloorDef = window.CareerAffixes.makeVendor(floorDef, vendor);
+    }
+    return await _fightFloor(eventId, playerId, openEvent, progress, build, skillLevels, battleFloorDef, floorNumber);
+  }
+
+  // 一般樓層的戰鬥與結算(從 challengeCareerFloor 拆出來,攤販變體與一般怪共用)
+  async function _fightFloor(eventId, playerId, openEvent, progress, build, skillLevels, floorDef, floorNumber) {
     const playerStats = window.CareerData.applyProgress(build.final_class, progress.stat_alloc, progress.equipment);
     const { hp: battleStartHpRaw, mp: battleStartMp } = _effectiveHpMp(progress, playerStats);
     const battleStartHp = _respawnHpIfNeeded(battleStartHpRaw, playerStats.maxHp);
     const battle = window.CareerPve.simulateFloorBattle(
-      _engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment, progress.level),
-      { classKey: floorDef.classKey, stats: floorDef.stats },
-      { startHp: battleStartHp, startMp: battleStartMp }
+      _withPlayerExtra(_engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment, progress.level), floorDef),
+      _monsterSide(floorDef),
+      { startHp: battleStartHp, startMp: battleStartMp, maxRounds: floorDef.maxRounds }
     );
     // 不管輸贏，這一戰打完HP/MP剩多少都要存回去(爬塔的HP/MP是持續的，不會每場重置)
     const hpMpPatch = { current_hp: _respawnHpIfNeeded(battle.endHp, playerStats.maxHp), current_mp: battle.endMp };
@@ -4354,9 +4385,9 @@ const db = (function () {
     const { hp: startHpRaw, mp: startMp } = _effectiveHpMp(progress, playerStats);
     const startHp = _respawnHpIfNeeded(startHpRaw, playerStats.maxHp);
     const battle = window.CareerPve.simulateFloorBattle(
-      _engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment, progress.level),
-      { classKey: floorDef.classKey, stats: floorDef.stats },
-      { startHp, startMp }
+      _withPlayerExtra(_engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment, progress.level), floorDef),
+      _monsterSide(floorDef),
+      { startHp, startMp, maxRounds: floorDef.maxRounds }
     );
     const patch = {
       auto_farm_last_at: new Date().toISOString(),

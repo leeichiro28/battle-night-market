@@ -536,11 +536,38 @@ window.CareerFloors = (function () {
   // 轉職後打出來的才會是對應職業的武器)。掉出來的東西會帶著 reqLevel(這層樓算出來的等級門檻)，
   // 跟稀有度是分開的兩件事——史詩不代表一定要Lv15，要看是幾層掉的。
   // luckBonus:「鑑定之眼」被動算出來的掉落機率加成(0~0.08)，直接加在樓層原本的掉落率上，最高封頂100%
+  // Boss 傳說裝備(武器依職業取名字與主屬性,防具/飾品共用)。reqFloor = 裝備等級門檻看「掉在第幾層」,
+  // fromAffix = 是被傳說詞條提高機率掉出來的(不是打贏那個 Boss 掉的)。
+  function buildBossLegendary(bossFloor, slot, classKey, reqFloor, fromAffix) {
+    const base = { ...BOSS_LEGENDARY_ITEMS[bossFloor][slot] };
+    if (slot === "weapon") {
+      const info = CD.CLASS_INFO[classKey];
+      base.statKey = info && info.path === "magic" ? "matk" : "atk";
+      const names = BOSS_WEAPON_NAMES[bossFloor];
+      base.name = (names && (names[classKey] || names.novice)) || "無名的Boss限定兵刃";
+    }
+    const out = { slot, ...base, reqLevel: floorReqLevel(reqFloor), bossExclusive: true };
+    if (fromAffix) out.fromAffix = true;
+    return out;
+  }
+  // 不超過這一層的最高一個有 Boss 套裝的樓層(40/50/60/70),沒有就回傳 null
+  function legendaryBossFloorFor(floor) {
+    const keys = Object.keys(BOSS_LEGENDARY_ITEMS).map(Number).filter((k) => k <= floor).sort((a, b) => b - a);
+    return keys.length ? keys[0] : null;
+  }
+
   function rollDrop(floorDef, classKey, luckBonus) {
     const dropChance = Math.min(1, floorDef.dropChance + (luckBonus || 0));
     if (Math.random() > dropChance) return null;
     const slot = SLOTS[Math.floor(Math.random() * SLOTS.length)];
-    const weights = floorDef.dropRarityWeights;
+    let weights = floorDef.forceRarityWeights || floorDef.dropRarityWeights; // 稀有攤販:固定掉稀有以上
+    // 詞條「反彈招牌」:把一部分普通掉落轉成稀有(70%)/史詩(30%)(只有這張表有這些稀有度才轉)
+    if (floorDef.rarityBoost && !floorDef.forceRarityWeights && weights.common) {
+      const shift = Math.min(weights.common, floorDef.rarityBoost);
+      weights = { ...weights, common: weights.common - shift };
+      if (weights.rare != null || "rare" in weights) weights.rare = (weights.rare || 0) + shift * 0.7;
+      weights.epic = (weights.epic || 0) + shift * 0.3;
+    }
     let r = Math.random();
     let rarity = "common";
     for (const key of Object.keys(weights)) {
@@ -555,14 +582,16 @@ window.CareerFloors = (function () {
     // P2-10追加修改:武器的名稱、statKey都要照玩家職業決定(名字見BOSS_WEAPON_NAMES，沒對應的
     // 職業退回novice款)，不是所有職業共用同一個名字。防具/飾品維持不分職業共用。
     if (rarity === "legendary" && BOSS_LEGENDARY_ITEMS[floorDef.floor]) {
-      const base = { ...BOSS_LEGENDARY_ITEMS[floorDef.floor][slot] };
-      if (slot === "weapon") {
-        const info = CD.CLASS_INFO[classKey];
-        base.statKey = info && info.path === "magic" ? "matk" : "atk";
-        const names = BOSS_WEAPON_NAMES[floorDef.floor];
-        base.name = (names && (names[classKey] || names.novice)) || "無名的Boss限定兵刃";
-      }
-      return { slot, ...base, reqLevel: floorReqLevel(floorDef.floor), bossExclusive: true };
+      return buildBossLegendary(floorDef.floor, slot, classKey, floorDef.floor, false);
+    }
+    // 詞條「夜市之神路過」:這層的傳說掉落率提高,沒有其他限制。掉出什麼傳說「依樓層」:
+    // 40 層以上掉的是「不超過這一層的最高一個 Boss 的套裝」(例如 45 層 → 40 層套裝、63 層 → 60 層套裝),
+    // 40 層以前還沒有 Boss 套裝,就掉一般的傳說(商店款)。三件湊齊一樣會有套裝效果。
+    if (floorDef.legendaryChance && Math.random() < floorDef.legendaryChance) {
+      const bf = legendaryBossFloorFor(floorDef.floor);
+      if (bf) return buildBossLegendary(bf, slot, classKey, floorDef.floor, true);
+      const leg = pickVariant(itemList(slot, classKey, "legendary", 1));
+      if (leg) return { slot, ...leg, rarity: "legendary", reqLevel: floorReqLevel(floorDef.floor), fromAffix: true };
     }
     const base = pickVariant(itemList(slot, classKey, rarity, floorTier(floorDef.floor)));
     return { slot, ...base, reqLevel: floorReqLevel(floorDef.floor) };
@@ -696,6 +725,7 @@ window.CareerFloors = (function () {
     FLOOR_ANCHORS,
     BOSS_LEGENDARY_ITEMS,
     BOSS_WEAPON_NAMES,
+    legendaryBossFloorFor,
     expToNextLevel,
     CLASS_KEYS,
     statPointPrice,

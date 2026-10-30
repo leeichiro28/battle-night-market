@@ -5,6 +5,7 @@
 //   任何指令都可加 --tweak 檔案.json:不改遊戲檔,臨時覆蓋 CareerData 的數值來試調整,例如 {"CLASS_EFFECTS.healer.regenPerRound": 0}
 //   node tools/sim.js towers     爬塔難度:建議等級的玩家(統一配點+對應階的裝備,含/不含專精)打指定樓層的勝率(--floors 51,60,70 --n 200)
 //   node tools/sim.js calibrate  校準 51 層以後的怪物:找出讓建議等級玩家勝率 ≈ --target 的怪物強度倍率(--floors 51,60,70 --target 0.65)
+//   node tools/sim.js affixes    樓層詞條/稀有攤販對勝率的影響:每個詞條在指定樓層的勝率與「比沒詞條差幾點」(--floors 30,55,65 --n 100)
 //   node tools/sim.js spec       專精平衡:12 條專精分支 vs 6 個沒專精的基準,爬塔勝率與互打勝率(--level 60 --slv 3 --n 150 --gear 0.3)
 // 直接載入 assets/ 底下真正的 career-*.js,所以戰鬥結果跟遊戲裡用的是同一套引擎。
 //
@@ -22,6 +23,7 @@ A("career-engine.js");
 A("career-floors.js");
 A("career-pve.js");
 A("career-spec.js");
+A("career-affixes.js");
 // --tweak:在載入資料之後、跑模擬之前覆蓋數值。key 是「CareerData 底下的路徑」,例如 SKILL_TREE_NODES.healer_ult_1.effect.healRatio
 {
   const ti = process.argv.indexOf("--tweak");
@@ -280,11 +282,11 @@ function recLevel(f) {
 }
 const GEAR_BY_TIER = { 1: { w: 4, def: 3, hp: 7, luck: 4 }, 2: { w: 9, def: 8, hp: 18, luck: 8 }, 3: { w: 13, def: 12, hp: 26, luck: 12 } }; // 該階史詩三件(見 career-floors.js)
 function towerSide(c, L, branch, floorN) {
-  const g = GEAR_BY_TIER[opt("tier", 0) || (floorN >= 61 ? 3 : floorN >= 51 ? 2 : 1)]; // --tier 1 可以模擬「還沒換到新階裝備」
+  const g = args.includes("--nogear") ? { w: 0, def: 0, hp: 0, luck: 0 } : GEAR_BY_TIER[opt("tier", 0) || (floorN >= 61 ? 3 : floorN >= 51 ? 2 : 1)]; // --nogear:沒有裝備(低等級玩家) // --tier 1 可以模擬「還沒換到新階裝備」
   const st = { ...buildStats(c, L, "new") };
   const magic = CD.CLASS_INFO[c].path === "magic";
   st[magic ? "matk" : "atk"] += g.w; st.def += g.def; st.maxHp += g.hp; st.hp = st.maxHp; st.luck += g.luck;
-  return specSide(c, st, branch, L, 5);
+  return specSide(c, st, branch, L, opt("slv", 5)); // --slv:技能等級(低等級玩家用 1~2)
 }
 function towerRates(f, monStats, N, L) {
   L = L || opt("level", 0) || recLevel(f); // --level 可以指定玩家等級(例如測 Lv.60 的人打 51 層)
@@ -337,4 +339,56 @@ function calibrate() {
     console.log(`   一般怪(非關主)建議數值:atk ${best.mon.atk}  def ${best.mon.def}  spd ${best.mon.spd}  hp ${best.mon.hp}  luck ${best.mon.luck}   (玩家參考:atk ${Math.round(ref.atk)} def ${Math.round(ref.def)} spd ${Math.round(ref.spd)} hp ${Math.round(ref.hp)})`);
   });
 }
-({ leveling, winrate, spec, classes, towers, calibrate })[cmd]();
+// ---------- 樓層詞條 / 稀有攤販 ----------
+// 跟 towers 同一組玩家(建議等級、統一配點、該階史詩裝備、技能 Lv.5、含專精 12 種平均),但怪物與玩家會套上詞條帶來的
+// 額外效果(怪物數值倍率、怪物暴擊/減傷/反彈、玩家暴擊/減傷、術法倍率、回合上限),跟 db.js 的 _monsterSide/_withPlayerExtra 一樣。
+const AF = window.CareerAffixes;
+function floorWith(f, mod) { // mod: 'none' | 詞條 | 攤販
+  const fd = CF.getFloor(f);
+  if (!mod) return fd;
+  if (mod.mods) return AF.applyAffix(fd, mod);
+  return AF.makeVendor(fd, mod);
+}
+function affixRates(f, fdMod, N) {
+  const L = opt("level", 0) || recLevel(f);
+  const perClass = {}; let sum = 0, cnt = 0;
+  CF.CLASS_KEYS.forEach((c, ci) => {
+    (args.includes("--nospec") ? [null] : ["a", "b"]).forEach((br, bi) => { // --nospec:低等級玩家(Lv.50 以前沒有專精)
+      let w = 0; seed(100 + ci * 7 + bi);
+      for (let i = 0; i < N; i++) {
+        let side = towerSide(c, L, br, f);
+        const ex = fdMod.playerExtra;
+        if (ex) {
+          if (ex.critBonus) side.critBonus = (side.critBonus || 0) + ex.critBonus;
+          if (ex.dmgReduceRatio) side.dmgReduceRatio = 1 - (1 - (side.dmgReduceRatio || 0)) * (1 - ex.dmgReduceRatio);
+          if (ex.magicMult != null) side.magicMult = ex.magicMult;
+        }
+        const mon = { classKey: fdMod.classKey, stats: { ...fdMod.stats }, ...(fdMod.monsterExtra || {}) };
+        if (PVE.simulateFloorBattle(side, mon, { maxRounds: fdMod.maxRounds }).won) w++;
+      }
+      sum += w / N; cnt++;
+    });
+  });
+  return sum / cnt;
+}
+function affixes() {
+  GEAR = 0;
+  const N = opt("n", 60), floors = (args[args.indexOf("--floors") + 1] || "30,55,65").split(",").map(Number);
+  console.log(`詞條/攤販對勝率的影響(建議等級玩家含專精,統一配點;每格 ${N} 場 × 6 職業 × 2 分支)。「差」= 比沒詞條的同一層高/低幾點。\n`);
+  floors.forEach((f) => {
+    const base = affixRates(f, floorWith(f, null), N);
+    console.log(`── 第 ${f} 層(建議 Lv.${recLevel(f)},怪物職業 ${CD.CLASS_INFO[CF.getFloor(f).classKey].name}),沒詞條勝率 ${Math.round(base * 100)}% ──`);
+    AF.AFFIXES.forEach((a) => {
+      const r = affixRates(f, floorWith(f, a), N);
+      const d = Math.round((r - base) * 100);
+      console.log(("  [" + AF.TIERS[a.tier].label + "] " + a.name + (a.good ? "(好)" : "")).padEnd(26) + (Math.round(r * 100) + "%").padStart(6) + ((d >= 0 ? "+" : "") + d + "點").padStart(8) + "   " + a.text);
+    });
+    AF.VENDORS.forEach((v) => {
+      const r = affixRates(f, floorWith(f, v), N);
+      const d = Math.round((r - base) * 100);
+      console.log(("  [攤販] " + v.title).padEnd(26) + (Math.round(r * 100) + "%").padStart(6) + ((d >= 0 ? "+" : "") + d + "點").padStart(8) + "   " + v.text);
+    });
+    console.log("");
+  });
+}
+({ leveling, winrate, spec, classes, towers, calibrate, affixes })[cmd]();

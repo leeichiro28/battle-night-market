@@ -33,12 +33,13 @@ window.CareerPve = (function () {
   }
 
   // playerSide: { classKey, stats }，monsterSide: { classKey, stats }
-  // opts: { startHp, startMp } — 爬塔用持續HP/MP起始值，不帶就是滿血滿魔開打(神秘人切磋用這個)
+  // opts: { startHp, startMp, maxRounds } — 爬塔用持續HP/MP起始值，不帶就是滿血滿魔開打(神秘人切磋用這個);maxRounds = 回合上限(詞條用)
   function simulateFloorBattle(playerSide, monsterSide, opts) {
     opts = opts || {};
     let state = window.CareerEngine.initialMatchState(playerSide, monsterSide, { hp1: opts.startHp, mp1: opts.startMp });
     let rounds = 0;
-    while (state.hp1 > 0 && state.hp2 > 0 && rounds < MAX_ROUNDS) {
+    const limit = opts.maxRounds ? Math.min(opts.maxRounds, MAX_ROUNDS) : MAX_ROUNDS; // 詞條「打烊倒數」會把上限縮短,超過就算輸
+    while (state.hp1 > 0 && state.hp2 > 0 && rounds < limit) {
       state.m1 = decideAction(state, 1);
       state.m2 = decideAction(state, 2);
       const result = window.CareerEngine.resolveRound(state);

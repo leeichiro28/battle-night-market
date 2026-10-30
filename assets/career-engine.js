@@ -86,6 +86,9 @@ window.CareerEngine = (function () {
       spec2: p2.spec || null,
       // 套裝效果(60/70 層 Boss 套裝,見 career-floors.js SET_BONUSES):舊相片套裝「致命傷害保留 1 點 HP(每場一次)」、
       // 第零攤套裝「第一回合必定暴擊」。surviveUsed = 這場是否已經用掉保命機會。
+      // 術法傷害倍率(樓層詞條「雨天濕滑」,見 career-affixes.js):只乘在「法術類」職業的攻擊上,沒帶就是 null
+      magicMult1: p1.magicMult == null ? null : p1.magicMult,
+      magicMult2: p2.magicMult == null ? null : p2.magicMult,
       surviveOnce1: !!p1.surviveOnce,
       surviveOnce2: !!p2.surviveOnce,
       surviveUsed1: false,
@@ -208,6 +211,7 @@ window.CareerEngine = (function () {
       if (spec.singleSkillBonus && isSkill && (extra.hits || 1) === 1) dmg *= 1 + spec.singleSkillBonus; // 爆裂:單次技能
       if (spec.multiHitBonus && ((isSkill && (extra.hits || 1) > 1) || (isUlt && ultEffect && ultEffect.kind === "multiHit"))) dmg *= 1 + spec.multiHitBonus; // 連鎖:多段
     }
+    if (isMagic && extra.magicMult != null) dmg *= extra.magicMult; // 詞條「雨天濕滑」:法術類職業(雙方)傷害打折
     if (isMagic && attackerClass === "mage") dmg *= 1 + (mastery.magicDmgBonus || 0); // 「法術精研」職業被動:只有正式轉職法師才有
 
     let crit = false;
@@ -450,7 +454,7 @@ window.CareerEngine = (function () {
         if (curDefHp <= 0) break;
         const curHpRatio = curDefHp / defMaxHp;
         const selfHpRatio = (side === 1 ? hp1 / s.maxhp1 : hp2 / s.maxhp2);
-        const { dmg, crit } = computeAttackHit(atkStats, defStats, cls, actionType, curHpRatio, defenderImmuneRatio, skillLevel, critBonus, critDmgBonus, mastery, ultEffect, defenderDmgReduceRatio, { skillEffect: skillEff, spec: attackerSpec, selfHpRatio, hits, forceCrit: s.round === 1 && !!(side === 1 ? s.firstRoundCrit1 : s.firstRoundCrit2) });
+        const { dmg, crit } = computeAttackHit(atkStats, defStats, cls, actionType, curHpRatio, defenderImmuneRatio, skillLevel, critBonus, critDmgBonus, mastery, ultEffect, defenderDmgReduceRatio, { skillEffect: skillEff, spec: attackerSpec, selfHpRatio, hits, forceCrit: s.round === 1 && !!(side === 1 ? s.firstRoundCrit1 : s.firstRoundCrit2), magicMult: side === 1 ? s.magicMult1 : s.magicMult2 });
         if (side === 1) hp2 = Math.max(0, hp2 - dmg);
         else hp1 = Math.max(0, hp1 - dmg);
         lastDmg = dmg;

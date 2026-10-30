@@ -625,6 +625,9 @@
       html += `<div class="empty" style="margin:10px 0;font-size:12px;">${ui.icon("wand-sparkles")}你有 ${progress.skill_points} 點技能點可以花，去「技能樹」分頁升級戰技或被動(永久保留，不會歸零)!</div>`;
     }
 
+    // 樓層詞條:「下一層」這個時段的詞條(每 10 分鐘輪替,同一場活動所有玩家看到的一樣)
+    if (window.CareerAffixes && nextFloorDef && !locked) html += CareerAffixes.cardHtml(ev && ev.rules, nextFloor);
+
     html += `
       <div class="career-action-row" style="flex-wrap:wrap;">
         <button class="btn" id="train-btn" style="flex:1 1 30%;" ${canTrain ? "" : "disabled"}>
@@ -647,7 +650,12 @@
         <div style="margin-top:10px;">
           <p style="font-size:11px;color:var(--ink-dim);margin:0 0 6px;">已清樓層，可以重新挑戰(重複挑戰經驗減半、幣 ×0.6;第一次通關的樓層經驗加倍):</p>
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            ${chips.map((f) => `<button class="btn ghost small" data-retry-floor="${f}">第${f}層</button>`).join("")}
+            ${chips
+              .map((f) => {
+                const af = window.CareerAffixes ? CareerAffixes.affixFor(ev && ev.rules, f) : null;
+                return `<button class="btn ghost small" data-retry-floor="${f}"${af ? ` title="${ui.esc(`${CareerAffixes.TIERS[af.tier].label}詞條・${af.name}:${af.text}`)}"` : ""}>第${f}層${af ? `<span style="color:${CareerAffixes.TIERS[af.tier].color};"> ${ui.icon(af.icon, { size: "11px" })}</span>` : ""}</button>`;
+              })
+              .join("")}
           </div>
         </div>`;
     }
@@ -671,6 +679,16 @@
           <p style="margin:0 0 6px;font-weight:700;color:${b.won ? "var(--green)" : "var(--red)"};display:flex;align-items:center;gap:6px;">
             ${ui.icon(b.won ? "trophy" : "skull")}${b.won ? `打贏了 ${ui.esc(b.floorDef.name)}!` : `打輸給 ${ui.esc(b.floorDef.name)}了...`}
           </p>
+          ${
+            b.floorDef && b.floorDef.vendor
+              ? `<p style="margin:0 0 6px;font-size:12px;color:var(--gold);overflow-wrap:anywhere;">${ui.icon(b.floorDef.vendor.icon, { size: "13px" })}<b>稀有攤販出現了!</b>${ui.esc(b.floorDef.vendor.title)}・${ui.esc(b.floorDef.vendor.text)}${b.won ? "(打贏必掉稀有以上裝備,幣與經驗 ×1.5)" : ""}</p>`
+              : ""
+          }
+          ${
+            b.floorDef && b.floorDef.affix && window.CareerAffixes
+              ? `<p style="margin:0 0 6px;font-size:12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;overflow-wrap:anywhere;">${CareerAffixes.tierBadgeHtml(b.floorDef.affix)}<span style="color:var(--ink-dim);">${ui.esc(b.floorDef.affix.text)}</span></p>`
+              : ""
+          }
           ${
             b.won
               ? `<p style="font-size:12px;color:var(--ink-dim);margin:0 0 6px;">

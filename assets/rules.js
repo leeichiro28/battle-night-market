@@ -402,3 +402,38 @@
       </table>
     </div>`;
 })();
+
+// 樓層詞條與稀有攤販表(來源:assets/career-affixes.js,資料直接讀,改了那邊這裡自動跟著變)
+(function () {
+  const el = document.getElementById("career-affix-table");
+  if (!el || !window.CareerAffixes) return;
+  const AF = CareerAffixes;
+  const tierRows = AF.TIER_ORDER.map((t) =>
+    AF.AFFIXES.filter((a) => a.tier === t)
+      .map(
+        (a) => `
+      <tr>
+        <td><span style="color:${AF.TIERS[t].color};font-weight:700;">${ui.esc(AF.TIERS[t].label)}</span></td>
+        <td>${ui.icon(a.icon, { size: "13px" })}${ui.esc(a.name)}${a.good ? ' <span style="color:var(--green);font-size:11px;">(好詞條)</span>' : ""}</td>
+        <td>${ui.esc(a.text)}</td>
+      </tr>`
+      )
+      .join("")
+  ).join("");
+  const vendorRows = AF.VENDORS.map(
+    (v) => `<tr><td>${ui.icon(v.icon, { size: "13px" })}${ui.esc(v.title)}</td><td>${ui.esc(v.text)}</td><td>打贏必掉稀有(70%)或史詩(30%)，幣與經驗 ×${AF.VENDOR_REWARD.expMult}</td></tr>`
+  ).join("");
+  el.innerHTML = `
+    <div class="rule-table-wrap">
+      <table class="rule-table">
+        <thead><tr><th>階級</th><th>詞條</th><th>效果</th></tr></thead>
+        <tbody>${tierRows}</tbody>
+      </table>
+    </div>
+    <div class="rule-table-wrap" style="margin-top:12px;">
+      <table class="rule-table">
+        <thead><tr><th>稀有攤販</th><th>怪物變化</th><th>獎勵</th></tr></thead>
+        <tbody>${vendorRows}</tbody>
+      </table>
+    </div>`;
+})();
