@@ -233,6 +233,7 @@ const db = (function () {
     { key: "codex_ach10", name: "初窺門徑", desc: "累計達成 10 個成就", icon: "award" },
     { key: "codex_ach20", name: "夜市達人", desc: "累計達成 20 個成就", icon: "award" },
     { key: "codex_ach_all", name: "夜市百科", desc: "達成全部成就", icon: "trophy" },
+    { key: "world_boss_first", name: "第一個回應的人", desc: "夜市大戰中，對打烊鐘造成最多傷害", icon: "bell-ring" },
     { key: "codex_half", name: "圖鑑收藏家", desc: "圖鑑(怪物、裝備、事件)收集過半", icon: "book-open" },
     { key: "codex_all", name: "圖鑑館長", desc: "圖鑑(怪物、裝備、事件)全部收集", icon: "book-marked" },
   ];
@@ -4293,6 +4294,77 @@ const db = (function () {
     return { success, item: resultItem, fee: rule.fee, rate, progress: updated[0] };
   }
 
+  // ---------------- 全服 Boss「打烊鐘」(夜市大戰) ----------------
+  // 階段與時程在 career-modifiers.js(WORLD_BOSS / worldBossWindow);血量、冷卻、領獎在資料庫函式。
+  // 讀取目前狀態:Boss 本體、我的貢獻、前三名貢獻。階段是 active 且還沒有 Boss 就幫忙叫出來
+  // (任何一個開著頁面的玩家都可以;資料庫端 on conflict do nothing,多人同時呼叫不會生出兩隻)。
+  async function refreshWorldBoss(eventId, playerId, rules) {
+    const CM = window.CareerModifiers;
+    if (!rules) { const ev = await getEventSafe(eventId); rules = ev && ev.rules; }
+    const win = CM.worldBossWindow(rules);
+    if (win.phase === "none" || win.phase === "before") return { phase: win.phase, win, boss: null, my: null, top: [] };
+    let { data: boss, error } = await client.from("career_world_boss").select("*").eq("event_id", eventId).maybeSingle();
+    if (error) throw error;
+    if (!boss && win.phase === "active") {
+      const { count } = await client.from("career_builds").select("id", { count: "exact", head: true }).eq("event_id", eventId);
+      const { error: spawnErr } = await client.rpc("spawn_career_world_boss", { p_event_id: eventId, p_participants: count || 1, p_ends_at: win.endsAtIso });
+      if (spawnErr) throw spawnErr;
+      ({ data: boss } = await client.from("career_world_boss").select("*").eq("event_id", eventId).maybeSingle());
+    }
+    if (!boss) return { phase: win.phase, win, boss: null, my: null, top: [] };
+    const { data: rows } = await client.from("career_world_boss_damage").select("player_id, damage, hits, last_hit_at, reward_claimed").eq("event_id", eventId).order("damage", { ascending: false }).limit(50);
+    const list = rows || [];
+    const my = list.find((r) => r.player_id === playerId) || (await client.from("career_world_boss_damage").select("player_id, damage, hits, last_hit_at, reward_claimed").eq("event_id", eventId).eq("player_id", playerId).maybeSingle()).data || null;
+    const finished = !!boss.defeated_at || win.phase === "after";
+    const top = list.slice(0, 3);
+    if (top.length) {
+      const { data: ps } = await client.from("players").select("id, name").in("id", top.map((r) => r.player_id));
+      const nameOf = {}; (ps || []).forEach((p) => (nameOf[p.id] = p.name));
+      top.forEach((r) => (r.name = nameOf[r.player_id] || "?"));
+    }
+    const idx = list.findIndex((r) => r.player_id === playerId);
+    return { phase: win.phase, win, boss, my, top, finished, myRank: idx >= 0 ? idx + 1 : null };
+  }
+
+  // 出擊一次:用自己的職業、屬性、裝備跟 Boss 打 15 回合(或自己倒下),滿血滿魔開打、不影響爬塔的 HP/MP、不扣任何東西。
+  // 傷害 = Boss 掉的血,回報給資料庫累加(資料庫端有單次上限與冷卻)。
+  async function attackWorldBoss(eventId, playerId) {
+    await _assertCareerOpen(eventId);
+    const CM = window.CareerModifiers;
+    const W = CM.WORLD_BOSS;
+    const [progress, build, skillLevels] = await Promise.all([
+      getOrCreateCareerProgress(eventId, playerId),
+      getCareerBuildFor(eventId, playerId),
+      getPlayerSkillLevels(playerId),
+    ]);
+    if (!build) throw new Error("請先選好職業再挑戰打烊鐘");
+    const playerStats = window.CareerData.applyProgress(build.final_class, progress.stat_alloc, progress.equipment);
+    const battle = window.CareerPve.simulateFloorBattle(
+      _engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment, progress.level),
+      { classKey: W.classKey, stats: { ...W.stats } },
+      { startHp: playerStats.maxHp, startMp: playerStats.maxMp, maxRounds: W.rounds }
+    );
+    const damage = Math.max(0, Math.round(W.stats.maxHp - battle.state.hp2));
+    const { data, error } = await client.rpc("deal_career_world_boss", { p_event_id: eventId, p_player_id: playerId, p_damage: damage });
+    if (error) throw error;
+    if (!data || !data.accepted) {
+      const why = data && data.reason;
+      throw new Error(why === "cooldown" ? "出擊太頻繁了，等一下再打" : why === "ended" ? "打烊鐘已經結束了" : "現在打不了打烊鐘");
+    }
+    return { damage, applied: data.applied, result: data, log: battle.log, rounds: battle.state.round - 1, survived: battle.state.hp1 > 0 };
+  }
+
+  // 領獎(Boss 被打倒或時間到之後,打過至少一次的人各領一次)。第 1 名另外拿稱號。
+  async function claimWorldBossReward(eventId, playerId) {
+    const { data, error } = await client.rpc("claim_career_world_boss", { p_event_id: eventId, p_player_id: playerId });
+    if (error) throw new Error(error.message || "領獎失敗");
+    if (data && data.rank === 1) {
+      try { await grantTitleAndStats(playerId, ["world_boss_first"], {}); } catch (e) { console.error(e); }
+    }
+    const progress = await getOrCreateCareerProgress(eventId, playerId);
+    return { reward: data, progress };
+  }
+
   // 強化身上穿著的裝備 +1(最高 +5)。失敗只賠幣、不降級。
   async function enhanceCareerEquipment(eventId, playerId, slot) {
     await _assertCareerOpen(eventId);
@@ -4979,6 +5051,9 @@ const db = (function () {
     buyCareerMedal,
     synthesizeCareerEquipment,
     enhanceCareerEquipment,
+    refreshWorldBoss,
+    attackWorldBoss,
+    claimWorldBossReward,
     reforgeCareerEquipment,
     bulkSellCareerEquipment,
     equipCareerItem,

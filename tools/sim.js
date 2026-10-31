@@ -391,4 +391,30 @@ function affixes() {
     console.log("");
   });
 }
-({ leveling, winrate, spec, classes, towers, calibrate, affixes })[cmd]();
+// ---------- 全服 Boss「打烊鐘」:單人一次出擊的傷害 ----------
+// 用法: node tools/sim.js worldboss [--rounds 15] [--n 40] [--bossatk 1]
+// 一次出擊 = 滿血滿魔、跟 Boss 打 rounds 回合(或自己倒下)。傷害 = Boss 掉的血。
+// 用來校準 db.js 的 WORLD_BOSS_HP_PER_PLAYER(Boss 血量 = 參加人數 × 這個值)。
+function worldboss() {
+  GEAR = 0;
+  const N = opt("n", 40), R = opt("rounds", 15), BA = opt("bossatk", 1), BD = opt("bossdef", 1);
+  const f70 = CF.getFloor(70).stats;
+  const bossStats = { atk: Math.round(f70.atk * BA), matk: Math.round(f70.matk * BA), def: Math.round(f70.def * BD), spd: f70.spd, hp: 1e9, maxHp: 1e9, luck: f70.luck };
+  console.log(`全服 Boss 單次出擊(${R} 回合上限,每格 ${N} 場平均,各職業統一配點、含專精與 70 層階級裝備)。\n  Boss 屬性:攻 ${bossStats.atk} 防 ${bossStats.def} 速 ${bossStats.spd}(血量無限,只量傷害)\n`);
+  console.log("等級".padEnd(8) + CF.CLASS_KEYS.map((c) => CD.CLASS_INFO[c].name.padStart(8)).join("") + "   平均傷害  活過幾回合");
+  [10, 20, 30, 40, 50, 60, 80, 100].forEach((L) => {
+    let tot = 0, totRounds = 0;
+    const cells = CF.CLASS_KEYS.map((c, ci) => {
+      let dmg = 0, rounds = 0;
+      seed(100 + ci);
+      for (let i = 0; i < N; i++) {
+        const r = PVE.simulateFloorBattle(towerSide(c, L, "a", 70), { classKey: "warrior", stats: { ...bossStats } }, { maxRounds: R });
+        dmg += 1e9 - r.state.hp2; rounds += r.state.round || R;
+      }
+      tot += dmg / N; totRounds += rounds / N;
+      return String(Math.round(dmg / N)).padStart(8);
+    }).join("");
+    console.log(("Lv." + L).padEnd(8) + cells + String(Math.round(tot / CF.CLASS_KEYS.length)).padStart(11) + String((totRounds / CF.CLASS_KEYS.length).toFixed(1)).padStart(10));
+  });
+}
+({ leveling, winrate, spec, classes, towers, calibrate, affixes, worldboss })[cmd]();

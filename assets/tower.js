@@ -46,6 +46,12 @@
   let lastEvent = null; // { eventDef, text, drop } — instant事件/商店購買結果(顯示在爬塔分頁)
   let lastShopNote = null; // 商店購買結果(顯示在商店分頁頂端，買完留在商店不跳走)
   let lastGachaResult = null; // 抽獎結果(顯示在抽獎機分頁，不會跳走)
+  // 全服 Boss「打烊鐘」(夜市大戰):worldBoss = db.refreshWorldBoss 的結果,每 4 秒更新一次
+  let worldBoss = null;
+  let wbSig = "";
+  let wbReadyAt = 0; // 下一次可以出擊的時間(毫秒)
+  let wbTickNow = async () => {}; // 出擊/領獎後立刻重新讀一次
+  let wbResult = null; // 最近一次出擊/領獎的結果文字
   let lastEnhanceResult = null; // 強化/重鑄結果(顯示在合成分頁)
   let lastSynthesisResult = null; // 合成結果(顯示在合成分頁，不會跳走)
   let bossSubmitted = false; // 王戰:這回合是否已經送出動作
@@ -182,6 +188,21 @@
     };
     pvpTick();
     pvpTimer = setInterval(pvpTick, 3000);
+    // 全服 Boss:每 4 秒看一次(還沒到時間時只是算時間,不打資料庫)。狀態有變才重繪。
+    const wbTick = async () => {
+      try {
+        if (!window.CareerModifiers || !ev || ev.status === "closed") return;
+        const r = await db.refreshWorldBoss(eventId, myId, ev.rules);
+        const sig = JSON.stringify([r.phase, r.boss && r.boss.damage_total, r.boss && r.boss.defeated_at, r.my && r.my.damage, r.my && r.my.reward_claimed, r.top.map((x) => x.player_id + x.damage)]);
+        worldBoss = r;
+        if (sig !== wbSig) { wbSig = sig; render(); }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    wbTick();
+    wbTickNow = wbTick;
+    setInterval(wbTick, 4000);
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) pvpTick(); // 切回前景立刻補一次，不等下一個 3 秒
     });
@@ -1543,6 +1564,48 @@
       </div>`;
   }
 
+  // 夜市大戰橫幅:Boss 出現前 3 分鐘預告;出現後顯示共享血量、我的貢獻、前三名、出擊按鈕;結束後可以領獎
+  function worldBossHtml(locked) {
+    const wb = worldBoss;
+    const W = window.CareerModifiers && CareerModifiers.WORLD_BOSS;
+    if (!wb || !W || wb.phase === "none") return "";
+    const box = (inner) => `<div style="padding:10px 12px;margin-bottom:12px;border-radius:var(--radius);background:var(--panel2);border:1px solid var(--gold-d);">${inner}</div>`;
+    const clock = (sec) => `${Math.floor(sec / 60)}:${String(Math.max(0, sec) % 60).padStart(2, "0")}`;
+    if (wb.phase === "before") {
+      const left = Math.max(0, Math.round((wb.win.spawnAt - Date.now()) / 1000));
+      if (left > 180) return "";
+      return box(`<p style="margin:0;font-size:12.5px;">${ui.icon("bell-ring", { size: "14px" })}<b style="color:var(--gold);">夜市好像有點安靜……</b> ${clock(left)} 後，有東西要來了。</p>`);
+    }
+    if (!wb.boss) return "";
+    const b = wb.boss;
+    const pct = Math.min(100, Math.round((Number(b.damage_total) / Number(b.max_hp)) * 100));
+    const defeated = !!b.defeated_at;
+    const finished = defeated || wb.phase === "after";
+    const remain = Math.max(0, Math.round((wb.win.endAt - Date.now()) / 1000));
+    const my = wb.my;
+    const myLine = my ? `你的貢獻:${Number(my.damage).toLocaleString()} 傷害(出擊 ${my.hits} 次${wb.myRank ? `,第 ${wb.myRank} 名` : ""})` : "你還沒有出擊過";
+    const topLine = wb.top.length ? wb.top.map((r, i) => `${["①", "②", "③"][i]}${ui.esc(r.name)} ${Number(r.damage).toLocaleString()}`).join("　") : "";
+    let action = "";
+    if (finished) {
+      if (my && my.hits >= 1 && !my.reward_claimed) action = `<button class="btn" id="wb-claim-btn">${ui.icon("gift")}領取夜市大戰獎勵</button>`;
+      else if (my && my.reward_claimed) action = `<span style="font-size:12px;color:var(--ink-dim);">${ui.icon("check")}獎勵已領取</span>`;
+      else action = `<span style="font-size:12px;color:var(--ink-dim);">你沒有參加這一場夜市大戰</span>`;
+    } else {
+      const cdLeft = Math.max(0, Math.ceil((wbReadyAt - Date.now()) / 1000));
+      action = `<button class="btn" id="wb-attack-btn" ${locked || cdLeft > 0 ? "disabled" : ""}>${ui.icon("swords")}${cdLeft > 0 ? `冷卻 ${cdLeft} 秒` : `挑戰${ui.esc(W.name)}`}</button>`;
+    }
+    const resultHtml = wbResult ? `<div class="empty" style="font-size:12px;margin-top:8px;">${ui.icon("scroll-text")}${ui.esc(wbResult)}</div>` : "";
+    return box(`
+      <p style="margin:0 0 4px;font-size:13px;font-weight:700;">${ui.icon("bell-ring", { size: "15px" })}夜市大戰・${ui.esc(W.name)}${defeated ? `<span style="color:var(--green);">(已被打倒)</span>` : wb.phase === "after" ? `<span style="color:var(--ink-dim);">(已經離開)</span>` : `<span style="color:var(--gold);">(剩 ${clock(remain)})</span>`}</p>
+      <div style="height:10px;border-radius:999px;background:var(--bg);border:1px solid var(--line);overflow:hidden;margin:6px 0;"><div style="height:100%;width:${pct}%;background:${defeated ? "var(--green)" : "var(--gold)"};"></div></div>
+      <p style="margin:0 0 4px;font-size:11.5px;color:var(--ink-dim);">全場共同傷害 ${Number(b.damage_total).toLocaleString()} / ${Number(b.max_hp).toLocaleString()}(${pct}%)・${b.participants} 人參加</p>
+      <p style="margin:0 0 4px;font-size:11.5px;overflow-wrap:anywhere;">${myLine}</p>
+      ${topLine ? `<p style="margin:0 0 6px;font-size:11.5px;color:var(--ink-dim);overflow-wrap:anywhere;">貢獻榜:${topLine}</p>` : ""}
+      <div>${action}</div>
+      ${!finished ? `<p style="margin:6px 0 0;font-size:11px;color:var(--ink-dim);">出擊不扣血、不扣幣，用你現在的職業與裝備打 ${W.rounds} 回合(或倒下為止)，傷害加進全場共同血量。每次間隔 ${W.cooldownSec} 秒。打倒它全員有獎，貢獻最高的人還有稱號。</p>` : ""}
+      ${resultHtml}`);
+  }
+
   function broadcastTickerHtml() {
     if (!broadcasts.length) return "";
     const latest = broadcasts[0];
@@ -1655,6 +1718,7 @@
       </div>`;
 
     html += broadcastTickerHtml();
+    html += worldBossHtml(locked);
     html += highlightCardHtml();
     html += renderTabsBar();
     html += `<div class="card folder-tab-card" style="margin-top:0;">`;
@@ -2214,6 +2278,47 @@
           render();
         } catch (e) {
           await ui.alert(e.message || "合成失敗", { title: "操作失敗", tone: "danger" });
+          await loadAndRender();
+        } finally {
+          busy = false;
+        }
+      };
+    }
+
+    const wbAttack = document.getElementById("wb-attack-btn");
+    if (wbAttack && !wbAttack.disabled) {
+      wbAttack.onclick = async () => {
+        if (busy) return;
+        busy = true;
+        try {
+          const r = await db.attackWorldBoss(eventId, myId);
+          wbReadyAt = Date.now() + CareerModifiers.WORLD_BOSS.cooldownSec * 1000;
+          const done = r.result.defeated;
+          wbResult = `這次出擊造成 ${r.applied.toLocaleString()} 傷害(${r.rounds} 回合${r.survived ? "" : "，你倒下了，但沒有任何損失"})。${done ? "打烊鐘被打倒了!" : ""}`;
+          await wbTickNow();
+        } catch (e) {
+          await ui.alert(e.message || "出擊失敗", { title: "操作失敗", tone: "danger" });
+        } finally {
+          busy = false;
+        }
+      };
+    }
+    const wbClaim = document.getElementById("wb-claim-btn");
+    if (wbClaim) {
+      wbClaim.onclick = async () => {
+        if (busy) return;
+        busy = true;
+        try {
+          const r = await db.claimWorldBossReward(eventId, myId);
+          progress = r.progress;
+          const x = r.reward;
+          const parts = [`${Number(x.coins).toLocaleString()} 幣`];
+          if (x.statPoints) parts.push(`${x.statPoints} 數值點`);
+          if (x.skillPoints) parts.push(`${x.skillPoints} 技能點`);
+          wbResult = `${x.defeated ? "打烊鐘被打倒了，全員有獎!" : "打烊鐘走了，這是參加獎。"}你拿到 ${parts.join("、")}${x.rank ? `(貢獻第 ${x.rank} 名${x.rank === 1 ? "，獲得稱號「第一個回應的人」" : ""})` : ""}。`;
+          await wbTickNow();
+        } catch (e) {
+          await ui.alert(e.message || "領獎失敗", { title: "操作失敗", tone: "danger" });
           await loadAndRender();
         } finally {
           busy = false;

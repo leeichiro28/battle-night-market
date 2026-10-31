@@ -85,6 +85,29 @@
     </div>`;
   }
 
+  // ---- 全服 Boss「打烊鐘」(夜市大戰):活動第 30 分鐘出現,存在 15 分鐘,被打倒就提早結束 ----
+  // 血量、冷卻、獎勵在資料庫(spawn/deal/claim_career_world_boss);這裡只放時程與 Boss 的戰鬥屬性。
+  // 屬性用 tools/sim.js worldboss 校準:攻擊 = 70 層 Boss ×0.2、防禦 ×0.4,讓各等級玩家都能撐滿 15 回合左右,
+  // 傷害才反映玩家強度(單次出擊約 Lv.10:170、Lv.50:1,200、Lv.100:2,300)。血量無限大,只量傷害。
+  const WORLD_BOSS = {
+    startMin: 30, durationMin: 15, rounds: 15, cooldownSec: 30, name: "打烊鐘",
+    stats: { atk: 28, matk: 28, def: 28, spd: 21, luck: 14, hp: 1e9, maxHp: 1e9 },
+    classKey: "warrior",
+  };
+  // 目前處在哪個階段:before(還沒出現)/ active(可以打)/ after(已經結束);endsAt 是 Boss 消失的時間(ISO)
+  function worldBossWindow(rules, now) {
+    const s = startMs(rules);
+    if (s == null) return { phase: "none" };
+    const t = now == null ? Date.now() : now;
+    const spawnAt = s + WORLD_BOSS.startMin * 60000;
+    const endAt = spawnAt + WORLD_BOSS.durationMin * 60000;
+    const phase = t < spawnAt ? "before" : t < endAt ? "active" : "after";
+    return {
+      phase, spawnAt, endAt, endsAtIso: new Date(endAt).toISOString(),
+      startsInSec: Math.max(0, Math.round((spawnAt - t) / 1000)), remainSec: Math.max(0, Math.round((endAt - t) / 1000)),
+    };
+  }
+
   function startMs(rules) {
     if (!rules || !rules.activityEndsAt) return null;
     return new Date(rules.activityEndsAt).getTime() - ACTIVITY_MINUTES * 60000;
@@ -178,5 +201,5 @@
     return `<div style="padding:8px 12px;margin-bottom:12px;border-radius:var(--radius);background:var(--panel2);border:1px dashed var(--gold-d);">${rows}</div>`;
   }
 
-  window.CareerModifiers = { arenaBannerHtml, arenaInfo, arenaRuleAt, arenaRuleByKey, compressStats, ARENA_RULES, bannerHtml, THEME_MODS, WINDOWS, currentWindow, nextWindow, activeFor, applyToFloor, describe, themeRuleText, fmtClock };
+  window.CareerModifiers = { WORLD_BOSS, worldBossWindow, arenaBannerHtml, arenaInfo, arenaRuleAt, arenaRuleByKey, compressStats, ARENA_RULES, bannerHtml, THEME_MODS, WINDOWS, currentWindow, nextWindow, activeFor, applyToFloor, describe, themeRuleText, fmtClock };
 })();
