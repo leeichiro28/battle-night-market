@@ -27,6 +27,7 @@
     { key: "skilltree", icon: "wand-sparkles", label: "技能樹" },
     { key: "backpack", icon: "backpack", label: "背包" },
     { key: "missions", icon: "target", label: "任務" },
+    { key: "settings", icon: "settings", label: "設定" },
   ];
 
   let ev = null;
@@ -569,8 +570,9 @@
   function renderRememberedChoices() {
     const remembered = progress.event_auto_choices || {};
     const keys = Object.keys(remembered).filter((k) => CareerEvents.getEvent(k));
-    if (!keys.length) return "";
-    const rows = keys
+    const rows = !keys.length
+      ? `<div class="empty" style="font-size:11.5px;">${ui.icon("check")}目前沒有記住任何事件的選擇，遇到事件時都會重新詢問</div>`
+      : keys
       .map((k) => {
         const def = CareerEvents.getEvent(k);
         const label = (CHOICE_LABEL[k] && CHOICE_LABEL[k][remembered[k]]) || remembered[k];
@@ -583,10 +585,17 @@
       })
       .join("");
     return `
-      <div style="margin-top:14px;">
-        <p class="shop-section-title">已設定「不要再問我」的事件(取消後下次遇到會重新詢問)</p>
+      <div>
+        <p class="shop-section-title">${ui.icon("bell-off")}已設定「不要再問我」的事件(取消後下次遇到會重新詢問)</p>
         ${rows}
       </div>`;
+  }
+
+  // 設定分頁:爬塔相關的設定都放這裡，不佔爬塔首頁的位置。之後有新的爬塔設定，在這裡加一個區塊就好。
+  function renderSettingsTab() {
+    return `
+      <p class="shop-section-title" style="margin-top:0;">${ui.icon("settings")}爬塔設定</p>
+      ${renderRememberedChoices()}`;
   }
 
   function renderTowerTab(ctx) {
@@ -710,8 +719,6 @@
           }
         </div>`;
     }
-
-    html += renderRememberedChoices();
 
     html += `<div class="log-panel career-log-panel" style="margin-top:12px;">${
       lastBattle && lastBattle.log && lastBattle.log.length
@@ -1622,6 +1629,8 @@
       html += renderBackpackTab();
     } else if (activeTab === "missions") {
       html += renderMissionsTab(locked);
+    } else if (activeTab === "settings") {
+      html += renderSettingsTab();
     }
     html += `</div>`;
 
