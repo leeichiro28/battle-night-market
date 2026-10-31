@@ -2218,3 +2218,10 @@ input,select,textarea{max-width:100%;min-width:0;}
   .rule-tabbar{flex-direction:column;gap:8px;padding:14px 14px 0;}
   .rule-expand-all{align-self:flex-end;height:30px;}
 }
+
+/* 規則頁・爬塔說明用的小表格(只有 2~4 欄的短表，例如藥水、強化費用、遺物、全服 Boss 獎勵)：
+   不要吃裝備表那種 760px 最小寬度，手機上直接換行顯示，不出現橫向捲軸 */
+.rule-table.compact-table{min-width:0;font-size:12.5px;}
+.rule-table.compact-table th,.rule-table.compact-table td{white-space:normal;overflow-wrap:anywhere;}
+.rule-table.compact-table td:first-child,.rule-table.compact-table th:first-child{white-space:nowrap;}
+.rule-table.compact-table th{position:static;}

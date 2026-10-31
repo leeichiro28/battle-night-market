@@ -497,8 +497,12 @@
           <h4><i data-lucide="heart-pulse" class="ico"></i> HP／魔力與藥水</h4>
           <p style="color:var(--ink-dim);line-height:1.9;margin:0 0 10px;">
             爬塔的 HP、魔力是<b style="color:var(--ink);">持續的</b>:打完一場剩多少就是多少，<b style="color:var(--ink);">不會自動補滿</b>，要靠藥水、事件來恢復(PVP 每場則是用你當下的上限重新開始)。HP 見底也不會卡關，會自動保留三成 HP 復活，馬上能再挑戰；輸的懲罰只是拿不到獎勵。<br/><br/>
-            <b style="color:var(--ink);">藥水</b>在商店買，是消耗品，用一瓶少一瓶:恢復藥水 30 幣(補 40% HP)、魔力藥水 25 幣(補 50% MP)。開局會先送 2 瓶恢復藥水跟 1 瓶魔力藥水。
+            <b style="color:var(--ink);">藥水</b>在商店買，是消耗品，用一瓶少一瓶；開局會先送 2 瓶恢復藥水跟 1 瓶魔力藥水。
           </p>
+          <div class="rule-table-wrap"><table class="rule-table compact-table"><thead><tr><th>藥水</th><th class="num">價格</th><th>效果</th><th class="num">開局贈送</th></tr></thead><tbody>
+<tr><td>恢復藥水</td><td class="num">30 幣</td><td>補 40% HP</td><td class="num">2 瓶</td></tr>
+<tr><td>魔力藥水</td><td class="num">25 幣</td><td>補 50% MP</td><td class="num">1 瓶</td></tr>
+</tbody></table></div>
         </div>
 
         <div class="game-section">
@@ -525,7 +529,14 @@
           裝備分四個稀有度:<span class="tier-tag common">普通</span> <span class="tier-tag rare">稀有</span> <span class="tier-tag epic">史詩</span> <span class="tier-tag legendary">傳說</span>，分武器／防具／吊飾(飾品)三個部位。武器是分職業的，而且每個職業每個稀有度都有<b style="color:var(--ink);">2款不同風格</b>的武器(例如戰士是「大鐵叉」跟「巨斧」)，取得時隨機拿到其中一款，史詩/傳說這兩款各自有不同的特殊效果，不是完全一樣。防具/飾品也是每個稀有度2款(不分職業共用)。<b style="color:var(--gold);">傳說裝備的限制是「同一件裝備(同名字)不會重複拿到第二件」</b>，不同名字的傳說裝備(例如同部位的另一款、或Boss限定掉落的)互不影響，都可以拿到、都可以同時裝備。完整清單見下面「裝備表」。<br/><br/>
           <b style="color:var(--ink);">套裝效果</b>:40/50/60/70層Boss限定掉落的傳說裝備(武器+防具+飾品)是同一套，三件都裝備在身上會額外觸發套裝效果(比單件更好一點)，背包分頁裝備齊全時會顯示提示。60層「舊相片套裝」是<b>受到致命傷害時保留 1 點HP(每場戰鬥一次)</b>，70層「第零攤套裝」是<b>第一回合的攻擊必定暴擊</b>。<br/><br/><b style="color:var(--ink);">裝備階級</b>:51~60層掉「<b>招牌階</b>」、61~70層掉「<b>塔心階</b>」的普通/稀有/史詩裝備，數值明顯比原本的「夜市階」高(史詩從約+4 提高到+9、+13)，名字也依章節換成招牌、鐵捲門、號碼牌、空位、未命名的…。合成會保留階級:先用掉階級最低的3件，結果的階級跟用掉的最高那件一樣；傳說不分階。<br/><br/>
           <b style="color:var(--ink);">商店</b>:直接花幣加數值點(買一次漲一次價，每場活動最多買 10 點)、買指定稀有度的裝備。排行分不能用幣買，只能靠 PVP 戰績與爬塔高度。商店也賣藥水(見「HP／魔力與藥水」)。<br/><br/>
-          <b style="color:var(--ink);">抽獎機</b>:固定幣數抽一次，機率表:小獎(幣)55%、自由數值點20%、普通裝備10%、稀有裝備12%、史詩裝備2.5%、傳說裝備0.5%。<br/><br/>
+          <b style="color:var(--ink);">抽獎機</b>:固定幣數抽一次，機率表如下。<br/><div class="rule-table-wrap"><table class="rule-table compact-table"><thead><tr><th>獎項</th><th class="num">機率</th></tr></thead><tbody>
+<tr><td>小獎(幣)</td><td class="num">55%</td></tr>
+<tr><td>自由數值點</td><td class="num">20%</td></tr>
+<tr><td>稀有裝備</td><td class="num">12%</td></tr>
+<tr><td>普通裝備</td><td class="num">10%</td></tr>
+<tr><td>史詩裝備</td><td class="num">2.5%</td></tr>
+<tr><td>傳說裝備</td><td class="num">0.5%</td></tr>
+</tbody></table></div><br/>
           <b style="color:var(--ink);">合成</b>:背包裡同部位、同稀有度的裝備湊滿3件可以合成一次，成功變成下一個稀有度(普通→稀有→史詩→傳說)。稀有→史詩要 1000 幣、史詩→傳說要 3000 幣，成功機率分別是 50% / 20%(普通→稀有免費、50%)。失敗會拿回1件同稀有度的裝備，並累積保底，下次成功率更高。合成傳說只會拿到你還沒擁有過的款式，Boss 限定傳說不能合成。一般樓層不再掉史詩，史詩只從小關主與合成來。<br/><br/>
           <b style="color:var(--ink);">背包</b>:所有撿到/買到的裝備都先進背包，不會自動穿上，要自己決定穿哪一件、卸下哪一件，也可以用「一鍵賣裝」清掉不要的裝備換幣。
           </p>
@@ -535,14 +546,20 @@
           <h4><i data-lucide="hammer" class="ico"></i> 強化與重鑄</h4>
           <p style="color:var(--ink-dim);line-height:1.9;margin:0 0 10px;">
             在爬塔頁「鐵匠鋪」分頁最上方的「強化與重鑄」區塊操作，<b style="color:var(--ink);">只能處理身上穿著的三件裝備</b>。<br/><br/>
-            <b style="color:var(--ink);">強化</b>:花幣把裝備強化到最高 +5，每一級給主屬性固定加成(約原本數值的 15%，至少 +1)。<b style="color:var(--ink);">失敗只賠幣，不會降級、不會碎</b>，但越高級成功率越低、費用越貴:<br/>
-            &nbsp;&nbsp;• +1:1,500 幣、成功率 100%<br/>
-            &nbsp;&nbsp;• +2:3,000 幣、90%<br/>
-            &nbsp;&nbsp;• +3:6,000 幣、75%<br/>
-            &nbsp;&nbsp;• +4:12,000 幣、60%<br/>
-            &nbsp;&nbsp;• +5:25,000 幣、45%<br/>
-            強化過的裝備<b style="color:var(--ink);">不能拿去合成</b>，也<b style="color:var(--ink);">不會被「一鍵賣裝」賣掉</b>；卸下放回背包時會自己一組顯示。<br/><br/>
-            <b style="color:var(--ink);">重鑄</b>:花幣把裝備換成「同部位、同稀有度、同階級」的另一款，不會抽到原本那款，<b style="color:var(--ink);">強化等級會保留</b>。費用:普通 200、稀有 1,000、史詩 3,000 幣。傳說裝備與 Boss 套裝不能重鑄；只有一款的裝備(例如招牌階／塔心階的武器、見習武器)沒有其他款可換，按鈕會顯示「只有一款」。
+            <b style="color:var(--ink);">強化</b>:花幣把裝備強化到最高 +5，每一級給主屬性固定加成(約原本數值的 15%，至少 +1)。<b style="color:var(--ink);">失敗只賠幣，不會降級、不會碎</b>，但越高級成功率越低、費用越貴:
+            <div class="rule-table-wrap"><table class="rule-table compact-table"><thead><tr><th>強化等級</th><th class="num">費用</th><th class="num">成功率</th></tr></thead><tbody>
+<tr><td>+1</td><td class="num">1,500 幣</td><td class="num">100%</td></tr>
+<tr><td>+2</td><td class="num">3,000 幣</td><td class="num">90%</td></tr>
+<tr><td>+3</td><td class="num">6,000 幣</td><td class="num">75%</td></tr>
+<tr><td>+4</td><td class="num">12,000 幣</td><td class="num">60%</td></tr>
+<tr><td>+5</td><td class="num">25,000 幣</td><td class="num">45%</td></tr>
+</tbody></table></div><br/>強化過的裝備<b style="color:var(--ink);">不能拿去合成</b>，也<b style="color:var(--ink);">不會被「一鍵賣裝」賣掉</b>；卸下放回背包時會自己一組顯示。<br/><br/>
+            <b style="color:var(--ink);">重鑄</b>:花幣把裝備換成「同部位、同稀有度、同階級」的另一款，不會抽到原本那款，<b style="color:var(--ink);">強化等級會保留</b>。費用見下表。傳說裝備與 Boss 套裝不能重鑄；只有一款的裝備(例如招牌階／塔心階的武器、見習武器)沒有其他款可換，按鈕會顯示「只有一款」。
+            <div class="rule-table-wrap"><table class="rule-table compact-table"><thead><tr><th>重鑄稀有度</th><th class="num">費用</th></tr></thead><tbody>
+<tr><td>普通</td><td class="num">200 幣</td></tr>
+<tr><td>稀有</td><td class="num">1,000 幣</td></tr>
+<tr><td>史詩</td><td class="num">3,000 幣</td></tr>
+</tbody></table></div>
           </p>
         </div>
 
@@ -608,18 +625,41 @@
         <div class="game-section">
           <h4 data-tab-label="今夜主題"><i data-lucide="moon-star" class="ico"></i> 今夜主題與時段事件</h4>
 <p style="color:var(--ink-dim);line-height:1.9;">
-<b style="color:var(--ink);">今夜主題</b>:主辦人選的主題現在帶一條實際規則(一般夜沒有)。雨夜:掉落率 +10%、怪物 HP +10%；中元夜:怪物 HP/攻擊 +15%、掉落率 +15%、幣 +10%；跨年夜:幣 ×1.5；颱風夜:經驗 ×1.2、怪物攻擊 +10%。<br/><br/>
-<b style="color:var(--ink);">時段事件</b>:整場活動中固定有三段限時的全場加成，夜市廣播橫幅會顯示倒數。活動開始後第 20～28 分鐘「發財時段」幣 ×2；第 33～41 分鐘「擂台加碼」PVP 積分 ×1.5；第 46～54 分鐘「怪物暴動」怪物 HP/攻擊 +20%、掉落率 +20%。主題與時段事件可以疊加。
+<b style="color:var(--ink);">今夜主題</b>:主辦人選的主題帶一條實際規則(一般夜沒有)。
 </p>
+<div class="rule-table-wrap"><table class="rule-table compact-table"><thead><tr><th>今夜主題</th><th>規則</th></tr></thead><tbody>
+<tr><td>一般夜</td><td>沒有額外規則</td></tr>
+<tr><td>雨夜</td><td>掉落率 +10%、怪物 HP +10%</td></tr>
+<tr><td>中元夜</td><td>怪物 HP／攻擊 +15%、掉落率 +15%、幣 +10%</td></tr>
+<tr><td>跨年夜</td><td>幣 ×1.5</td></tr>
+<tr><td>颱風夜</td><td>經驗 ×1.2、怪物攻擊 +10%</td></tr>
+</tbody></table></div>
+<p style="color:var(--ink-dim);line-height:1.9;">
+<b style="color:var(--ink);">時段事件</b>:整場活動固定有三段限時的全場加成，夜市廣播橫幅會顯示倒數。主題與時段事件可以疊加。
+</p>
+<div class="rule-table-wrap"><table class="rule-table compact-table"><thead><tr><th>時段事件</th><th>活動時間</th><th>效果</th></tr></thead><tbody>
+<tr><td>發財時段</td><td>第 20～28 分鐘</td><td>幣 ×2</td></tr>
+<tr><td>擂台加碼</td><td>第 33～41 分鐘</td><td>PVP 積分 ×1.5</td></tr>
+<tr><td>怪物暴動</td><td>第 46～54 分鐘</td><td>怪物 HP／攻擊 +20%、掉落率 +20%</td></tr>
+</tbody></table></div>
+<p></p>
         </div>
 
         <div class="game-section">
           <h4><i data-lucide="mountain" class="ico"></i> 爬塔:樓層 / Boss / 掉落</h4>
           <p style="color:var(--ink-dim);line-height:1.9;">
-          爬塔頁面有三個核心動作:<br/><br/>
-          <b style="color:var(--ink);"><i data-lucide="hand-coins" class="ico"></i> 特訓</b>:每90秒可領一次，穩定的基礎收入(幣+少量經驗)，不用打怪也能慢慢升級。<br/><br/>
-          <b style="color:var(--ink);"><i data-lucide="swords" class="ico"></i> 挑戰樓層</b>:沒有冷卻，AI對手直接算完整場戰鬥(不用像PVP等對方回合)。打贏才推進樓層拿獎勵，打輸留在原樓層、不扣任何東西，可以馬上重試。已經清過的樓層也能回頭重新挑戰，用來穩定刷幣/經驗/裝備掉落，但<b style="color:var(--ink);">重打的獎勵會打折</b>:經驗 ×0.5、幣 ×0.6，重打關主樓層的裝備掉落機率只有 35%；第一次通關則是經驗 ×2、關主掉落 100%。HP 與魔力是接續上一場的(見「HP／魔力與藥水」)，血量低就先喝藥水再挑。<br/><br/>
-          <b style="color:var(--ink);"><i data-lucide="repeat" class="ico"></i> 練功掛機</b>:只有已經清過的樓層才能開，系統背景自動幫你反覆挑戰，效率打七折，換取不用一直盯著操作。<br/><br/>
+          爬塔頁面有三個核心動作:
+          <div class="rule-table-wrap"><table class="rule-table compact-table"><thead><tr><th>動作</th><th>冷卻</th><th>說明</th></tr></thead><tbody>
+<tr><td>特訓</td><td>每 90 秒一次</td><td>穩定的基礎收入(幣＋少量經驗)，不用打怪也能慢慢升級。</td></tr>
+<tr><td>挑戰樓層</td><td>沒有冷卻</td><td>AI 對手直接算完整場戰鬥。打贏才推進樓層拿獎勵，打輸留在原樓層、不扣任何東西，可以馬上重試。HP 與魔力接續上一場(見「HP／魔力與藥水」)，血量低先喝藥水再挑。</td></tr>
+<tr><td>練功掛機</td><td>背景自動</td><td>只有已清過的樓層才能開，系統反覆幫你挑戰，效率打七折。</td></tr>
+</tbody></table></div>
+          <br/>已經清過的樓層也能回頭重新挑戰，用來刷幣、經驗與裝備，但<b style="color:var(--ink);">重打的獎勵會打折</b>:
+          <div class="rule-table-wrap"><table class="rule-table compact-table"><thead><tr><th>挑戰類型</th><th class="num">經驗</th><th class="num">幣</th><th class="num">關主裝備掉落</th></tr></thead><tbody>
+<tr><td>第一次通關</td><td class="num">×2</td><td class="num">×1</td><td class="num">100%</td></tr>
+<tr><td>重新挑戰已清過的樓層</td><td class="num">×0.5</td><td class="num">×0.6</td><td class="num">35%</td></tr>
+</tbody></table></div>
+          <br/>
           <b style="color:var(--ink);">Boss</b>:每滿10層會遇到小關主，數值比較高但獎勵也更好，保底掉稀有以上的裝備。<b style="color:var(--ink);">第一次</b>挑戰關主要手動即時對戰(可以撤退)，之後想再重打(賭裝備掉落)就跟一般樓層一樣AI直接算完，不用再手動打一次。40/50/60/70層的關主是獨立命名的隱藏Boss(60層相片攤老闆「阿旺」、70層「第零攤」)，打贏有機率掉落Boss限定傳說裝備。<br/><br/>
           <b style="color:var(--ink);">掉落</b>:掉落機率是「打贏這一層」的前提下才會判定，普通樓層只掉得到普通/稀有，小關主保底稀有以上，40層開始一般樓層也會有機率掉史詩(機率隨樓層提高)，40/50/60/70層的關主額外有機率掉Boss限定傳說裝備。裝備等級門檻是「第幾層掉的」決定，不是看稀有度。目前開放70層，完整怪物/掉落數值見下面的表。<b style="color:var(--ink);">51層以後難度明顯提高</b>:建議約 Lv.90 才打得過51層(Lv.50~70的一般玩家基本過不去)、60層約 Lv.120、70層約 Lv.160，要先換到招牌階/塔心階裝備並選好專精。
           </p>
@@ -646,15 +686,33 @@
         <div class="game-section">
           <h4><i data-lucide="ticket" class="ico"></i> 遺物(攤位小物)</h4>
           <p style="color:var(--ink-dim);line-height:1.9;margin:0 0 10px;">
-            這場活動撿到的護符，<b>最多同時裝 3 個</b>，在爬塔頁的「遺物」分頁裝上或卸下，隨時可換。<b>第一次打贏關主</b>一定掉 1 個，遇到<b>貴人相助</b>會送 1 個，<b>夜市抽獎機</b>小機率中到；同一個遺物不會重複拿到。遺物<b>每場活動重來、不跨活動</b>，不能買賣或合成。效果例如：舊號碼牌(第一回合必定先手)、不滅的燈泡(暴擊時回 3 魔)、半截筷子(被普攻命中 12% 機率反彈 35% 傷害)、油漬圍裙(受傷 -6%)、竹籤串(暴擊率 +6%)、皺掉的紅包(暴擊傷害 +25%)、破掉的紙扇(每回合多回 1 魔)、保溫杯(命中回復傷害 6% HP)、折角的折價券(大招少花 1 魔)。爬塔與 PVP 都有效。
+            這場活動撿到的護符，<b>最多同時裝 3 個</b>，在爬塔頁的「遺物」分頁裝上或卸下，隨時可換。<b>第一次打贏關主</b>一定掉 1 個，遇到<b>貴人相助</b>會送 1 個，<b>夜市抽獎機</b>小機率中到；同一個遺物不會重複拿到。遺物<b>每場活動重來、不跨活動</b>，不能買賣或合成。爬塔與 PVP 都有效。效果如下表：
           </p>
+          <div class="rule-table-wrap"><table class="rule-table compact-table"><thead><tr><th>遺物</th><th>效果</th></tr></thead><tbody>
+<tr><td>舊號碼牌</td><td>第一回合必定先手(雙方都有則照速度)</td></tr>
+<tr><td>不滅的燈泡</td><td>自己暴擊時回 3 點魔力</td></tr>
+<tr><td>半截筷子</td><td>被普攻命中時 12% 機率反彈 35% 傷害</td></tr>
+<tr><td>油漬圍裙</td><td>受到傷害 -6%</td></tr>
+<tr><td>竹籤串</td><td>暴擊率 +6%</td></tr>
+<tr><td>皺掉的紅包</td><td>暴擊傷害 +25%</td></tr>
+<tr><td>破掉的紙扇</td><td>每回合多回 1 點魔力</td></tr>
+<tr><td>保溫杯</td><td>命中時回復傷害 6% 的 HP</td></tr>
+<tr><td>折角的折價券</td><td>大招少花 1 點魔力(最低仍留 1)</td></tr>
+</tbody></table></div>
         </div>
 
         <div class="game-section">
           <h4 data-tab-label="夜市大戰"><i data-lucide="bell-ring" class="ico"></i> 夜市大戰・全服 Boss「打烊鐘」</h4>
           <p style="color:var(--ink-dim);line-height:1.9;margin:0 0 10px;">
-            活動進行到第 30 分鐘，夜市廣播「逼——。有東西來了。」，全場共同的 Boss「打烊鐘」會出現，存在 15 分鐘(到第 45 分)，被打倒就提早結束。爬塔頁最上方會出現它的血量條，按「挑戰打烊鐘」就用你現在的職業、屬性和裝備跟它打最多 15 回合(或你倒下為止)；<b>出擊不扣血、不扣幣、不影響爬塔進度</b>，造成的傷害會加進全場共同血量，每次出擊間隔 30 秒，可以反覆挑戰。Boss 血量依參加人數決定(每人約 15,000，最少 30,000)。結束後打過至少一次的人都能領獎：<b>打倒它</b>每人 50,000 幣＋5 數值點＋3 技能點，<b>沒打倒</b>也有 10,000 幣的參加獎；貢獻前三名另外加碼 100,000／50,000／30,000 幣，第一名還能拿到稱號「第一個回應的人」。
+            活動進行到第 30 分鐘，夜市廣播「逼——。有東西來了。」，全場共同的 Boss「打烊鐘」會出現，存在 15 分鐘(到第 45 分)，被打倒就提早結束。爬塔頁最上方會出現它的血量條，按「挑戰打烊鐘」就用你現在的職業、屬性和裝備跟它打最多 15 回合(或你倒下為止)；<b>出擊不扣血、不扣幣、不影響爬塔進度</b>，造成的傷害會加進全場共同血量，每次出擊間隔 30 秒，可以反覆挑戰。Boss 血量依參加人數決定(每人約 15,000，最少 30,000)。結束後打過至少一次的人都能領獎，獎勵如下表：
           </p>
+          <div class="rule-table-wrap"><table class="rule-table compact-table"><thead><tr><th>條件</th><th>獎勵</th></tr></thead><tbody>
+<tr><td>打倒 Boss，打過至少 1 次</td><td>每人 50,000 幣＋5 數值點＋3 技能點</td></tr>
+<tr><td>時間到沒打倒，打過至少 1 次</td><td>參加獎 10,000 幣</td></tr>
+<tr><td>貢獻第 1 名</td><td>另加 100,000 幣＋稱號「第一個回應的人」</td></tr>
+<tr><td>貢獻第 2 名</td><td>另加 50,000 幣</td></tr>
+<tr><td>貢獻第 3 名</td><td>另加 30,000 幣</td></tr>
+</tbody></table></div>
           <p style="color:var(--ink-dim);line-height:1.9;margin:0 0 10px;">
             <b style="color:var(--ink);">跟爬塔、PVP 的關係</b>:打烊鐘是全場一起打的 Boss，不用排隊配對；出擊用的是你「現在」的職業、屬性、裝備與遺物，所以先去爬塔練強再來打更有貢獻。
           </p>
