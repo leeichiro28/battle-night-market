@@ -196,7 +196,7 @@
         return `
           <div class="lb-row${isMe ? " me" : ""}">
             ${ui.rankBadge(rank)}
-            <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}${titleLine}${rewardLine}
+            <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}${titleLine}${rewardLine}${ui.bountyTag(row.queueEntry.win_streak)}
               <span style="color:var(--ink-dim);font-size:11px;"> · 第${row.floor}層 · ${row.queueEntry.wins}勝${row.queueEntry.losses}敗</span>
             </span>
             <span class="lb-score">${row.score}</span>
@@ -315,6 +315,7 @@
         </div>`;
     }
     if (window.CareerModifiers && ev && ev.status !== "closed") html += CareerModifiers.bannerHtml(ev.rules);
+    if (window.CareerModifiers && ev && ev.status !== "closed" && pvpAllowed()) html += CareerModifiers.arenaBannerHtml(ev.rules);
     html += `
       <div class="career-class-card selected" style="cursor:default;margin-bottom:16px;">
         <div class="cc-head">${ui.icon(info.icon)}${ui.esc(info.name)}
@@ -397,7 +398,7 @@
                     return `
                       <div class="lb-row${isMe ? " me" : ""}">
                         ${ui.rankBadge(idx + 1)}
-                        <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}${ui.titleBadge(row.displayTitle)}
+                        <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}${ui.titleBadge(row.displayTitle)}${ui.bountyTag(row.queueEntry.win_streak)}
                           <span style="color:var(--ink-dim);font-size:11px;"> · ${summaryText}</span>
                         </span>
                       </div>`;
@@ -555,7 +556,8 @@
     const state = match.state || {};
     if (state[`m${oppSlot}`]) return;
     const botUltCost = Math.max(1, (CareerData.ULT_MANA_COST || 0) - (state[`ultCostReduce${oppSlot}`] || 0));
-    const canUlt = (state[`mp${oppSlot}`] || 0) >= botUltCost && (state[`ultCharge${oppSlot}`] || 0) >= (CareerData.ULT_CHARGE_MAX || 100);
+    const botUltBanned = state.arenaRule === "noult" || state.arenaRule === "limited";
+    const canUlt = !botUltBanned && (state[`mp${oppSlot}`] || 0) >= botUltCost && (state[`ultCharge${oppSlot}`] || 0) >= (CareerData.ULT_CHARGE_MAX || 100);
     const action = canUlt ? "ult" : "attack";
     try {
       await db.submitCareerMove(match.id, oppSlot, { action });
@@ -657,7 +659,7 @@
         const gapText = isMe && idx > 0 ? `<span style="color:var(--gold);font-size:11px;"> · 距第1名還差${topScore - row.score}分</span>` : "";
         return `<div class="lb-row${isMe ? " me" : ""}">
           ${ui.rankBadge(idx + 1)}
-          <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}${ui.titleBadge(row.displayTitle)}
+          <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}${ui.titleBadge(row.displayTitle)}${ui.bountyTag(row.queueEntry.win_streak)}
             <span style="color:var(--ink-dim);font-size:11px;"> · 第${row.floor}層 · ${row.queueEntry.wins}勝${row.queueEntry.losses}敗${summaryText}</span>${gapText}
           </span>
           <span class="lb-score">${row.score}</span>
@@ -727,13 +729,18 @@
     const ultCharged = myUltCharge >= ultChargeMax;
     // 「大招精修」被動會降低大招魔力花費(最低1點)，按鈕判斷跟顯示都要用減免後的實際花費，跟引擎一致
     const myUltCost = Math.max(1, (CareerData.ULT_MANA_COST || 0) - ((mySlot === 1 ? s.ultCostReduce1 : s.ultCostReduce2) || 0));
-    const ultAffordable = ultCharged && myMp >= myUltCost;
+    // 輪替擂台規則(整場固定,存在 state.arenaRule):noult 禁大招;limited 只能普攻+技能A
+    const arenaRuleKey = s.arenaRule || "standard";
+    const ultBanned = arenaRuleKey === "noult" || arenaRuleKey === "limited";
+    const skill2Banned = arenaRuleKey === "limited";
+    const arenaDef = window.CareerModifiers ? CareerModifiers.arenaRuleByKey(arenaRuleKey) : null;
+    const ultAffordable = !ultBanned && ultCharged && myMp >= myUltCost;
     const mySkillUnlocked = !!(mySlot === 1 ? s.skillUnlocked1 : s.skillUnlocked2);
     const mySkillCost = ((mySlot === 1 ? s.skillEffectA1 : s.skillEffectA2) || {}).manaCost || CareerData.SKILL_MANA_COST || 0;
     const mySkill2Cost = ((mySlot === 1 ? s.skillEffectB1 : s.skillEffectB2) || {}).manaCost || CareerData.SKILL_MANA_COST || 0;
     const skillAffordable = mySkillUnlocked && myMp >= mySkillCost;
     const mySkill2Unlocked = !!(mySlot === 1 ? s.skill2Unlocked1 : s.skill2Unlocked2);
-    const skill2Affordable = mySkill2Unlocked && myMp >= mySkill2Cost;
+    const skill2Affordable = !skill2Banned && mySkill2Unlocked && myMp >= mySkill2Cost;
     const myUltName = (mySlot === 1 ? s.ultName1 : s.ultName2) || null; // Phase 4:大招可能被換成大招2，優先用state裡實際裝備的名字
     const myInfo = CareerData.CLASS_INFO[myClass];
     const oppInfo = CareerData.CLASS_INFO[oppClass];
@@ -756,7 +763,10 @@
       debuffs.forEach((d) => tags.push(`<span class="tag" style="color:var(--red,#e0594a);">${ui.icon("arrow-big-down")}${d.stat === "atk" ? "攻擊" : "防禦"} -${Math.round(d.ratio * 100)}%(${d.fresh ? "下回合起 " : "剩 "}${d.rounds} 回合)</span>`));
       return tags.length ? `<div class="tag-row" style="margin-top:4px;">${tags.join("")}</div>` : "";
     };
-    let html = `
+    let html = arenaDef && arenaRuleKey !== "standard"
+      ? `<div class="tag-row" style="justify-content:center;margin-bottom:8px;"><span class="tag" style="color:var(--gold);">${ui.icon(arenaDef.icon)}${ui.esc(arenaDef.label)}:${ui.esc(arenaDef.text)}</span></div>`
+      : "";
+    html += `
       <div class="career-vs-row">
         <div class="career-side">
           <div class="cs-name">${ui.icon(myInfo.icon)}${ui.esc(myName || "你")}</div>
@@ -788,6 +798,7 @@
       if (iWon && reward && !practice) {
         const parts = [`+${reward.coinReward}幣`];
         if (reward.statPointBonus > 0) parts.push(`+${reward.statPointBonus}數值點`);
+        if (reward.bounty > 0) parts.push(`含懸賞${reward.bounty}幣+${reward.bountyScore || 0}分(打倒連勝${reward.bountyStreak}場的對手)`);
         rewardLine = `<p style="font-size:12px;color:var(--gold);margin:6px 0 0;">${ui.icon("gift")}${parts.join("、")}${reward.winStreak >= 2 ? `(連勝${reward.winStreak}場加成)` : ""}</p>`;
       }
       html += `
@@ -816,12 +827,12 @@
           ${
             mySkill2Unlocked
               ? `<button class="btn ghost" id="skill2-btn" style="flex:1 1 28%;" ${iActed || !skill2Affordable ? "disabled" : ""}>
-                  ${ui.icon("sparkles")}${ui.esc((mySlot === 1 ? s.skillBName1 : s.skillBName2) || "技能B")}(${mySkill2Cost}魔力)
+                  ${ui.icon("sparkles")}${ui.esc((mySlot === 1 ? s.skillBName1 : s.skillBName2) || "技能B")}(${skill2Banned ? "本場禁用" : mySkill2Cost + "魔力"})
                 </button>`
               : ""
           }
           <button class="btn career-ult-btn" id="ult-btn" style="flex:1 1 28%;" ${iActed || !ultAffordable ? "disabled" : ""}>
-            ${ui.icon("flame")}${ui.esc(myUltName || myInfo.ultName)}(${myUltCost}魔力)${!ultCharged ? `(大招點 ${Math.round(myUltCharge)}/${ultChargeMax})` : myMp < myUltCost ? "(魔力不足)" : ""}
+            ${ui.icon("flame")}${ui.esc(myUltName || myInfo.ultName)}(${myUltCost}魔力)${ultBanned ? "(本場禁用)" : !ultCharged ? `(大招點 ${Math.round(myUltCharge)}/${ultChargeMax})` : myMp < myUltCost ? "(魔力不足)" : ""}
           </button>
         </div>
         <div style="text-align:center;margin-top:8px;">

@@ -28,6 +28,63 @@
     { key: "riot", label: "怪物暴動", icon: "flame", startMin: 46, endMin: 54, mods: { monsterHpMult: 1.2, monsterAtkMult: 1.2, dropChanceAdd: 0.2 }, text: "怪物 HP/攻擊 +20%、掉落率 +20%", open: "塔裡有東西吵醒了，打起來很痛，但他們身上掉的東西更好。", close: "塔裡安靜下來了，剛剛那群東西好像回去睡了。" },
   ];
 
+  // ---- 輪替擂台規則:PVP 開放後(第 PVP_START_MIN 分鐘起)每 ARENA_ROTATE_MIN 分鐘換一個規則,照順序循環 ----
+  // 規則是「配對成立那一刻」依活動經過時間決定,寫進這場對戰的 state.arenaRule,整場固定
+  // (兩邊玩家看到的規則一定一樣,打到一半換時段也不會變)。要新增規則:加一筆 ARENA_RULES,
+  // 並在 career-engine.js(招式限制)或 db.js initializeCareerMatch(數值)實作效果。
+  const PVP_START_MIN = 15; // 要跟 db.js 的準備時間(15 分鐘)一致
+  const ARENA_ROTATE_MIN = 10;
+  const COMPRESS_RATIO = 0.5; // 雙方數值差距縮小到一半(往兩人平均靠攏)
+  const ARENA_RULES = [
+    { key: "standard", label: "標準擂台", icon: "swords", text: "沒有特殊限制", line: "今天的擂台照老規矩打。" },
+    { key: "noult", label: "禁大招擂台", icon: "flame-kindling", text: "這一場不能放大招", line: "擂台中央貼了張紙:「本場禁止大招，違者罰站。」" },
+    { key: "compress", label: "勢均力敵擂台", icon: "scale", text: "雙方 HP/攻/防/速差距縮小一半", line: "裁判拿著天秤站在中間，把兩邊的差距都削掉一半。" },
+    { key: "limited", label: "限定技能擂台", icon: "lock", text: "只能用普攻和技能A(技能B、大招封印)", line: "擂台邊的櫃子上了鎖，裡面的招式今天不開放。" },
+  ];
+  function arenaRuleAt(rules, now) {
+    const m = elapsedMin(rules, now);
+    if (m == null || m < PVP_START_MIN) return ARENA_RULES[0];
+    const idx = Math.floor((m - PVP_START_MIN) / ARENA_ROTATE_MIN) % ARENA_RULES.length;
+    return ARENA_RULES[idx];
+  }
+  function arenaRuleByKey(key) {
+    return ARENA_RULES.find((r) => r.key === key) || ARENA_RULES[0];
+  }
+  // 目前規則 + 距離下次換規則的秒數
+  function arenaInfo(rules, now) {
+    const m = elapsedMin(rules, now);
+    const cur = arenaRuleAt(rules, now);
+    if (m == null) return { rule: cur, next: ARENA_RULES[0], changeInSec: null };
+    const t = Math.max(m, PVP_START_MIN);
+    const slot = Math.floor((t - PVP_START_MIN) / ARENA_ROTATE_MIN);
+    const changeInSec = Math.max(0, Math.round((PVP_START_MIN + (slot + 1) * ARENA_ROTATE_MIN - m) * 60));
+    return { rule: cur, next: ARENA_RULES[(slot + 1) % ARENA_RULES.length], changeInSec };
+  }
+  // 雙方數值壓縮:往兩人平均靠攏。只壓雙方都有的數值(例如攻擊力,只有一邊是 0 時不動,避免法師憑空長出物攻)
+  function compressStats(s1, s2, ratio) {
+    const r = ratio == null ? COMPRESS_RATIO : ratio;
+    const out1 = { ...s1 }, out2 = { ...s2 };
+    ["maxHp", "atk", "matk", "def", "spd"].forEach((k) => {
+      const a = s1[k] || 0, b = s2[k] || 0;
+      if (a <= 0 || b <= 0) return;
+      const mean = (a + b) / 2;
+      out1[k] = Math.max(1, Math.round(mean + (a - mean) * r));
+      out2[k] = Math.max(1, Math.round(mean + (b - mean) * r));
+    });
+    return [out1, out2];
+  }
+  // PVP 頁用的橫幅:目前擂台規則(含倒數)與下一個規則
+  function arenaBannerHtml(rules, now) {
+    const u = typeof ui !== "undefined" ? ui : null;
+    if (!u || !rules || !rules.activityEndsAt) return "";
+    const info = arenaInfo(rules, now);
+    const sec = info.changeInSec;
+    return `<div style="padding:8px 12px;margin-bottom:12px;border-radius:var(--radius);background:var(--panel2);border:1px dashed var(--gold-d);">
+      <p style="margin:0 0 3px;font-size:12px;overflow-wrap:anywhere;">${u.icon(info.rule.icon, { size: "14px" })}<b style="color:var(--gold);">目前擂台:${u.esc(info.rule.label)}</b>・${u.esc(info.rule.text)}${sec != null ? `(${fmtClock(sec)} 後換成${u.esc(info.next.label)})` : ""}</p>
+      <p style="margin:0;font-size:12px;color:var(--ink-dim);font-style:italic;overflow-wrap:anywhere;">${u.esc(info.rule.line)}配對成立當下的規則，整場固定。</p>
+    </div>`;
+  }
+
   function startMs(rules) {
     if (!rules || !rules.activityEndsAt) return null;
     return new Date(rules.activityEndsAt).getTime() - ACTIVITY_MINUTES * 60000;
@@ -121,5 +178,5 @@
     return `<div style="padding:8px 12px;margin-bottom:12px;border-radius:var(--radius);background:var(--panel2);border:1px dashed var(--gold-d);">${rows}</div>`;
   }
 
-  window.CareerModifiers = { bannerHtml, THEME_MODS, WINDOWS, currentWindow, nextWindow, activeFor, applyToFloor, describe, themeRuleText, fmtClock };
+  window.CareerModifiers = { arenaBannerHtml, arenaInfo, arenaRuleAt, arenaRuleByKey, compressStats, ARENA_RULES, bannerHtml, THEME_MODS, WINDOWS, currentWindow, nextWindow, activeFor, applyToFloor, describe, themeRuleText, fmtClock };
 })();

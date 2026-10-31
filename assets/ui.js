@@ -166,6 +166,14 @@ const ui = (function () {
   // 跨場永久系統(Phase 0):玩家名字旁邊的稱號小標籤，titleKey 是空的就不顯示任何東西。
   // 稱號定義(名稱/圖示/說明)存在 db.TITLE_CATALOG，這裡只負責照 key 找出來組成標籤 HTML，
   // 純粹顯示用，不影響任何一場活動的起始數值或名次計算。
+  // 懸賞標籤:連勝滿 3 場的人旁邊顯示「懸賞 N 幣」(金額由 db.careerBountyFor 算)
+  function bountyTag(winStreak) {
+    const b = window.db && window.db.careerBountyFor ? window.db.careerBountyFor(winStreak) : 0;
+    if (!b) return "";
+    const sc = window.db.careerBountyScoreFor ? window.db.careerBountyScoreFor(winStreak) : 0;
+    return `<span class="tag" style="margin-left:6px;color:var(--gold);">${icon("crosshair")}連勝${winStreak}場·懸賞${b}幣+${sc}分</span>`;
+  }
+
   function titleBadge(titleKey) {
     if (!titleKey) return "";
     const meta = (typeof db !== "undefined" && db.TITLE_CATALOG && db.TITLE_CATALOG.find((t) => t.key === titleKey)) || null;
@@ -378,6 +386,7 @@ const ui = (function () {
     statusTag,
     losersTag,
     titleBadge,
+    bountyTag,
     classTag,
     ruleTags,
     tierTag,

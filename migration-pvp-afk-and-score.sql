@@ -75,6 +75,15 @@ declare
   LOSS_POINTS     constant int := 2;    -- 輸的參加分
   AFK_WIN_POINTS  constant int := 3;    -- 對手掛網棄權時，在場玩家拿到的分(不加連勝加成)
   AFK_WIN_COINS   constant int := 5;
+  -- 懸賞榜:對手連勝滿 BOUNTY_MIN_STREAK 場就有懸賞，打倒他的人額外拿幣。
+  -- 要跟前端 assets/db.js 的 careerBountyFor 一起改。
+  BOUNTY_MIN_STREAK constant int := 3;
+  BOUNTY_BASE     constant int := 100;  -- 連勝剛滿門檻時的懸賞幣
+  BOUNTY_PER_WIN  constant int := 100;  -- 之後每多連勝 1 場 +100 幣
+  BOUNTY_MAX      constant int := 1000; -- 懸賞幣上限(連勝 12 場封頂)
+  BOUNTY_SCORE_BASE    constant int := 5;   -- 連勝剛滿門檻時額外加的排行積分
+  BOUNTY_SCORE_PER_WIN constant int := 2;   -- 之後每多連勝 1 場 +2 分
+  BOUNTY_SCORE_MAX     constant int := 25;  -- 懸賞積分上限
   -- 時段事件「擂台加碼」:活動開始後第 33～41 分鐘內結算的 PVP 積分 ×1.5。
   -- 要跟前端 assets/career-modifiers.js 的 WINDOWS(key = arena)一起改。
   ARENA_START_MIN constant numeric := 33;
@@ -86,6 +95,9 @@ declare
   streak_score_bonus int;
   win_coin_reward int;
   win_stat_point_bonus int;
+  loser_streak int := 0;  -- 輸家這場之前的連勝數(懸賞榜用)
+  bounty_coins int := 0;  -- 打倒連勝者的懸賞幣
+  bounty_score int := 0;  -- 打倒連勝者的懸賞積分
   w_score int; l_score int;
   base_pts int; win_pts int; loss_pts int;
   reward jsonb;
@@ -139,6 +151,14 @@ begin
     loss_pts := LOSS_POINTS;
     win_coin_reward := (15 + floor(random() * 11)::int) + least(winner_streak * 5, 25);
     win_stat_point_bonus := least(greatest((winner_streak - 1) / 2, 0), 3);
+    -- 懸賞榜:掛網棄權、機器人練習賽都不算(練習賽前面已經 return)
+    select coalesce(win_streak, 0) into loser_streak from career_pvp_queue where event_id = m.event_id and player_id = p_loser_id;
+    if loser_streak >= BOUNTY_MIN_STREAK then
+      bounty_coins := least(BOUNTY_BASE + (loser_streak - BOUNTY_MIN_STREAK) * BOUNTY_PER_WIN, BOUNTY_MAX);
+      win_coin_reward := win_coin_reward + bounty_coins;
+      bounty_score := least(BOUNTY_SCORE_BASE + (loser_streak - BOUNTY_MIN_STREAK) * BOUNTY_SCORE_PER_WIN, BOUNTY_SCORE_MAX);
+      win_pts := win_pts + bounty_score;
+    end if;
   end if;
 
   -- 擂台加碼:依活動經過的分鐘數判斷(activityEndsAt 往前推 60 分鐘 = 活動開始)
@@ -162,6 +182,9 @@ begin
     'scoreGained', win_pts,
     'loserScoreGained', loss_pts,
     'afkForfeit', is_afk,
+    'bounty', case when bounty_coins > 0 then bounty_coins else null end,
+    'bountyScore', case when bounty_coins > 0 then bounty_score else null end,
+    'bountyStreak', case when bounty_coins > 0 then loser_streak else null end,
     'arenaBonus', case when arena_mult > 1 then arena_mult else null end
   );
 

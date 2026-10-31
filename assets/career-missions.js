@@ -18,7 +18,7 @@
 
   const counter = (name) => (c) => (c.counters && c.counters[name]) || 0;
   const MISSIONS = [
-    { key: "floor10", group: "climb", name: "初出茅廬", desc: "清到 10 層", target: 10, value: (c) => c.progress.floor || 0, reward: { coins: 50 } },
+    { key: "floor10", group: "climb", name: "初出茅廬", desc: "清到 10 層", target: 10, value: (c) => c.progress.floor || 0, reward: { coins: 500 } },
     { key: "floor30", group: "climb", name: "小有名氣", desc: "清到 30 層", target: 30, value: (c) => c.progress.floor || 0, reward: { statPoints: 1, score: 3 } },
     { key: "floor50", group: "climb", name: "登高望遠", desc: "清到 50 層", target: 50, value: (c) => c.progress.floor || 0, reward: { score: 8 } },
     { key: "floor70", group: "climb", name: "塔心", desc: "清到 70 層", target: 70, value: (c) => c.progress.floor || 0, reward: { score: 12 }, available: () => !!(window.CareerFloors && window.CareerFloors.FLOORS.length >= 70) },
@@ -27,7 +27,7 @@
     { key: "streak3", group: "pvp", name: "連戰連勝", desc: "PVP 連勝 3 場", target: 3, value: (c) => c.queue.best_streak || 0, reward: { score: 5 } },
     { key: "beatHigher", group: "pvp", name: "不速之客", desc: "贏過總積分比自己高的對手", target: 1, value: (c) => c.queue.beat_higher || 0, reward: { score: 4 } },
     { key: "pvp7", group: "pvp", name: "七戰七捷", desc: "累計 PVP 勝 7 場", target: 7, value: (c) => c.queue.wins || 0, reward: { score: 6 } },
-    { key: "synth1", group: "craft", name: "手藝人", desc: "合成成功 1 次", target: 1, value: counter("synthSuccess"), reward: { coins: 300 } },
+    { key: "synth1", group: "craft", name: "手藝人", desc: "合成成功 1 次", target: 1, value: counter("synthSuccess"), reward: { coins: 1000 } },
     {
       key: "fullGear", group: "craft", name: "裝備齊全", desc: "三個部位都穿上稀有以上的裝備", target: 3,
       value: (c) => ["weapon", "armor", "accessory"].filter((s) => { const it = c.progress.equipment && c.progress.equipment[s]; return it && ["rare", "epic", "legendary"].includes(it.rarity); }).length,

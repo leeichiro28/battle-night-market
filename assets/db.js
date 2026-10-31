@@ -2490,16 +2490,25 @@ const db = (function () {
       getPlayerSkillLevels(match.player1_id),
       getPlayerSkillLevels(match.player2_id),
     ]);
-    const stats1 = progress1
+    let stats1 = progress1
       ? window.CareerData.applyProgress(build1.final_class, progress1.stat_alloc, progress1.equipment)
       : window.CareerData.computeStats(build1.final_class);
-    const stats2 = progress2
+    let stats2 = progress2
       ? window.CareerData.applyProgress(build2.final_class, progress2.stat_alloc, progress2.equipment)
       : window.CareerData.computeStats(build2.final_class);
+    // 輪替擂台規則:配對成立(初始化)當下依活動經過時間決定,寫進 state.arenaRule,整場固定。
+    // 讀不到活動時間(舊活動、沒開始)就當標準擂台;機器人練習賽一樣套用規則,方便測試。
+    let arenaRule = "standard";
+    if (window.CareerModifiers) {
+      const { data: evRow } = await client.from("events").select("rules").eq("id", match.event_id).maybeSingle();
+      arenaRule = window.CareerModifiers.arenaRuleAt(evRow && evRow.rules).key;
+      if (arenaRule === "compress") [stats1, stats2] = window.CareerModifiers.compressStats(stats1, stats2);
+    }
     const initState = window.CareerEngine.initialMatchState(
       _engineSide(build1.final_class, stats1, skillLevels1, _activeSkills(progress1), progress1 && progress1.equipped_skill_a, progress1 && progress1.equipped_skill_b, progress1 && progress1.equipped_ult, progress1 && progress1.equipment, progress1 && progress1.level),
       _engineSide(build2.final_class, stats2, skillLevels2, _activeSkills(progress2), progress2 && progress2.equipped_skill_a, progress2 && progress2.equipped_skill_b, progress2 && progress2.equipped_ult, progress2 && progress2.equipment, progress2 && progress2.level)
     );
+    initState.arenaRule = arenaRule;
     const { data, error } = await client
       .from("career_matches")
       .update({ state: initState, initialized: true })
@@ -2533,6 +2542,19 @@ const db = (function () {
   // 一場結束時呼叫:寫入 winner_id、雙方 +10/+2 分並退回佇列繼續配對(RPC 用 status='active'
   // 當條件鎖,兩邊分頁同時判定結束也只會真的結算一次)。
   // reason(選填):'afk' = 對手掛網棄權，伺服器會用打折的分數結算(防止朋友刻意掛網刷分)
+  // 懸賞榜:連勝滿 3 場頭上就有懸賞，打倒他的人額外拿幣(滿 3 連勝 100 幣+5 分，之後每多 1 場 +100 幣+2 分，幣最高 1000、分最高 25)。
+  // 數字要跟 finish_career_match 的 BOUNTY_* 參數一致;SQL 才是真正發幣的地方，這裡只負責畫面顯示。
+  function careerBountyFor(winStreak) {
+    const s = Number(winStreak) || 0;
+    if (s < 3) return 0;
+    return Math.min(100 + (s - 3) * 100, 1000);
+  }
+  function careerBountyScoreFor(winStreak) {
+    const s = Number(winStreak) || 0;
+    if (s < 3) return 0;
+    return Math.min(5 + (s - 3) * 2, 25);
+  }
+
   async function finishCareerMatch(matchId, winnerId, loserId, reason) {
     const { error } = await client.rpc("finish_career_match", {
       p_match_id: matchId,
@@ -3146,7 +3168,7 @@ const db = (function () {
       case "gacha": {
         const roll = Math.random();
         if (roll < 0.6) {
-          const coinGain = 5 + Math.floor(Math.random() * 10);
+          const coinGain = 100 + Math.floor(Math.random() * 101); // 100~200
           return { text: `抽獎機吐出安慰獎，+${coinGain} 幣。`, patch: { coins: progress.coins + coinGain } };
         }
         if (roll < 0.9) {
@@ -3177,7 +3199,7 @@ const db = (function () {
       case "lost_child": {
         const roll = Math.random();
         if (roll < 0.7) {
-          const coinGain = 8 + Math.floor(Math.random() * 13);
+          const coinGain = 100 + Math.floor(Math.random() * 151); // 100~250
           return { text: `順利幫小孩找到爸媽，感激地塞給你 ${coinGain} 幣當謝禮!`, patch: { coins: progress.coins + coinGain } };
         }
         return { text: `找了一圈沒看到小孩的爸媽，剛好路過的警衛叔叔接手處理了，你也沒損失什麼。`, patch: {} };
@@ -3835,17 +3857,17 @@ const db = (function () {
     let patch = {};
     if (pendingKey === "chest") {
       if (choiceKey === "open_now") {
-        const coinGain = 5 + Math.floor(Math.random() * 11);
+        const coinGain = 150 + Math.floor(Math.random() * 101); // 150~250(穩拿)
         patch.coins = progress.coins + coinGain;
         text = `當場打開寶箱，穩穩拿到 ${coinGain} 幣。`;
       } else {
         const roll = Math.random();
         if (roll < 0.5) {
-          const coinGain = 2 + Math.floor(Math.random() * 7);
+          const coinGain = 100 + Math.floor(Math.random() * 51); // 100~150(賭輸)
           patch.coins = progress.coins + coinGain;
           text = `晚點打開寶箱，只有 ${coinGain} 幣，早知道當場開了...`;
         } else if (roll < 0.85) {
-          const coinGain = 20 + Math.floor(Math.random() * 21);
+          const coinGain = 300 + Math.floor(Math.random() * 201); // 300~500(賭贏)
           patch.coins = progress.coins + coinGain;
           text = `晚點打開寶箱，裡面滿滿都是幣，賺到了!+${coinGain} 幣。`;
         } else {
@@ -3891,7 +3913,7 @@ const db = (function () {
       if (roll < 0.05) {
         text = `打開箱子...裡面空空如也，這箱摃龜了，運氣不好下次再來。`;
       } else if (roll < 0.45) {
-        const coinGain = 10 + Math.floor(Math.random() * 16);
+        const coinGain = 100 + Math.floor(Math.random() * 151); // 100~250
         patch.coins = progress.coins + coinGain;
         text = `打開箱子，裡面是 ${coinGain} 幣!`;
       } else if (roll < 0.7) {
@@ -4871,6 +4893,8 @@ const db = (function () {
     submitCareerMove,
     updateCareerMatchState,
     finishCareerMatch,
+    careerBountyFor,
+    careerBountyScoreFor,
     addCareerTestBot,
     getOrCreateCareerProgress,
     trainForCareerCoins,

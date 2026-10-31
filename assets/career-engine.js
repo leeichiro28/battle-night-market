@@ -246,6 +246,17 @@ window.CareerEngine = (function () {
     // 舊的行動指令可能還是 "skill"(切版前送出、或還沒重新整理的前端)，一律當成技能A
     if (m1.action === "skill") m1.action = "skill1";
     if (m2.action === "skill") m2.action = "skill1";
+    // 輪替擂台規則(見 career-modifiers.js ARENA_RULES,存在 state.arenaRule,整場固定):
+    // noult 禁大招;limited 只能用普攻與技能A(技能B、大招都禁)。被禁的招式當普通攻擊處理
+    // (畫面會把按鈕灰掉,這裡是保險,也擋掉代打與還沒重新整理的舊分頁)。沒有 arenaRule 就跟以前完全一樣。
+    if (s.arenaRule === "noult" || s.arenaRule === "limited") {
+      if (m1.action === "ult") m1.action = "attack";
+      if (m2.action === "ult") m2.action = "attack";
+    }
+    if (s.arenaRule === "limited") {
+      if (m1.action === "skill2") m1.action = "attack";
+      if (m2.action === "skill2") m2.action = "attack";
+    }
     const events = [];
 
     let hp1 = s.hp1;
