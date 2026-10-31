@@ -2506,8 +2506,8 @@ const db = (function () {
       if (arenaRule === "compress") [stats1, stats2] = window.CareerModifiers.compressStats(stats1, stats2);
     }
     const initState = window.CareerEngine.initialMatchState(
-      _engineSide(build1.final_class, stats1, skillLevels1, _activeSkills(progress1), progress1 && progress1.equipped_skill_a, progress1 && progress1.equipped_skill_b, progress1 && progress1.equipped_ult, progress1 && progress1.equipment, progress1 && progress1.level),
-      _engineSide(build2.final_class, stats2, skillLevels2, _activeSkills(progress2), progress2 && progress2.equipped_skill_a, progress2 && progress2.equipped_skill_b, progress2 && progress2.equipped_ult, progress2 && progress2.equipment, progress2 && progress2.level)
+      _engineSide(build1.final_class, stats1, skillLevels1, _activeSkills(progress1), progress1 && progress1.equipped_skill_a, progress1 && progress1.equipped_skill_b, progress1 && progress1.equipped_ult, progress1 && progress1.equipment, progress1 && progress1.level, progress1 && progress1.relics),
+      _engineSide(build2.final_class, stats2, skillLevels2, _activeSkills(progress2), progress2 && progress2.equipped_skill_a, progress2 && progress2.equipped_skill_b, progress2 && progress2.equipped_ult, progress2 && progress2.equipment, progress2 && progress2.level, progress2 && progress2.relics)
     );
     initState.arenaRule = arenaRule;
     const { data, error } = await client
@@ -2660,7 +2660,7 @@ const db = (function () {
     return bonus;
   }
 
-  function _engineSide(classKey, stats, skillLevels, activeSkills, equippedSkillA, equippedSkillB, equippedUltId, equipment, charLevel) {
+  function _engineSide(classKey, stats, skillLevels, activeSkills, equippedSkillA, equippedSkillB, equippedUltId, equipment, charLevel, relics) {
     const levels = skillLevels || {};
     const active = activeSkills || { ult_1: 1 };
     const treeUnlocked = classKey !== "novice";
@@ -2675,6 +2675,8 @@ const db = (function () {
     const nodeA = treeUnlocked ? window.CareerData.SKILL_TREE_NODES[`${classKey}_${slotA}`] : null;
     const nodeB = treeUnlocked ? window.CareerData.SKILL_TREE_NODES[`${classKey}_${slotB}`] : null;
     const equipBonus = _equipEffectBonus(equipment);
+    // 遺物(這場活動撿到的護符,見 career-relics.js):沒載入模組、沒有 relics 欄位、沒裝備任何遺物時全部是 0,跟以前完全一樣
+    const relicBonus = window.CareerRelics ? window.CareerRelics.effectBonus(relics) : { critBonus: 0, critDmgBonus: 0, lifestealOnHit: 0, dmgReduceRatio: 0, manaRegenBonus: 0, ultCostReduce: 0, firstStrike: 0, manaOnCrit: 0, counter: 0 };
     // 專精(第二轉職):這場活動選了分支才有被動;裝備的技能是專精技能時,帶上它的附帶效果(中毒、減益、多段...)。
     // 沒帶 CareerSpec 的頁面、沒選專精的玩家、機器人與怪物都是 null,引擎會當作沒有專精。
     const SP = window.CareerSpec;
@@ -2697,16 +2699,38 @@ const db = (function () {
       skillBName: nodeB ? nodeB.name : undefined,
       ultEffect: ultInfo.effect,
       ultName: ultInfo.name,
-      critBonus: window.CareerData.passiveValue("crit_boost", levels.crit_boost || 0) + equipBonus.critBonus,
-      critDmgBonus: window.CareerData.passiveValue("crit_dmg_boost", levels.crit_dmg_boost || 0) + equipBonus.critDmgBonus,
-      manaRegenBonus: window.CareerData.passiveValue("mana_regen", levels.mana_regen || 0),
-      ultCostReduce: window.CareerData.passiveValue("ult_cost", levels.ult_cost || 0),
+      critBonus: window.CareerData.passiveValue("crit_boost", levels.crit_boost || 0) + equipBonus.critBonus + relicBonus.critBonus,
+      critDmgBonus: window.CareerData.passiveValue("crit_dmg_boost", levels.crit_dmg_boost || 0) + equipBonus.critDmgBonus + relicBonus.critDmgBonus,
+      manaRegenBonus: window.CareerData.passiveValue("mana_regen", levels.mana_regen || 0) + relicBonus.manaRegenBonus,
+      ultCostReduce: window.CareerData.passiveValue("ult_cost", levels.ult_cost || 0) + relicBonus.ultCostReduce,
       mastery: window.CareerData.classMasteryBonus(classKey, levels["class_mastery:" + classKey] || 0),
-      lifestealOnHit: equipBonus.lifestealOnHit,
-      dmgReduceRatio: equipBonus.dmgReduceRatio,
+      lifestealOnHit: equipBonus.lifestealOnHit + relicBonus.lifestealOnHit,
+      dmgReduceRatio: equipBonus.dmgReduceRatio + relicBonus.dmgReduceRatio,
       surviveOnce: equipBonus.surviveOnce > 0, // 舊相片套裝:致命傷害保留 1 點 HP(每場一次)
       firstRoundCrit: equipBonus.firstRoundCrit > 0, // 第零攤套裝:第一回合必定暴擊
+      firstStrike: relicBonus.firstStrike > 0, // 遺物「舊號碼牌」:第一回合必定先手
+      manaOnCrit: relicBonus.manaOnCrit, // 遺物「不滅的燈泡」:暴擊回魔
+      relicCounter: relicBonus.counter, // 遺物「半截筷子」:被普攻命中時機率反擊
     };
+  }
+
+  // 遺物:裝備/卸下(最多同時裝 CareerRelics.MAX_EQUIPPED 個)。每場活動各自的東西,存在 career_progress.relics。
+  // (沒有加樂觀鎖:遺物只有玩家自己會改,兩個分頁同時換的話後按的蓋掉先按的,結果仍然合法、不會超過 3 個。)
+  async function setCareerRelicEquipped(eventId, playerId, relicKey, equipped) {
+    await _assertCareerOpen(eventId);
+    const R = window.CareerRelics;
+    const progress = await getOrCreateCareerProgress(eventId, playerId);
+    if (!R.supported(progress.relics)) throw new Error("資料庫還沒更新遺物欄位,請先執行 migration-relics.sql");
+    const res = equipped ? R.equip(progress.relics, relicKey) : { ok: true, relics: R.unequip(progress.relics, relicKey) };
+    if (!res.ok) throw new Error(res.reason);
+    const { data, error } = await client
+      .from("career_progress")
+      .update({ relics: res.relics })
+      .eq("id", progress.id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
   }
 
   // 裝備大招:免費隨時換(第22點更新確認過的規則)，唯一的限制是要先花技能點把那個大招節點
@@ -3140,6 +3164,14 @@ const db = (function () {
   // (真的推進進度)，也可以是任何已經清過的樓層(單純想farm，不會改變 floor 記錄)。
   // 掉到的裝備一律進背包，不會自動穿上——要不要穿是玩家在「背包」分頁自己決定的事。
 
+  // 遺物掉落:從「這場活動還沒拿過」的遺物裡抽一個。沒載入遺物模組、資料庫還沒有 relics 欄位(沒跑 SQL)、
+  // 或全部都拿過了都回傳 null,呼叫端就照原本的獎勵發,不會讓爬塔壞掉。
+  function _rollRelicDrop(progress) {
+    const R = window.CareerRelics;
+    if (!R || !R.supported(progress.relics)) return null;
+    return R.pickDrop(progress.relics);
+  }
+
   // instant 類型事件的效果，純算數、不需要玩家做選擇。回傳 { text, patch }，
   // patch 是要疊加寫進 career_progress 的欄位。
   function _resolveInstantEvent(eventDef, progress, stats) {
@@ -3164,6 +3196,9 @@ const db = (function () {
         };
       }
       case "benefactor": {
+        // 貴人相助:有還沒拿過的遺物就送一個(他把東西塞給你就走了),沒有可送的(或還沒跑 SQL)照舊送 1 點自由數值點
+        const relic = _rollRelicDrop(progress);
+        if (relic) return { text: `遇到貴人,他把一個小東西塞給你就走了:「${relic.name}」!(${relic.desc})`, patch: { stat_points: progress.stat_points + 1, relics: window.CareerRelics.add(progress.relics, relic.key) }, relic };
         return { text: `遇到貴人，直接送你 1 點自由數值點!`, patch: { stat_points: progress.stat_points + 1 } };
       }
       case "gacha": {
@@ -3174,6 +3209,10 @@ const db = (function () {
         }
         if (roll < 0.9) {
           return { text: `手氣不錯，直接抽中 1 點自由數值點!`, patch: { stat_points: progress.stat_points + 1 } };
+        }
+        if (roll < 0.9 + (window.CareerRelics ? window.CareerRelics.GACHA_RELIC_CHANCE : 0)) {
+          const relic = _rollRelicDrop(progress);
+          if (relic) return { text: `機器吐出一個舊舊的東西:「${relic.name}」!(${relic.desc})`, patch: { relics: window.CareerRelics.add(progress.relics, relic.key) }, relic };
         }
         return { text: null, patch: {}, rollRareDrop: true }; // 大獎:外層另外處理裝備掉落
       }
@@ -3541,6 +3580,12 @@ const db = (function () {
     }
     if (legendaryOwnedPatch) patch.legendary_slots = legendaryOwnedPatch;
     patch.mission_state = _bumpMission(progress.mission_state, "pveWins"); // 任務:累計打贏場數
+    // 遺物:第一次打贏關主掉一個(重打不掉);有空位就自動裝上,滿 3 個要到「遺物」分頁自己換
+    let relicDrop = null;
+    if (floorDef.isMiniBoss && isAdvance && window.CareerRelics && Math.random() < window.CareerRelics.BOSS_DROP_CHANCE) {
+      relicDrop = _rollRelicDrop(progress);
+      if (relicDrop) patch.relics = window.CareerRelics.add(progress.relics, relicDrop.key);
+    }
 
     let { data: updated, error } = await client
       .from("career_progress")
@@ -3574,9 +3619,14 @@ const db = (function () {
       const name = await _playerName(playerId);
       await broadcastCareerEvent(eventId, "crown", `${name} 打贏「${floorDef.name}」，掉落了Boss限定傳說裝備「${drop.name}」!`);
     }
+    if (relicDrop) {
+      const name = await _playerName(playerId);
+      await broadcastCareerEvent(eventId, "ticket", `${name} 打贏「${floorDef.name}」,從攤位後面撿到了遺物「${relicDrop.name}」!`);
+    }
 
     return {
       won: true,
+      relicDrop,
       floorDef,
       coinGain,
       expGain,
@@ -3614,7 +3664,7 @@ const db = (function () {
     // 這裡是玩家自己主動按「重新挑戰」，只是不用再手動選招而已)。
     if (floorDef.isMiniBoss && floorNumber > progress.floor) {
       const state = window.CareerEngine.initialMatchState(
-        _engineSide(build.final_class, playerStatsForHp, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment, progress.level),
+        _engineSide(build.final_class, playerStatsForHp, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment, progress.level, progress.relics),
         _monsterSide(floorDef),
         { hp1: startHp, mp1: startMp }
       );
@@ -3693,7 +3743,7 @@ const db = (function () {
         const playerStats = window.CareerData.applyProgress(build.final_class, progress.stat_alloc, progress.equipment);
         const opponentClass = window.CareerFloors.CLASS_KEYS[Math.floor(Math.random() * window.CareerFloors.CLASS_KEYS.length)];
         const battle = window.CareerPve.simulateFloorBattle(
-          _engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment, progress.level),
+          _engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment, progress.level, progress.relics),
           { classKey: opponentClass, stats: floorDef.stats }
         );
         if (!battle.won) {
@@ -3759,7 +3809,7 @@ const db = (function () {
     const { hp: battleStartHpRaw, mp: battleStartMp } = _effectiveHpMp(progress, playerStats);
     const battleStartHp = _respawnHpIfNeeded(battleStartHpRaw, playerStats.maxHp);
     const battle = window.CareerPve.simulateFloorBattle(
-      _withPlayerExtra(_engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment, progress.level), floorDef),
+      _withPlayerExtra(_engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment, progress.level, progress.relics), floorDef),
       _monsterSide(floorDef),
       { startHp: battleStartHp, startMp: battleStartMp, maxRounds: floorDef.maxRounds }
     );
@@ -4340,7 +4390,7 @@ const db = (function () {
     if (!build) throw new Error("請先選好職業再挑戰打烊鐘");
     const playerStats = window.CareerData.applyProgress(build.final_class, progress.stat_alloc, progress.equipment);
     const battle = window.CareerPve.simulateFloorBattle(
-      _engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment, progress.level),
+      _engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment, progress.level, progress.relics),
       { classKey: W.classKey, stats: { ...W.stats } },
       { startHp: playerStats.maxHp, startMp: playerStats.maxMp, maxRounds: W.rounds }
     );
@@ -4550,7 +4600,7 @@ const db = (function () {
     const { hp: startHpRaw, mp: startMp } = _effectiveHpMp(progress, playerStats);
     const startHp = _respawnHpIfNeeded(startHpRaw, playerStats.maxHp);
     const battle = window.CareerPve.simulateFloorBattle(
-      _withPlayerExtra(_engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment, progress.level), floorDef),
+      _withPlayerExtra(_engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment, progress.level, progress.relics), floorDef),
       _monsterSide(floorDef),
       { startHp, startMp, maxRounds: floorDef.maxRounds }
     );
@@ -5075,6 +5125,7 @@ const db = (function () {
     upgradePlayerSkill,
     upgradeActiveSkill,
     setEquippedUlt,
+    setCareerRelicEquipped,
     setEquippedSkill,
     buyCareerPotion,
     useCareerPotion,

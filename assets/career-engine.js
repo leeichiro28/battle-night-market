@@ -33,6 +33,9 @@ window.CareerEngine = (function () {
     return 1 - (1 - (a || 0)) * (1 - (b || 0));
   }
 
+  // 遺物「半截筷子」反擊時反彈的傷害比例(見下面 resolveRound 的反擊段;數值要跟 career-relics.js 的說明一致)
+  const RELIC_COUNTER_RATIO = 0.35;
+
   function randFloat() {
     return 1 + Math.floor(Math.random() * 3); // 隨機浮動 1~3
   }
@@ -95,6 +98,13 @@ window.CareerEngine = (function () {
       surviveUsed2: false,
       firstRoundCrit1: !!p1.firstRoundCrit,
       firstRoundCrit2: !!p2.firstRoundCrit,
+      // 遺物(見 career-relics.js):第一回合必定先手 / 暴擊時回魔 / 被普攻命中時機率反擊(任何職業)。沒帶就是 0,跟以前完全一樣。
+      firstStrike1: !!p1.firstStrike,
+      firstStrike2: !!p2.firstStrike,
+      manaOnCrit1: p1.manaOnCrit || 0,
+      manaOnCrit2: p2.manaOnCrit || 0,
+      relicCounter1: p1.relicCounter || 0,
+      relicCounter2: p2.relicCounter || 0,
       skillEffectA1: p1.skillEffectA || null,
       skillEffectA2: p2.skillEffectA || null,
       skillEffectB1: p1.skillEffectB || null,
@@ -406,6 +416,11 @@ window.CareerEngine = (function () {
 
     // ---- 先攻順序:速度高的先手,同速 50/50 隨機決定(不是固定某一方永遠先手)
     let first = s.spd1 === s.spd2 ? (Math.random() < 0.5 ? 1 : 2) : s.spd1 > s.spd2 ? 1 : 2;
+    // 遺物「舊號碼牌」:第一回合必定先手。只有一方有的話強制先手,雙方都有就照速度(跟沒有一樣)。
+    if (s.round === 1 && !!s.firstStrike1 !== !!s.firstStrike2) {
+      first = s.firstStrike1 ? 1 : 2;
+      events.push({ side: first, type: "first_strike", text: `${first === 1 ? "你" : "對方"}的舊號碼牌讓${first === 1 ? "你" : "對方"}搶到先手!` });
+    }
     const order = [first, first === 1 ? 2 : 1];
 
     function performAttack(side) {
@@ -474,6 +489,12 @@ window.CareerEngine = (function () {
         if (skillEff && skillEff.manaPerHit && dmg > 0) {
           if (side === 1) mp1 = Math.min(s.maxmp1 || 0, mp1 + skillEff.manaPerHit);
           else mp2 = Math.min(s.maxmp2 || 0, mp2 + skillEff.manaPerHit);
+        }
+        // 遺物「不滅的燈泡」:自己暴擊時回魔
+        const bulb = side === 1 ? s.manaOnCrit1 : s.manaOnCrit2;
+        if (crit && dmg > 0 && bulb > 0) {
+          if (side === 1) mp1 = Math.min(s.maxmp1 || 0, mp1 + bulb);
+          else mp2 = Math.min(s.maxmp2 || 0, mp2 + bulb);
         }
         // 反震:被打的人(有反震被動/這回合用了震盪盾擊)把一部分傷害反彈回來
         const reflectRatio = ((defenderSpec && defenderSpec.reflect) || 0) + roundReflectBonus[defSide];
@@ -578,21 +599,35 @@ window.CareerEngine = (function () {
       const defenderClass = side === 1 ? s.class2 : s.class1;
       const defenderOwnImmuneRatio = side === 1 ? immuneRatio2 : immuneRatio1;
       const defenderAliveNow = (side === 1 ? hp2 : hp1) > 0; // 守衛已經被這一擊打倒就不能反擊
-      if (actionType === "attack" && defenderClass === "guardian" && defenderAliveNow && !(defenderOwnImmuneRatio > 0)) {
+      // 遺物「半截筷子」讓任何職業都有機率反擊,但只反彈 RELIC_COUNTER_RATIO 的傷害(守衛的反擊姿態是反彈全部,
+      // 兩個各擲各的:先擲守衛的,沒觸發才擲遺物的)。實測全額反彈的遺物會讓鏡像勝率衝到 90% 以上,所以打折。
+      const relicCounter = (side === 1 ? s.relicCounter2 : s.relicCounter1) || 0;
+      const guardianChance = defenderClass === "guardian" ? (CD.CLASS_EFFECTS.guardian.counterChance || 0) + (defenderMastery.counterChance || 0) + roundCounterBonus[defSide] : 0;
+      if (actionType === "attack" && (guardianChance > 0 || relicCounter > 0) && defenderAliveNow && !(defenderOwnImmuneRatio > 0)) {
         const lastEvent = events[events.length - 1];
-        if (lastEvent && lastEvent.type === "attack" && lastEvent.dmg > 0 && Math.random() < (CD.CLASS_EFFECTS.guardian.counterChance || 0) + (defenderMastery.counterChance || 0) + roundCounterBonus[defSide]) {
-          const counterDmg = lastEvent.dmg;
-          if (side === 1) {
-            hp1 = Math.max(0, hp1 - counterDmg);
-            dealt2 = true;
-            took1 = true;
-          } else {
-            hp2 = Math.max(0, hp2 - counterDmg);
-            dealt1 = true;
-            took2 = true;
+        if (lastEvent && lastEvent.type === "attack" && lastEvent.dmg > 0) {
+          let counterDmg = 0;
+          let counterName = "";
+          if (guardianChance > 0 && Math.random() < guardianChance) {
+            counterDmg = lastEvent.dmg;
+            counterName = "反擊姿態";
+          } else if (relicCounter > 0 && Math.random() < relicCounter) {
+            counterDmg = Math.max(1, Math.round(lastEvent.dmg * RELIC_COUNTER_RATIO));
+            counterName = "反擊";
           }
-          events.push({ side: side === 1 ? 2 : 1, type: "counter", dmg: counterDmg, text: `${side === 1 ? "對方" : "你"}觸發反擊姿態,反彈了 ${counterDmg} 點傷害!` });
-          lethalGuard();
+          if (counterDmg > 0) {
+            if (side === 1) {
+              hp1 = Math.max(0, hp1 - counterDmg);
+              dealt2 = true;
+              took1 = true;
+            } else {
+              hp2 = Math.max(0, hp2 - counterDmg);
+              dealt1 = true;
+              took2 = true;
+            }
+            events.push({ side: side === 1 ? 2 : 1, type: "counter", dmg: counterDmg, text: `${side === 1 ? "對方" : "你"}觸發${counterName},反彈了 ${counterDmg} 點傷害!` });
+            lethalGuard();
+          }
         }
       }
     }

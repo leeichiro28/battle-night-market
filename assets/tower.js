@@ -26,6 +26,7 @@
     { key: "synthesis", icon: "flask-conical", label: "合成" },
     { key: "skilltree", icon: "wand-sparkles", label: "技能樹" },
     { key: "backpack", icon: "backpack", label: "背包" },
+    { key: "relics", icon: "ticket", label: "遺物" },
     { key: "missions", icon: "target", label: "任務" },
     { key: "settings", icon: "settings", label: "設定" },
   ];
@@ -1019,6 +1020,59 @@
     const n = CareerMissions.claimableCount(missionCtx());
     return n > 0 ? ` <b style="color:var(--gold);">(${n})</b>` : "";
   }
+  // ---------------- 分頁:遺物 ----------------
+  // 遺物(攤位小物,見 career-relics.js)是這場活動撿到的護符:關主首通、貴人相助、夜市抽獎機大獎會掉,
+  // 最多同時裝 3 個,每場活動重來。這裡列出全部遺物:拿到的可以裝上/卸下,沒拿到的顯示成「？？？」不洩漏效果。
+  function renderRelicsTab(locked) {
+    const R = window.CareerRelics;
+    if (!R) return `<p class="empty">遺物資料沒有載入,請重新整理頁面。</p>`;
+    if (!R.supported(progress.relics)) {
+      return `<p class="empty">資料庫還沒有遺物欄位,請管理員先執行 <code>migration-relics.sql</code>(或重跑 <code>supabase-schema.sql</code>)。</p>`;
+    }
+    const cur = R.normalize(progress.relics);
+    const slots = [];
+    for (let i = 0; i < R.MAX_EQUIPPED; i++) {
+      const r = cur.equipped[i] ? R.get(cur.equipped[i]) : null;
+      slots.push(
+        r
+          ? `<div class="relic-slot filled">${ui.icon(r.icon, { size: "22px" })}<b>${ui.esc(r.name)}</b></div>`
+          : `<div class="relic-slot">${ui.icon("circle-dashed", { size: "22px" })}<span>空位</span></div>`
+      );
+    }
+    const rows = R.RELICS.map((r) => {
+      const owned = cur.owned.includes(r.key);
+      const on = cur.equipped.includes(r.key);
+      if (!owned) {
+        return `
+          <div class="relic-row locked">
+            <div class="relic-ico">${ui.icon("lock", { size: "20px" })}</div>
+            <div class="relic-body"><b>？？？</b><div class="relic-desc">還沒撿到。</div></div>
+          </div>`;
+      }
+      const btn = on
+        ? `<button class="btn ghost small" data-relic-off="${r.key}" ${locked ? "disabled" : ""}>卸下</button>`
+        : `<button class="btn small" data-relic-on="${r.key}" ${locked || cur.equipped.length >= R.MAX_EQUIPPED ? "disabled" : ""}>裝上</button>`;
+      return `
+        <div class="relic-row${on ? " on" : ""}">
+          <div class="relic-ico">${ui.icon(r.icon, { size: "20px" })}</div>
+          <div class="relic-body">
+            <b>${ui.esc(r.name)}</b>
+            <div class="relic-desc">${ui.esc(r.desc)}</div>
+            <div class="relic-flavor">${ui.esc(r.flavor)}</div>
+          </div>
+          <div class="relic-act">${btn}</div>
+        </div>`;
+    }).join("");
+    return `
+      <p style="margin:0 0 8px;font-size:12px;color:var(--ink-dim);line-height:1.7;">
+        遺物是這場活動撿到的護符,最多同時裝 ${R.MAX_EQUIPPED} 個,可以隨時換,下一場活動會重新開始。
+        第一次打贏關主、遇到貴人、運氣好的抽獎機都有機會拿到。已拿到 ${cur.owned.length} / ${R.RELICS.length} 個。
+        裝上的遺物在爬塔與 PVP 都有效。
+      </p>
+      <div class="relic-slots">${slots.join("")}</div>
+      ${rows}`;
+  }
+
   function renderMissionsTab(locked) {
     const M = CareerMissions;
     const ctx = missionCtx();
@@ -1740,6 +1794,8 @@
       }
     } else if (activeTab === "backpack") {
       html += renderBackpackTab();
+    } else if (activeTab === "relics") {
+      html += renderRelicsTab(locked || hasPendingEvent);
     } else if (activeTab === "missions") {
       html += renderMissionsTab(locked);
     } else if (activeTab === "settings") {
@@ -2084,6 +2140,25 @@
       };
     });
 
+    // 遺物:裝上/卸下
+    app.querySelectorAll("[data-relic-on], [data-relic-off]").forEach((btn) => {
+      if (btn.disabled) return;
+      btn.onclick = async () => {
+        if (busy) return;
+        busy = true;
+        btn.disabled = true;
+        try {
+          const on = btn.dataset.relicOn != null;
+          progress = await db.setCareerRelicEquipped(eventId, myId, on ? btn.dataset.relicOn : btn.dataset.relicOff, on);
+          render();
+        } catch (e) {
+          await ui.alert(e.message || "操作失敗", { title: "遺物", tone: "danger" });
+          await loadAndRender();
+        } finally {
+          busy = false;
+        }
+      };
+    });
     app.querySelectorAll("[data-equip-ult]").forEach((btn) => {
       btn.onclick = async () => {
         if (busy) return;
@@ -2494,6 +2569,10 @@
             highlight = { icon: "mountain", title: "爬塔完賽!", text: `你爬完了目前開放的所有樓層(第${result.floorDef.floor}層)!` };
           } else {
             highlight = { icon: "swords", title: "王戰勝利!", text: `打贏了第${result.floorDef.floor}層的關主「${result.floorDef.name}」!` };
+          }
+          // 遺物:首通關主掉的護符(蓋過一般的勝利卡片,因為這是比較難得的東西)
+          if (result.relicDrop) {
+            highlight = { icon: result.relicDrop.icon, title: "撿到遺物!", text: `「${result.relicDrop.name}」:${result.relicDrop.desc}。可以到「遺物」分頁調整裝備。`, quote: result.relicDrop.flavor };
           }
         } else {
           lastBattle = { won: false, log: result.log, floorDef: result.floorDef, reviveText: window.CareerStory ? CareerStory.pickRevive() : "" };

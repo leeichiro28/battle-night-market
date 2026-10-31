@@ -1635,6 +1635,9 @@ alter table career_progress add column if not exists synthesis_pity jsonb not nu
 -- 任務進度/已領紀錄、任務積分，以及任務要用到的兩個 PVP 統計(最高連勝、贏過積分比自己高的次數)。
 alter table career_progress add column if not exists mission_state jsonb not null default '{}'::jsonb;
 alter table career_progress add column if not exists mission_score int not null default 0;
+
+-- 遺物(攤位小物):這場活動撿到的護符,最多裝 3 個,每場活動重來(見 migration-relics.sql)
+alter table career_progress add column if not exists relics jsonb not null default '{"owned":[],"equipped":[]}'::jsonb;
 alter table career_pvp_queue add column if not exists best_streak int not null default 0;
 alter table career_pvp_queue add column if not exists beat_higher int not null default 0;
 
