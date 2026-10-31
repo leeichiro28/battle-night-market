@@ -2201,3 +2201,17 @@ input,select,textarea{max-width:100%;min-width:0;}
 .relic-desc { font-size:12px; color:var(--ink); margin-top:2px; line-height:1.6; }
 .relic-flavor { font-size:11.5px; color:var(--ink-dim); margin-top:2px; line-height:1.6; }
 .relic-act { flex-shrink:0; }
+
+
+/* 規則頁:每個遊戲分組的小節分頁籤(見 rules.js)。分頁籤列自己有內距,手機上會自動換行不橫向捲動 */
+.rule-tabbar{display:flex;align-items:flex-start;gap:10px;padding:16px 20px 0;}
+.rule-tabbar .rule-tabs{flex:1 1 auto;min-width:0;margin-bottom:0;}
+.rule-expand-all{flex-shrink:0;height:36px;padding:0 12px;font-size:12px;font-family:inherit;color:var(--ink-dim);background:transparent;border:1px dashed var(--line);border-radius:4px;cursor:pointer;white-space:nowrap;}
+.rule-expand-all:hover{color:var(--ink);border-color:var(--ink-dim);}
+.rule-pager{display:flex;justify-content:space-between;gap:10px;margin-top:18px;padding-top:14px;border-top:1px dashed var(--line);}
+.rule-pager .btn{min-width:0;max-width:48%;overflow:hidden;text-overflow:ellipsis;}
+.game-body.show-all .rule-pager{display:none;}
+@media (max-width:560px){
+  .rule-tabbar{flex-direction:column;gap:8px;padding:14px 14px 0;}
+  .rule-expand-all{align-self:flex-end;height:30px;}
+}

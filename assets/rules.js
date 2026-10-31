@@ -268,45 +268,87 @@
     </div>`;
 })();
 
-// 職業養成對決小節太多、整頁捲動太長(玩家回饋)，改成分頁籤切換，一次只顯示一個小節，
-// 不用改動上面每個小節本身的HTML，直接讀現有的 <h4> 當分頁籤標題，新增小節時也會自動出現
-// 在分頁籤列，不用回來另外維護一份清單。
+// 每個遊戲分組(骰子/五手勢/拍賣/職業養成對決)的小節太多、整頁捲動太長，一律改成分頁籤切換，
+// 一次只顯示一個小節(職業養成對決先做過，玩家回饋好，現在全部統一成同一種操作)。
+// 不用改動各小節本身的HTML:直接讀每個 <h4> 當分頁籤標題，新增小節時會自動出現在分頁籤列。
+//   - 分頁籤標題太長時，在 <h4 data-tab-label="短標題"> 指定;沒指定就取「:」或「(」前面那段
+//   - 每個小節底下有「上一節／下一節」，讀完不用捲回上面找分頁籤
+//   - 「展開全部」可以把整組小節一次攤開(要用瀏覽器 Ctrl+F 搜尋整份規則時用)
 (function () {
-  const body = document.querySelector('.game-group[data-group="career"] .game-body');
-  if (!body) return;
-  const sections = Array.from(body.querySelectorAll(":scope > .game-section"));
-  if (sections.length < 2) return;
+  document.querySelectorAll(".game-group").forEach((group) => {
+    const body = group.querySelector(".game-body");
+    if (!body) return;
+    const sections = Array.from(body.querySelectorAll(":scope > .game-section"));
+    if (sections.length < 2) return;
 
-  // 小節數量文字是寫死的("8 個小節")，之後小節增減很容易忘記同步，改成直接照實際小節數算。
-  const countEl = document.querySelector('.game-group[data-group="career"] .game-toggle-count');
-  if (countEl) countEl.textContent = `${sections.length} 個小節`;
+    // 小節數量文字是寫死的(\"8 個小節\")，之後增減很容易忘記同步，改成直接照實際小節數算
+    const countEl = group.querySelector(".game-toggle-count");
+    if (countEl) countEl.textContent = `${sections.length} 個小節`;
 
-  const tabBar = document.createElement("div");
-  tabBar.className = "rule-tabs";
+    const labels = sections.map((sec, idx) => {
+      const h4 = sec.querySelector("h4");
+      const full = h4 ? h4.textContent.trim() : `小節${idx + 1}`;
+      const short = (h4 && h4.dataset.tabLabel) || full.split(/[:：(（]/)[0].trim() || full;
+      const iconEl = h4 && h4.querySelector(".ico, svg");
+      const iconName = iconEl ? iconEl.getAttribute("data-lucide") : null;
+      return { short, iconName };
+    });
 
-  sections.forEach((sec, idx) => {
-    const h4 = sec.querySelector("h4");
-    const fullLabel = h4 ? h4.textContent.trim() : `小節${idx + 1}`;
-    const shortLabel = fullLabel.split(/[:：]/)[0]; // 標題常常是「XX:說明」，分頁籤只取冒號前面那段，比較不會擠
-    const iconEl = h4 && h4.querySelector(".ico");
-    const iconName = iconEl ? iconEl.getAttribute("data-lucide") : null;
+    const bar = document.createElement("div");
+    bar.className = "rule-tabbar";
+    const tabBar = document.createElement("div");
+    tabBar.className = "rule-tabs";
+    const allBtn = document.createElement("button");
+    allBtn.type = "button";
+    allBtn.className = "rule-expand-all";
+    allBtn.textContent = "展開全部";
+    bar.appendChild(tabBar);
+    bar.appendChild(allBtn);
 
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "rule-tab" + (idx === 0 ? " active" : "");
-    btn.innerHTML = (iconName ? `<i data-lucide="${iconName}" class="ico"></i>` : "") + shortLabel;
-    btn.onclick = () => {
-      sections.forEach((s, i) => {
-        s.hidden = i !== idx;
+    let current = 0;
+    let showAll = false;
+
+    function apply() {
+      sections.forEach((sec, i) => {
+        sec.hidden = !showAll && i !== current;
       });
-      tabBar.querySelectorAll(".rule-tab").forEach((t, i) => t.classList.toggle("active", i === idx));
-      sec.scrollIntoView({ block: "start", behavior: "smooth" });
-    };
-    tabBar.appendChild(btn);
-    sec.hidden = idx !== 0;
-  });
+      tabBar.querySelectorAll(".rule-tab").forEach((t, i) => t.classList.toggle("active", !showAll && i === current));
+      body.classList.toggle("show-all", showAll);
+      allBtn.textContent = showAll ? "分頁顯示" : "展開全部";
+    }
+    function go(idx, scroll) {
+      current = Math.max(0, Math.min(sections.length - 1, idx));
+      showAll = false;
+      apply();
+      // 捲到分頁籤列(不是小節本身),這樣切換後分頁籤還看得到,也不會被上方內容擋住
+      if (scroll) bar.scrollIntoView({ block: "start", behavior: "smooth" });
+    }
 
-  body.insertBefore(tabBar, sections[0]); // 圖示是動態插入的<i data-lucide>，ui.js已經有全域MutationObserver會自動轉成svg，這裡不用手動呼叫
+    labels.forEach((l, idx) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "rule-tab";
+      btn.innerHTML = (l.iconName ? `<i data-lucide="${l.iconName}" class="ico"></i>` : "") + l.short.replace(/</g, "&lt;");
+      btn.onclick = () => go(idx, true);
+      tabBar.appendChild(btn);
+
+      // 小節底部的上一節/下一節
+      const pager = document.createElement("div");
+      pager.className = "rule-pager";
+      pager.innerHTML =
+        (idx > 0 ? `<button type="button" class="btn ghost small" data-go="${idx - 1}">← ${labels[idx - 1].short.replace(/</g, "&lt;")}</button>` : "<span></span>") +
+        (idx < sections.length - 1 ? `<button type="button" class="btn ghost small" data-go="${idx + 1}">${labels[idx + 1].short.replace(/</g, "&lt;")} →</button>` : "<span></span>");
+      pager.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => go(Number(b.dataset.go), true)));
+      sections[idx].appendChild(pager);
+    });
+    allBtn.onclick = () => {
+      showAll = !showAll;
+      apply();
+    };
+
+    body.insertBefore(bar, sections[0]); // 圖示是動態插入的<i data-lucide>，ui.js已經有全域MutationObserver會自動轉成svg
+    apply();
+  });
 })();
 
 // 職業養成對決:職業表(玩家回饋「職業也要細分」，力量/敏捷/魔法三條路線、每條線2個最終職業，
