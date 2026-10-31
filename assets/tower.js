@@ -46,6 +46,7 @@
   let lastEvent = null; // { eventDef, text, drop } — instant事件/商店購買結果(顯示在爬塔分頁)
   let lastShopNote = null; // 商店購買結果(顯示在商店分頁頂端，買完留在商店不跳走)
   let lastGachaResult = null; // 抽獎結果(顯示在抽獎機分頁，不會跳走)
+  let lastEnhanceResult = null; // 強化/重鑄結果(顯示在合成分頁)
   let lastSynthesisResult = null; // 合成結果(顯示在合成分頁，不會跳走)
   let bossSubmitted = false; // 王戰:這回合是否已經送出動作
   let bossSeenRound = null;
@@ -860,7 +861,8 @@
   function groupInventory() {
     const groups = {};
     (progress.inventory || []).forEach((item) => {
-      const key = `${item.slot}:${item.rarity}`;
+      // 強化過的裝備自己一組(不跟沒強化的混在一起,穿裝/合成/賣裝才不會拿錯)
+      const key = item.enhance > 0 ? `${item.slot}:${item.rarity}:+${item.enhance}:${item.name}` : `${item.slot}:${item.rarity}`;
       const reqLevel = _itemReqLevel(item);
       if (!groups[key]) groups[key] = { ...item, count: 0, ids: [], minReq: reqLevel, maxReq: reqLevel };
       groups[key].count += 1;
@@ -934,6 +936,53 @@
         <div style="margin-top:14px;">
           <button class="btn" id="synthesize-btn" ${locked ? "disabled" : ""}>${ui.icon("arrow-big-up")}合成(消耗${need}件${rule.fee > 0 ? `+${rule.fee}幣` : ""})</button>
         </div>
+        ${resultHtml}
+      </div>
+      ${renderEnhanceSection(locked)}`;
+  }
+
+  // 強化與重鑄:只處理「身上穿著的」三件裝備
+  function renderEnhanceSection(locked) {
+    const CF = CareerFloors;
+    const rows = ["weapon", "armor", "accessory"].map((slot) => {
+      const item = progress.equipment && progress.equipment[slot];
+      if (!item) {
+        return `<div class="shop-row"><div class="shop-row-name">${slotLabel(slot)}:(尚未裝備)<span class="shop-row-desc">先穿上裝備才能強化與重鑄</span></div></div>`;
+      }
+      const level = item.enhance || 0;
+      const maxed = level >= CF.ENHANCE_MAX;
+      const rule = CF.ENHANCE_RULES[level];
+      const base = item.baseValue != null ? item.baseValue : item.statValue;
+      const gain = CF.enhanceBonusPerLevel(base);
+      const canEnhance = !!item.statKey && !maxed && progress.coins >= (rule ? rule.fee : Infinity);
+      const reforgeFee = CF.REFORGE_FEES[item.rarity];
+      // 有些裝備只有 1 款(招牌階/塔心階的武器、見習武器),沒有其他變化款可以換;夜市階武器與防具/飾品每個稀有度有 2 款
+      const variantCount = reforgeFee != null && !item.setKey && myBuild ? ((CF.itemList(slot, myBuild.final_class, item.rarity, item.tier || 1) || []).length) : 0;
+      const canReforge = variantCount > 1 && progress.coins >= reforgeFee;
+      const enhanceLabel = maxed ? "已強化到最高 +5" : `強化 +${level + 1}(${rule.fee}幣·成功率${Math.round(rule.rate * 100)}%)`;
+      return `
+        <div class="shop-row">
+          ${rarityTag(item.rarity)}
+          <div class="shop-row-name">${slotLabel(slot)}:${ui.esc(item.name)}${level > 0 ? ` <b style="color:var(--gold);">+${level}</b>` : ""}
+            <span class="shop-row-desc">${CF.describeItem(item)}${maxed || !item.statKey ? "" : ` · 每級 ${CF.STAT_LABEL[item.statKey]}+${gain}`}</span></div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
+            <button class="btn small" data-enhance-slot="${slot}" ${locked || !canEnhance ? "disabled" : ""}>${ui.icon("hammer")}${enhanceLabel}</button>
+            <button class="btn ghost small" data-reforge-slot="${slot}" ${locked || !canReforge ? "disabled" : ""}>${ui.icon("shuffle")}${reforgeFee == null ? "傳說不能重鑄" : item.setKey ? "套裝不能重鑄" : variantCount <= 1 ? "只有一款" : `重鑄(${reforgeFee}幣)`}</button>
+          </div>
+        </div>`;
+    }).join("");
+    let resultHtml = "";
+    if (lastEnhanceResult) {
+      resultHtml = `<div class="empty" style="font-size:12px;margin-top:8px;color:${lastEnhanceResult.success ? "var(--green)" : "var(--ink-dim)"};">${ui.icon(lastEnhanceResult.success ? "sparkles" : "x")}${ui.esc(lastEnhanceResult.text)}</div>`;
+    }
+    return `
+      <div style="margin-top:22px;">
+        <p class="shop-section-title">${ui.icon("hammer")}強化與重鑄(身上穿著的裝備)</p>
+        <p style="margin:0 0 8px;font-size:11.5px;color:var(--ink-dim);line-height:1.7;">
+          強化:用幣把裝備強化到最高 +5，每級給主屬性固定加成，<b>失敗只賠幣、不降級、不會碎</b>，越高級成功率越低、費用越貴。強化過的裝備不能拿去合成，也不會被一鍵賣裝賣掉。<br/>
+          重鑄:花幣換成「同部位、同稀有度」的另一款(不會抽到原本那款)，強化等級會保留。只有一款的裝備(例如招牌階、塔心階的武器、見習武器)沒有其他款可以換，不能重鑄；傳說與 Boss 套裝也不能重鑄。
+        </p>
+        ${rows}
         ${resultHtml}
       </div>`;
   }
@@ -2171,6 +2220,54 @@
         }
       };
     }
+
+    app.querySelectorAll("[data-enhance-slot]").forEach((btn) => {
+      if (btn.disabled) return;
+      btn.onclick = async () => {
+        if (busy) return;
+        busy = true;
+        try {
+          const result = await db.enhanceCareerEquipment(eventId, myId, btn.dataset.enhanceSlot);
+          progress = result.progress;
+          lastEnhanceResult = {
+            success: result.success,
+            text: result.success
+              ? `強化成功!「${result.item.name}」變成 +${result.level} 了(花了 ${result.fee} 幣)`
+              : `強化失敗，「${result.item.name}」維持 +${result.level}(花了 ${result.fee} 幣，裝備沒有受損)，再試一次吧。`,
+          };
+          render();
+        } catch (e) {
+          await ui.alert(e.message || "強化失敗", { title: "操作失敗", tone: "danger" });
+          await loadAndRender();
+        } finally {
+          busy = false;
+        }
+      };
+    });
+    app.querySelectorAll("[data-reforge-slot]").forEach((btn) => {
+      if (btn.disabled) return;
+      btn.onclick = async () => {
+        if (busy) return;
+        const slot = btn.dataset.reforgeSlot;
+        const cur = progress.equipment && progress.equipment[slot];
+        if (!cur) return;
+        const fee = CareerFloors.REFORGE_FEES[cur.rarity];
+        const okGo = await ui.confirm(`花 ${fee} 幣重鑄「${cur.name}」?會換成同部位、同稀有度的另一款，強化等級保留。`, { title: "重鑄裝備" });
+        if (!okGo) return;
+        busy = true;
+        try {
+          const result = await db.reforgeCareerEquipment(eventId, myId, slot);
+          progress = result.progress;
+          lastEnhanceResult = { success: true, text: `重鑄完成!「${result.oldItem.name}」變成「${result.item.name}」(花了 ${result.fee} 幣)` };
+          render();
+        } catch (e) {
+          await ui.alert(e.message || "重鑄失敗", { title: "操作失敗", tone: "danger" });
+          await loadAndRender();
+        } finally {
+          busy = false;
+        }
+      };
+    });
 
     app.querySelectorAll("[data-equip-item]").forEach((btn) => {
       if (btn.disabled) return;

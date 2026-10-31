@@ -4138,7 +4138,7 @@ const db = (function () {
     if (!allowedRarities.size) throw new Error("至少要勾選一個稀有度才能賣");
     const maxReqLevel = f.lowLevelOnly ? f.lowLevelThreshold || 10 : Infinity;
     const inventory = progress.inventory || [];
-    const toSell = inventory.filter((it) => allowedRarities.has(it.rarity) && (it.reqLevel || 1) <= maxReqLevel);
+    const toSell = inventory.filter((it) => allowedRarities.has(it.rarity) && (it.reqLevel || 1) <= maxReqLevel && !(it.enhance > 0)); // 強化過的裝備不一起賣掉
     if (!toSell.length) throw new Error("背包裡沒有符合條件的裝備可以賣");
     const totalCoins = toSell.reduce((sum, it) => sum + window.CareerFloors.sellPrice(it.rarity), 0);
     const soldIds = new Set(toSell.map((it) => it.id));
@@ -4231,7 +4231,7 @@ const db = (function () {
     const slotName = slot === "weapon" ? "武器" : slot === "armor" ? "防具" : "飾品";
     // 51 層以後的裝備有階級(招牌階/塔心階,見 career-floors.js):先用掉階級最低的 3 件,合成結果的階級 = 用掉的那幾件裡最高的,
     // 這樣不會因為混了一件低階的就把高階材料降級,也不會用高階材料偷偷升級低階裝備。
-    const matching = (progress.inventory || []).filter((it) => it.slot === slot && it.rarity === rarity).sort((a, b) => (a.tier || 1) - (b.tier || 1));
+    const matching = (progress.inventory || []).filter((it) => it.slot === slot && it.rarity === rarity && !(it.enhance > 0)).sort((a, b) => (a.tier || 1) - (b.tier || 1));
     if (matching.length < need) {
       throw new Error(`「${CFl.RARITY_LABEL[rarity]}${slotName}」不夠${need}件(目前${matching.length}件)`);
     }
@@ -4291,6 +4291,77 @@ const db = (function () {
       await broadcastCareerEvent(eventId, "crown", `${name} 合成出了傳說裝備「${resultItem.name}」!`);
     }
     return { success, item: resultItem, fee: rule.fee, rate, progress: updated[0] };
+  }
+
+  // 強化身上穿著的裝備 +1(最高 +5)。失敗只賠幣、不降級。
+  async function enhanceCareerEquipment(eventId, playerId, slot) {
+    await _assertCareerOpen(eventId);
+    const CFl = window.CareerFloors;
+    const progress = await getOrCreateCareerProgress(eventId, playerId);
+    const item = progress.equipment && progress.equipment[slot];
+    if (!item) throw new Error("這個部位還沒有穿裝備");
+    if (!item.statKey) throw new Error("這件裝備沒有可以強化的屬性");
+    const level = item.enhance || 0;
+    if (level >= CFl.ENHANCE_MAX) throw new Error(`已經強化到 +${CFl.ENHANCE_MAX}，是最高等級了`);
+    const rule = CFl.ENHANCE_RULES[level];
+    if (progress.coins < rule.fee) throw new Error(`強化要付 ${rule.fee} 幣，你只有 ${progress.coins} 幣`);
+    const success = Math.random() < rule.rate;
+    const baseValue = item.baseValue != null ? item.baseValue : item.statValue;
+    const newItem = { ...item, baseValue };
+    if (success) {
+      newItem.enhance = level + 1;
+      newItem.statValue = CFl.enhancedValue(baseValue, level + 1);
+    }
+    const equipment = { ...progress.equipment, [slot]: newItem };
+    const { data: updated, error } = await client
+      .from("career_progress")
+      .update({ equipment, coins: progress.coins - rule.fee })
+      .eq("id", progress.id)
+      .eq("inventory_rev", progress.inventory_rev) // 同一個樂觀鎖:別的分頁剛換過裝備/背包就失敗，不會覆蓋
+      .eq("coins", progress.coins) // 鎖幣，避免連點重複扣費
+      .select();
+    if (error) throw error;
+    if (!updated || !updated.length) throw new Error("裝備剛好被別的分頁更新過了，請重新整理後再試一次");
+    return { success, item: newItem, level: success ? level + 1 : level, fee: rule.fee, rate: rule.rate, progress: updated[0] };
+  }
+
+  // 重鑄身上穿著的裝備:花幣換成「同部位、同稀有度、同階級」的另一款(不會抽到原本那款)。
+  // 強化等級會保留(新款的原本數值 + 同樣等級的加成)。傳說不能重鑄。
+  async function reforgeCareerEquipment(eventId, playerId, slot) {
+    await _assertCareerOpen(eventId);
+    const CFl = window.CareerFloors;
+    const [progress, build] = await Promise.all([
+      getOrCreateCareerProgress(eventId, playerId),
+      getCareerBuildFor(eventId, playerId),
+    ]);
+    if (!build) throw new Error("請先選好職業");
+    const item = progress.equipment && progress.equipment[slot];
+    if (!item) throw new Error("這個部位還沒有穿裝備");
+    const fee = CFl.REFORGE_FEES[item.rarity];
+    if (fee == null) throw new Error("傳說裝備不能重鑄");
+    if (item.setKey) throw new Error("Boss 限定套裝不能重鑄");
+    if (progress.coins < fee) throw new Error(`重鑄要付 ${fee} 幣，你只有 ${progress.coins} 幣`);
+    const list = (CFl.itemList(slot, build.final_class, item.rarity, item.tier || 1) || []).filter((it) => it.name !== item.name);
+    if (!list.length) throw new Error("這個稀有度、這個階級只有一款，沒有其他變化款可以重鑄");
+    const base = CFl.pickVariant(list);
+    const level = item.enhance || 0;
+    const newItem = { slot, ...base, id: item.id, reqLevel: item.reqLevel };
+    if (level > 0) {
+      newItem.baseValue = base.statValue;
+      newItem.enhance = level;
+      newItem.statValue = CFl.enhancedValue(base.statValue, level);
+    }
+    const equipment = { ...progress.equipment, [slot]: newItem };
+    const { data: updated, error } = await client
+      .from("career_progress")
+      .update({ equipment, coins: progress.coins - fee })
+      .eq("id", progress.id)
+      .eq("inventory_rev", progress.inventory_rev)
+      .eq("coins", progress.coins)
+      .select();
+    if (error) throw error;
+    if (!updated || !updated.length) throw new Error("裝備剛好被別的分頁更新過了，請重新整理後再試一次");
+    return { item: newItem, oldItem: item, fee, progress: updated[0] };
   }
 
   // 花一點自由數值點(atk/def/spd/hp/luck 其中一項 +1)
@@ -4907,6 +4978,8 @@ const db = (function () {
     buyCareerGachaPull,
     buyCareerMedal,
     synthesizeCareerEquipment,
+    enhanceCareerEquipment,
+    reforgeCareerEquipment,
     bulkSellCareerEquipment,
     equipCareerItem,
     unequipCareerItem,

@@ -526,6 +526,7 @@ window.CareerFloors = (function () {
     if (!item) return "";
     const parts = [];
     if (item.tier > 1 && TIER_LABEL[item.tier]) parts.push(TIER_LABEL[item.tier]); // 招牌階/塔心階
+    if (item.enhance > 0) parts.push(`強化+${item.enhance}`);
     if (item.statKey) parts.push(`${STAT_LABEL[item.statKey]}+${item.statValue}`);
     if (item.extraHp) parts.push(`HP+${item.extraHp}`);
     if (item.specialEffect) parts.push(`★${item.specialEffect.desc}`);
@@ -696,6 +697,29 @@ window.CareerFloors = (function () {
     if (!r) return 0;
     return Math.min(1, r.rate + Math.min(r.pityMax, (fails || 0) * r.pityStep));
   }
+  // ---- 強化與重鑄(合成與經濟第二批,見 BUG 文件 28-3 / 項目 18) ----
+  // 只能強化/重鑄「身上穿著的」裝備。強化 +1~+5:每級給主屬性固定加成 = max(1, round(原本數值×15%)),
+  // 失敗只賠幣、不降級、不碎。費用跟實際幣收入同量級【待模擬確認】。
+  // 強化過的裝備會帶 enhance(目前等級)與 baseValue(原本數值),statValue 直接存「強化後」的數值,
+  // 所以戰鬥算屬性、背包比較這些地方都不用改。強化過的裝備不能拿去合成、也不會被一鍵賣裝賣掉。
+  const ENHANCE_MAX = 5;
+  const ENHANCE_RULES = [
+    { fee: 1500, rate: 1.0 },   // +0 → +1
+    { fee: 3000, rate: 0.9 },   // +1 → +2
+    { fee: 6000, rate: 0.75 },  // +2 → +3
+    { fee: 12000, rate: 0.6 },  // +3 → +4
+    { fee: 25000, rate: 0.45 }, // +4 → +5
+  ];
+  function enhanceBonusPerLevel(baseValue) {
+    return Math.max(1, Math.round((baseValue || 0) * 0.15));
+  }
+  // 強化後的數值 = 原本數值 + 每級加成 × 等級
+  function enhancedValue(baseValue, level) {
+    return (baseValue || 0) + enhanceBonusPerLevel(baseValue) * (level || 0);
+  }
+  // 重鑄費用(傳說不能重鑄:傳說的名字會跟「擁有過哪些傳說」綁在一起,Boss 套裝也不能亂換)
+  const REFORGE_FEES = { common: 200, rare: 1000, epic: 3000 };
+
   // 小關主/Boss 樓層「重複挑戰」時的掉落機率(第一次通關仍然是 100%)。
   // 不限制的話,重複打關主樓層就能無限拿保底史詩,史詩不稀有、合成也就沒用了。
   const REPEAT_BOSS_DROP_CHANCE = 0.35;
@@ -744,6 +768,11 @@ window.CareerFloors = (function () {
     SYNTHESIS_PATH,
     SYNTHESIS_INPUT_COUNT,
     SYNTHESIS_RULES,
+    ENHANCE_MAX,
+    ENHANCE_RULES,
+    enhanceBonusPerLevel,
+    enhancedValue,
+    REFORGE_FEES,
     synthesisRate,
     REPEAT_BOSS_DROP_CHANCE,
   };

@@ -147,6 +147,50 @@ const fails = async (fn, re, m) => { try { await fn(); ok(false, m + "(應該失
   res = await db.synthesizeCareerEquipment("e", "p", "weapon", "epic");
   ok(res.success && res.item.rarity === "legendary" && !res.item.tier, "合成傳說走原本的傳說款(不分階)");
 
+  // ---- 強化與重鑄 ----
+  const CFl = sb.CareerFloors;
+  ok(CFl.ENHANCE_MAX === 5 && CFl.ENHANCE_RULES.length === 5 && CFl.ENHANCE_RULES.every((r, i, a) => i === 0 || (r.fee > a[i - 1].fee && r.rate <= a[i - 1].rate)), "強化 5 級,費用逐級上升、成功率逐級不增");
+  ok(CFl.enhanceBonusPerLevel(1) === 1 && CFl.enhanceBonusPerLevel(5) === 1 && CFl.enhanceBonusPerLevel(14) === 2 && CFl.enhanceBonusPerLevel(0) === 1, "每級加成 = max(1, 原本數值×15% 四捨五入)");
+  ok(CFl.enhancedValue(3, 5) === 8 && CFl.enhancedValue(14, 3) === 20, "強化後數值 = 原本 + 每級加成×等級");
+  const sword = { id: "w1", slot: "weapon", name: CFl.itemList("weapon", "warrior", "rare", 1)[0].name, rarity: "rare", statKey: "atk", statValue: 3, reqLevel: 5 };
+  const arm = { id: "a1", slot: "armor", rarity: "rare", statKey: "def", statValue: 2, extraHp: 5, name: CFl.itemList("armor", "warrior", "rare", 1)[0].name, reqLevel: 5 };
+  prog.coins = 99999; prog.inventory = []; prog.inventory_rev = 10; prog.equipment = { weapon: sword, armor: arm };
+  Math.random = () => 0;
+  res = await db.enhanceCareerEquipment("e", "p", "weapon");
+  ok(res.success && res.level === 1 && prog.equipment.weapon.statValue === 4 && prog.equipment.weapon.baseValue === 3 && prog.coins === 99999 - 1500, `強化 +1 成功:攻擊 3→4、扣 1500 幣(${prog.equipment.weapon.statValue}, 剩 ${prog.coins})`);
+  res = await db.enhanceCareerEquipment("e", "p", "weapon");
+  ok(res.success && prog.equipment.weapon.enhance === 2 && prog.equipment.weapon.statValue === 5, "強化 +2 成功:攻擊 5(原本 3 + 每級 1 × 2)");
+  Math.random = () => 0.9999;
+  const before = prog.coins;
+  res = await db.enhanceCareerEquipment("e", "p", "weapon");
+  ok(!res.success && prog.equipment.weapon.enhance === 2 && prog.equipment.weapon.statValue === 5 && prog.coins === before - CFl.ENHANCE_RULES[2].fee, "強化失敗:等級與屬性不變、只賠幣(+2→+3 要 6000)");
+  Math.random = () => 0;
+  prog.equipment.weapon.enhance = 5; prog.equipment.weapon.statValue = 8;
+  let err = null; try { await db.enhanceCareerEquipment("e", "p", "weapon"); } catch (e) { err = e; }
+  ok(err && /最高/.test(err.message), "+5 不能再強化");
+  prog.coins = 100; prog.equipment.weapon = { ...sword };
+  err = null; try { await db.enhanceCareerEquipment("e", "p", "weapon"); } catch (e) { err = e; }
+  ok(err && /幣/.test(err.message) && prog.coins === 100, "幣不夠:報錯、不扣幣");
+  err = null; try { await db.enhanceCareerEquipment("e", "p", "accessory"); } catch (e) { err = e; }
+  ok(err && /還沒有穿/.test(err.message), "沒穿裝備的部位不能強化");
+  // 重鑄:換成同稀有度另一款,保留強化等級
+  prog.coins = 99999; prog.equipment.armor = { ...arm, enhance: 2, baseValue: 2, statValue: 4 };
+  Math.random = () => 0;
+  res = await db.reforgeCareerEquipment("e", "p", "armor");
+  ok(res.item.name !== arm.name && res.item.rarity === "rare" && res.item.slot === "armor" && prog.coins === 99999 - CFl.REFORGE_FEES.rare, `重鑄:換成另一款(${arm.name} → ${res.item.name})、扣 ${CFl.REFORGE_FEES.rare} 幣`);
+  ok(prog.equipment.armor.enhance === 2 && prog.equipment.armor.statValue === CFl.enhancedValue(res.item.baseValue, 2) && prog.equipment.armor.id === "a1", "重鑄保留強化等級與裝備 id,屬性依新款重算");
+  const coinsBefore = prog.coins;
+  prog.equipment.weapon = { ...sword, tier: 2, name: CFl.itemList("weapon", "warrior", "rare", 2)[0].name }; // 招牌階武器只有 1 款
+  err = null; try { await db.reforgeCareerEquipment("e", "p", "weapon"); } catch (e) { err = e; }
+  ok(err && /只有一款/.test(err.message) && prog.coins === coinsBefore, "只有一款的裝備(招牌階武器)沒辦法重鑄(報錯、不扣幣)");
+  prog.equipment.armor = { ...arm, rarity: "legendary" };
+  err = null; try { await db.reforgeCareerEquipment("e", "p", "armor"); } catch (e) { err = e; }
+  ok(err && /傳說/.test(err.message), "傳說不能重鑄");
+  // 強化過的裝備不能拿去合成
+  prog.coins = 99999; prog.inventory = [...inv(1, 2, "z"), { id: "zz", slot: "weapon", rarity: "rare", name: "x1", enhance: 1, baseValue: 3, statValue: 4 }]; prog.inventory_rev = 20;
+  err = null; try { await db.synthesizeCareerEquipment("e", "p", "weapon", "rare"); } catch (e) { err = e; }
+  ok(err && /不夠/.test(err.message), "強化過的裝備不算合成材料(2 件沒強化 + 1 件強化 → 材料不夠)");
+
   // ---- 圖鑑目錄 ----
   const cat = sb.CareerCodex.catalog();
   ok(cat.mon.length === 70, "怪物圖鑑 70 筆");
