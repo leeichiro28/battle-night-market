@@ -23,7 +23,7 @@
     { key: "tower", icon: "mountain", label: "爬塔" },
     { key: "shop", icon: "store", label: "商店" },
     { key: "gacha", icon: "dices", label: "抽獎機" },
-    { key: "synthesis", icon: "flask-conical", label: "合成" },
+    { key: "synthesis", icon: "hammer", label: "鐵匠鋪" },
     { key: "skilltree", icon: "wand-sparkles", label: "技能樹" },
     { key: "backpack", icon: "backpack", label: "背包" },
     { key: "relics", icon: "ticket", label: "遺物" },
@@ -339,7 +339,7 @@
   // ---------------- 分頁1:爬塔 ----------------
 
   function hourglassHint(text) {
-    return `<div class="empty" style="margin:10px 0;font-size:12px;">${ui.icon("hourglass")}${ui.esc(text)}</div>`;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 12px;margin:8px 0;border-radius:999px;background:var(--panel2);border:1px solid var(--line);font-size:12px;overflow:hidden;">${ui.icon("hourglass")}<span style="flex:1;min-width:0;overflow-wrap:anywhere;">${ui.esc(text)}</span></div>`;
   }
 
   function renderPathPicker() {
@@ -653,9 +653,6 @@
       html += renderAllocPanel(cls, battleStats);
     }
 
-    if (progress.skill_points > 0 && !locked) {
-      html += `<div class="empty" style="margin:10px 0;font-size:12px;">${ui.icon("wand-sparkles")}你有 ${progress.skill_points} 點技能點可以花，去「技能樹」分頁升級戰技或被動(永久保留，不會歸零)!</div>`;
-    }
 
     // 樓層詞條:「下一層」這個時段的詞條(每 10 分鐘輪替,同一場活動所有玩家看到的一樣)
     if (window.CareerAffixes && nextFloorDef && !locked) html += CareerAffixes.cardHtml(ev && ev.rules, nextFloor);
@@ -945,7 +942,8 @@
     }
 
     return `
-      <div style="text-align:center;">
+      ${renderEnhanceSection(locked)}
+      <div style="text-align:center;margin-top:26px;padding-top:18px;border-top:1px dashed var(--line);">
         ${ui.icon("flask-conical", { size: "32px" })}
         <p style="margin:10px 0 4px;font-weight:700;font-size:15px;">裝備合成</p>
         <p style="margin:0 0 16px;font-size:11.5px;color:var(--ink-dim);line-height:1.7;">
@@ -961,8 +959,7 @@
           <button class="btn" id="synthesize-btn" ${locked ? "disabled" : ""}>${ui.icon("arrow-big-up")}合成(消耗${need}件${rule.fee > 0 ? `+${rule.fee}幣` : ""})</button>
         </div>
         ${resultHtml}
-      </div>
-      ${renderEnhanceSection(locked)}`;
+      </div>`;
   }
 
   // 強化與重鑄:只處理「身上穿著的」三件裝備
@@ -1000,8 +997,11 @@
       resultHtml = `<div class="empty" style="font-size:12px;margin-top:8px;color:${lastEnhanceResult.success ? "var(--green)" : "var(--ink-dim)"};">${ui.icon(lastEnhanceResult.success ? "sparkles" : "x")}${ui.esc(lastEnhanceResult.text)}</div>`;
     }
     return `
-      <div style="margin-top:22px;">
-        <p class="shop-section-title">${ui.icon("hammer")}強化與重鑄(身上穿著的裝備)</p>
+      <div>
+        <div style="text-align:center;">
+          ${ui.icon("hammer", { size: "32px" })}
+          <p style="margin:10px 0 4px;font-weight:700;font-size:15px;">強化與重鑄(身上穿著的裝備)</p>
+        </div>
         <p style="margin:0 0 8px;font-size:11.5px;color:var(--ink-dim);line-height:1.7;">
           強化:用幣把裝備強化到最高 +5，每級給主屬性固定加成，<b>失敗只賠幣、不降級、不會碎</b>，越高級成功率越低、費用越貴。強化過的裝備不能拿去合成，也不會被一鍵賣裝賣掉。<br/>
           重鑄:花幣換成「同部位、同稀有度」的另一款(不會抽到原本那款)，強化等級會保留。只有一款的裝備(例如招牌階、塔心階的武器、見習武器)沒有其他款可以換，不能重鑄；傳說與 Boss 套裝也不能重鑄。

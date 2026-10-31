@@ -50,7 +50,7 @@ const fails = async (fn, re, m) => { try { await fn(); ok(false, m + "(應該失
   ok(names.size === 12 && [...names].every((x) => !/\(\d+層關主\)/.test(x)), `51~69 層一般怪名稱(${names.size} 種)`);
   const mono = (a, b, k) => CF.getFloor(b).stats[k] >= CF.getFloor(a).stats[k];
   ok(mono(50, 51, "atk") && mono(51, 55, "atk") && mono(55, 59, "hp") && mono(61, 65, "hp") && mono(65, 69, "atk"), "怪物強度隨樓層上升(含 50→51 沒有倒退)");
-  ok(CF.getFloor(51).stats.hp > CF.getFloor(50).stats.hp * 2.5, `51 層比 50 層明顯變難(HP ${CF.getFloor(50).stats.hp} → ${CF.getFloor(51).stats.hp})`);
+  ok(CF.getFloor(51).stats.hp > CF.getFloor(50).stats.hp * 1.5, `51 層比 50 層有變難(2026-11 玩家回饋下調,門檻從 2.5 倍放寬到 1.5 倍;Lv.40 就能打過 51 層)(HP ${CF.getFloor(50).stats.hp} → ${CF.getFloor(51).stats.hp})`);
   ok(CF.floorScore(70) === 105, "爬到 70 層的爬塔分 = 105");
 
   // ---- 階級裝備 ----

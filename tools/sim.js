@@ -274,11 +274,11 @@ function classes() {
 // 設計目標(docs 28-2):51 層建議約 Lv.90(Lv.50~70 的一般玩家過不去)、60 層約 Lv.120、70 層約 Lv.160。
 // 玩家 = 統一配點 + 該樓層那一階的「史詩」裝備三件(實際數值,不是百分比加成)+ 大招 Lv.3 + 技能 Lv.5;
 // 「含專精」= 12 條專精分支平均,「不含專精」= 沒選專精(Lv.50 以後大多數人會選,所以以含專精為主要目標)。
-const TOWER_LEVEL = [[51, 90], [60, 120], [70, 160]]; // 樓層 -> 建議等級(中間線性內插)
+const TOWER_LEVEL = [[51, 40], [60, 51], [70, 63]]; // 樓層 -> 建議等級(中間線性內插)
 function recLevel(f) {
-  if (f <= 51) return 90 - (51 - f) * 3;
+  if (f <= 51) return 40 - (51 - f) * 3;
   for (let i = 1; i < TOWER_LEVEL.length; i++) if (f <= TOWER_LEVEL[i][0]) { const [f0, l0] = TOWER_LEVEL[i - 1], [f1, l1] = TOWER_LEVEL[i]; return Math.round(l0 + ((f - f0) / (f1 - f0)) * (l1 - l0)); }
-  return 160;
+  return 63;
 }
 const GEAR_BY_TIER = { 1: { w: 4, def: 3, hp: 7, luck: 4 }, 2: { w: 9, def: 8, hp: 18, luck: 8 }, 3: { w: 13, def: 12, hp: 26, luck: 12 } }; // 該階史詩三件(見 career-floors.js)
 function towerSide(c, L, branch, floorN) {
@@ -333,7 +333,7 @@ function calibrate() {
       if (boss) { mon.hp = Math.round(mon.hp / 1.3); mon.maxHp = mon.hp; } // 關主有 ×1.3 的成長,這裡先還原,實際值再乘回去
       const r = towerRates(f, boss ? { ...mon, atk: Math.round(mon.atk * 1.3), def: Math.round(mon.def * 1.3), hp: Math.round(mon.hp * 1.3), maxHp: Math.round(mon.hp * 1.3), matk: Math.round(mon.atk * 1.3) } : mon, N, L);
       best = { mid, mon, r };
-      if (r.spec > target) lo = mid; else hi = mid;
+      if ((L < 50 ? r.base : r.spec) > target) lo = mid; else hi = mid;
     }
     console.log(`第 ${f} 層(建議 Lv.${L}):倍率 ×${best.mid.toFixed(2)} → 勝率 含專精 ${Math.round(best.r.spec * 100)}% / 不含 ${Math.round(best.r.base * 100)}%`);
     console.log(`   一般怪(非關主)建議數值:atk ${best.mon.atk}  def ${best.mon.def}  spd ${best.mon.spd}  hp ${best.mon.hp}  luck ${best.mon.luck}   (玩家參考:atk ${Math.round(ref.atk)} def ${Math.round(ref.def)} spd ${Math.round(ref.spd)} hp ${Math.round(ref.hp)})`);
