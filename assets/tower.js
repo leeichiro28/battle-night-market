@@ -573,7 +573,7 @@
       .join("");
     return `
       <div class="alloc-panel">
-        <p class="alloc-title">${ui.icon("sparkles")}自由數值點:剩 ${left} 點可分配${total ? `(已預選 ${total} 點)` : ""}</p>
+        <p class="alloc-title">${ui.icon("sparkles")}自由數值點:剩 ${left} 點可分配${total ? `(已預選 ${total} 點)` : ""}<span style="margin-left:8px;color:var(--gold);font-weight:700;white-space:nowrap;">目前 Lv.${progress.level}</span></p>
         <p class="alloc-hint">HP 每點 +10、MP 每點 +2,其餘每點 +1。按 +/- 預覽,確認後才會真的扣點。</p>
         ${rows}
         <div class="alloc-actions">
@@ -672,6 +672,8 @@
           ${ui.icon("repeat")}練功掛機・${progress.floor <= 0 ? "已清樓層限定" : isAutoFarming ? "進行中(自動)" : "開始"}
         </button>
       </div>`;
+
+    html += highlightCardHtml();
 
     if (isAutoFarming) html += autoFarmStatusHtml();
 
@@ -1582,15 +1584,19 @@
 
   function highlightCardHtml() {
     if (!highlight) return "";
+    // 精簡版:一張小卡(圖示+標題+一行字+小按鈕)，不再是佔半個螢幕的大卡
     return `
-      <div style="text-align:center;padding:20px 16px;margin-bottom:14px;border-radius:var(--radius);border:2px solid var(--gold);background:radial-gradient(circle at 50% 0%, rgba(242,183,5,.15), var(--panel2));">
-        ${ui.icon(highlight.icon, { size: "32px" })}
-        <p style="margin:10px 0 4px;font-family:'Display',sans-serif;font-size:16px;color:var(--gold);letter-spacing:.05em;">${ui.esc(highlight.title)}</p>
-        <p style="margin:0 0 ${highlight.quote ? "8px" : "14px"};font-size:13px;color:var(--ink);">${ui.esc(highlight.text)}</p>
-        ${highlight.quote ? `<p style="margin:0 0 14px;font-size:12.5px;color:var(--ink-dim);font-style:italic;overflow-wrap:anywhere;">${ui.esc(highlight.quote)}</p>` : ""}
-        <div style="display:flex;gap:8px;justify-content:center;">
-          <button class="btn small" id="highlight-share-btn">${ui.icon("copy")}複製分享文字</button>
-          <button class="btn ghost small" id="highlight-close-btn">${ui.icon("x")}關閉</button>
+      <div style="padding:8px 10px;margin:8px 0;border-radius:var(--radius);border:1px solid var(--gold);background:radial-gradient(circle at 0% 0%, rgba(242,183,5,.12), var(--panel2));">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="color:var(--gold);flex-shrink:0;">${ui.icon(highlight.icon, { size: "20px" })}</span>
+          <div style="flex:1;min-width:0;">
+            <p style="margin:0;font-size:13px;font-weight:700;color:var(--gold);overflow-wrap:anywhere;">${ui.esc(highlight.title)}</p>
+            <p style="margin:0;font-size:11.5px;color:var(--ink);overflow-wrap:anywhere;">${ui.esc(highlight.text)}${highlight.quote ? `<span style="color:var(--ink-dim);font-style:italic;"> ${ui.esc(highlight.quote)}</span>` : ""}</p>
+          </div>
+          <div style="display:flex;gap:4px;flex-shrink:0;">
+            <button class="btn small" id="highlight-share-btn" aria-label="複製分享文字">${ui.icon("copy")}</button>
+            <button class="btn ghost small" id="highlight-close-btn" aria-label="關閉">${ui.icon("x")}</button>
+          </div>
         </div>
       </div>`;
   }
@@ -1639,6 +1645,11 @@
     const my = wb.my;
     const myLine = my ? `你的貢獻:${Number(my.damage).toLocaleString()} 傷害(出擊 ${my.hits} 次${wb.myRank ? `,第 ${wb.myRank} 名` : ""})` : "你還沒有出擊過";
     const topLine = wb.top.length ? wb.top.map((r, i) => `${["①", "②", "③"][i]}${ui.esc(r.name)} ${Number(r.damage).toLocaleString()}`).join("　") : "";
+    // 結束後:沒參加或已領完獎勵就整塊收起來(成績靠全服公告);還沒領獎的只留一行精簡版
+    if (finished) {
+      if (!(my && my.hits >= 1 && !my.reward_claimed)) return "";
+      return box(`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:space-between;"><span style="font-size:12.5px;font-weight:700;">${ui.icon("bell-ring", { size: "14px" })}夜市大戰已${defeated ? "打倒" : "結束"}・你造成 ${Number(my.damage).toLocaleString()} 傷害${wb.myRank ? `(第 ${wb.myRank} 名)` : ""}</span><button class="btn small" id="wb-claim-btn">${ui.icon("gift")}領取獎勵</button></div>`);
+    }
     let action = "";
     if (finished) {
       if (my && my.hits >= 1 && !my.reward_claimed) action = `<button class="btn" id="wb-claim-btn">${ui.icon("gift")}領取夜市大戰獎勵</button>`;
@@ -1773,7 +1784,7 @@
 
     html += broadcastTickerHtml();
     html += worldBossHtml(locked);
-    html += highlightCardHtml();
+    if (activeTab !== "tower") html += highlightCardHtml(); // 爬塔分頁的提示卡改放在樓層按鈕下面(見 renderTowerTab)
     html += renderTabsBar();
     html += `<div class="card folder-tab-card" style="margin-top:0;">`;
     if (activeTab === "tower") {

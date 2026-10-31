@@ -22,7 +22,7 @@ window.CareerEvents = (function () {
       desc: "一個戴斗笠的神秘人邀你切磋一下(練習賽，輸了不扣任何東西)" },
     { key: "reclass", icon: "rotate-ccw", name: "轉職邀請", type: "choice", weight: 8,
       desc: "一位老師傅表示可以幫你重新調整已經點過的數值點，但要收點手續費" },
-    { key: "pickpocket", icon: "user-x", name: "扒手出沒", type: "instant", weight: 12,
+    { key: "pickpocket", icon: "user-x", name: "扒手出沒", type: "instant", weight: 5,
       desc: "小心!剛剛好像被摸走了一點錢" },
     { key: "landmine", icon: "bomb", name: "彈珠台機關", type: "instant", weight: 12,
       desc: "不小心誤觸了路邊攤位的機關" },

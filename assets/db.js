@@ -3184,7 +3184,7 @@ const db = (function () {
         return { text: `算命攤幫你加持了 2 點${label}!(這場活動都有效)`, patch: { stat_alloc: alloc } };
       }
       case "pickpocket": {
-        const loss = Math.min(progress.coins, Math.round(progress.coins * (0.1 + Math.random() * 0.1)));
+        const loss = Math.min(progress.coins, Math.round(progress.coins * (0.1 + Math.random() * 0.05)));
         return { text: loss > 0 ? `遇到扒手，被摸走了 ${loss} 幣...` : `扒手看你身上沒什麼錢，放過你了。`, patch: { coins: progress.coins - loss } };
       }
       case "landmine": {
@@ -4064,6 +4064,7 @@ const db = (function () {
       item = window.CareerFloors.pickVariant(table);
     }
     if (!item) throw new Error("找不到這件商品");
+    item = { slot, ...item }; // 修復:商店款式表裡的裝備沒有 slot，沒帶的話穿上去會存進不存在的部位而憑空消失
     const price = window.CareerFloors.equipmentPrice(rarity);
     if (progress.coins < price) throw new Error(`幣不夠，這件要 ${price} 幣`);
     const patch = { coins: progress.coins - price, inventory: _addToInventory(progress.inventory, item) };
@@ -4214,8 +4215,25 @@ const db = (function () {
     return { soldCount: toSell.length, coinsGained: totalCoins, progress: updated[0] };
   }
 
+  // 舊存檔修復:之前商店買的裝備沒有 slot。用主屬性推回部位(def=防具、luck=飾品、其餘=武器)。
+  function _inferSlot(it) {
+    if (!it) return null;
+    if (it.slot) return it.slot;
+    return it.statKey === "def" ? "armor" : it.statKey === "luck" ? "accessory" : "weapon";
+  }
+
   async function equipCareerItem(eventId, playerId, itemId) {
-    const progress = await getOrCreateCareerProgress(eventId, playerId);
+    let progress = await getOrCreateCareerProgress(eventId, playerId);
+    // 舊存檔修復:把已經被穿進 equipment[\"undefined\"] 而消失的裝備救回背包，背包裡缺 slot 的補上 slot
+    const eq0 = progress.equipment || {};
+    if (eq0["undefined"] || (progress.inventory || []).some((it) => it && !it.slot)) {
+      let inv0 = (progress.inventory || []).map((it) => (it && !it.slot ? { ...it, slot: _inferSlot(it) } : it));
+      const lost = eq0["undefined"];
+      const eqFixed = { ...eq0 };
+      delete eqFixed["undefined"];
+      if (lost) inv0 = [...inv0, { ...lost, slot: _inferSlot(lost), id: lost.id || _makeItemId() }];
+      progress = { ...progress, inventory: inv0, equipment: eqFixed };
+    }
     const item = (progress.inventory || []).find((it) => it.id === itemId);
     if (!item) throw new Error("找不到這件裝備，可能已經被用掉了");
     const reqLevel = item.reqLevel != null ? item.reqLevel : window.CareerFloors.RARITY_REQ_LEVEL[item.rarity] || 1;
