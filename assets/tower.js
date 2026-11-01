@@ -622,9 +622,25 @@
   }
 
   // 設定分頁:爬塔相關的設定都放這裡，不佔爬塔首頁的位置。之後有新的爬塔設定，在這裡加一個區塊就好。
+  function renderResetClassSection() {
+    const picked = myBuild && myBuild.final_class !== "novice";
+    const info = picked ? CareerData.CLASS_INFO[myBuild.final_class] : null;
+    const busyNow = !!(progress && (progress.active_boss_battle || progress.auto_farm_floor));
+    const body = picked
+      ? `<div class="shop-row">
+          <div class="shop-row-name">${ui.icon(info.icon)}目前職業:${ui.esc(info.name)}<span class="shop-row-desc">選錯或誤點的話可以退回見習學徒，重新選系/轉職。等級、金幣、裝備、樓層進度都會保留${busyNow ? "(王戰或掛機中不能重選)" : ""}</span></div>
+          <button class="btn ghost small" id="reset-class-btn" ${busyNow ? "disabled" : ""}>${ui.icon("rotate-ccw")}重選職業</button>
+        </div>`
+      : `<div class="empty" style="font-size:11.5px;">${ui.icon("check")}你還沒選系，到了 Lv.${CareerData.TRANSFER_LEVEL_PATH} 就能選;選之前都會先問你確認</div>`;
+    return `
+      <p class="shop-section-title">${ui.icon("user-round-cog")}重選職業</p>
+      ${body}`;
+  }
+
   function renderSettingsTab() {
     return `
       <p class="shop-section-title" style="margin-top:0;">${ui.icon("settings")}爬塔設定</p>
+      ${renderResetClassSection()}
       ${renderRememberedChoices()}`;
   }
 
@@ -886,11 +902,15 @@
     return item.reqLevel != null ? item.reqLevel : CareerFloors.RARITY_REQ_LEVEL[item.rarity] || 1;
   }
 
-  function groupInventory() {
+  // byName=true(背包分頁用):連名字和階級一起分組。Boss 限定傳說、招牌階/塔心階、不同款式的裝備
+  // 同部位同稀有度但名字/數值不一樣，如果只用 slot:rarity 分組會被併成一列，列上顯示的是其中一件的名字，
+  // 「穿上」卻穿到 ids[0] 那一件(可能是另一把武器)。合成分頁只看「部位+稀有度」的件數，維持預設分組。
+  function groupInventory(byName) {
     const groups = {};
     (progress.inventory || []).forEach((item) => {
       // 強化過的裝備自己一組(不跟沒強化的混在一起,穿裝/合成/賣裝才不會拿錯)
-      const key = item.enhance > 0 ? `${item.slot}:${item.rarity}:+${item.enhance}:${item.name}` : `${item.slot}:${item.rarity}`;
+      const base = byName ? `${item.slot}:${item.rarity}:t${item.tier || 1}:${item.name}` : `${item.slot}:${item.rarity}`;
+      const key = item.enhance > 0 ? `${item.slot}:${item.rarity}:+${item.enhance}:${item.name}` : base;
       const reqLevel = _itemReqLevel(item);
       if (!groups[key]) groups[key] = { ...item, count: 0, ids: [], minReq: reqLevel, maxReq: reqLevel };
       groups[key].count += 1;
@@ -1548,7 +1568,7 @@
   // ---------------- 分頁4:背包 ----------------
 
   function renderBackpackTab() {
-    const groups = groupInventory();
+    const groups = groupInventory(true);
     let html = `<p class="shop-section-title">目前裝備</p>`;
     ["weapon", "armor", "accessory"].forEach((slot) => {
       const item = progress.equipment[slot];
@@ -2005,11 +2025,54 @@
       };
     });
 
+    const resetClassBtn = document.getElementById("reset-class-btn");
+    if (resetClassBtn && !resetClassBtn.disabled) {
+      resetClassBtn.onclick = async () => {
+        if (busy) return;
+        busy = true;
+        try {
+          const info = CareerData.CLASS_INFO[myBuild.final_class];
+          const ok = await ui.confirm(
+            `你現在是「${info.name}」。重選後會退回見習學徒:\n` +
+              "・轉職送的數值加成與新手藥水會收回\n" +
+              "・技能點與專精選擇會重置(重新選系時依你的等級一次補發)\n" +
+              "・等級、金幣、裝備、樓層進度不變\n" +
+              "確定要重選嗎?",
+            { title: "重選職業", confirmText: "確定重選", cancelText: "取消", tone: "danger" }
+          );
+          if (!ok) return;
+          resetClassBtn.disabled = true;
+          const result = await db.resetCareerClass(eventId, myId);
+          myBuild = result.build;
+          progress = result.progress;
+          activeTab = "tower";
+          highlight = { icon: "rotate-ccw", title: "已退回見習學徒", text: "可以重新選系了，這次選之前會先問你確認。" };
+          render();
+        } catch (e) {
+          await ui.alert(e.message || "重選職業失敗", { title: "操作失敗", tone: "danger" });
+          render();
+        } finally {
+          busy = false;
+        }
+      };
+    }
+
     app.querySelectorAll("[data-path-pick]").forEach((card) => {
       card.onclick = async () => {
         if (busy) return;
-        busy = true;
         const pathKey = card.dataset.pathPick;
+        const pathDef = CareerData.CAREER_TREE[pathKey];
+        busy = true; // 確認視窗開著的時候先擋住連點
+        const okPath = await ui.confirm(`要選「${pathDef.label}」嗎?`, {
+          title: "確認選系",
+          confirmText: `選${pathDef.label}`,
+          cancelText: "再想想",
+          tone: "question",
+        });
+        if (!okPath) {
+          busy = false;
+          return;
+        }
         app.querySelectorAll("[data-path-pick]").forEach((c) => (c.style.pointerEvents = "none"));
         card.style.opacity = "0.6";
         try {
@@ -2035,10 +2098,20 @@
     app.querySelectorAll(".career-class-card[data-class]").forEach((card) => {
       card.onclick = async () => {
         if (busy) return;
-        busy = true;
         const key = card.dataset.class;
         const pathKey = card.dataset.path;
         const info = CareerData.CLASS_INFO[key];
+        busy = true; // 確認視窗開著的時候先擋住連點
+        const okClass = await ui.confirm(`要轉職成「${info.name}」嗎?`, {
+          title: "確認轉職",
+          confirmText: `轉職${info.name}`,
+          cancelText: "再想想",
+          tone: "question",
+        });
+        if (!okClass) {
+          busy = false;
+          return;
+        }
         app.querySelectorAll(".career-class-card[data-class]").forEach((c) => (c.style.pointerEvents = "none"));
         card.style.opacity = "0.6";
         try {

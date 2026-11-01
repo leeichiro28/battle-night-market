@@ -2285,6 +2285,54 @@ const db = (function () {
     return { build, progress: updatedProgress, bonus };
   }
 
+  // 重選職業(誤點選系/選錯職業的補救):把這場活動的職業退回「見習學徒」，之後到了等級會重新出現選系畫面。
+  // 收回的東西:選系/定案送的數值加成、新手藥水禮包(不足就扣到0)、已花的技能點與專精選擇
+  // (技能點歸零，重新選系時會依當時等級一次補發，所以不會吃虧也不會多拿)。
+  // 不動的東西:等級、經驗、金幣、裝備、背包、遺物、樓層進度、永久被動(career_player_skills)。
+  // 王戰進行中、PVP配對/對戰中不能重選，避免戰鬥中途職業被換掉。
+  async function resetCareerClass(eventId, playerId) {
+    const build = await getCareerBuildFor(eventId, playerId);
+    if (!build || build.final_class === "novice") throw new Error("你還沒選過系，不需要重選");
+    const progress = await getOrCreateCareerProgress(eventId, playerId);
+    if (progress.active_boss_battle) throw new Error("王戰進行中，先打完再重選職業");
+    if (progress.auto_farm_floor) throw new Error("掛機中，先停止掛機再重選職業");
+    const queue = await getMyCareerQueueEntry(eventId, playerId).catch(() => null);
+    if (queue && queue.status === "waiting") throw new Error("正在 PVP 配對佇列中，先離開佇列再重選職業");
+    if (queue && queue.status === "matched") {
+      const m = await getMyActiveCareerMatch(eventId, playerId).catch(() => null);
+      if (m) throw new Error("PVP 對戰進行中，打完再重選職業");
+    }
+
+    const CD = window.CareerData;
+    const alloc = { ...progress.stat_alloc };
+    const revoke = (bonus) => Object.keys(bonus || {}).forEach((k) => (alloc[k] = Math.max(0, (alloc[k] || 0) - bonus[k])));
+    revoke(CD.PATH_TRANSFER_BONUS[build.path]);
+    if (!build.final_class.startsWith("novice_")) revoke(CD.FINAL_TRANSFER_BONUS[build.final_class]);
+    const pack = CD.STARTER_PACK_POTIONS || {};
+    const potions = {
+      hp: Math.max(0, ((progress.potions && progress.potions.hp) || 0) - (pack.hp || 0)),
+      mp: Math.max(0, ((progress.potions && progress.potions.mp) || 0) - (pack.mp || 0)),
+    };
+
+    const newBuild = await saveCareerBuild(eventId, playerId, { path: "novice", finalClass: "novice", skillKeys: [] });
+    const { data: updatedProgress, error } = await client
+      .from("career_progress")
+      .update({
+        stat_alloc: alloc,
+        potions,
+        skill_points: 0,
+        active_skills: { ult_1: 1 }, // 跟資料表預設值一樣
+        equipped_skill_a: null,
+        equipped_skill_b: null,
+        equipped_ult: null,
+      })
+      .eq("id", progress.id)
+      .select()
+      .single();
+    if (error) throw error;
+    return { build: newBuild, progress: updatedProgress };
+  }
+
   async function getCareerBuildFor(eventId, playerId) {
     const { data, error } = await client
       .from("career_builds")
@@ -5317,6 +5365,7 @@ const db = (function () {
     getOrCreateCareerBuild,
     transferCareerPath,
     transferCareerFinalClass,
+    resetCareerClass,
     getMyCareerQueueEntry,
     joinCareerQueue,
     listCareerQueue,
