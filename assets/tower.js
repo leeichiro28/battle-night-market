@@ -1231,13 +1231,15 @@
       const SP = window.CareerSpec;
       const specBranch = SP ? SP.chosenBranch(chosenClass, activeSkills) : null;
       const specSkillNodes = specBranch ? [1, 2].map((i) => CD.SKILL_TREE_NODES[`${chosenClass}_spec_${specBranch}_skill_${i}`]).filter(Boolean) : [];
+      const awakened = !!(specBranch && SP.awakenInfo(chosenClass, specBranch, progress.level).awakened); // 覺醒技能卡放在下面的覺醒區塊,但算進技能池
       let html = group(
-        `主動技能・${specBranch ? 5 : 3}選2自由裝備(這場活動自己的等級，換下一場活動會重新歸零)`,
+        `主動技能・${specBranch ? (awakened ? 6 : 5) : 3}選2自由裝備(這場活動自己的等級，換下一場活動會重新歸零)`,
         "wand-sparkles",
         atkCard + skillNodes.concat(specSkillNodes).map((n) => skillTreeKitCard(n, chosenClass, activeSkills, canSpend, equippedUltId, equippedSkillA, equippedSkillB, true)).join("")
       );
       html += group("大招・2選1自由裝備(免費隨時換裝，但等級一樣是這場活動自己的)", "flame", ultNodes.map((n) => skillTreeKitCard(n, chosenClass, activeSkills, canSpend, equippedUltId, equippedSkillA, equippedSkillB, true)).join(""));
       html += renderSpecSection(chosenClass, activeSkills, canSpend);
+      html += renderAwakenSection(chosenClass, activeSkills, canSpend, equippedUltId, equippedSkillA, equippedSkillB);
       return html;
     }
 
@@ -1255,6 +1257,76 @@
       html += `<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">${ultNodes.map((n) => skillTreeKitCard(n, previewClass, {}, false, `${previewClass}_ult_1`, "skill_1", "skill_2", false)).join("")}</div>`;
     });
     return html;
+  }
+
+  // ---- Lv.75 覺醒(第三轉職,見 career-spec.js、docs 項目 10) ----
+  // 覺醒狀態由等級 + 這場活動選的專精分支推算,不存資料庫。未覺醒回傳 { awakened: false },畫面不套任何顏色。
+  function awakenCtx() {
+    const SP = window.CareerSpec;
+    if (!SP || !myBuild || !progress) return { awakened: false };
+    const br = SP.chosenBranch(myBuild.final_class, _activeSkills());
+    return br ? SP.awakenInfo(myBuild.final_class, br, progress.level) : { awakened: false };
+  }
+  function awakenStyle(info) {
+    return info && info.palette ? `--c1:${info.palette.c1};--c2:${info.palette.c2};--glow:${info.palette.c2}66;` : "";
+  }
+  // 覺醒框:外圈慢速旋轉的漸層邊(減少動態效果時是靜態漸層),內層是原本的卡片底
+  function awakenFrame(info, innerHtml, extraClass) {
+    return `<div class="awk ${extraClass || ""}" style="${awakenStyle(info)}"><div class="in">${innerHtml}</div></div>`;
+  }
+  // 玩家卡左上角的職業標題(所有玩家都是新版型:圖示方塊 + 職業 + 等級徽章;只有覺醒才多出框、星標與進階職業名)
+  function playerTitleHtml(info) {
+    const aw = awakenCtx();
+    const av = `<span class="pc-av">${ui.icon(info.icon, { size: "20px" })}</span>`;
+    if (!aw.awakened) {
+      return `<div class="pc-title">${av}<div><div class="pc-name">${ui.esc(info.name)}</div><div class="pc-sub">Lv.${progress.level}</div></div></div>`;
+    }
+    return awakenFrame(aw, `<div class="pc-title">${av}<div><div class="pc-name">${ui.esc(aw.fullName)} <span class="awk-badge">${ui.icon("star", { size: "11px" })}覺醒</span></div><div class="pc-sub">Lv.${progress.level}</div></div></div>`, "awk-pc");
+  }
+  // 技能分頁的「覺醒」區塊:Lv.75 前灰色鎖定(顯示解鎖等級),覺醒後用覺醒框,技能卡跟其他技能一樣能升級、裝備
+  function renderAwakenSection(cls, activeSkills, canSpend, equippedUltId, equippedSkillA, equippedSkillB) {
+    const SP = window.CareerSpec;
+    if (!SP || !SP.AWAKEN[cls]) return "";
+    const lvl = progress.level || 1;
+    const br = SP.chosenBranch(cls, activeSkills);
+    const head = `<p style="text-align:center;margin:20px 0 4px;font-size:12px;font-weight:700;color:var(--ink-dim);">${ui.icon("star", { size: "13px" })}覺醒(第三轉職)・Lv.${SP.AWAKEN_LEVEL} 自動覺醒</p>`;
+    if (!br) {
+      return head + `<p style="text-align:center;margin:0 0 10px;font-size:11px;color:var(--ink-dim);line-height:1.7;">覺醒會接在你選的專精分支上。先選一條專精分支，角色到 Lv.${SP.AWAKEN_LEVEL} 就會自動覺醒，拿到進階職業名、第 3 個專精技能與覺醒大招。</p>`;
+    }
+    const info = SP.awakenInfo(cls, br, lvl);
+    const aw = SP.AWAKEN[cls][br];
+    if (!info.awakened) {
+      return head + `<div class="card-lite awk-locked"><div class="sk-row lock"><span class="sk-ic">${ui.icon("star", { size: "17px" })}</span><div><b>${ui.esc(aw.skill.name)}</b><small>覺醒技能，角色 Lv.${SP.AWAKEN_LEVEL} 解鎖(你現在 Lv.${lvl})</small></div><span class="sk-pill">Lv.${SP.AWAKEN_LEVEL}</span></div><p style="margin:8px 0 0;font-size:11px;color:var(--ink-dim);">到 Lv.${SP.AWAKEN_LEVEL} 會自動成為「${ui.esc(aw.title)}・${ui.esc(CareerData.CLASS_INFO[cls].name)}」。</p></div>`;
+    }
+    const node = CareerData.SKILL_TREE_NODES[`${cls}_spec_${br}_skill_3`];
+    const card = node ? skillTreeKitCard(node, cls, activeSkills, canSpend, equippedUltId, equippedSkillA, equippedSkillB, true) : "";
+    return head + awakenFrame(info, `<div style="text-align:center;margin-bottom:8px;"><span class="awk-badge">${ui.icon("star", { size: "11px" })}${ui.esc(info.fullName)}</span></div><div style="display:flex;justify-content:center;">${card}</div><p style="margin:8px 0 0;font-size:11px;color:var(--ink-dim);text-align:center;line-height:1.7;">覺醒技能花 1 點解鎖、可升到 Lv.${CareerData.MAX_SKILL_LEVEL}，進技能池跟其他技能一起挑 2 個裝備。</p>`, "awk-sec");
+  }
+  // 第一次升到 Lv.75(且已選專精分支)彈出一次的覺醒演出;看過的記在 localStorage(每場活動每個玩家一次)
+  function maybeShowAwakenPopup() {
+    const aw = awakenCtx();
+    if (!aw.awakened || document.getElementById("awaken-pop")) return;
+    const key = `awaken_seen:${eventId}:${myId}`;
+    try { if (localStorage.getItem(key)) return; } catch (e) { return; } // 讀不到儲存空間就不彈,免得每次重畫都彈
+    const SP = window.CareerSpec;
+    const ov = document.createElement("div");
+    ov.id = "awaken-pop";
+    ov.className = "awk-overlay";
+    ov.setAttribute("role", "dialog");
+    ov.setAttribute("aria-modal", "true");
+    ov.setAttribute("aria-label", "覺醒");
+    ov.innerHTML = `<div class="awk awk-pop" style="${awakenStyle(aw)}"><div class="in">
+      <div class="awk-tt">覺 醒</div>
+      <h3>${ui.esc(aw.title)}</h3>
+      <div class="pc-sub">${ui.esc(CareerData.CLASS_INFO[myBuild.final_class].name)} 已進階</div>
+      <ul><li>${ui.icon("star", { size: "13px" })}新技能：${ui.esc(aw.skill.name)}(技能分頁花 1 點學習)</li><li>${ui.icon("star", { size: "13px" })}名字旁出現覺醒框</li></ul>
+      <button class="btn" type="button" id="awaken-pop-ok">知道了</button></div></div>`;
+    document.body.appendChild(ov);
+    const close = () => { try { localStorage.setItem(key, "1"); } catch (e) {} ov.remove(); };
+    const ok = ov.querySelector("#awaken-pop-ok");
+    ok.onclick = close;
+    ov.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+    ok.focus();
   }
 
   // 專精(第二轉職):Lv.50 兩條分支擇一(花 1 技能點,這場活動選了就不能改,下一場重選),Lv.100 自動升階。
@@ -1769,9 +1841,7 @@
 
     html += `
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
-        <div style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;">
-          ${ui.icon(info.icon)}${ui.esc(info.name)} Lv.${progress.level}
-        </div>
+        ${playerTitleHtml(info)}
         <div style="display:flex;gap:16px;align-items:center;font-size:13px;">
           <span style="color:var(--ink-dim);">${ui.esc(CareerFloors.TOWER_NAME || "")}・第 ${progress.floor} 層</span>
           <span style="color:var(--gold);font-weight:700;display:inline-flex;align-items:center;gap:4px;">${ui.icon("coins")}${progress.coins}</span>
@@ -1839,6 +1909,7 @@
     lastRenderedHtml = html;
     app.innerHTML = html;
     bindHandlers();
+    maybeShowAwakenPopup();
   }
 
   function flushPendingRender() {

@@ -172,6 +172,7 @@ function winrate() {
 //   爬塔:對各樓層的勝率;互打:18 個參賽者(6 基準 + 12 專精)兩兩對打,看平均勝率。
 // 已知限制:雙方都用 PVE.decideAction(大招點滿就放、有魔力 50% 機率放技能),不會依局勢選招,
 // 所以「一回合定生死」型的招(處決)與「持續型」的招(中毒)比真人實際表現保守。
+let AWK = false; // 覺醒開關(awaken 指令用)
 function specSide(classKey, stats, branch, charLevel, slv) {
   const side = sideFor(classKey, stats);
   side.skillLevel = slv; side.skill2Level = slv;
@@ -183,6 +184,8 @@ function specSide(classKey, stats, branch, charLevel, slv) {
     side.spec = SP.resolvePassive(classKey, branch, charLevel);
     side.skillEffectA = SP.resolveSkill(classKey, `spec_${branch}_skill_1`, slv, charLevel);
     side.skillEffectB = SP.resolveSkill(classKey, `spec_${branch}_skill_2`, slv, charLevel);
+    // --awaken:Lv.75 覺醒,用覺醒技能(第 3 個專精技能)換掉第 2 個專精技能(假設玩家會裝備最強的兩個)
+    if (AWK && charLevel >= SP.AWAKEN_LEVEL) side.skillEffectB = SP.resolveSkill(classKey, `spec_${branch}_skill_3`, slv, charLevel);
   }
   return side;
 }
@@ -419,4 +422,38 @@ function worldboss() {
     console.log(("Lv." + L).padEnd(8) + cells + String(Math.round(tot / CF.CLASS_KEYS.length)).padStart(11) + String((totRounds / CF.CLASS_KEYS.length).toFixed(1)).padStart(10));
   });
 }
-({ leveling, winrate, spec, classes, towers, calibrate, affixes, worldboss })[cmd]();
+// ---------- 覺醒平衡(Lv.75) ----------
+//   node tools/sim.js awaken [--n 60] [--floors 80,90,100]
+// 爬塔:同一批玩家(統一配點+該階史詩裝備,技能 Lv.5)覺醒前後打各樓層的勝率差;
+// 互打:覺醒 vs 沒覺醒(同職業同分支同等級)的勝率。目標:覺醒明顯變強但不碾壓(爬塔 +5~15 個百分點、互打 55%~65%)。
+function awaken() {
+  GEAR = 0;
+  const N = opt("n", 60), floors = (args[args.indexOf("--floors") + 1] || "75,80,90,100").split(",").map(Number);
+  console.log(`覺醒平衡(含專精平均;每格 ${N} 場 × 6 職業 × 2 分支;覺醒 = 覺醒技能取代第 2 專精技能)\n`);
+  console.log("樓層".padEnd(8) + "等級".padStart(6) + "覺醒前".padStart(9) + "覺醒後".padStart(9) + "差".padStart(7) + "   各職業(覺醒後 / 差)");
+  floors.forEach((f) => {
+    const fd = CF.getFloor(f), L = Math.max(SP.AWAKEN_LEVEL, recLevel(f));
+    AWK = false; const r0 = towerRates(f, fd.stats, N, L);
+    AWK = true; const r1 = towerRates(f, fd.stats, N, L);
+    console.log(String(f).padEnd(8) + String(L).padStart(6) + (Math.round(r0.spec * 100) + "%").padStart(9) + (Math.round(r1.spec * 100) + "%").padStart(9) + ((r1.spec - r0.spec >= 0 ? "+" : "") + Math.round((r1.spec - r0.spec) * 100)).padStart(7) + "   " +
+      CF.CLASS_KEYS.map((c) => CD.CLASS_INFO[c].name + " " + Math.round(r1.perClass[c].spec * 100) + "/" + ((r1.perClass[c].spec - r0.perClass[c].spec >= 0 ? "+" : "") + Math.round((r1.perClass[c].spec - r0.perClass[c].spec) * 100))).join("  "));
+  });
+  console.log("\n互打(覺醒 vs 沒覺醒,同職業同分支,Lv.75 與 Lv.100):");
+  [75, 100].forEach((L) => {
+    const per = {};
+    CF.CLASS_KEYS.forEach((c, ci) => {
+      ["a", "b"].forEach((br) => {
+        const st = { ...buildStats(c, L, "new") };
+        seed(901 + ci * 7 + L);
+        AWK = true; const sa = specSide(c, { ...st }, br, L, 5);
+        AWK = false; const sb = specSide(c, { ...st }, br, L, 5);
+        const w1 = pvp(sa, sb, Math.floor(N / 2)), w2 = 1 - pvp(sb, sa, Math.ceil(N / 2));
+        per[c + br] = (w1 * Math.floor(N / 2) + w2 * Math.ceil(N / 2)) / N;
+      });
+    });
+    const avg = Object.values(per).reduce((a, b) => a + b, 0) / Object.values(per).length;
+    console.log(`  Lv.${L}:覺醒方平均勝率 ${Math.round(avg * 100)}%  ` + Object.keys(per).map((k) => k + " " + Math.round(per[k] * 100)).join(" "));
+  });
+  AWK = false;
+}
+({ leveling, winrate, spec, classes, towers, calibrate, affixes, worldboss, awaken })[cmd]();

@@ -26,3 +26,25 @@ let all = true; Object.keys(sb.CareerSpec.SPECS).forEach((c) => { [49, 50, 100].
 ok(all, "6 個職業 × 3 種等級都能正常產生畫面,且列出技能名稱");
 ok(ctx.f("novice", {}, true) === "", "見習(沒有專精的職業)不顯示專精區塊");
 console.log("\n--- Lv.50 戰士畫面文字 ---\n" + strip((ctx.progress.level = 50, ctx.f("warrior", {}, true))));
+
+// ---- 階段 2:覺醒區塊、玩家卡、覺醒框 ----
+console.log("\n--- 覺醒 UI ---");
+const ctx2 = { window: sb, CareerSpec: sb.CareerSpec, CareerData: sb.CareerData, ui, console, progress: { level: 74 }, myBuild: { final_class: "warrior" }, act: {},
+  _activeSkills: () => ctx2.act, skillTreeKitCard: (n) => `<card ${n.id}>`, eventId: "e", myId: "p" };
+vm.createContext(ctx2);
+vm.runInContext(["awakenCtx", "awakenStyle", "awakenFrame", "playerTitleHtml", "renderAwakenSection"].map(extract).join("\n") + "\nthis.t=playerTitleHtml;this.sec=renderAwakenSection;this.ctx=awakenCtx;", ctx2);
+const info = sb.CareerData.CLASS_INFO.warrior;
+ctx2.act = {}; h = ctx2.t(info);
+ok(!h.includes("awk") && h.includes("Lv.74"), "未選分支:新版型玩家卡,沒有覺醒框");
+ctx2.act = { spec_b: 1 }; h = ctx2.t(info);
+ok(!h.includes("awk") && !h.includes("覺醒"), "Lv.74 已選分支:還沒覺醒,沒有框、沒有星標");
+h = ctx2.sec("warrior", { spec_b: 1 }, true, "warrior_ult_1", "skill_1", "skill_2");
+ok(h.includes("修羅血祭") && h.includes("Lv.75") && !h.includes("<card"), "Lv.74:覺醒區塊灰色鎖定,顯示技能名與解鎖等級");
+ok(ctx2.sec("warrior", {}, true, "u", "a", "b").includes("先選一條專精分支"), "沒選分支:說明要先選分支");
+ctx2.progress.level = 75; ctx2.act = { spec_b: 1 }; h = ctx2.t(info);
+ok(h.includes("awk") && h.includes("修羅・戰士") && h.includes("--c1:#f2c14e") && h.includes("#e0533d"), "Lv.75 狂戰戰士:覺醒框 + 修羅・戰士 + 赤金配色");
+h = ctx2.sec("warrior", { spec_b: 1 }, true, "u", "a", "b");
+ok(h.includes("awk") && h.includes("<card warrior_spec_b_skill_3>"), "Lv.75:覺醒區塊用覺醒框並放出覺醒技能卡");
+const pal = { warrior: "#e0533d", archer: "#1fb5a3", mage: "#9a5cf0" };
+let palOk = true; Object.keys(pal).forEach((c) => { ctx2.myBuild = { final_class: c }; ctx2.act = { spec_a: 1 }; if (!ctx2.t(sb.CareerData.CLASS_INFO[c]).includes(pal[c])) palOk = false; });
+ok(palOk, "三個系配色:力量赤金、敏捷青金、魔法金紫");

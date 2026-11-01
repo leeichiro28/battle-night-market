@@ -2767,7 +2767,7 @@ const db = (function () {
     const cls = build.final_class;
     const nodeId = `${cls}_${nodeSuffix}`;
     const node = window.CareerData.SKILL_TREE_NODES[nodeId];
-    const isSpecSkill = /^spec_(a|b)_skill_(1|2)$/.test(nodeSuffix); // 專精技能:節點掛在分支底下,不是直接掛在職業底下
+    const isSpecSkill = /^spec_(a|b)_skill_(1|2|3)$/.test(nodeSuffix); // _3 = Lv.75 覺醒技能 // 專精技能:節點掛在分支底下,不是直接掛在職業底下
     const belongsToClass = node && (node.requires === `class_${cls}` || (isSpecSkill && node.requires === `${cls}_spec_${nodeSuffix[5]}`));
     if (!node || node.type !== "active_skill" || !belongsToClass) throw new Error("這不是你目前職業可以裝備的技能");
     const progress = await getOrCreateCareerProgress(eventId, playerId);
@@ -2938,7 +2938,7 @@ const db = (function () {
   // nodeSuffix 是節點後綴，例如 "skill_3"、"ult_2"(不是完整節點id，也不是裝備欄位a/b)。
   async function upgradeActiveSkill(eventId, playerId, nodeSuffix) {
     // 專精(第二轉職,見 career-spec.js):spec_a/spec_b = 選分支(等級只有 0/1),spec_a_skill_1 ... = 分支底下的專精技能
-    const specMatch = /^spec_(a|b)(_skill_(1|2))?$/.exec(nodeSuffix);
+    const specMatch = /^spec_(a|b)(_skill_(1|2|3))?$/.exec(nodeSuffix);
     if (!specMatch && !["skill_1", "skill_2", "skill_3", "ult_1", "ult_2"].includes(nodeSuffix)) throw new Error("不認識的技能欄位");
     const progress = await getOrCreateCareerProgress(eventId, playerId);
     if (progress.skill_points <= 0) throw new Error("沒有可以花的技能點了");
@@ -2960,6 +2960,7 @@ const db = (function () {
       } else if (!(activeSkills[`spec_${branch}`] > 0)) {
         throw new Error("要先選擇這條專精分支，才能學它的技能");
       }
+      if (!isBranch && specMatch[3] === "3" && (progress.level || 1) < SP.AWAKEN_LEVEL) throw new Error(`覺醒技能要角色 Lv.${SP.AWAKEN_LEVEL} 才能學(你現在 Lv.${progress.level || 1})`);
     }
     if (curLevel >= maxLevel) throw new Error("這個技能/大招已經是目前開放的最高等級了");
     // 解鎖(Lv.0→1)與 Lv.2~3 不限制;升到 Lv.4、Lv.5 要角色等級夠高

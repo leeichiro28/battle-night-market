@@ -28,6 +28,7 @@ window.CareerSpec = (function () {
   const SPEC_LEVEL = 50; // 選分支需要的角色等級
   const SPEC_UPGRADE_LEVEL = 100; // 升階需要的角色等級
   const UPGRADE_SKILL_MULT = 0.05; // 升階後專精技能的傷害倍率加成
+  const AWAKEN_LEVEL = 75; // 覺醒(第三轉職)需要的角色等級,設計見 docs/bug-optimization-requirements.md「項目 10」
 
   const SPECS = {
     warrior: {
@@ -140,6 +141,43 @@ window.CareerSpec = (function () {
     },
   };
 
+  // ---- Lv.75 覺醒(2026-11-01):在 Lv.50 選的分支上自動覺醒,不再二選一 ----
+  // 給:進階職業名稱(title)、第 3 個專精技能(skill,花 1 技能點,可升到 Lv.5,進技能池)。
+  // 覺醒大招(階段 3)之後補在這裡的 ult 欄位。技能效果只用現有引擎欄位,不新增機制;數字是草案【待模擬確認】。
+  // Lv.100 升階的 +0.05 傷害倍率只加在原本兩個專精技能,覺醒技能不重複加成。
+  const AWAKEN = {
+    warrior: {
+      a: { title: "破軍", skill: { name: "裂地破陣", icon: "axe", desc: "傷害極高，無視對方 50% 防禦，魔力花費 6", effect: { mult: 1.6, ignoreDef: 0.5, manaCost: 6 } } },
+      b: { title: "修羅", skill: { name: "修羅血祭", icon: "flame", desc: "自己損失的 HP 越多傷害越高(最多再 +60%)，並回復傷害的 10%", effect: { mult: 1.5, missingHpBonusMax: 0.6, lifesteal: 0.1 } } },
+    },
+    guardian: {
+      a: { title: "磐石", skill: { name: "不動如山", icon: "shield", desc: "這回合受到的傷害 -35%，並回復自己最大 HP 的 6%", effect: { mult: 1.2, selfReduce: 0.35, healMaxHp: 0.06 } } },
+      b: { title: "震嶽", skill: { name: "山崩反震", icon: "zap", desc: "這回合反彈傷害額外 +25%、反擊機率 +15%", effect: { mult: 1.5, reflectBonus: 0.25, counterBonus: 0.15 } } },
+    },
+    archer: {
+      a: { title: "流星", skill: { name: "流星驟雨", icon: "target", desc: "連續射 4 下，每下較輕", effect: { mult: 0.4, hits: 4 } } },
+      b: { title: "天眼", skill: { name: "天眼一擊", icon: "eye", desc: "這招暴擊率 +30%，對方 HP 一半以下必定暴擊", effect: { mult: 1.6, extraCrit: 0.3, forceCritBelow: 0.5 } } },
+    },
+    assassin: {
+      a: { title: "無聲", skill: { name: "無聲絕斬", icon: "moon", desc: "對方 HP 50% 以下，傷害大增", effect: { mult: 1.6, lowHp: { below: 0.5, mult: 2.8 } } } },
+      b: { title: "蝕心", skill: { name: "蝕心劇毒", icon: "skull", desc: "中毒 5 回合(每回合 攻擊力 ×0.3)，並降低對方防禦 20%、持續 2 回合", effect: { mult: 1.0, poison: { rounds: 5, atkRatio: 0.3 }, debuff: { stat: "def", ratio: 0.2, rounds: 2 } } } },
+    },
+    mage: {
+      a: { title: "焚天", skill: { name: "焚天烈焰", icon: "flame", desc: "傷害極高，無視對方 20% 防禦，魔力花費 7", effect: { mult: 1.9, ignoreDef: 0.2, manaCost: 7 } } },
+      b: { title: "雷樞", skill: { name: "雷樞風暴", icon: "zap", desc: "連續 4 下，每下命中回復 1 點魔力", effect: { mult: 0.5, hits: 4, manaPerHit: 1 } } },
+    },
+    healer: {
+      a: { title: "不夜", skill: { name: "不夜長明", icon: "sun", desc: "回復自己最大 HP 的 10%，這回合受到的傷害 -20%", effect: { mult: 1.1, healMaxHp: 0.1, selfReduce: 0.2 } } },
+      b: { title: "陰燭", skill: { name: "燭影纏身", icon: "eye", desc: "對方攻擊力 -30%，持續 3 回合", effect: { mult: 1.0, debuff: { stat: "atk", ratio: 0.3, rounds: 3 } } } },
+    },
+  };
+  // 覺醒框配色:三個系各用一組(金色 + 系的主色)。只有覺醒的玩家才有框,未覺醒不套任何顏色。
+  const AWAKEN_PALETTES = {
+    strength: { name: "赤金", c1: "#f2c14e", c2: "#e0533d" }, // 力量系:戰士、守衛
+    agility: { name: "青金", c1: "#f2c14e", c2: "#1fb5a3" }, // 敏捷系:弓箭手、刺客
+    magic: { name: "金紫", c1: "#e8b84a", c2: "#9a5cf0" }, // 魔法系:法師、巫醫
+  };
+
   // ---- 把專精節點登錄進技能樹(跟既有 SKILL_TREE_NODES 同一份資料) ----
   // 分支節點 type = "spec_branch"(跟 Lv.5 選系、Lv.15 選職業的 "branch" 分開,舊畫面不會誤把它當成一般分支);
   // exclusiveWith = 互斥的另一條,買了其中一條就不能買另一條。
@@ -152,6 +190,14 @@ window.CareerSpec = (function () {
         id: branchId, type: "spec_branch", requires: `class_${classKey}`, unlockCharLevel: SPEC_LEVEL, cost: 1, maxLevel: 1,
         name: sp.name, icon: sp.icon, exclusiveWith: `${classKey}_spec_${other}`, effect: { desc: sp.desc, specKey: br },
       };
+      const aw = AWAKEN[classKey] && AWAKEN[classKey][br];
+      if (aw) { // 覺醒技能 = 這條分支的第 3 個專精技能,Lv.75 才能學
+        const id = `${branchId}_skill_3`;
+        CD.SKILL_TREE_NODES[id] = {
+          id, type: "active_skill", requires: branchId, unlockCharLevel: AWAKEN_LEVEL, cost: 1, maxLevel: CD.MAX_SKILL_LEVEL,
+          name: aw.skill.name, icon: aw.skill.icon, effect: { desc: aw.skill.desc, manaCost: aw.skill.effect.manaCost || CD.SKILL_MANA_COST, specSkill: true, awakening: true },
+        };
+      }
       sp.skills.forEach((sk, i) => {
         const id = `${branchId}_skill_${i + 1}`;
         CD.SKILL_TREE_NODES[id] = {
@@ -180,13 +226,15 @@ window.CareerSpec = (function () {
   // 專精技能的實際效果:傷害倍率照技能等級成長(用現有 skillDmgMult 的比例),Lv.100 升階再 +0.1。
   // suffix 例如 "spec_a_skill_1";level = 這個技能目前等級(1~5)。找不到回傳 null。
   function resolveSkill(classKey, suffix, level, charLevel) {
-    const m = /^spec_(a|b)_skill_(1|2)$/.exec(suffix || "");
+    const m = /^spec_(a|b)_skill_(1|2|3)$/.exec(suffix || "");
     if (!m || !SPECS[classKey]) return null;
-    const sk = SPECS[classKey][m[1]].skills[Number(m[2]) - 1];
+    const isAwaken = m[2] === "3"; // 覺醒技能:沒到 Lv.75 不能用;Lv.100 升階的倍率加成不重複加
+    if (isAwaken && (charLevel || 0) < AWAKEN_LEVEL) return null;
+    const sk = isAwaken ? (AWAKEN[classKey] && AWAKEN[classKey][m[1]] && AWAKEN[classKey][m[1]].skill) : SPECS[classKey][m[1]].skills[Number(m[2]) - 1];
     if (!sk) return null;
     const lv = Math.max(1, Math.min(CD.MAX_SKILL_LEVEL, level || 1));
     const scale = CD.skillDmgMult(lv) / CD.skillDmgMult(1);
-    const bonus = (charLevel || 0) >= SPEC_UPGRADE_LEVEL ? UPGRADE_SKILL_MULT : 0;
+    const bonus = !isAwaken && (charLevel || 0) >= SPEC_UPGRADE_LEVEL ? UPGRADE_SKILL_MULT : 0;
     const e = JSON.parse(JSON.stringify(sk.effect));
     const r2 = (n) => Math.round(n * 100) / 100;
     e.mult = r2(e.mult * scale + bonus);
@@ -199,6 +247,17 @@ window.CareerSpec = (function () {
   function getBranches(classKey) {
     return SPECS[classKey] || null;
   }
+  // 覺醒狀態:Lv.75 以上且已選分支才算覺醒。沒選分支(或見習系列)回傳 { awakened: false }。
+  // 回傳的 palette 只有覺醒才有,畫面上「覺醒框」的顏色只看這個,未覺醒不套顏色。
+  function awakenInfo(classKey, branch, charLevel) {
+    const aw = AWAKEN[classKey] && AWAKEN[classKey][branch];
+    const info = CD.CLASS_INFO[classKey];
+    if (!aw || !info || (charLevel || 0) < AWAKEN_LEVEL) return { awakened: false };
+    return {
+      awakened: true, branch, title: aw.title, fullName: `${aw.title}・${info.name}`, skill: aw.skill,
+      pathKey: info.path, palette: AWAKEN_PALETTES[info.path],
+    };
+  }
 
-  return { SPECS, SPEC_LEVEL, SPEC_UPGRADE_LEVEL, UPGRADE_SKILL_MULT, chosenBranch, resolvePassive, resolveSkill, getBranches };
+  return { SPECS, SPEC_LEVEL, SPEC_UPGRADE_LEVEL, UPGRADE_SKILL_MULT, AWAKEN_LEVEL, AWAKEN, AWAKEN_PALETTES, chosenBranch, resolvePassive, resolveSkill, getBranches, awakenInfo };
 })();
