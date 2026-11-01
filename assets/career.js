@@ -196,7 +196,7 @@
         return `
           <div class="lb-row${isMe ? " me" : ""}">
             ${ui.rankBadge(rank)}
-            <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}${titleLine}${rewardLine}${ui.bountyTag(row.queueEntry.win_streak)}
+            <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}${titleLine}${ui.awakenBadge(row.summary && row.summary.awaken)}${rewardLine}${ui.bountyTag(row.queueEntry.win_streak)}
               <span style="color:var(--ink-dim);font-size:11px;"> · 第${row.floor}層 · ${row.queueEntry.wins}勝${row.queueEntry.losses}敗</span>
             </span>
             <span class="lb-score">${row.score}</span>
@@ -295,7 +295,8 @@
     const activeSkills = (progress && progress.active_skills) || { ult1: 1 };
     const equippedUltId = progress && progress.equipped_ult;
     const ultLevel = equippedUltId && equippedUltId.endsWith("_ult_2") ? activeSkills.ult2 || 0 : activeSkills.ult1 || 1;
-    const equippedUltInfo = CareerData.resolveUltInfo(myBuild.final_class, equippedUltId, ultLevel);
+    const awakenSel = window.CareerSpec && /_spec_(a|b)_ult$/.test(equippedUltId || "") ? window.CareerSpec.ultSelection(myBuild.final_class, equippedUltId, activeSkills, progress && progress.level) : null; // 覺醒大招
+    const equippedUltInfo = awakenSel ? CareerData.resolveUltInfo(myBuild.final_class, awakenSel.id, awakenSel.level) : CareerData.resolveUltInfo(myBuild.final_class, equippedUltId, ultLevel);
     const isNovice = myBuild.final_class === "novice" || myBuild.final_class.startsWith("novice_");
     const queueEntry = await db.getMyCareerQueueEntry(eventId, myId);
     const inQueue = queueEntry && queueEntry.status === "waiting";
@@ -398,7 +399,7 @@
                     return `
                       <div class="lb-row${isMe ? " me" : ""}">
                         ${ui.rankBadge(idx + 1)}
-                        <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}${ui.titleBadge(row.displayTitle)}${ui.bountyTag(row.queueEntry.win_streak)}
+                        <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}${ui.titleBadge(row.displayTitle)}${ui.awakenBadge(row.summary && row.summary.awaken)}${ui.bountyTag(row.queueEntry.win_streak)}
                           <span style="color:var(--ink-dim);font-size:11px;"> · ${summaryText}</span>
                         </span>
                       </div>`;
@@ -659,7 +660,7 @@
         const gapText = isMe && idx > 0 ? `<span style="color:var(--gold);font-size:11px;"> · 距第1名還差${topScore - row.score}分</span>` : "";
         return `<div class="lb-row${isMe ? " me" : ""}">
           ${ui.rankBadge(idx + 1)}
-          <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}${ui.titleBadge(row.displayTitle)}${ui.bountyTag(row.queueEntry.win_streak)}
+          <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}${ui.titleBadge(row.displayTitle)}${ui.awakenBadge(row.summary && row.summary.awaken)}${ui.bountyTag(row.queueEntry.win_streak)}
             <span style="color:var(--ink-dim);font-size:11px;"> · 第${row.floor}層 · ${row.queueEntry.wins}勝${row.queueEntry.losses}敗${summaryText}</span>${gapText}
           </span>
           <span class="lb-score">${row.score}</span>
@@ -744,6 +745,11 @@
     const myUltName = (mySlot === 1 ? s.ultName1 : s.ultName2) || null; // Phase 4:大招可能被換成大招2，優先用state裡實際裝備的名字
     const myInfo = CareerData.CLASS_INFO[myClass];
     const oppInfo = CareerData.CLASS_INFO[oppClass];
+    const myAwaken = mySlot === 1 ? s.awaken1 : s.awaken2; // 覺醒才有(db.js 配對時寫入),沒有就維持中性
+    const oppAwaken = mySlot === 1 ? s.awaken2 : s.awaken1;
+    // PVP 名牌:覺醒者外面包金紫(三系各色)靜態漸層框,職業名改成「破軍・戰士」;對戰畫面每回合重畫,所以不用旋轉動畫
+    const sideWrap = (aw, inner) => aw ? `<div class="awk awk-static awk-side" style="--c1:${ui.esc(aw.c1)};--c2:${ui.esc(aw.c2)};--glow:${ui.esc(aw.c2)}66;"><div class="in">${inner}</div></div>` : inner;
+    const clsLabel = (info, aw) => aw ? `${ui.esc(aw.title)}・${ui.esc(info.name)}` : ui.esc(info.name);
     const isDone = match.status === "done";
     const iWon = isDone && match.winner_id === myId;
 
@@ -769,8 +775,8 @@
     html += `
       <div class="career-vs-row">
         <div class="career-side">
-          <div class="cs-name">${ui.icon(myInfo.icon)}${ui.esc(myName || "你")}</div>
-          <div class="cs-sub">${ui.esc(myInfo.name)} · 速度 ${mySpd}</div>
+          ${sideWrap(myAwaken, `<div class="cs-name">${ui.icon(myInfo.icon)}${ui.esc(myName || "你")}${ui.awakenBadge(myAwaken)}</div>
+          <div class="cs-sub">${clsLabel(myInfo, myAwaken)} · 速度 ${mySpd}</div>`)}
           ${statusHtml(mySlot)}
           ${statBarHtml("HP", myHp, myMaxHp, "hp")}
           ${statBarHtml("MP", myMp, myMaxMp, "mp")}
@@ -779,8 +785,8 @@
         </div>
         <div class="career-vs-mid">VS</div>
         <div class="career-side right">
-          <div class="cs-name">${ui.esc(oppName || "對手")}${ui.icon(oppInfo.icon)}</div>
-          <div class="cs-sub">${ui.esc(oppInfo.name)} · 速度 ${oppSpd}</div>
+          ${sideWrap(oppAwaken, `<div class="cs-name">${ui.awakenBadge(oppAwaken)}${ui.esc(oppName || "對手")}${ui.icon(oppInfo.icon)}</div>
+          <div class="cs-sub">${clsLabel(oppInfo, oppAwaken)} · 速度 ${oppSpd}</div>`)}
           ${statusHtml(mySlot === 1 ? 2 : 1)}
           ${statBarHtml("HP", oppHp, oppMaxHp, "hp")}
           ${statBarHtml("MP", oppMp, oppMaxMp, "mp")}

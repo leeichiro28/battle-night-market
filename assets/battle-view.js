@@ -264,11 +264,11 @@ window.BattleView = (function () {
       // 沒有職業系統(例如五手勢對戰)時整個隱藏，不要留一格空白佔位
       if (p1Icon) {
         p1Icon.style.display = c1 ? "flex" : "none";
-        p1Icon.innerHTML = c1 ? ui.icon(c1.icon) + c1.name : "";
+        p1Icon.innerHTML = c1 ? ui.icon(c1.icon) + (state.awaken1 ? ui.esc(state.awaken1.title) + "・" : "") + c1.name + ui.awakenBadge(state.awaken1) : "";
       }
       if (p2Icon) {
         p2Icon.style.display = c2 ? "flex" : "none";
-        p2Icon.innerHTML = c2 ? ui.icon(c2.icon) + c2.name : "";
+        p2Icon.innerHTML = c2 ? ui.icon(c2.icon) + (state.awaken2 ? ui.esc(state.awaken2.title) + "・" : "") + c2.name + ui.awakenBadge(state.awaken2) : "";
       }
 
       const fieldTag = $("field-mod-tag");

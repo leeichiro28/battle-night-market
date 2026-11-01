@@ -197,6 +197,7 @@ window.CareerEngine = (function () {
         dmgMult = 1;
         forceCrit = typeof hpRatio === "number" && hpRatio <= 0.5; // 對方HP過半以下必定爆擊
       }
+      if (ultEffect && ultEffect.forceCrit) forceCrit = true; // 覺醒大招(天眼「千里一擊」):這一擊必爆
     } else if (isSkill && skillEff) {
       // 專精技能:倍率已經依技能等級算好(career-spec.js resolveSkill),這裡處理附帶效果
       dmgMult = skillEff.mult || 1;
@@ -392,6 +393,11 @@ window.CareerEngine = (function () {
           if (willSkip) skip2 = true;
         }
         events.push({ side, type: "ult_heal", text: `${side === 1 ? "你" : "對方"}使出「${ultName}」,回復了 ${heal} 點 HP!` });
+        if (ultEffect.cleanse) { // 覺醒大招(不夜「不夜之光」):清除自己身上的中毒與減益
+          if (side === 1) { poisonNew1 = null; debuffsNew1.length = 0; }
+          else { poisonNew2 = null; debuffsNew2.length = 0; }
+          events.push({ side, type: "cleanse", text: `${side === 1 ? "你" : "對方"}身上的異常狀態被清除了!` });
+        }
       }
     }
     handleNonAttackUlt(1);
@@ -412,6 +418,13 @@ window.CareerEngine = (function () {
         roundReflectBonus[side] += eff.reflectBonus || 0;
         roundCounterBonus[side] += eff.counterBonus || 0;
       });
+    });
+    // 覺醒大招(震嶽「山河反照」):免疫型大招可以附帶這回合的反彈／反擊加成
+    [1, 2].forEach((side) => {
+      const ue = side === 1 ? s.ultEffect1 : s.ultEffect2;
+      if (!(side === 1 ? ultUsed1 : ultUsed2) || !ue || ue.kind !== "immune") return;
+      roundReflectBonus[side] += ue.reflectBonus || 0;
+      roundCounterBonus[side] += ue.counterBonus || 0;
     });
 
     // ---- 先攻順序:速度高的先手,同速 50/50 隨機決定(不是固定某一方永遠先手)
@@ -562,24 +575,27 @@ window.CareerEngine = (function () {
           events.push({ side, type: "skill_heal", dmg: healed, text: `${side === 1 ? "你" : "對方"}回復了 ${healed} 點HP!` });
         }
       }
-      if (skillEff && (side === 1 ? hp2 : hp1) > 0) {
-        if (skillEff.poison) {
+      // 中毒/減益:專精技能或覺醒大招(蝕心「萬毒歸心」、陰燭「燭滅影消」)都可以附帶
+      const fxEff = skillEff || (wantsUlt ? ultEffect : null);
+      if (fxEff && (side === 1 ? hp2 : hp1) > 0) {
+        if (fxEff.poison) {
           const mainAtk = (CD.CLASS_INFO[cls] && CD.CLASS_INFO[cls].path === "magic") ? atkStats.matk : atkStats.atk;
-          const pdmg = Math.max(1, Math.round(mainAtk * skillEff.poison.atkRatio * (1 + ((attackerSpec && attackerSpec.poisonBonus) || 0))));
-          const np = { dmg: pdmg, rounds: skillEff.poison.rounds };
+          const pdmg = Math.max(1, Math.round(mainAtk * fxEff.poison.atkRatio * (1 + ((attackerSpec && attackerSpec.poisonBonus) || 0))));
+          const np = { dmg: pdmg, rounds: fxEff.poison.rounds };
           if (side === 1) poisonNew2 = np;
           else poisonNew1 = np;
           events.push({ side, type: "poison", text: `${side === 1 ? "對方" : "你"}中毒了!每回合損失 ${pdmg} 點HP,持續 ${np.rounds} 回合。` });
         }
-        if (skillEff.debuff) {
-          const rounds = skillEff.debuff.rounds + ((attackerSpec && attackerSpec.debuffRoundsAdd) || 0);
+        const debuffList = fxEff.debuff ? [fxEff.debuff] : fxEff.debuffs || [];
+        debuffList.forEach((db) => {
+          const rounds = db.rounds + ((attackerSpec && attackerSpec.debuffRoundsAdd) || 0);
           const list = side === 1 ? debuffsNew2 : debuffsNew1;
-          const keep = list.filter((d) => d.stat !== skillEff.debuff.stat);
-          keep.push({ stat: skillEff.debuff.stat, ratio: skillEff.debuff.ratio, rounds, fresh: true });
+          const keep = list.filter((d) => d.stat !== db.stat);
+          keep.push({ stat: db.stat, ratio: db.ratio, rounds, fresh: true });
           list.length = 0;
           keep.forEach((d) => list.push(d));
-          events.push({ side, type: "debuff", text: `${side === 1 ? "對方" : "你"}的${skillEff.debuff.stat === "atk" ? "攻擊力" : "防禦力"}被削弱了 ${Math.round(skillEff.debuff.ratio * 100)}%,持續 ${rounds} 回合!` });
-        }
+          events.push({ side, type: "debuff", text: `${side === 1 ? "對方" : "你"}的${db.stat === "atk" ? "攻擊力" : "防禦力"}被削弱了 ${Math.round(db.ratio * 100)}%,持續 ${rounds} 回合!` });
+        });
       }
 
       // P2-2/P2-3新增:傳說裝備的吸血特殊效果，不管這次出的是普攻/技能/大招都算(用這次動作

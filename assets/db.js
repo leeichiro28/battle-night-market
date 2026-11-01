@@ -2335,6 +2335,17 @@ const db = (function () {
     return data;
   }
 
+  // Lv.75 覺醒標記(只給畫面顯示用,由等級 + 專精分支推算,不存資料庫)。沒覺醒回傳 null。
+  // 排行榜摘要與 PVP 對戰狀態(state.awaken1/awaken2)共用,畫面端只認 { title, fullName, c1, c2 }。
+  function _awakenTagFor(classKey, activeSkills, level) {
+    const SP = window.CareerSpec;
+    if (!SP || !classKey) return null;
+    const br = SP.chosenBranch(classKey, activeSkills || {});
+    if (!br) return null;
+    const info = SP.awakenInfo(classKey, br, level || 1);
+    return info.awakened ? { title: info.title, fullName: info.fullName, c1: info.palette.c1, c2: info.palette.c2 } : null;
+  }
+
   // getPlayerSkillLevels的批次版本，一次撈一批玩家的永久被動等級，用在排行榜/排隊列表這種
   // 「一次要顯示一堆人」的地方，不然每個人都各自查一次資料庫太浪費。篩選邏輯跟
   // getPlayerSkillLevels完全一樣(只留永久被動、濾掉舊格式殘留資料)。
@@ -2362,7 +2373,7 @@ const db = (function () {
     if (!ids.length) return {};
     const [buildsRes, progressRes, skillLevelsByPlayer] = await Promise.all([
       client.from("career_builds").select("player_id, final_class").eq("event_id", eventId).in("player_id", ids),
-      client.from("career_progress").select("player_id, level, stat_alloc, equipment").eq("event_id", eventId).in("player_id", ids),
+      client.from("career_progress").select("player_id, level, stat_alloc, equipment, active_skills").eq("event_id", eventId).in("player_id", ids),
       _getPlayerSkillLevelsBatch(ids),
     ]);
     if (buildsRes.error) throw buildsRes.error;
@@ -2387,6 +2398,7 @@ const db = (function () {
         classIcon: (classInfo && classInfo.icon) || "user",
         level: (progress && progress.level) || 1,
         stats,
+        awaken: progress ? _awakenTagFor(finalClass, progress.active_skills, progress.level) : null, // 覺醒才有,排行榜／排隊名單用來畫覺醒徽章
       };
     });
     return summaries;
@@ -2514,6 +2526,11 @@ const db = (function () {
       _engineSide(build2.final_class, stats2, skillLevels2, _activeSkills(progress2), progress2 && progress2.equipped_skill_a, progress2 && progress2.equipped_skill_b, progress2 && progress2.equipped_ult, progress2 && progress2.equipment, progress2 && progress2.level, progress2 && progress2.relics)
     );
     initState.arenaRule = arenaRule;
+    // 覺醒徽章(純顯示):雙方各自推算,沒覺醒就不寫欄位
+    const awk1 = progress1 ? _awakenTagFor(build1.final_class, progress1.active_skills, progress1.level) : null;
+    const awk2 = progress2 ? _awakenTagFor(build2.final_class, progress2.active_skills, progress2.level) : null;
+    if (awk1) initState.awaken1 = awk1;
+    if (awk2) initState.awaken2 = awk2;
     const { data, error } = await client
       .from("career_matches")
       .update({ state: initState, initialized: true })
@@ -2671,9 +2688,11 @@ const db = (function () {
     const boostedStats = window.CareerData.applyStatBoostPassives(stats, levels); // 數值精研被動:固定加值疊上去
     // 裝備的是大招1還是大招2，決定要吃 active.ult_1 還是 active.ult_2 的等級；大招1沒點過技能點
     // 的話還是當Lv.1(免費基礎強度)，大招2沒點過就是Lv.0(根本還沒解鎖，理論上不會被裝備到這裡)
+    // 覺醒大招(Lv.75,career-spec.js ultSelection):沒學、等級不夠或不是這場選的分支就退回預設大招1
+    const ultSel = window.CareerSpec && treeUnlocked ? window.CareerSpec.ultSelection(classKey, equippedUltId, active, charLevel || 1) : null;
     const isUlt2Equipped = !!(equippedUltId && equippedUltId.endsWith("_ult_2"));
-    const ultLevel = !treeUnlocked ? 1 : isUlt2Equipped ? active.ult_2 || 0 : active.ult_1 || 1;
-    const ultInfo = window.CareerData.resolveUltInfo(classKey, equippedUltId, ultLevel);
+    const ultLevel = ultSel ? ultSel.level : !treeUnlocked ? 1 : isUlt2Equipped ? active.ult_2 || 0 : active.ult_1 || 1;
+    const ultInfo = window.CareerData.resolveUltInfo(classKey, ultSel ? ultSel.id : equippedUltId, ultLevel);
     const slotA = equippedSkillA || "skill_1"; // 沒設定過就用預設的技能1/技能2(舊玩家、剛建立的career_progress)
     const slotB = equippedSkillB || "skill_2";
     const nodeA = treeUnlocked ? window.CareerData.SKILL_TREE_NODES[`${classKey}_${slotA}`] : null;
@@ -2744,8 +2763,15 @@ const db = (function () {
     if (!build) throw new Error("找不到職業build");
     const cls = build.final_class;
     const node = window.CareerData.SKILL_TREE_NODES[ultNodeId];
-    if (!node || node.type !== "ultimate" || node.requires !== `class_${cls}`) throw new Error("這不是你目前職業可以裝備的大招");
-    if (!ultNodeId.endsWith("_ult_1")) {
+    const awakenUltM = node && node.awakenUlt ? /_spec_(a|b)_ult$/.exec(ultNodeId) : null; // 覺醒大招:掛在專精分支底下
+    const belongs = node && (node.requires === `class_${cls}` || (awakenUltM && node.requires === `${cls}_spec_${awakenUltM[1]}`));
+    if (!node || node.type !== "ultimate" || !belongs) throw new Error("這不是你目前職業可以裝備的大招");
+    if (awakenUltM) {
+      const progress = await getOrCreateCareerProgress(eventId, playerId);
+      const activeSkills = _activeSkills(progress);
+      if ((progress.level || 1) < window.CareerSpec.AWAKEN_LEVEL) throw new Error(`覺醒大招要角色 Lv.${window.CareerSpec.AWAKEN_LEVEL}`);
+      if (!(activeSkills[`spec_${awakenUltM[1]}_ult`] > 0)) throw new Error("要先花技能點解鎖這個覺醒大招才能裝備");
+    } else if (!ultNodeId.endsWith("_ult_1")) {
       // 大招1(預設)免費隨時裝，大招2要先在「這場活動」花過技能點解鎖過才能裝(技能A/B、大招現在
       // 是每場活動自己的東西，不是永久的，所以查的是 career_progress.active_skills，不是永久表)
       const progress = await getOrCreateCareerProgress(eventId, playerId);
@@ -2938,7 +2964,7 @@ const db = (function () {
   // nodeSuffix 是節點後綴，例如 "skill_3"、"ult_2"(不是完整節點id，也不是裝備欄位a/b)。
   async function upgradeActiveSkill(eventId, playerId, nodeSuffix) {
     // 專精(第二轉職,見 career-spec.js):spec_a/spec_b = 選分支(等級只有 0/1),spec_a_skill_1 ... = 分支底下的專精技能
-    const specMatch = /^spec_(a|b)(_skill_(1|2|3))?$/.exec(nodeSuffix);
+    const specMatch = /^spec_(a|b)(_skill_(1|2|3)|_ult)?$/.exec(nodeSuffix); // _skill_3 / _ult = Lv.75 覺醒技能／覺醒大招
     if (!specMatch && !["skill_1", "skill_2", "skill_3", "ult_1", "ult_2"].includes(nodeSuffix)) throw new Error("不認識的技能欄位");
     const progress = await getOrCreateCareerProgress(eventId, playerId);
     if (progress.skill_points <= 0) throw new Error("沒有可以花的技能點了");
@@ -2960,7 +2986,7 @@ const db = (function () {
       } else if (!(activeSkills[`spec_${branch}`] > 0)) {
         throw new Error("要先選擇這條專精分支，才能學它的技能");
       }
-      if (!isBranch && specMatch[3] === "3" && (progress.level || 1) < SP.AWAKEN_LEVEL) throw new Error(`覺醒技能要角色 Lv.${SP.AWAKEN_LEVEL} 才能學(你現在 Lv.${progress.level || 1})`);
+      if (!isBranch && (specMatch[3] === "3" || specMatch[2] === "_ult") && (progress.level || 1) < SP.AWAKEN_LEVEL) throw new Error(`覺醒技能／大招要角色 Lv.${SP.AWAKEN_LEVEL} 才能學(你現在 Lv.${progress.level || 1})`);
     }
     if (curLevel >= maxLevel) throw new Error("這個技能/大招已經是目前開放的最高等級了");
     // 解鎖(Lv.0→1)與 Lv.2~3 不限制;升到 Lv.4、Lv.5 要角色等級夠高

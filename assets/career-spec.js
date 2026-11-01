@@ -143,32 +143,32 @@ window.CareerSpec = (function () {
 
   // ---- Lv.75 覺醒(2026-11-01):在 Lv.50 選的分支上自動覺醒,不再二選一 ----
   // 給:進階職業名稱(title)、第 3 個專精技能(skill,花 1 技能點,可升到 Lv.5,進技能池)。
-  // 覺醒大招(階段 3)之後補在這裡的 ult 欄位。技能效果只用現有引擎欄位,不新增機制;數字是草案【待模擬確認】。
+  // 覺醒大招(階段 3)在 ult 欄位:effect 用現有大招 kind(pierce/lifesteal/immune/multiHit/dmgMult/ignoreDef/heal),附帶 poison/debuffs/forceCrit/reflectBonus/cleanse 由 career-engine.js 處理。技能效果只用現有引擎欄位,不新增機制;數字是草案【待模擬確認】。
   // Lv.100 升階的 +0.05 傷害倍率只加在原本兩個專精技能,覺醒技能不重複加成。
   const AWAKEN = {
     warrior: {
-      a: { title: "破軍", skill: { name: "裂地破陣", icon: "axe", desc: "傷害極高，無視對方 50% 防禦，魔力花費 6", effect: { mult: 1.6, ignoreDef: 0.5, manaCost: 6 } } },
-      b: { title: "修羅", skill: { name: "修羅血祭", icon: "flame", desc: "自己損失的 HP 越多傷害越高(最多再 +60%)，並回復傷害的 10%", effect: { mult: 1.5, missingHpBonusMax: 0.6, lifesteal: 0.1 } } },
+      a: { title: "破軍", skill: { name: "裂地破陣", icon: "axe", desc: "傷害極高，無視對方 50% 防禦，魔力花費 6", effect: { mult: 1.6, ignoreDef: 0.5, manaCost: 6 } }, ult: { name: "斷軍破陣", icon: "swords", desc: "單次無視防禦，造成 x2.4 傷害", effect: { kind: "pierce", dmgMult: 2.4, ignoreDefRatio: 1 } } },
+      b: { title: "修羅", skill: { name: "修羅血祭", icon: "flame", desc: "自己損失的 HP 越多傷害越高(最多再 +60%)，並回復傷害的 10%", effect: { mult: 1.5, missingHpBonusMax: 0.6, lifesteal: 0.1 } }, ult: { name: "修羅降世", icon: "flame", desc: "傷害 x2.0，並回復造成傷害 40% 的HP", effect: { kind: "lifesteal", dmgMult: 2.0, lifestealRatio: 0.4 } } },
     },
     guardian: {
-      a: { title: "磐石", skill: { name: "不動如山", icon: "shield", desc: "這回合受到的傷害 -35%，並回復自己最大 HP 的 6%", effect: { mult: 1.2, selfReduce: 0.35, healMaxHp: 0.06 } } },
-      b: { title: "震嶽", skill: { name: "山崩反震", icon: "zap", desc: "這回合反彈傷害額外 +25%、反擊機率 +15%", effect: { mult: 1.5, reflectBonus: 0.25, counterBonus: 0.15 } } },
+      a: { title: "磐石", skill: { name: "不動如山", icon: "shield", desc: "這回合受到的傷害 -35%，並回復自己最大 HP 的 6%", effect: { mult: 1.2, selfReduce: 0.35, healMaxHp: 0.06 } }, ult: { name: "萬象不動", icon: "shield", desc: "受到傷害 -60%，本回合仍可正常攻擊", effect: { kind: "immune", dmgReduceRatio: 0.6, skipAttack: false } } },
+      b: { title: "震嶽", skill: { name: "山崩反震", icon: "zap", desc: "這回合反彈傷害額外 +25%、反擊機率 +15%", effect: { mult: 1.5, reflectBonus: 0.25, counterBonus: 0.15 } }, ult: { name: "山河反照", icon: "shield-alert", desc: "受到傷害 -50%，仍可攻擊，並且這回合反彈傷害額外 +25%", effect: { kind: "immune", dmgReduceRatio: 0.5, skipAttack: false, reflectBonus: 0.25 } } },
     },
     archer: {
-      a: { title: "流星", skill: { name: "流星驟雨", icon: "target", desc: "連續射 4 下，每下較輕", effect: { mult: 0.4, hits: 4 } } },
-      b: { title: "天眼", skill: { name: "天眼一擊", icon: "eye", desc: "這招暴擊率 +30%，對方 HP 一半以下必定暴擊", effect: { mult: 1.6, extraCrit: 0.3, forceCritBelow: 0.5 } } },
+      a: { title: "流星", skill: { name: "流星驟雨", icon: "target", desc: "連續射 4 下，每下較輕", effect: { mult: 0.4, hits: 4 } }, ult: { name: "天河落星", icon: "sparkles", desc: "連續射 4 次，每次傷害 x0.6", effect: { kind: "multiHit", hits: 4, dmgMultPerHit: 0.6 } } },
+      b: { title: "天眼", skill: { name: "天眼一擊", icon: "eye", desc: "這招暴擊率 +30%，對方 HP 一半以下必定暴擊", effect: { mult: 1.6, extraCrit: 0.3, forceCritBelow: 0.5 } }, ult: { name: "千里一擊", icon: "crosshair", desc: "單次無視防禦、必定爆擊，造成 x2.2 傷害", effect: { kind: "pierce", dmgMult: 2.2, ignoreDefRatio: 1, forceCrit: true } } },
     },
     assassin: {
-      a: { title: "無聲", skill: { name: "無聲絕斬", icon: "moon", desc: "對方 HP 50% 以下，傷害大增", effect: { mult: 1.6, lowHp: { below: 0.5, mult: 2.8 } } } },
-      b: { title: "蝕心", skill: { name: "蝕心劇毒", icon: "skull", desc: "中毒 5 回合(每回合 攻擊力 ×0.3)，並降低對方防禦 20%、持續 2 回合", effect: { mult: 1.0, poison: { rounds: 5, atkRatio: 0.3 }, debuff: { stat: "def", ratio: 0.2, rounds: 2 } } } },
+      a: { title: "無聲", skill: { name: "無聲絕斬", icon: "moon", desc: "對方 HP 50% 以下，傷害大增", effect: { mult: 1.6, lowHp: { below: 0.5, mult: 2.8 } } }, ult: { name: "殺意無聲", icon: "swords", desc: "連續攻擊 3 次，每次傷害 x0.7", effect: { kind: "multiHit", hits: 3, dmgMultPerHit: 0.7 } } },
+      b: { title: "蝕心", skill: { name: "蝕心劇毒", icon: "skull", desc: "中毒 5 回合(每回合 攻擊力 ×0.3)，並降低對方防禦 20%、持續 2 回合", effect: { mult: 1.0, poison: { rounds: 5, atkRatio: 0.3 }, debuff: { stat: "def", ratio: 0.2, rounds: 2 } } }, ult: { name: "萬毒歸心", icon: "biohazard", desc: "傷害 x1.8，並施加強力中毒 5 回合(每回合 攻擊力 ×0.45)", effect: { kind: "dmgMult", value: 1.8, poison: { rounds: 5, atkRatio: 0.45 } } } },
     },
     mage: {
-      a: { title: "焚天", skill: { name: "焚天烈焰", icon: "flame", desc: "傷害極高，無視對方 20% 防禦，魔力花費 7", effect: { mult: 1.9, ignoreDef: 0.2, manaCost: 7 } } },
-      b: { title: "雷樞", skill: { name: "雷樞風暴", icon: "zap", desc: "連續 4 下，每下命中回復 1 點魔力", effect: { mult: 0.5, hits: 4, manaPerHit: 1 } } },
+      a: { title: "焚天", skill: { name: "焚天烈焰", icon: "flame", desc: "傷害極高，無視對方 20% 防禦，魔力花費 7", effect: { mult: 1.9, ignoreDef: 0.2, manaCost: 7 } }, ult: { name: "焚天滅地", icon: "flame", desc: "無視防禦，造成 x2.8 傷害", effect: { kind: "ignoreDef", value: 2.8, ignoreDefRatio: 1 } } },
+      b: { title: "雷樞", skill: { name: "雷樞風暴", icon: "zap", desc: "連續 4 下，每下命中回復 1 點魔力", effect: { mult: 0.5, hits: 4, manaPerHit: 1 } }, ult: { name: "萬雷歸一", icon: "cloud-lightning", desc: "連續 5 下，每下傷害 x0.45", effect: { kind: "multiHit", hits: 5, dmgMultPerHit: 0.45 } } },
     },
     healer: {
-      a: { title: "不夜", skill: { name: "不夜長明", icon: "sun", desc: "回復自己最大 HP 的 10%，這回合受到的傷害 -20%", effect: { mult: 1.1, healMaxHp: 0.1, selfReduce: 0.2 } } },
-      b: { title: "陰燭", skill: { name: "燭影纏身", icon: "eye", desc: "對方攻擊力 -30%，持續 3 回合", effect: { mult: 1.0, debuff: { stat: "atk", ratio: 0.3, rounds: 3 } } } },
+      a: { title: "不夜", skill: { name: "不夜長明", icon: "sun", desc: "回復自己最大 HP 的 10%，這回合受到的傷害 -20%", effect: { mult: 1.1, healMaxHp: 0.1, selfReduce: 0.2 } }, ult: { name: "不夜之光", icon: "sun", desc: "回復大量HP(最大HP 70%)，並清除自己身上的中毒與減益，本回合不出手", effect: { kind: "heal", healRatio: 0.7, skipAttack: true, cleanse: true } } },
+      b: { title: "陰燭", skill: { name: "燭影纏身", icon: "eye", desc: "對方攻擊力 -30%，持續 3 回合", effect: { mult: 1.0, debuff: { stat: "atk", ratio: 0.3, rounds: 3 } } }, ult: { name: "燭滅影消", icon: "moon", desc: "傷害 x2.3，並同時降低對方攻擊與防禦各 30%、持續 2 回合", effect: { kind: "dmgMult", value: 2.3, debuffs: [{ stat: "atk", ratio: 0.3, rounds: 2 }, { stat: "def", ratio: 0.3, rounds: 2 }] } } },
     },
   };
   // 覺醒框配色:三個系各用一組(金色 + 系的主色)。只有覺醒的玩家才有框,未覺醒不套任何顏色。
@@ -196,6 +196,13 @@ window.CareerSpec = (function () {
         CD.SKILL_TREE_NODES[id] = {
           id, type: "active_skill", requires: branchId, unlockCharLevel: AWAKEN_LEVEL, cost: 1, maxLevel: CD.MAX_SKILL_LEVEL,
           name: aw.skill.name, icon: aw.skill.icon, effect: { desc: aw.skill.desc, manaCost: aw.skill.effect.manaCost || CD.SKILL_MANA_COST, specSkill: true, awakening: true },
+        };
+      }
+      if (aw && aw.ult) { // 覺醒大招:掛在分支底下,Lv.75 才能學,進大招選項(跟原本兩個大招擇一裝備)。等級存在 active_skills[spec_a_ult]
+        const uid = `${branchId}_ult`;
+        CD.SKILL_TREE_NODES[uid] = {
+          id: uid, type: "ultimate", requires: branchId, unlockCharLevel: AWAKEN_LEVEL, cost: 1, maxLevel: CD.MAX_SKILL_LEVEL,
+          name: aw.ult.name, icon: aw.ult.icon, effect: { ...aw.ult.effect, desc: aw.ult.desc }, awakenUlt: true,
         };
       }
       sp.skills.forEach((sk, i) => {
@@ -244,6 +251,19 @@ window.CareerSpec = (function () {
     e.name = sk.name;
     return e;
   }
+  // 這場活動實際生效的大招(節點 id + 等級)。覺醒大招要:已學(等級>0)、角色 Lv.75、而且是這場選的那條分支,
+  // 任何一項不成立就退回預設大招1(不會因為殘留的裝備欄位出錯)。db.js 戰鬥、career.js 介紹卡共用這個。
+  function ultSelection(classKey, equippedUltId, active, charLevel) {
+    const a = active || {};
+    const m = /_spec_(a|b)_ult$/.exec(equippedUltId || "");
+    if (m) {
+      const lvl = a[`spec_${m[1]}_ult`] || 0;
+      const ok = lvl > 0 && (charLevel || 0) >= AWAKEN_LEVEL && equippedUltId === `${classKey}_spec_${m[1]}_ult` && chosenBranch(classKey, a) === m[1] && AWAKEN[classKey] && AWAKEN[classKey][m[1]] && AWAKEN[classKey][m[1]].ult;
+      return ok ? { id: equippedUltId, level: lvl } : { id: `${classKey}_ult_1`, level: a.ult_1 || 1 };
+    }
+    const isUlt2 = !!(equippedUltId && equippedUltId.endsWith("_ult_2"));
+    return { id: equippedUltId, level: isUlt2 ? a.ult_2 || 0 : a.ult_1 || 1 };
+  }
   function getBranches(classKey) {
     return SPECS[classKey] || null;
   }
@@ -254,10 +274,10 @@ window.CareerSpec = (function () {
     const info = CD.CLASS_INFO[classKey];
     if (!aw || !info || (charLevel || 0) < AWAKEN_LEVEL) return { awakened: false };
     return {
-      awakened: true, branch, title: aw.title, fullName: `${aw.title}・${info.name}`, skill: aw.skill,
+      awakened: true, branch, title: aw.title, fullName: `${aw.title}・${info.name}`, skill: aw.skill, ult: aw.ult || null,
       pathKey: info.path, palette: AWAKEN_PALETTES[info.path],
     };
   }
 
-  return { SPECS, SPEC_LEVEL, SPEC_UPGRADE_LEVEL, UPGRADE_SKILL_MULT, AWAKEN_LEVEL, AWAKEN, AWAKEN_PALETTES, chosenBranch, resolvePassive, resolveSkill, getBranches, awakenInfo };
+  return { SPECS, SPEC_LEVEL, SPEC_UPGRADE_LEVEL, UPGRADE_SKILL_MULT, AWAKEN_LEVEL, AWAKEN, AWAKEN_PALETTES, chosenBranch, resolvePassive, resolveSkill, ultSelection, getBranches, awakenInfo };
 })();

@@ -48,3 +48,15 @@ ok(h.includes("awk") && h.includes("<card warrior_spec_b_skill_3>"), "Lv.75:覺�
 const pal = { warrior: "#e0533d", archer: "#1fb5a3", mage: "#9a5cf0" };
 let palOk = true; Object.keys(pal).forEach((c) => { ctx2.myBuild = { final_class: c }; ctx2.act = { spec_a: 1 }; if (!ctx2.t(sb.CareerData.CLASS_INFO[c]).includes(pal[c])) palOk = false; });
 ok(palOk, "三個系配色:力量赤金、敏捷青金、魔法金紫");
+
+// ---- 技能列統一版型 ----
+const ctx3 = { window: sb, CareerData: sb.CareerData, ui, console, skillLevels: {}, levelGate: () => false, gateLabel: () => "" };
+vm.createContext(ctx3);
+vm.runInContext(["skRowHtml", "skillTreeKitCard"].map(extract).join("\n") + "\nthis.k=skillTreeKitCard;", ctx3);
+const CDx = sb.CareerData, sk = CDx.SKILL_TREE_NODES.warrior_skill_1, ul = CDx.SKILL_TREE_NODES.warrior_ult_2;
+h = ctx3.k(sk, "warrior", { skill_1: 2 }, true, "warrior_ult_1", "skill_1", "skill_2", true);
+ok(h.includes("sk-row2 on") && h.includes("裝備中 A") && !h.includes("st-card") && !h.includes("awk"), "技能列:裝備中有金邊與標籤,沒有彩框");
+h = ctx3.k(ul, "warrior", {}, true, "warrior_ult_1", "skill_1", "skill_2", true);
+ok(h.includes("sk-row2") && h.includes("花1點解鎖"), "大招列:未解鎖顯示花1點解鎖");
+h = ctx3.k(sk, "warrior", {}, false, "x", "skill_1", "skill_2", false);
+ok(h.includes("sk-row2 dim") && h.includes("尚未解鎖"), "預覽(未定案職業):灰色列");

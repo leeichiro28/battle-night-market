@@ -28,7 +28,7 @@ const evs = (r, type) => (r.events || []).filter((e) => e.type === type);
 (async () => {
   // ---- 資料 / 解析 ----
   const nodes = Object.keys(CD.SKILL_TREE_NODES).filter((k) => /_spec_/.test(k));
-  ok(nodes.length === 48, `專精節點登錄 48 個(12 分支 + 24 專精技能 + 12 覺醒技能),實際 ${nodes.length}`);
+  ok(nodes.length === 60, `專精節點登錄 60 個(12 分支 + 24 專精技能 + 12 覺醒技能 + 12 覺醒大招),實際 ${nodes.length}`);
   ok(CD.SKILL_TREE_NODES.warrior_spec_a.exclusiveWith === "warrior_spec_b" && CD.SKILL_TREE_NODES.warrior_spec_b.exclusiveWith === "warrior_spec_a", "兩條分支互斥");
   ok(CD.SKILL_TREE_NODES.warrior_spec_a.unlockCharLevel === 50, "Lv.50 解鎖");
   ok(SP.chosenBranch("warrior", { spec_a: 1 }) === "a" && SP.chosenBranch("warrior", { spec_b: 1 }) === "b" && SP.chosenBranch("warrior", { skill_1: 3 }) === null, "從 active_skills 判斷選了哪條分支");

@@ -186,6 +186,8 @@ function specSide(classKey, stats, branch, charLevel, slv) {
     side.skillEffectB = SP.resolveSkill(classKey, `spec_${branch}_skill_2`, slv, charLevel);
     // --awaken:Lv.75 覺醒,用覺醒技能(第 3 個專精技能)換掉第 2 個專精技能(假設玩家會裝備最強的兩個)
     if (AWK && charLevel >= SP.AWAKEN_LEVEL) side.skillEffectB = SP.resolveSkill(classKey, `spec_${branch}_skill_3`, slv, charLevel);
+    // 階段 3:覺醒後預設也換上覺醒大招(--noult 可關掉,只看覺醒技能的效果)
+    if (AWK && charLevel >= SP.AWAKEN_LEVEL && !args.includes("--noult")) { const au = CD.resolveUltInfo(classKey, `${classKey}_spec_${branch}_ult`, ultLv); side.ultEffect = au.effect; side.ultName = au.name; }
   }
   return side;
 }
@@ -429,7 +431,7 @@ function worldboss() {
 function awaken() {
   GEAR = 0;
   const N = opt("n", 60), floors = (args[args.indexOf("--floors") + 1] || "75,80,90,100").split(",").map(Number);
-  console.log(`覺醒平衡(含專精平均;每格 ${N} 場 × 6 職業 × 2 分支;覺醒 = 覺醒技能取代第 2 專精技能)\n`);
+  console.log(`覺醒平衡(含專精平均;每格 ${N} 場 × 6 職業 × 2 分支;覺醒 = 覺醒技能取代第 2 專精技能,並換上覺醒大招;--noult 只算覺醒技能)\n`);
   console.log("樓層".padEnd(8) + "等級".padStart(6) + "覺醒前".padStart(9) + "覺醒後".padStart(9) + "差".padStart(7) + "   各職業(覺醒後 / 差)");
   floors.forEach((f) => {
     const fd = CF.getFloor(f), L = Math.max(SP.AWAKEN_LEVEL, recLevel(f));

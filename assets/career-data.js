@@ -632,7 +632,7 @@ window.CareerData = (function () {
     else if (effect.kind === "pierce" || effect.kind === "lifesteal") scaled.dmgMult = round2((effect.dmgMult || 1) * scale);
     else if (effect.kind === "multiHit") scaled.dmgMultPerHit = round2((effect.dmgMultPerHit != null ? effect.dmgMultPerHit : 1) * scale);
     else if (effect.kind === "immune") scaled.dmgReduceRatio = Math.min(0.95, round2((effect.dmgReduceRatio || 0) * scale));
-    else if (effect.kind === "heal") scaled.healRatio = round2((effect.healRatio || 0.5) * scale);
+    else if (effect.kind === "heal") scaled.healRatio = Math.min(0.95, round2((effect.healRatio || 0.5) * scale));
     else if (effect.kind === "ignoreDef") scaled.value = round2(1 * scale); // 無視防禦本身不會變(已經100%)，升級改成加傷害倍率
     else if (effect.kind === "guaranteedCritBelowHalf") scaled.critDmgBonus = round2((lv - 1) * 0.07); // 必爆機率不會變，升級改成加爆擊傷害
     return scaled;
@@ -649,7 +649,9 @@ window.CareerData = (function () {
     const defaultId = `${classKey}_ult_1`;
     const requiresKey = `class_${classKey}`;
     const equippedNode = equippedUltId ? SKILL_TREE_NODES[equippedUltId] : null;
-    const node = equippedNode && equippedNode.requires === requiresKey ? equippedNode : SKILL_TREE_NODES[defaultId];
+    // 覺醒大招(career-spec.js)掛在專精分支底下(requires = <classKey>_spec_a|b),不是直接掛在職業底下
+    const isAwakenUlt = !!(equippedNode && equippedNode.awakenUlt && equippedNode.requires.startsWith(`${classKey}_spec_`));
+    const node = equippedNode && (equippedNode.requires === requiresKey || isAwakenUlt) ? equippedNode : SKILL_TREE_NODES[defaultId];
     if (!node) return { name: "大招", effect: { kind: "dmgMult", value: 1.3 } };
     return { name: node.name, effect: scaleUltEffect(node.effect, level) };
   }

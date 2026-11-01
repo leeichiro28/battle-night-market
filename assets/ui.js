@@ -180,6 +180,12 @@ const ui = (function () {
     if (!meta) return "";
     return `<span class="tag title-badge" title="${esc(meta.desc || "")}">${icon(meta.icon || "crown")}<span>${esc(meta.name)}</span></span>`;
   }
+  // Lv.75 覺醒徽章(排行榜、排隊名單、PVP 名牌共用)。aw = { title, c1, c2 },沒覺醒(null)就不顯示。
+  // 顏色由三系配色決定(赤金／青金／金紫),只有覺醒才有,未覺醒的玩家畫面維持中性。
+  function awakenBadge(aw) {
+    if (!aw || !aw.title) return "";
+    return `<span class="awk-badge" style="--c1:${esc(aw.c1)};--c2:${esc(aw.c2)};margin-left:6px;" title="Lv.75 覺醒：${esc(aw.fullName || aw.title)}">${icon("star", { size: "11px" })}${esc(aw.title)}</span>`;
+  }
   // 賽程列表/賽制圖裡玩家名字旁邊的職業小標籤，沒選職業就不顯示
   function classTag(key) {
     if (!key || !CLASS_NAME[key]) return "";
@@ -386,6 +392,7 @@ const ui = (function () {
     statusTag,
     losersTag,
     titleBadge,
+    awakenBadge,
     bountyTag,
     classTag,
     ruleTags,

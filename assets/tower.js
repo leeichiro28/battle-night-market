@@ -1207,16 +1207,10 @@
   // 兩個小標題分開列，不要混在一起。
   function renderSkillTreeSkillsSection(chosenPath, chosenClass, canSpend) {
     const CD = CareerData;
-    const atkCard = `
-      <div class="st-card" style="display:flex;flex-direction:column;background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius);padding:10px;text-align:center;">
-        ${ui.icon("sword", { size: "18px" })}
-        <p style="margin:6px 0 0;font-weight:700;font-size:12px;">普通攻擊</p>
-        <p style="margin:2px 0 6px;font-size:10px;color:var(--ink-dim);">基礎攻擊，不用學，隨時可用</p>
-        <div style="margin-top:auto;"><span style="font-size:10px;color:var(--green);font-weight:700;">${ui.icon("check", { size: "12px" })}已學會</span></div>
-      </div>`;
+    const atkCard = skRowHtml({ icon: "sword", name: "普通攻擊", desc: "基礎攻擊，不用學，隨時可用", action: `<span class="sk-ok">${ui.icon("check", { size: "12px" })}已學會</span>` });
 
     function group(title, icon, cardsHtml) {
-      return `<p style="text-align:center;margin:16px 0 8px;font-size:12px;font-weight:700;color:var(--ink-dim);">${ui.icon(icon, { size: "13px" })}${title}</p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">${cardsHtml}</div>`;
+      return `<p style="text-align:center;margin:16px 0 8px;font-size:12px;font-weight:700;color:var(--ink-dim);">${ui.icon(icon, { size: "13px" })}${title}</p><div class="sk-list">${cardsHtml}</div>`;
     }
 
     if (chosenClass) {
@@ -1252,9 +1246,9 @@
       const skillNodes = CD.getSkillTreeChildren(`class_${previewClass}`).filter((n) => n.type === "active_skill");
       const ultNodes = CD.getSkillTreeChildren(`class_${previewClass}`).filter((n) => n.type === "ultimate");
       html += `<p style="text-align:center;margin:10px 0 4px;font-size:11px;color:var(--ink-dim);">${ui.icon(info.icon, { size: "13px" })}如果選「${ui.esc(info.name)}」(預覽)</p>`;
-      html += `<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">${skillNodes.map((n) => skillTreeKitCard(n, previewClass, {}, false, `${previewClass}_ult_1`, "skill_1", "skill_2", false)).join("")}</div>`;
+      html += `<div class="sk-list">${skillNodes.map((n) => skillTreeKitCard(n, previewClass, {}, false, `${previewClass}_ult_1`, "skill_1", "skill_2", false)).join("")}</div>`;
       html += `<p style="text-align:center;margin:14px 0 4px;font-size:12px;font-weight:700;color:var(--ink-dim);">${ui.icon("flame", { size: "13px" })}大招(預覽)</p>`;
-      html += `<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">${ultNodes.map((n) => skillTreeKitCard(n, previewClass, {}, false, `${previewClass}_ult_1`, "skill_1", "skill_2", false)).join("")}</div>`;
+      html += `<div class="sk-list">${ultNodes.map((n) => skillTreeKitCard(n, previewClass, {}, false, `${previewClass}_ult_1`, "skill_1", "skill_2", false)).join("")}</div>`;
     });
     return html;
   }
@@ -1296,11 +1290,12 @@
     const info = SP.awakenInfo(cls, br, lvl);
     const aw = SP.AWAKEN[cls][br];
     if (!info.awakened) {
-      return head + `<div class="card-lite awk-locked"><div class="sk-row lock"><span class="sk-ic">${ui.icon("star", { size: "17px" })}</span><div><b>${ui.esc(aw.skill.name)}</b><small>覺醒技能，角色 Lv.${SP.AWAKEN_LEVEL} 解鎖(你現在 Lv.${lvl})</small></div><span class="sk-pill">Lv.${SP.AWAKEN_LEVEL}</span></div><p style="margin:8px 0 0;font-size:11px;color:var(--ink-dim);">到 Lv.${SP.AWAKEN_LEVEL} 會自動成為「${ui.esc(aw.title)}・${ui.esc(CareerData.CLASS_INFO[cls].name)}」。</p></div>`;
+      return head + `<div class="card-lite awk-locked"><div class="sk-row lock"><span class="sk-ic">${ui.icon("star", { size: "17px" })}</span><div><b>${ui.esc(aw.skill.name)}</b><small>覺醒技能，角色 Lv.${SP.AWAKEN_LEVEL} 解鎖(你現在 Lv.${lvl})</small></div><span class="sk-pill">Lv.${SP.AWAKEN_LEVEL}</span></div>${aw.ult ? `<div class="sk-row lock" style="margin-top:8px;"><span class="sk-ic">${ui.icon("star", { size: "17px" })}</span><div><b>${ui.esc(aw.ult.name)}</b><small>覺醒大招，角色 Lv.${SP.AWAKEN_LEVEL} 解鎖</small></div><span class="sk-pill">Lv.${SP.AWAKEN_LEVEL}</span></div>` : ""}<p style="margin:8px 0 0;font-size:11px;color:var(--ink-dim);">到 Lv.${SP.AWAKEN_LEVEL} 會自動成為「${ui.esc(aw.title)}・${ui.esc(CareerData.CLASS_INFO[cls].name)}」。</p></div>`;
     }
     const node = CareerData.SKILL_TREE_NODES[`${cls}_spec_${br}_skill_3`];
-    const card = node ? skillTreeKitCard(node, cls, activeSkills, canSpend, equippedUltId, equippedSkillA, equippedSkillB, true) : "";
-    return head + awakenFrame(info, `<div style="text-align:center;margin-bottom:8px;"><span class="awk-badge">${ui.icon("star", { size: "11px" })}${ui.esc(info.fullName)}</span></div><div style="display:flex;justify-content:center;">${card}</div><p style="margin:8px 0 0;font-size:11px;color:var(--ink-dim);text-align:center;line-height:1.7;">覺醒技能花 1 點解鎖、可升到 Lv.${CareerData.MAX_SKILL_LEVEL}，進技能池跟其他技能一起挑 2 個裝備。</p>`, "awk-sec");
+    const ultNode = CareerData.SKILL_TREE_NODES[`${cls}_spec_${br}_ult`];
+    const card = (node ? skillTreeKitCard(node, cls, activeSkills, canSpend, equippedUltId, equippedSkillA, equippedSkillB, true) : "") + (ultNode ? skillTreeKitCard(ultNode, cls, activeSkills, canSpend, equippedUltId, equippedSkillA, equippedSkillB, true) : "");
+    return head + awakenFrame(info, `<div style="text-align:center;margin-bottom:8px;"><span class="awk-badge">${ui.icon("star", { size: "11px" })}${ui.esc(info.fullName)}</span></div>${card}<p style="margin:8px 0 0;font-size:11px;color:var(--ink-dim);text-align:center;line-height:1.7;">覺醒技能、覺醒大招各花 1 點解鎖、可升到 Lv.${CareerData.MAX_SKILL_LEVEL}。技能進技能池跟其他技能一起挑 2 個裝備；覺醒大招跟原本兩個大招擇一裝備(免費隨時換)。</p>`, "awk-sec");
   }
   // 第一次升到 Lv.75(且已選專精分支)彈出一次的覺醒演出;看過的記在 localStorage(每場活動每個玩家一次)
   function maybeShowAwakenPopup() {
@@ -1319,7 +1314,7 @@
       <div class="awk-tt">覺 醒</div>
       <h3>${ui.esc(aw.title)}</h3>
       <div class="pc-sub">${ui.esc(CareerData.CLASS_INFO[myBuild.final_class].name)} 已進階</div>
-      <ul><li>${ui.icon("star", { size: "13px" })}新技能：${ui.esc(aw.skill.name)}(技能分頁花 1 點學習)</li><li>${ui.icon("star", { size: "13px" })}名字旁出現覺醒框</li></ul>
+      <ul><li>${ui.icon("star", { size: "13px" })}新技能：${ui.esc(aw.skill.name)}(技能分頁花 1 點學習)</li>${aw.ult ? `<li>${ui.icon("star", { size: "13px" })}新大招：${ui.esc(aw.ult.name)}(大招可以換裝)</li>` : ""}<li>${ui.icon("star", { size: "13px" })}名字旁出現覺醒框</li></ul>
       <button class="btn" type="button" id="awaken-pop-ok">知道了</button></div></div>`;
     document.body.appendChild(ov);
     const close = () => { try { localStorage.setItem(key, "1"); } catch (e) {} ov.remove(); };
@@ -1417,6 +1412,16 @@
     return req ? `(需角色 Lv.${req})` : "";
   }
 
+  // 技能列(技能分頁統一版型):圖示方塊 + 名稱/等級/說明 + 右側操作。整齊、省空間;
+  // 彩色邊框只有覺醒區塊才有(外面包 awakenFrame),一般技能只有「裝備中」的金色細邊。
+  function skRowHtml(o) {
+    return `<div class="sk-row2${o.equipped ? " on" : ""}${o.dim ? " dim" : ""}">
+      <span class="sk-ic2">${ui.icon(o.icon, { size: "18px" })}</span>
+      <div class="sk-main"><div class="sk-nm"><b>${ui.esc(o.name)}</b>${o.lv > 0 ? `<span class="sk-lv">Lv.${o.lv}</span>` : ""}${o.tag ? `<span class="sk-tag">${ui.esc(o.tag)}</span>` : ""}</div><small>${ui.esc(o.desc || "")}</small></div>
+      <div class="sk-act">${o.action || ""}</div>
+    </div>`;
+  }
+
   function skillTreeKitCard(node, chosenClass, activeSkills, canSpend, equippedUltId, equippedSkillA, equippedSkillB, interactive) {
     const CD = CareerData;
     const MAX_LV = node.maxLevel || CD.MAX_SKILL_LEVEL;
@@ -1447,14 +1452,7 @@
             <button class="btn ghost small" data-equip-skill="b:${nodeSuffix}">${ui.icon("wand-sparkles", { size: "12px" })}裝到B欄</button>
           </div>`;
       }
-      return `
-        <div class="st-card" style="display:flex;flex-direction:column;position:relative;background:var(--panel2);border:1px solid ${equippedSlot ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:10px;text-align:center;${interactive ? "" : "opacity:0.55;"}">
-          <div style="position:absolute;top:-5px;left:50%;transform:translateX(-50%);width:8px;height:8px;border-radius:50%;background:${equippedSlot ? "var(--gold)" : "var(--line)"};"></div>
-          ${ui.icon(node.icon, { size: "18px" })}
-          <p style="margin:6px 0 0;font-weight:700;font-size:12px;">${ui.esc(node.name)}${lv > 0 ? ` Lv.${lv}` : ""}</p>
-          <p style="margin:2px 0 6px;font-size:9.5px;color:var(--ink-dim);">${ui.esc(node.effect.desc || "")}</p>
-          <div style="margin-top:auto;">${actionHtml}</div>
-        </div>`;
+      return skRowHtml({ icon: node.icon, name: node.name, lv, desc: node.effect.desc, action: actionHtml, equipped: !!equippedSlot, dim: !interactive, tag: equippedSlot ? `裝備中 ${equippedSlot}` : "" });
     }
 
     if (node.type === "ultimate") {
@@ -1476,14 +1474,7 @@
       } else {
         actionHtml = `<button class="btn ghost small" data-upgrade-active-skill="${nodeSuffix}" ${canSpend && !levelGate(lv + 1) ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "13px" })}裝備中・升到 Lv.${lv + 1}${gateLabel(lv + 1)}</button>`;
       }
-      return `
-        <div class="st-card" style="display:flex;flex-direction:column;position:relative;background:var(--panel2);border:1px solid ${isEquipped ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:10px;text-align:center;${interactive ? "" : "opacity:0.55;"}">
-          <div style="position:absolute;top:-5px;left:50%;transform:translateX(-50%);width:8px;height:8px;border-radius:50%;background:${isEquipped ? "var(--gold)" : "var(--line)"};"></div>
-          ${ui.icon(node.icon, { size: "18px" })}
-          <p style="margin:6px 0 0;font-weight:700;font-size:12px;">${ui.esc(node.name)}${lv > 0 ? ` Lv.${lv}` : ""}</p>
-          <p style="margin:2px 0 6px;font-size:9.5px;color:var(--ink-dim);">${ui.esc(node.effect.desc || "")}</p>
-          <div style="margin-top:auto;">${actionHtml}</div>
-        </div>`;
+      return skRowHtml({ icon: node.icon, name: node.name, lv: interactive && unlocked ? lv : 0, desc: node.effect.desc, action: actionHtml, equipped: isEquipped, dim: !interactive, tag: isEquipped ? "裝備中" : "" });
     }
 
     // passive(職業被動):跟上面「職業被動」卡片是同一份資料，這裡只是路線圖裡再顯示一次現況
@@ -1781,7 +1772,7 @@
         return `
           <div class="lb-row${isMe ? " me" : ""}">
             ${ui.rankBadge(idx + 1)}
-            <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}${ui.titleBadge(row.displayTitle)}${ui.bountyTag(row.queueEntry.win_streak)}
+            <span class="lb-name">${ui.esc(name)}${isMe ? "(你)" : ""}${ui.titleBadge(row.displayTitle)}${ui.awakenBadge(summary && summary.awaken)}${ui.bountyTag(row.queueEntry.win_streak)}
               <span style="color:var(--ink-dim);font-size:11px;"> · 第${row.floor}層 · ${row.queueEntry.wins}勝${row.queueEntry.losses}敗${summaryText}</span>${gapText}
             </span>
             <span class="lb-score">${row.score}</span>
