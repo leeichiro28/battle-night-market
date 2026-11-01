@@ -1406,6 +1406,7 @@ body.dialog-open{overflow:hidden;}
 .title-pick-row .title-pick-status.locked{color:var(--ink-dim);}
 .title-pick-row .title-pick-status .ico{width:13px;height:13px;}
 .title-pick-row .ico{flex-shrink:0;}
+.title-pick-group{margin:14px 0 8px;font-size:12px;font-weight:700;color:var(--ink-dim);letter-spacing:.05em;}
 .dialog-actions{
   display:flex;
   justify-content:flex-end;

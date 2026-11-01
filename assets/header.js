@@ -74,7 +74,10 @@
 
     function bodyHtml() {
       let html = rowHtml("", "不顯示任何稱號", "", null, false);
+      let lastGroup = "";
       (db.TITLE_CATALOG || []).forEach((meta) => {
+        if (meta.group && meta.group !== lastGroup) html += `<div class="title-pick-group">${ui.esc(meta.group)}</div>`; // 覺醒稱號分組顯示
+        lastGroup = meta.group || "";
         html += rowHtml(meta.key, meta.name, meta.desc, meta.icon, !unlocked.includes(meta.key));
       });
       return html;

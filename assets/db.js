@@ -228,7 +228,8 @@ const db = (function () {
     { key: "high_roller", name: "散盡家財的賭徒", desc: "夜市拍賣結束時，財神幣幾乎花光", icon: "coins" },
     { key: "auction_tycoon", name: "夜市大戶", desc: "夜市拍賣拿下第一名", icon: "gem" },
     { key: "career_champion", name: "夜市擂台之王", desc: "職業養成對決積分排行拿下第一名", icon: "crown" },
-    { key: "tower_conqueror", name: "爬塔霸主", desc: "本場已經爬完目前開放的所有樓層", icon: "mountain" },
+    { key: "tower_conqueror", name: "爬塔霸主", desc: "爬完 70 層(第零攤)", icon: "mountain" },
+    { key: "tower_first_stall", name: "第一攤打烊人", desc: "爬完第一攤全部 100 層", icon: "crown" },
     // 成就與圖鑑(見 career-codex.js 的 COUNT_TITLES):累計到某個數量給稱號
     { key: "codex_ach10", name: "初窺門徑", desc: "累計達成 10 個成就", icon: "award" },
     { key: "codex_ach20", name: "夜市達人", desc: "累計達成 20 個成就", icon: "award" },
@@ -241,6 +242,33 @@ const db = (function () {
     { key: "halloween_collector", name: "糖果收集家", desc: "萬聖夜限定:同一場活動集齊四種糖果", icon: "candy" },
     { key: "halloween_king", name: "鬼糖大王", desc: "萬聖夜限定:拿到最稀有的「幽靈彩虹棒棒糖」", icon: "crown" },
   ];
+
+  // 爬塔稱號的樓層門檻。「爬塔霸主」= 第零攤(70 層),「第一攤打烊人」= 第一攤(100 層)。
+  const TOWER_CONQUEROR_FLOOR = 70;
+  const FIRST_STALL_FLOOR = 100;
+
+  // 覺醒稱號(Lv.75 覺醒成哪個進階職業就拿哪個,永久,一條路線一個,共 12 個)。
+  // 這張表要跟 career-spec.js 的 AWAKEN 路線一一對應(tools/titles-test.js 會檢查);
+  // 不直接讀 CareerSpec 是因為 db.js 比 career-spec.js 早載入、而且首頁等頁面根本不載入 career-spec.js,
+  // 但稱號選單與名字旁的標籤每個頁面都要能顯示。key 規則:awaken_<職業>_<a|b>。
+  const AWAKEN_TITLES = {
+    warrior: { label: "戰士", a: { name: "陷陣先鋒", via: "破軍" }, b: { name: "血染夜市", via: "修羅" } },
+    guardian: { label: "守衛", a: { name: "夜市門神", via: "磐石" }, b: { name: "山河鎮守", via: "震嶽" } },
+    archer: { label: "弓箭手", a: { name: "流星獵手", via: "流星" }, b: { name: "千里目", via: "天眼" } },
+    assassin: { label: "刺客", a: { name: "影中來客", via: "無聲" }, b: { name: "毒心掌櫃", via: "蝕心" } },
+    mage: { label: "法師", a: { name: "焚天主廚", via: "焚天" }, b: { name: "雷鳴掌燈", via: "雷樞" } },
+    healer: { label: "巫醫", a: { name: "不夜守燈人", via: "不夜" }, b: { name: "燭影說書人", via: "陰燭" } },
+  };
+  const AWAKEN_TITLE_KEYS = [];
+  Object.keys(AWAKEN_TITLES).forEach((cls) => {
+    ["a", "b"].forEach((br) => {
+      const t = AWAKEN_TITLES[cls][br];
+      const key = `awaken_${cls}_${br}`;
+      AWAKEN_TITLE_KEYS.push(key);
+      TITLE_CATALOG.push({ key, name: t.name, desc: `覺醒成「${t.via}・${AWAKEN_TITLES[cls].label}」(Lv.75 自動覺醒時取得)`, icon: "star", group: "覺醒稱號" });
+    });
+  });
+  TITLE_CATALOG.push({ key: "awaken_all", name: "十二路歸一", desc: "12 條覺醒路線全部覺醒過(要跨很多場活動)", icon: "sparkles", group: "覺醒稱號" });
 
   async function getOrCreatePlayerProfile(playerId) {
     const { data, error } = await client.from("player_profiles").select("*").eq("player_id", playerId).maybeSingle();
@@ -3203,6 +3231,47 @@ const db = (function () {
     return R.pickDrop(progress.relics);
   }
 
+  // 爬塔與覺醒稱號:依「目前樓層」與「覺醒狀態」補發,第一次達成當下就給,不用等收攤。
+  // ctx = { floor, classKey, activeSkills, level }(缺的欄位就略過那一類)。回傳這次新拿到的稱號名稱。
+  // 本機記一份已拿稱號與上次判斷的簽名,畫面重畫時重複呼叫不會一直查資料庫;任何失敗都吞掉,不影響爬塔。
+  const _titleSync = {};
+  async function syncPlayerTitles(playerId, ctx) {
+    try {
+      if (!playerId || !ctx) return [];
+      const want = [];
+      const floor = Number(ctx.floor) || 0;
+      if (floor >= TOWER_CONQUEROR_FLOOR) want.push("tower_conqueror");
+      if (floor >= FIRST_STALL_FLOOR) want.push("tower_first_stall");
+      const SP = window.CareerSpec;
+      if (SP && ctx.classKey && AWAKEN_TITLES[ctx.classKey]) {
+        const br = SP.chosenBranch(ctx.classKey, ctx.activeSkills || {});
+        if (br && (ctx.level || 0) >= SP.AWAKEN_LEVEL && AWAKEN_TITLES[ctx.classKey][br]) want.push(`awaken_${ctx.classKey}_${br}`);
+      }
+      if (!want.length) return [];
+      const st = _titleSync[playerId] || (_titleSync[playerId] = { titles: null, sig: "" });
+      const sig = want.join(",");
+      if (sig === st.sig) return [];
+      if (!st.titles) {
+        const profile = await getPlayerProfile(playerId);
+        st.titles = new Set((profile && profile.titles) || []);
+      }
+      let fresh = want.filter((k) => !st.titles.has(k));
+      // 十二路歸一:12 條路線的稱號都拿到了(包含這次新拿的)
+      const afterSet = new Set([...st.titles, ...fresh]);
+      if (!afterSet.has("awaken_all") && AWAKEN_TITLE_KEYS.every((k) => afterSet.has(k))) fresh = fresh.concat("awaken_all");
+      st.sig = sig;
+      if (!fresh.length) return [];
+      await grantTitleAndStats(playerId, fresh, {});
+      fresh.forEach((k) => st.titles.add(k));
+      const names = fresh.map((k) => (TITLE_CATALOG.find((t) => t.key === k) || {}).name || k);
+      if (window.CareerCodex) names.forEach((n) => window.CareerCodex.titleToast(n));
+      return names;
+    } catch (e) {
+      console.error("爬塔／覺醒稱號發放失敗", e);
+      return [];
+    }
+  }
+
   // 萬聖夜限定稱號:第一次遇到事件 → 搗蛋鬼;這場集齊四種糖 → 糖果收集家;拿到幽靈彩虹棒棒糖 → 鬼糖大王。
   // 回傳「這次新拿到」的稱號名稱。稱號資料表還沒有或失敗都不影響爬塔。
   async function _grantHalloweenTitles(playerId, candy, missionState) {
@@ -3685,6 +3754,7 @@ const db = (function () {
     if (floorDef.story) _noteJournal(eventId, playerId, `boss:${floorNumber}`);
     codexNoteFloorWin(eventId, playerId, floorNumber, updated); // 成就圖鑑:怪物圖鑑 +1、累計場數 +1
 
+    if (isAdvance && floorNumber >= TOWER_CONQUEROR_FLOOR) syncPlayerTitles(playerId, { floor: floorNumber }); // 第一次通關 70／100 層當下就發稱號(不等收攤)
     if (isTopFloor) {
       const name = await _playerName(playerId);
       await broadcastCareerEvent(eventId, "mountain", `${name} 爬完了目前開放的所有樓層(第${floorNumber}層)!`);
@@ -5110,7 +5180,6 @@ const db = (function () {
   // 讀出來比大小再寫回去的方式處理，不能跟其他累計數字混在同一個 statPatch 裡。
   async function awardCareerTitles(eventId, standings) {
     if (!standings || !standings.length) return;
-    const topFloor = window.CareerFloors ? window.CareerFloors.FLOORS.length : 20;
     for (let i = 0; i < standings.length; i++) {
       const row = standings[i];
       const playerId = row.queueEntry.player_id;
@@ -5122,7 +5191,8 @@ const db = (function () {
         const totalChampionships = ((profile.lifetime_stats || {}).total_championships || 0) + 1;
         if (totalChampionships >= 3) titleKeys.push("triple_champion");
       }
-      if (row.floor >= topFloor) titleKeys.push("tower_conqueror");
+      if (row.floor >= TOWER_CONQUEROR_FLOOR) titleKeys.push("tower_conqueror"); // 爬完 70 層(第零攤)
+      if (row.floor >= FIRST_STALL_FLOOR) titleKeys.push("tower_first_stall"); // 爬完 100 層(第一攤)
 
       const prevHighest = (profile.lifetime_stats || {}).career_highest_floor || 0;
       if (row.floor > prevHighest) {
@@ -5178,6 +5248,8 @@ const db = (function () {
     deleteEvent,
     setEventStatus,
     TITLE_CATALOG,
+    AWAKEN_TITLES,
+    syncPlayerTitles,
     getPlayerProfile,
     getPlayerProfiles,
     setDisplayTitle,

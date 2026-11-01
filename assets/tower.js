@@ -1901,6 +1901,16 @@
     app.innerHTML = html;
     bindHandlers();
     maybeShowAwakenPopup();
+    syncMyTitles();
+  }
+
+  // 爬塔／覺醒稱號補發:進頁面與每次重畫都判斷一次(db.js 內有簽名,沒變化不會查資料庫);已經 Lv.75 覺醒、
+  // 清過 70／100 層的老玩家進來也會補拿。失敗不影響畫面。
+  function syncMyTitles() {
+    try {
+      if (!progress || !myId || !myBuild || !db.syncPlayerTitles) return;
+      db.syncPlayerTitles(myId, { floor: progress.floor, classKey: myBuild.final_class, activeSkills: _activeSkills(), level: progress.level });
+    } catch (e) { /* 稱號是附帶功能 */ }
   }
 
   function flushPendingRender() {
