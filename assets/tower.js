@@ -36,6 +36,7 @@
   let myQueue = null; // 我在 PVP 排隊表的紀錄(勝場、最高連勝…),任務進度要用
   let myBuild = null;
   let progress = null;
+  let weaponRepairTries = 0; // 武器自動修復最多試幾次(見 loadAndRender)
   let skillLevels = {}; // 第22點更新:永久被動等級(通用被動+職業被動，只綁player_id，跨活動/跨賽季都不會重置)
   let skillTreeSubTab = "skills"; // 技能樹分頁裡的子分頁:"path"(轉職路線) | "skills"(技能・大招) | "passives"(被動)
 
@@ -269,6 +270,21 @@
 
   async function loadAndRender() {
     progress = await db.getOrCreateCareerProgress(eventId, myId);
+    // 自動修復:已經定案職業、但身上/背包還有別的職業的武器(名字和攻擊屬性綁職業)，轉成目前職業的款式，強化等級保留。
+    // 本地先檢查，沒東西要轉就不打資料庫;最多試 2 次，避免一直失敗時每次載入都重打。
+    const _cls = myBuild && myBuild.final_class;
+    if (_cls && _cls.indexOf("novice") !== 0 && weaponRepairTries < 2 && window.CareerFloors && CareerFloors.convertWeaponForClass) {
+      const needsConvert = [progress.equipment && progress.equipment.weapon].concat(progress.inventory || []).some((it) => it && CareerFloors.convertWeaponForClass(it, _cls) !== it);
+      if (needsConvert) {
+        weaponRepairTries += 1;
+        try {
+          const fixed = await db.repairCareerWeapons(eventId, myId);
+          if (fixed && fixed.progress) progress = fixed.progress;
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
     skillLevels = await db.getPlayerSkillLevels(myId).catch(() => skillLevels || {});
     myQueue = await db.getMyCareerQueueEntry(eventId, myId).catch(() => myQueue); // 任務進度(PVP 勝場等)要用
     render();
@@ -2035,8 +2051,8 @@
           const ok = await ui.confirm(
             `你現在是「${info.name}」。重選後會退回見習學徒:\n` +
               "・轉職送的數值加成與新手藥水會收回\n" +
-              "・技能點與專精選擇會重置(重新選系時依你的等級一次補發)\n" +
-              "・等級、金幣、裝備、樓層進度不變\n" +
+              "・已花的技能點會全部退回，可以重新分配\n" +
+              "・等級、金幣、裝備、樓層進度不變;武器之後會自動換成新職業的款式，強化等級保留\n" +
               "確定要重選嗎?",
             { title: "重選職業", confirmText: "確定重選", cancelText: "取消", tone: "danger" }
           );

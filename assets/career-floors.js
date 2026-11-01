@@ -589,6 +589,61 @@ window.CareerFloors = (function () {
     return slot === "weapon" ? (WEAPON_TABLE[classKey] || WEAPON_TABLE.novice)[rarity] : EQUIPMENT_TABLE[slot][rarity];
   }
 
+  // ---- 換職業時,武器跟著轉成新職業的對應款(保留強化等級) ----
+  // 武器的名字、攻擊屬性(atk/matk)都綁職業,換職業後舊武器會變成「打不出該有的數值」,
+  // 玩家等於要重買、重強化。所以換職業時把武器轉成新職業的同稀有度、同階級、同序號款式,
+  // 強化等級照舊(原本數值換成新款的,再疊上同樣等級的加成)。見習(novice)的武器、找不到對應的武器維持原樣。
+  function _pathStatKey(classKey) {
+    const info = CD.CLASS_INFO[classKey];
+    return info && info.path === "magic" ? "matk" : "atk";
+  }
+  // 回傳這個武器名字在哪些最終職業的表裡出現過(通常只有一個)
+  function _weaponOrigins(item) {
+    const out = [];
+    const name = item.name;
+    Object.keys(BOSS_WEAPON_NAMES).forEach((f) => {
+      CLASS_KEYS.forEach((c) => {
+        if (BOSS_WEAPON_NAMES[f][c] === name) out.push({ cls: c, boss: Number(f) });
+      });
+    });
+    CLASS_KEYS.forEach((c) => {
+      const scan = (table, tier) => {
+        if (!table) return;
+        Object.keys(table).forEach((r) => {
+          const idx = (table[r] || []).findIndex((x) => x.name === name);
+          if (idx >= 0) out.push({ cls: c, rarity: r, index: idx, tier });
+        });
+      };
+      scan(WEAPON_TABLE[c], 1);
+      [2, 3, 4].forEach((t) => scan(WEAPON_TABLE_TIER[t] && WEAPON_TABLE_TIER[t][c], t));
+    });
+    return out;
+  }
+  // 回傳轉好的新物件;不用轉(不是武器/見習武器/本來就是這個職業的/找不到)就原封不動回傳同一個物件。
+  function convertWeaponForClass(item, classKey) {
+    if (!item || !classKey || !CD.CLASS_INFO[classKey] || String(classKey).indexOf("novice") === 0) return item;
+    const slot = item.slot || (item.statKey === "def" ? "armor" : item.statKey === "luck" ? "accessory" : "weapon");
+    if (slot !== "weapon") return item;
+    const origins = _weaponOrigins(item);
+    if (!origins.length || origins.some((o) => o.cls === classKey)) return item;
+    const o = origins[0];
+    if (o.boss) {
+      const names = BOSS_WEAPON_NAMES[o.boss];
+      return { ...item, name: names[classKey] || names.novice || item.name, statKey: _pathStatKey(classKey) };
+    }
+    const list = itemList("weapon", classKey, o.rarity, o.tier);
+    if (!list || !list.length) return item;
+    const base = list[Math.min(o.index, list.length - 1)];
+    const out = { slot: "weapon", ...base, id: item.id, reqLevel: item.reqLevel };
+    const lvl = item.enhance || 0;
+    if (lvl > 0) {
+      out.baseValue = base.statValue;
+      out.enhance = lvl;
+      out.statValue = enhancedValue(base.statValue, lvl);
+    }
+    return out;
+  }
+
   function pickVariant(list) {
     if (!list || !list.length) return null;
     return list[Math.floor(Math.random() * list.length)];
@@ -842,6 +897,7 @@ window.CareerFloors = (function () {
     EQUIPMENT_TABLE_TIER,
     floorTier,
     itemList,
+    convertWeaponForClass,
     FLOOR_ANCHORS,
     BOSS_LEGENDARY_ITEMS,
     BOSS_WEAPON_NAMES,

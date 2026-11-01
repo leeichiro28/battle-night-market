@@ -2236,7 +2236,10 @@ const db = (function () {
     Object.keys(bonus).forEach((k) => (alloc[k] = (alloc[k] || 0) + bonus[k]));
     const pack = window.CareerData.STARTER_PACK_POTIONS || {};
     const potions = { hp: (progress.potions.hp || 0) + (pack.hp || 0), mp: (progress.potions.mp || 0) + (pack.mp || 0) };
-    const skillPointGrant = progress.level * (window.CareerData.SKILL_POINTS_PER_LEVEL || 1);
+    // 重選職業(resetCareerClass)時技能點已經整筆退回，build.skill_keys 會留一個 "points_kept" 記號，
+    // 這時候重新選系就不要再補發一次(不然等於領兩次)。第一次選系沒有記號，照舊補發。
+    const pointsKept = !!(existingBuild && Array.isArray(existingBuild.skill_keys) && existingBuild.skill_keys.includes("points_kept"));
+    const skillPointGrant = pointsKept ? 0 : progress.level * (window.CareerData.SKILL_POINTS_PER_LEVEL || 1);
 
     const build = await saveCareerBuild(eventId, playerId, { path: pathKey, finalClass: `novice_${pathKey}`, skillKeys: [] });
     const { data: updatedProgress, error } = await client
@@ -2250,6 +2253,49 @@ const db = (function () {
     return { build, progress: updatedProgress, bonus, starterPack: pack, skillPointGrant };
   }
 
+  // 把身上穿的武器和背包裡的武器都轉成 classKey 的對應款。回傳 { changed, patch }，patch 可以直接丟進 career_progress.update。
+  // 傳說武器的「已擁有名字」紀錄(legendary_slots)也一併改名，不然之後會被誤判成還沒擁有而重複買到。
+  function _convertWeaponsPatch(progress, classKey) {
+    const CFl = window.CareerFloors;
+    if (!CFl || !CFl.convertWeaponForClass) return { changed: false, patch: {} };
+    let changed = false;
+    const owned = { ...(progress.legendary_slots || {}) };
+    const conv = (it) => {
+      const next = CFl.convertWeaponForClass(it, classKey);
+      if (next === it) return it;
+      changed = true;
+      if (it.rarity === "legendary" && next.name !== it.name && owned[it.name] != null) {
+        owned[next.name] = owned[it.name];
+        delete owned[it.name];
+      }
+      return next;
+    };
+    const equipment = { ...(progress.equipment || {}) };
+    if (equipment.weapon) equipment.weapon = conv(equipment.weapon);
+    const inventory = (progress.inventory || []).map((it) => (it ? conv(it) : it));
+    const patch = { equipment, inventory };
+    if (progress.legendary_slots) patch.legendary_slots = owned;
+    return { changed, patch };
+  }
+
+  // 自動修復:目前職業已經定案，但身上/背包裡還有別的職業的武器(例如重選職業前的版本轉職的人)，
+  // 就轉成目前職業的款式，強化等級保留。tower.js 每次載入都會檢查，沒東西要轉就不會打資料庫。
+  async function repairCareerWeapons(eventId, playerId) {
+    const [progress, build] = await Promise.all([getOrCreateCareerProgress(eventId, playerId), getCareerBuildFor(eventId, playerId)]);
+    if (!build || !build.final_class || build.final_class.indexOf("novice") === 0) return { changed: false, progress };
+    const wp = _convertWeaponsPatch(progress, build.final_class);
+    if (!wp.changed) return { changed: false, progress };
+    const { data, error } = await client
+      .from("career_progress")
+      .update(wp.patch)
+      .eq("id", progress.id)
+      .eq("inventory_rev", progress.inventory_rev)
+      .select();
+    if (error) throw error;
+    if (!data || !data.length) return { changed: false, progress }; // 剛好被別的分頁改過，下次載入再試
+    return { changed: true, progress: data[0] };
+  }
+
   // Lv15 定案最終職業:一樣送一筆永久加點(比 Lv5 那次多，畢竟是真正職業成形的時刻)。
   async function transferCareerFinalClass(eventId, playerId, finalClass, pathKey, skillKeys) {
     const progress = await getOrCreateCareerProgress(eventId, playerId);
@@ -2261,6 +2307,9 @@ const db = (function () {
     const prevClass = prevBuild && prevBuild.final_class; // 先記下來,存新 build 之後才拿來比較
     const build = await saveCareerBuild(eventId, playerId, { path: pathKey, finalClass, skillKeys });
     const patch = { stat_alloc: alloc };
+    // 武器的名字/攻擊屬性綁職業:換職業時轉成新職業的對應款，強化等級保留(見 CareerFloors.convertWeaponForClass)
+    const wp = _convertWeaponsPatch(progress, finalClass);
+    if (wp.changed) Object.assign(patch, wp.patch);
     // 專精是綁職業的(A/B 分支每個職業不一樣):換了職業就把專精清掉,已花的技能點退還,
     // 裝備欄裡的專精技能換回預設技能,不然舊職業的分支選擇會殘留、被誤套到新職業上。
     if (prevClass && prevClass !== finalClass) {
@@ -2314,13 +2363,18 @@ const db = (function () {
       mp: Math.max(0, ((progress.potions && progress.potions.mp) || 0) - (pack.mp || 0)),
     };
 
-    const newBuild = await saveCareerBuild(eventId, playerId, { path: "novice", finalClass: "novice", skillKeys: [] });
+    // 已經花掉的技能點整筆退回(ult_1 的 Lv.1 是免費預設，不算花掉的)。技能/專精的等級因為技能內容隨職業不同，一律清掉讓玩家重新分配。
+    // 永久被動(career_player_skills)不動，已經買的還是你的。
+    const active = progress.active_skills || {};
+    const spent = Object.keys(active).reduce((n, k) => n + Math.max(0, (active[k] || 0) - (k === "ult_1" ? 1 : 0)), 0);
+    // skill_keys 留記號:重新選系時不再補發一次技能點(退回的已經是全額了)
+    const newBuild = await saveCareerBuild(eventId, playerId, { path: "novice", finalClass: "novice", skillKeys: ["points_kept"] });
     const { data: updatedProgress, error } = await client
       .from("career_progress")
       .update({
         stat_alloc: alloc,
         potions,
-        skill_points: 0,
+        skill_points: (progress.skill_points || 0) + spent,
         active_skills: { ult_1: 1 }, // 跟資料表預設值一樣
         equipped_skill_a: null,
         equipped_skill_b: null,
@@ -5366,6 +5420,7 @@ const db = (function () {
     transferCareerPath,
     transferCareerFinalClass,
     resetCareerClass,
+    repairCareerWeapons,
     getMyCareerQueueEntry,
     joinCareerQueue,
     listCareerQueue,
