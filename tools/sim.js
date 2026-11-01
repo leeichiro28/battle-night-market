@@ -24,6 +24,7 @@ A("career-floors.js");
 A("career-pve.js");
 A("career-spec.js");
 A("career-affixes.js");
+A("career-modifiers.js");
 // --tweak:在載入資料之後、跑模擬之前覆蓋數值。key 是「CareerData 底下的路徑」,例如 SKILL_TREE_NODES.healer_ult_1.effect.healRatio
 {
   const ti = process.argv.indexOf("--tweak");
@@ -274,15 +275,15 @@ function classes() {
 // 設計目標(docs 28-2):51 層建議約 Lv.90(Lv.50~70 的一般玩家過不去)、60 層約 Lv.120、70 層約 Lv.160。
 // 玩家 = 統一配點 + 該樓層那一階的「史詩」裝備三件(實際數值,不是百分比加成)+ 大招 Lv.3 + 技能 Lv.5;
 // 「含專精」= 12 條專精分支平均,「不含專精」= 沒選專精(Lv.50 以後大多數人會選,所以以含專精為主要目標)。
-const TOWER_LEVEL = [[51, 40], [60, 51], [70, 63]]; // 樓層 -> 建議等級(中間線性內插)
+const TOWER_LEVEL = [[51, 40], [60, 51], [70, 63], [80, 75], [90, 88], [100, 100]]; // 樓層 -> 建議等級(中間線性內插)
 function recLevel(f) {
   if (f <= 51) return 40 - (51 - f) * 3;
   for (let i = 1; i < TOWER_LEVEL.length; i++) if (f <= TOWER_LEVEL[i][0]) { const [f0, l0] = TOWER_LEVEL[i - 1], [f1, l1] = TOWER_LEVEL[i]; return Math.round(l0 + ((f - f0) / (f1 - f0)) * (l1 - l0)); }
-  return 63;
+  return 100;
 }
-const GEAR_BY_TIER = { 1: { w: 4, def: 3, hp: 7, luck: 4 }, 2: { w: 9, def: 8, hp: 18, luck: 8 }, 3: { w: 13, def: 12, hp: 26, luck: 12 } }; // 該階史詩三件(見 career-floors.js)
+const GEAR_BY_TIER = { 1: { w: 4, def: 3, hp: 7, luck: 4 }, 2: { w: 9, def: 8, hp: 18, luck: 8 }, 3: { w: 13, def: 12, hp: 26, luck: 12 }, 4: { w: 19, def: 16, hp: 34, luck: 16 } }; // 該階史詩三件(見 career-floors.js)
 function towerSide(c, L, branch, floorN) {
-  const g = args.includes("--nogear") ? { w: 0, def: 0, hp: 0, luck: 0 } : GEAR_BY_TIER[opt("tier", 0) || (floorN >= 61 ? 3 : floorN >= 51 ? 2 : 1)]; // --nogear:沒有裝備(低等級玩家) // --tier 1 可以模擬「還沒換到新階裝備」
+  const g = args.includes("--nogear") ? { w: 0, def: 0, hp: 0, luck: 0 } : GEAR_BY_TIER[opt("tier", 0) || (floorN >= 71 ? 4 : floorN >= 61 ? 3 : floorN >= 51 ? 2 : 1)]; // --nogear:沒有裝備(低等級玩家) // --tier 1 可以模擬「還沒換到新階裝備」
   const st = { ...buildStats(c, L, "new") };
   const magic = CD.CLASS_INFO[c].path === "magic";
   st[magic ? "matk" : "atk"] += g.w; st.def += g.def; st.maxHp += g.hp; st.hp = st.maxHp; st.luck += g.luck;
@@ -398,8 +399,9 @@ function affixes() {
 function worldboss() {
   GEAR = 0;
   const N = opt("n", 40), R = opt("rounds", 15), BA = opt("bossatk", 1), BD = opt("bossdef", 1);
-  const f70 = CF.getFloor(70).stats;
-  const bossStats = { atk: Math.round(f70.atk * BA), matk: Math.round(f70.matk * BA), def: Math.round(f70.def * BD), spd: f70.spd, hp: 1e9, maxHp: 1e9, luck: f70.luck };
+  // 用遊戲真正的 Boss 屬性(career-modifiers.js 的 WORLD_BOSS.stats);--bossatk / --bossdef 是倍率,方便試調
+  const WS = window.CareerModifiers.WORLD_BOSS.stats;
+  const bossStats = { atk: Math.round(WS.atk * BA), matk: Math.round(WS.matk * BA), def: Math.round(WS.def * BD), spd: WS.spd, hp: 1e9, maxHp: 1e9, luck: WS.luck };
   console.log(`全服 Boss 單次出擊(${R} 回合上限,每格 ${N} 場平均,各職業統一配點、含專精與 70 層階級裝備)。\n  Boss 屬性:攻 ${bossStats.atk} 防 ${bossStats.def} 速 ${bossStats.spd}(血量無限,只量傷害)\n`);
   console.log("等級".padEnd(8) + CF.CLASS_KEYS.map((c) => CD.CLASS_INFO[c].name.padStart(8)).join("") + "   平均傷害  活過幾回合");
   [10, 20, 30, 40, 50, 60, 80, 100].forEach((L) => {
@@ -408,7 +410,7 @@ function worldboss() {
       let dmg = 0, rounds = 0;
       seed(100 + ci);
       for (let i = 0; i < N; i++) {
-        const r = PVE.simulateFloorBattle(towerSide(c, L, "a", 70), { classKey: "warrior", stats: { ...bossStats } }, { maxRounds: R });
+        const r = PVE.simulateFloorBattle(towerSide(c, L, "a", 70), { classKey: window.CareerModifiers.WORLD_BOSS.classKey, stats: { ...bossStats } }, { maxRounds: R });
         dmg += 1e9 - r.state.hp2; rounds += r.state.round || R;
       }
       tot += dmg / N; totRounds += rounds / N;

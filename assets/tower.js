@@ -446,7 +446,9 @@
   function renderBossBattleUi() {
     const active = progress.active_boss_battle;
     const s = active.state;
-    const floorDef = CareerFloors.getFloor(active.floor) || { name: "關主" };
+    const isWorld = !!active.worldBoss; // 夜市大戰(打烊鐘)的手動回合戰:沒有樓層、Boss 血量無限,改看累積傷害與回合數
+    const WB = isWorld ? CareerModifiers.WORLD_BOSS : null;
+    const floorDef = isWorld ? { name: WB.name } : CareerFloors.getFloor(active.floor) || { name: "關主" };
     const myInfo = CareerData.CLASS_INFO[s.class1];
     const monsterInfo = CareerData.CLASS_INFO[s.class2];
     const ultChargeMax = CareerData.ULT_CHARGE_MAX || 100;
@@ -465,7 +467,7 @@
     if (s.m1) bossSubmitted = true;
 
     let html = `
-      <div class="empty" style="margin-bottom:14px;">${ui.icon("swords")}王戰進行中:${ui.esc(floorDef.name)}(第${active.floor}層)</div>
+      <div class="empty" style="margin-bottom:14px;">${ui.icon("swords")}${isWorld ? `夜市大戰進行中:${ui.esc(floorDef.name)}(第 ${Math.min(s.round, WB.rounds)} / ${WB.rounds} 回合)` : `王戰進行中:${ui.esc(floorDef.name)}(第${active.floor}層)`}</div>
       ${
         s.round === 1 && floorDef.story && floorDef.story.pre
           ? `<p style="margin:0 0 12px;font-size:12.5px;color:var(--ink);font-style:italic;text-align:center;overflow-wrap:anywhere;">${ui.esc(floorDef.name)}:${ui.esc(floorDef.story.pre)}</p>`
@@ -483,9 +485,14 @@
         <div class="career-side right">
           <div class="cs-name">${ui.esc(floorDef.name)}${ui.icon(monsterInfo.icon)}</div>
           <div class="cs-sub">速度 ${s.spd2}</div>
-          ${statBarRow("HP", `${s.hp2} / ${s.maxhp2}`, s.hp2 / s.maxhp2, "hp")}
+          ${
+            isWorld
+              ? `<div style="font-size:12px;color:var(--gold);margin:6px 0;font-weight:700;">這場累積傷害 ${Math.max(0, Math.round(s.maxhp2 - s.hp2)).toLocaleString()}</div>
+                 <div style="font-size:11px;color:var(--ink-dim);">血量無限,傷害會加進全場共同血量</div>`
+              : `${statBarRow("HP", `${s.hp2} / ${s.maxhp2}`, s.hp2 / s.maxhp2, "hp")}
           ${statBarRow("MP", `${s.mp2} / ${s.maxmp2}`, s.maxmp2 > 0 ? s.mp2 / s.maxmp2 : 0, "mp")}
-          ${statBarRow("大招點", `${Math.round(s.ultCharge2 || 0)} / ${ultChargeMax}`, (s.ultCharge2 || 0) / ultChargeMax, "ult")}
+          ${statBarRow("大招點", `${Math.round(s.ultCharge2 || 0)} / ${ultChargeMax}`, (s.ultCharge2 || 0) / ultChargeMax, "ult")}`
+          }
         </div>
       </div>
       <div class="career-action-row" style="flex-wrap:wrap;">
@@ -512,7 +519,7 @@
         ${bossSubmitted ? "已送出這回合的動作，結算中..." : `第 ${s.round} 回合，剩餘 <span id="boss-round-timer">30</span> 秒`}
       </p>
       <div style="text-align:center;margin-top:10px;">
-        <button class="btn ghost small" id="boss-retreat-btn">${ui.icon("flag")}撤退(保留目前HP/MP，不算輸)</button>
+        <button class="btn ghost small" id="boss-retreat-btn">${ui.icon("flag")}${isWorld ? "撤退(結算目前傷害，不扣任何東西)" : "撤退(保留目前HP/MP，不算輸)"}</button>
       </div>
       <div class="log-panel career-log-panel" style="margin-top:12px;">${
         (s.log || [])
@@ -1667,7 +1674,7 @@
       <p style="margin:0 0 4px;font-size:11.5px;overflow-wrap:anywhere;">${myLine}</p>
       ${topLine ? `<p style="margin:0 0 6px;font-size:11.5px;color:var(--ink-dim);overflow-wrap:anywhere;">貢獻榜:${topLine}</p>` : ""}
       <div>${action}</div>
-      ${!finished ? `<p style="margin:6px 0 0;font-size:11px;color:var(--ink-dim);">出擊不扣血、不扣幣，用你現在的職業與裝備打 ${W.rounds} 回合(或倒下為止)，傷害加進全場共同血量。每次間隔 ${W.cooldownSec} 秒。打倒它全員有獎，貢獻最高的人還有稱號。</p>` : ""}
+      ${!finished ? `<p style="margin:6px 0 0;font-size:11px;color:var(--ink-dim);">出擊是跟樓層關主一樣的手動回合戰:自己選普攻、技能或大招，最多 ${W.rounds} 回合(或倒下為止)，不扣血、不扣幣，傷害加進全場共同血量。每次打完要等 ${W.cooldownSec} 秒才能再出擊。打倒它全員有獎，貢獻最高的人還有稱號。</p>` : ""}
       ${resultHtml}`);
   }
 
@@ -1766,7 +1773,7 @@
           ${ui.icon(info.icon)}${ui.esc(info.name)} Lv.${progress.level}
         </div>
         <div style="display:flex;gap:16px;align-items:center;font-size:13px;">
-          <span style="color:var(--ink-dim);">第 ${progress.floor} 層</span>
+          <span style="color:var(--ink-dim);">${ui.esc(CareerFloors.TOWER_NAME || "")}・第 ${progress.floor} 層</span>
           <span style="color:var(--gold);font-weight:700;display:inline-flex;align-items:center;gap:4px;">${ui.icon("coins")}${progress.coins}</span>
         </div>
       </div>
@@ -1861,7 +1868,11 @@
     const bossRetreatBtn = document.getElementById("boss-retreat-btn");
     if (bossRetreatBtn) {
       bossRetreatBtn.onclick = async () => {
-        const ok = await ui.confirm("確定要撤退嗎?保留目前的HP/MP，不算輸也不算贏，這場王戰結束。", { title: "撤退" });
+        const isWorldBattle = !!(progress.active_boss_battle && progress.active_boss_battle.worldBoss);
+        const ok = await ui.confirm(
+          isWorldBattle ? "確定要撤退嗎?目前已經打出的傷害會算進全場共同血量，不扣任何東西，之後要等冷卻才能再出擊。" : "確定要撤退嗎?保留目前的HP/MP，不算輸也不算贏，這場王戰結束。",
+          { title: "撤退" }
+        );
         if (!ok) return;
         if (busy) return;
         busy = true;
@@ -1871,6 +1882,7 @@
           bossSeenRound = null;
           bossSubmitted = false;
           clearInterval(bossRoundTimer);
+          if (result.worldBoss) await finishWorldBossBattle(result);
           render();
         } catch (e) {
           await ui.alert(e.message || "撤退失敗", { title: "操作失敗", tone: "danger" });
@@ -2377,11 +2389,15 @@
         if (busy) return;
         busy = true;
         try {
-          const r = await db.attackWorldBoss(eventId, myId);
-          wbReadyAt = Date.now() + CareerModifiers.WORLD_BOSS.cooldownSec * 1000;
-          const done = r.result.defeated;
-          wbResult = `這次出擊造成 ${r.applied.toLocaleString()} 傷害(${r.rounds} 回合${r.survived ? "" : "，你倒下了，但沒有任何損失"})。${done ? "打烊鐘被打倒了!" : ""}`;
-          await wbTickNow();
+          // 手動回合制:按下去先開一場即時對戰(跟樓層關主同一個畫面),打完才結算傷害(見 finishWorldBossBattle)
+          const r = await db.startWorldBossBattle(eventId, myId);
+          progress = r.progress;
+          bossSeenRound = null;
+          bossSubmitted = false;
+          lastBattle = null;
+          lastEvent = null;
+          wbResult = "";
+          render();
         } catch (e) {
           await ui.alert(e.message || "出擊失敗", { title: "操作失敗", tone: "danger" });
         } finally {
@@ -2556,6 +2572,19 @@
     }
   }
 
+  // 打烊鐘的手動戰結束(倒下 / 打滿回合 / 撤退):算冷卻、整理結果文字、刷新全場血量條
+  const WB_END_TEXT = { dead: "你倒下了，但沒有任何損失", rounds: "打滿了回合上限", retreat: "你撤退了" };
+  async function finishWorldBossBattle(r) {
+    wbReadyAt = Date.now() + CareerModifiers.WORLD_BOSS.cooldownSec * 1000; // 倒下、打滿回合、撤退一律冷卻
+    lastBattle = null;
+    if (!r.accepted && r.damage > 0) {
+      wbResult = r.rejectReason === "ended" ? "打烊鐘已經離開了，這次的傷害沒有計入。" : "出擊間隔太短，這次的傷害沒有計入。";
+    } else {
+      wbResult = `這次出擊造成 ${r.applied.toLocaleString()} 傷害(${r.rounds} 回合，${WB_END_TEXT[r.reason] || ""})。${r.defeated ? "打烊鐘被打倒了!" : ""}`;
+    }
+    await wbTickNow();
+  }
+
   async function submitBossMove(action) {
     if (bossSubmitted) return;
     bossSubmitted = true;
@@ -2571,7 +2600,11 @@
     try {
       const result = await db.submitCareerBossMove(eventId, myId, action);
       progress = result.progress;
-      if (result.done) {
+      if (result.done && result.worldBoss) {
+        bossSeenRound = null;
+        bossSubmitted = false;
+        await finishWorldBossBattle(result);
+      } else if (result.done) {
         bossSeenRound = null;
         bossSubmitted = false;
         if (result.won) {

@@ -18,6 +18,7 @@
     rain: { mods: { dropChanceAdd: 0.1, monsterHpMult: 1.1 }, text: "掉落率 +10%、怪物 HP +10%", line: "擂台很滑，怪物也站不穩，但躲雨的人都在地上撿東西。" },
     zhongyuan: { mods: { monsterHpMult: 1.15, monsterAtkMult: 1.15, dropChanceAdd: 0.15, coinMult: 1.1 }, text: "怪物 HP/攻擊 +15%、掉落率 +15%、幣 +10%", line: "今晚的「客人」特別多，打起來很痛，但他們出手大方。" },
     newyear: { mods: { coinMult: 1.5 }, text: "幣 ×1.5", line: "人潮多、紅包也多，今晚賺錢特別快。" },
+    halloween: { costume: true, mods: { monsterHpMult: 1.1, monsterAtkMult: 1.1, dropChanceAdd: 0.2 }, text: "怪物 HP/攻擊 +10%、掉落率 +20%，一般樓層的怪物與關主都會換上扮裝", line: "塔裡的客人全換了衣服，分不出誰是人。打起來有點痛，但他們口袋裡的糖果特別多。" },
     typhoon: { mods: { expMult: 1.2, monsterAtkMult: 1.1 }, text: "經驗 ×1.2、怪物攻擊 +10%", line: "風大浪大，打得辛苦，但練起來特別快。" },
   };
 
@@ -87,7 +88,8 @@
 
   // ---- 全服 Boss「打烊鐘」(夜市大戰):活動第 30 分鐘出現,存在 15 分鐘,被打倒就提早結束 ----
   // 血量、冷卻、獎勵在資料庫(spawn/deal/claim_career_world_boss);這裡只放時程與 Boss 的戰鬥屬性。
-  // 屬性用 tools/sim.js worldboss 校準:攻擊 = 70 層 Boss ×0.2、防禦 ×0.4,讓各等級玩家都能撐滿 15 回合左右,
+  // 2026-11-01 改成手動回合制(跟樓層關主同一套畫面):打完 15 回合、倒下或撤退才結算傷害,結束後冷卻 30 秒。
+  // 屬性用 tools/sim.js worldboss 校準:各等級玩家都能撐滿 15 回合左右,
   // 傷害才反映玩家強度(單次出擊約 Lv.10:170、Lv.50:1,200、Lv.100:2,300)。血量無限大,只量傷害。
   const WORLD_BOSS = {
     startMin: 30, durationMin: 15, rounds: 15, cooldownSec: 30, name: "打烊鐘",
@@ -137,6 +139,10 @@
       else total[k] = (total[k] == null ? 1 : total[k]) * mods[k]; // 倍率類相乘
     });
   }
+  // 萬聖夜:怪物與關主的名稱前面加一個扮裝
+  // 關主的扮裝(每 10 層換一個)
+  const BOSS_COSTUMES = ["戴著南瓜頭的", "披著吸血鬼斗篷的", "畫了骷髏妝的", "穿著巫師長袍的"];
+  const COSTUMES = ["扮成南瓜的", "披著床單的", "戴著蝙蝠耳朵的", "畫了鬼臉的", "穿著巫師袍的", "假裝是殭屍的"];
   // 目前生效的所有加成(主題 + 時段事件)合併成一份
   function activeFor(rules, now) {
     const total = {};
@@ -146,6 +152,7 @@
     const cur = currentWindow(rules, now);
     if (cur) { mergeInto(total, cur.window.mods); sources.push(cur.window.label); }
     total.sources = sources;
+    if (theme && theme.costume) total.costume = true; // 萬聖夜:怪物換扮裝名(只換名字,見 applyToFloor)
     return total;
   }
 
@@ -159,6 +166,7 @@
     const st = floorDef.stats;
     return {
       ...floorDef,
+      name: mods.costume ? (floorDef.isMiniBoss ? BOSS_COSTUMES[Math.floor(floorDef.floor / 10) % BOSS_COSTUMES.length] : COSTUMES[floorDef.floor % COSTUMES.length]) + floorDef.name : floorDef.name,
       stats: hasMonster ? { ...st, hp: Math.round(st.hp * hpM), maxHp: Math.round((st.maxHp || st.hp) * hpM), atk: Math.round(st.atk * atkM), matk: Math.round((st.matk || 0) * atkM) } : st,
       expReward: Math.round(floorDef.expReward * (mods.expMult || 1)),
       coinReward: Math.round(floorDef.coinReward * (mods.coinMult || 1)),

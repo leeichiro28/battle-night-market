@@ -55,7 +55,7 @@ C.titleToast = (n) => toasts.push("title:" + n);
 const assert = (c, m) => { if (!c) { console.error("FAIL:", m); process.exitCode = 1; } else console.log("ok  ", m); };
 (async () => {
   const tot = C.totals();
-  assert(tot.mon === 70 && tot.event === 15 && tot.item > 100, `圖鑑總數 怪物${tot.mon} 事件${tot.event} 裝備${tot.item}`);
+  assert(tot.mon === 100 && tot.event === 15 && tot.item > 100, `圖鑑總數 怪物${tot.mon} 事件${tot.event} 裝備${tot.item}`);
   const keys = C.ACHIEVEMENTS.map((a) => a.key);
   assert(new Set(keys).size === keys.length, `成就 key 不重複(共 ${keys.length} 個)`);
   assert(C.ACHIEVEMENTS.every((a) => C.GROUPS[a.group]), "每個成就的分類都存在");

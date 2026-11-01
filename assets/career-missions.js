@@ -22,6 +22,7 @@
     { key: "floor30", group: "climb", name: "小有名氣", desc: "清到 30 層", target: 30, value: (c) => c.progress.floor || 0, reward: { statPoints: 1, score: 3 } },
     { key: "floor50", group: "climb", name: "登高望遠", desc: "清到 50 層", target: 50, value: (c) => c.progress.floor || 0, reward: { score: 8 } },
     { key: "floor70", group: "climb", name: "塔心", desc: "清到 70 層", target: 70, value: (c) => c.progress.floor || 0, reward: { score: 12 }, available: () => !!(window.CareerFloors && window.CareerFloors.FLOORS.length >= 70) },
+    { key: "floor100", group: "climb", name: "第一攤", desc: "清到 100 層", target: 100, value: (c) => c.progress.floor || 0, reward: { skillPoints: 2 }, available: () => !!(window.CareerFloors && window.CareerFloors.FLOORS.length >= 100) },
     { key: "pve100", group: "climb", name: "百戰百勝", desc: "累計打贏 100 場樓層戰鬥(含掛機)", target: 100, value: counter("pveWins"), reward: { score: 3 } },
     { key: "pvp1", group: "pvp", name: "擂台新人", desc: "贏 1 場對真人的 PVP", target: 1, value: (c) => c.queue.wins || 0, reward: { score: 2 } },
     { key: "streak3", group: "pvp", name: "連戰連勝", desc: "PVP 連勝 3 場", target: 3, value: (c) => c.queue.best_streak || 0, reward: { score: 5 } },

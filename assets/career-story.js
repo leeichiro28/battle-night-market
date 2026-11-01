@@ -108,6 +108,19 @@ window.CareerStory = (function () {
         found: ["對手的影子看起來比他本人多了一個。"],
       },
     },
+    halloween: {
+      label: "萬聖夜", icon: "candy", desc: "塔裡的客人全換了衣服，分不出誰是人",
+      opening: ["今晚塔裡的客人都換了衣服，分不出哪個是人。不給糖，會被搗蛋。"],
+      prep: [{ atMin: 5, text: "有人在攤位前擺了一整籃糖果，旁邊的牌子寫著「請每人拿一顆」，籃子已經空了一半。" }],
+      battle: ["擂台邊有個南瓜燈，眼睛一閃一閃，沒人敢確定它是不是在看你。", "老闆戴著一頂歪掉的巫師帽說：「別笑，這是公司規定。」"],
+      closing: ["糖果籃空了，南瓜燈熄了。你口袋裡好像多了一顆沒看過的糖。"],
+      pvp: {
+        wait: ["觀眾席上全是面具，你分不出哪個是真的在看你。"],
+        win: ["有個扮成殭屍的觀眾激動到把手臂拍掉了，他自己撿回去裝好。"],
+        lose: ["對手遞給你一顆糖，說：「不給糖就搗蛋，你剛剛已經被搗蛋了。」"],
+        found: ["對手戴著南瓜頭，你只能從他的鞋子認出他是人。"],
+      },
+    },
     newyear: {
       label: "跨年夜", icon: "party-popper", desc: "人很多，倒數時請勿爬塔",
       opening: ["人很多，倒數時請勿爬塔，會被擠下來。"],
@@ -135,7 +148,7 @@ window.CareerStory = (function () {
       },
     },
   };
-  const THEME_ORDER = ["normal", "rain", "zhongyuan", "newyear", "typhoon"];
+  const THEME_ORDER = ["normal", "rain", "zhongyuan", "halloween", "newyear", "typhoon"];
   function getTheme(key) {
     return THEMES[key] || THEMES.normal;
   }
@@ -255,7 +268,7 @@ window.CareerStory = (function () {
   // 要顯示的文字全部在這裡，之後改文案、加條目都不用動資料庫。
   //
   // entry_key 對照(由 db.js 在爬塔/結算時寫入):
-  //   boss:10/20/30/40/50/60/70  打贏該層關主    npc:cloak/master/benefactor/lost_child  遇到該事件
+  //   boss:10/20/30/40/50/60/70/80/90/100  打贏該層關主    npc:cloak/master/benefactor/lost_child  遇到該事件
   //   revive               倒下被救起(只記次數)   closing_bell  活動結算收攤
   // ---------------- 收攤頒獎典禮(世界觀十四之 1) ----------------
   // 每個獎項:key 對應 db.js computeCareerAwards 的算法;min = 至少要達到才頒(避免全場都 0 還硬頒);
@@ -272,7 +285,7 @@ window.CareerStory = (function () {
 
   const JOURNAL = {
     // 關主的名字與戰後對話直接讀 career-floors.js(CareerFloors.getFloor(n)),不在這裡重複存一份
-    bossFloors: [10, 20, 30, 40, 50, 60, 70],
+    bossFloors: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
     // 四個高伏筆角色。只標「疑似有關」，不說是不是同一批人。
     people: [
       { key: "npc:cloak", icon: "hat-glasses", name: "斗笠人", note: "他出招很熟練，像在回憶什麼。" },
@@ -291,6 +304,12 @@ window.CareerStory = (function () {
         text: "兩半照片拼在一起，年輕的夜市老闆旁邊站著另一個人。老闆說他會回來拿。有人等到了打烊。" },
       { key: "clue:next", from: "boss:70", icon: "megaphone", title: "「下一位」", hint: "最深的地方，有人在喊話。",
         text: "你每次聽到的「逼」，不是收攤，是有人在喊「下一位」。你開始分不清，是在喊你，還是在等你。" },
+      { key: "clue:ledger", from: "boss:80", icon: "book-open", title: "少了一筆的帳", hint: "有人替老闆記著一筆帳。",
+        text: "帳本上少了一筆，不是你的，是老闆的。旁邊寫著三個字：「第一攤」。你不確定「第一」是什麼意思。" },
+      { key: "clue:script", from: "boss:90", icon: "mic", title: "稿子的最後一行", hint: "每天打烊前的廣播，有一句永遠一樣。",
+        text: "廣播稿最後一行永遠是：「第二攤，往上走。」念稿的人念了幾十年，沒上去過。" },
+      { key: "clue:first_stall", from: "boss:100", icon: "door-open", title: "門外的夜市", hint: "最高的地方，有一扇門。",
+        text: "門外是另一片夜市的燈，更遠還有第三片、第四片。每個夜市都有自己的塔，每座塔頂都有人喊「下一位」。你爬完的，只是第一攤。" },
       { key: "clue:cloak_style", from: "npc:cloak", icon: "sword", title: "斗笠人的刀法", hint: "有個人的出招，你好像看過。",
         text: "他的出招，你好像在哪裡看過。想不起來。" },
       { key: "clue:child_point", from: "npc:lost_child", icon: "footprints", title: "走失小孩的指向", hint: "有人指了一個方向。",

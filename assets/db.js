@@ -236,6 +236,10 @@ const db = (function () {
     { key: "world_boss_first", name: "第一個回應的人", desc: "夜市大戰中，對打烊鐘造成最多傷害", icon: "bell-ring" },
     { key: "codex_half", name: "圖鑑收藏家", desc: "圖鑑(怪物、裝備、事件)收集過半", icon: "book-open" },
     { key: "codex_all", name: "圖鑑館長", desc: "圖鑑(怪物、裝備、事件)全部收集", icon: "book-marked" },
+    // 萬聖夜限定(今夜主題是「萬聖夜」的活動,遇到「不給糖就搗蛋」事件才拿得到)
+    { key: "halloween_trick", name: "搗蛋鬼", desc: "萬聖夜限定:第一次遇到「不給糖就搗蛋」", icon: "ghost" },
+    { key: "halloween_collector", name: "糖果收集家", desc: "萬聖夜限定:同一場活動集齊四種糖果", icon: "candy" },
+    { key: "halloween_king", name: "鬼糖大王", desc: "萬聖夜限定:拿到最稀有的「幽靈彩虹棒棒糖」", icon: "crown" },
   ];
 
   async function getOrCreatePlayerProfile(playerId) {
@@ -3172,6 +3176,26 @@ const db = (function () {
     return R.pickDrop(progress.relics);
   }
 
+  // 萬聖夜限定稱號:第一次遇到事件 → 搗蛋鬼;這場集齊四種糖 → 糖果收集家;拿到幽靈彩虹棒棒糖 → 鬼糖大王。
+  // 回傳「這次新拿到」的稱號名稱。稱號資料表還沒有或失敗都不影響爬塔。
+  async function _grantHalloweenTitles(playerId, candy, missionState) {
+    try {
+      const wanted = ["halloween_trick"];
+      const seen = (missionState && missionState.counters && missionState.counters.candies) || {};
+      if (window.CareerEvents.CANDIES.every((c) => seen[c.key])) wanted.push("halloween_collector");
+      if (candy.key === "ghost") wanted.push("halloween_king");
+      const profile = await getPlayerProfile(playerId);
+      const have = new Set((profile && profile.titles) || []);
+      const fresh = wanted.filter((k) => !have.has(k));
+      if (!fresh.length) return [];
+      await grantTitleAndStats(playerId, fresh, {});
+      return fresh.map((k) => (TITLE_CATALOG.find((t) => t.key === k) || {}).name || k);
+    } catch (e) {
+      console.error("萬聖稱號發放失敗", e);
+      return [];
+    }
+  }
+
   // instant 類型事件的效果，純算數、不需要玩家做選擇。回傳 { text, patch }，
   // patch 是要疊加寫進 career_progress 的欄位。
   function _resolveInstantEvent(eventDef, progress, stats) {
@@ -3249,6 +3273,37 @@ const db = (function () {
         // 這個函式沒有拿到 build，見 challengeCareerFloor 呼叫這裡之後的處理)。
         const slot = window.CareerFloors.SLOTS[Math.floor(Math.random() * window.CareerFloors.SLOTS.length)];
         return { text: null, patch: {}, rollTryOnDrop: slot };
+      }
+      case "trick_or_treat": {
+        // 萬聖夜「不給糖就搗蛋」:抽一種糖果,直接得到對應獎勵(不用換)。權重見 career-events.js 的 CANDIES。
+        const candy = window.CareerEvents.rollCandy();
+        const patch = {};
+        let gain;
+        if (candy.key === "marshmallow") {
+          const c = 100 + Math.floor(Math.random() * 101);
+          patch.coins = progress.coins + c;
+          gain = `${c} 幣`;
+        } else if (candy.key === "pumpkin") {
+          const expGain = Math.max(10, Math.round(window.CareerFloors.expToNextLevel(progress.level) * 0.3));
+          const leveled = _applyExpGain(progress, expGain);
+          Object.assign(patch, { exp: leveled.exp, level: leveled.level, stat_points: leveled.stat_points, skill_points: leveled.skill_points });
+          gain = `${expGain} 經驗${leveled.leveledUp ? `(升到 Lv.${leveled.newLevel}!)` : ""}`;
+        } else if (candy.key === "bat") {
+          patch.stat_points = progress.stat_points + 1;
+          gain = "1 點自由數值點";
+        } else {
+          patch.stat_points = progress.stat_points + 2;
+          gain = "2 點自由數值點";
+          // 排行分跟每場任務共用上限(SCORE_CAP);這個欄位還沒建(沒跑任務 SQL)就不發分數
+          const M = window.CareerMissions;
+          if (M && progress.mission_score !== undefined) {
+            const now = progress.mission_score || 0;
+            const add = Math.min(5, Math.max(0, M.SCORE_CAP - now));
+            if (add > 0) { patch.mission_score = now + add; gain += ` + ${add} 排行分`; }
+            else { patch.coins = progress.coins + 500; gain += " + 500 幣(排行分已達上限，改發幣)"; }
+          }
+        }
+        return { text: `不給糖就搗蛋!你得到了「${candy.name}」，獲得了 ${gain}!`, patch, candy };
       }
       case "spirit_blessing": {
         const roll = Math.random();
@@ -3599,7 +3654,7 @@ const db = (function () {
     }
     if (error) throw error;
 
-    // 夜記:打贏有劇情對話的關主(10/20/30/40/50/60/70 層)才記,一般樓層不記
+    // 夜記:打贏有劇情對話的關主(10/20/…/100 層)才記,一般樓層不記
     if (floorDef.story) _noteJournal(eventId, playerId, `boss:${floorNumber}`);
     codexNoteFloorWin(eventId, playerId, floorNumber, updated); // 成就圖鑑:怪物圖鑑 +1、累計場數 +1
 
@@ -3684,7 +3739,7 @@ const db = (function () {
     // 直接不觸發，這一層照常打怪，連事件卡片都不會出現。
     let rolledEvent = null;
     if (!floorDef.isMiniBoss && Math.random() < window.CareerEvents.EVENT_TRIGGER_CHANCE) {
-      rolledEvent = window.CareerEvents.pickWeighted();
+      rolledEvent = window.CareerEvents.pickWeighted(openEvent.rules && openEvent.rules.storyTheme);
       const remembered = progress.event_auto_choices && progress.event_auto_choices[rolledEvent.key];
       if (rolledEvent.type === "choice" && remembered && _EVENT_DECLINE_CHOICE[rolledEvent.key] === remembered) rolledEvent = null;
     }
@@ -3788,9 +3843,19 @@ const db = (function () {
         patch.inventory = _addToInventory(progress.inventory, drop);
         text = `老闆大方送你一件「${drop.name}」(普通)當試穿品，放進背包了!`;
       }
+      // 萬聖夜糖果:記下這場拿過哪幾種糖(集齊四種拿稱號),並發限定稱號
+      let newTitles = [];
+      if (resolved && resolved.candy && window.CareerMissions && progress.mission_state !== undefined) {
+        const M = window.CareerMissions;
+        patch.mission_state = M.noteSeen(M.noteSeen(progress.mission_state, "eventsSeen", eventDef.key), "candies", resolved.candy.key);
+      }
       const { data: updated, error } = await client.from("career_progress").update(patch).eq("id", progress.id).select().single();
       if (error) throw error;
-      return { event: true, eventDef, text, drop, progress: updated };
+      if (resolved && resolved.candy) {
+        newTitles = await _grantHalloweenTitles(playerId, resolved.candy, updated.mission_state);
+        if (newTitles.length) text += ` 獲得萬聖限定稱號「${newTitles.join("」「")}」!`;
+      }
+      return { event: true, eventDef, text, drop, candy: resolved && resolved.candy, newTitles, progress: updated };
     }
 
     // 稀有攤販(career-affixes.js):沒有觸發事件、也不是關主的樓層,有小機率遇到特殊攤販(比平常難打,必掉稀有以上)。
@@ -3842,6 +3907,7 @@ const db = (function () {
     ]);
     const active = progress.active_boss_battle;
     if (!active) throw new Error("目前沒有進行中的王戰");
+    if (active.worldBoss) return _submitWorldBossMove(eventId, playerId, progress, active, action); // 夜市大戰(打烊鐘)的手動回合戰
     const floorDef = _modFloorDef(openEvent.rules, window.CareerFloors.getFloor(active.floor));
     if (!floorDef) throw new Error("找不到這一層的資料");
 
@@ -3883,6 +3949,8 @@ const db = (function () {
     const progress = await getOrCreateCareerProgress(eventId, playerId);
     const active = progress.active_boss_battle;
     if (!active) throw new Error("目前沒有進行中的王戰");
+    // 打烊鐘:撤退 = 結算已經打出的傷害(不影響爬塔的 HP/MP,也沒有任何懲罰),一樣進入冷卻
+    if (active.worldBoss) return _settleWorldBossBattle(eventId, playerId, progress, active.state, "retreat");
     const { data: updated, error } = await client
       .from("career_progress")
       .update({ current_hp: active.state.hp1, current_mp: active.state.mp1, active_boss_battle: null })
@@ -4394,32 +4462,91 @@ const db = (function () {
     return { phase: win.phase, win, boss, my, top, finished, myRank: idx >= 0 ? idx + 1 : null };
   }
 
-  // 出擊一次:用自己的職業、屬性、裝備跟 Boss 打 15 回合(或自己倒下),滿血滿魔開打、不影響爬塔的 HP/MP、不扣任何東西。
-  // 傷害 = Boss 掉的血,回報給資料庫累加(資料庫端有單次上限與冷卻)。
-  async function attackWorldBoss(eventId, playerId) {
-    await _assertCareerOpen(eventId);
+  // 出擊(2026-11-01 改成手動回合制,跟樓層關主同一套畫面與操作):
+  //   開打 = 用自己的職業、屬性、裝備跟打烊鐘打,滿血滿魔開打、不影響爬塔的 HP/MP、不扣任何東西。
+  //   進行中的戰鬥存在 career_progress.active_boss_battle(多一個 worldBoss: true 標記,不需要改資料庫結構),
+  //   每回合由玩家自己選普攻/技能/大招(submitCareerBossMove 會轉進 _submitWorldBossMove)。
+  //   結束條件:自己倒下、打滿 WORLD_BOSS.rounds 回合、或按撤退;傷害 = Boss 掉的血,結束時一次回報給資料庫累加
+  //   (資料庫端有單次上限與冷卻,見 deal_career_world_boss)。回報成功後才清掉進行中的戰鬥,
+  //   萬一清除失敗重送一次,也會被資料庫的冷卻擋下,不會重複計傷害。
+  function _worldBossSide() {
+    const W = window.CareerModifiers.WORLD_BOSS;
+    return { classKey: W.classKey, stats: { ...W.stats } };
+  }
+  async function startWorldBossBattle(eventId, playerId) {
+    const openEvent = await _assertCareerOpen(eventId);
     const CM = window.CareerModifiers;
-    const W = CM.WORLD_BOSS;
     const [progress, build, skillLevels] = await Promise.all([
       getOrCreateCareerProgress(eventId, playerId),
       getCareerBuildFor(eventId, playerId),
       getPlayerSkillLevels(playerId),
     ]);
     if (!build) throw new Error("請先選好職業再挑戰打烊鐘");
+    if (progress.pending_event) throw new Error("有一個夜市事件還沒處理完，請先選擇要怎麼應對");
+    if (progress.active_boss_battle) throw new Error("還有一場王戰在進行中，先打完再繼續");
+    const win = CM.worldBossWindow(openEvent.rules);
+    if (win.phase !== "active") throw new Error("現在打不了打烊鐘");
+    const { data: boss, error: bossErr } = await client.from("career_world_boss").select("max_hp, damage_total, defeated_at").eq("event_id", eventId).maybeSingle();
+    if (bossErr) throw bossErr;
+    if (!boss) throw new Error("打烊鐘還沒出現");
+    if (boss.defeated_at) throw new Error("打烊鐘已經被打倒了");
     const playerStats = window.CareerData.applyProgress(build.final_class, progress.stat_alloc, progress.equipment);
-    const battle = window.CareerPve.simulateFloorBattle(
+    const state = window.CareerEngine.initialMatchState(
       _engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment, progress.level, progress.relics),
-      { classKey: W.classKey, stats: { ...W.stats } },
-      { startHp: playerStats.maxHp, startMp: playerStats.maxMp, maxRounds: W.rounds }
+      _worldBossSide(),
+      { hp1: playerStats.maxHp, mp1: playerStats.maxMp }
     );
-    const damage = Math.max(0, Math.round(W.stats.maxHp - battle.state.hp2));
-    const { data, error } = await client.rpc("deal_career_world_boss", { p_event_id: eventId, p_player_id: playerId, p_damage: damage });
+    const { data: updated, error } = await client
+      .from("career_progress")
+      .update({ active_boss_battle: { worldBoss: true, floor: 0, state } })
+      .eq("id", progress.id)
+      .select()
+      .single();
     if (error) throw error;
-    if (!data || !data.accepted) {
-      const why = data && data.reason;
-      throw new Error(why === "cooldown" ? "出擊太頻繁了，等一下再打" : why === "ended" ? "打烊鐘已經結束了" : "現在打不了打烊鐘");
+    return { bossBattle: true, worldBoss: true, done: false, state, progress: updated };
+  }
+
+  // 結算世界 Boss 戰:把這場打出的傷害回報給資料庫,再清掉進行中的戰鬥。reason: "rounds" 打滿回合 / "dead" 倒下 / "retreat" 撤退
+  async function _settleWorldBossBattle(eventId, playerId, progress, state, reason) {
+    const W = window.CareerModifiers.WORLD_BOSS;
+    const damage = Math.max(0, Math.round(W.stats.maxHp - state.hp2));
+    let result = { accepted: true, applied: 0, defeated: false };
+    if (damage > 0) {
+      const { data, error } = await client.rpc("deal_career_world_boss", { p_event_id: eventId, p_player_id: playerId, p_damage: damage });
+      if (error) throw error;
+      result = data || { accepted: false };
     }
-    return { damage, applied: data.applied, result: data, log: battle.log, rounds: battle.state.round - 1, survived: battle.state.hp1 > 0 };
+    const { data: updated, error: clearErr } = await client
+      .from("career_progress")
+      .update({ active_boss_battle: null })
+      .eq("id", progress.id)
+      .select()
+      .single();
+    if (clearErr) throw clearErr;
+    return {
+      bossBattle: true, worldBoss: true, done: true, reason, damage,
+      applied: result.accepted ? result.applied || 0 : 0, accepted: !!result.accepted, rejectReason: result.reason || null,
+      defeated: !!result.defeated, result, log: state.log, rounds: state.round - 1, survived: state.hp1 > 0, progress: updated,
+    };
+  }
+
+  // 世界 Boss 戰的一回合:玩家選動作、Boss 用跟爬塔野怪同一套 AI 決定,算完這一回合;
+  // 倒下或打滿回合上限就結算,否則把狀態存回去等下一回合。
+  async function _submitWorldBossMove(eventId, playerId, progress, active, action) {
+    const W = window.CareerModifiers.WORLD_BOSS;
+    const state = { ...active.state, m1: { action } };
+    state.m2 = window.CareerPve.decideAction(state, 2);
+    const { state: newState } = window.CareerEngine.resolveRound(state);
+    const over = newState.hp1 <= 0 || newState.round - 1 >= W.rounds;
+    if (over) return _settleWorldBossBattle(eventId, playerId, progress, newState, newState.hp1 <= 0 ? "dead" : "rounds");
+    const { data: updated, error } = await client
+      .from("career_progress")
+      .update({ active_boss_battle: { worldBoss: true, floor: 0, state: newState } })
+      .eq("id", progress.id)
+      .select()
+      .single();
+    if (error) throw error;
+    return { bossBattle: true, worldBoss: true, done: false, state: newState, progress: updated };
   }
 
   // 領獎(Boss 被打倒或時間到之後,打過至少一次的人各領一次)。第 1 名另外拿稱號。
@@ -5120,7 +5247,7 @@ const db = (function () {
     synthesizeCareerEquipment,
     enhanceCareerEquipment,
     refreshWorldBoss,
-    attackWorldBoss,
+    startWorldBossBattle,
     claimWorldBossReward,
     reforgeCareerEquipment,
     bulkSellCareerEquipment,

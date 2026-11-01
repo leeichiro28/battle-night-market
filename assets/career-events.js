@@ -43,7 +43,25 @@ window.CareerEvents = (function () {
       desc: "感覺有股神秘力量在打量你" },
     { key: "blind_boxes", icon: "package-search", name: "夜市矇眼摸彩", type: "choice", weight: 9,
       desc: "老闆擺出三個一模一樣的箱子，說隨便挑一個，裡面是什麼只有打開才知道" },
+    // 萬聖夜限定(onlyTheme):只有今夜主題是「萬聖夜」的活動才會抽到,其他活動不會出現,也不算進圖鑑的事件總數。
+    // weight 調高一點,因為整場活動只有這一晚才有。糖果見下面 CANDIES。
+    { key: "trick_or_treat", icon: "candy", name: "不給糖就搗蛋", type: "instant", weight: 70, onlyTheme: "halloween",
+      desc: "一個扮成鬼的小孩攔住你:「不給糖就搗蛋!」……他自己的糖袋好像是空的" },
   ];
+
+  // 萬聖夜「不給糖就搗蛋」會得到的四種糖果:weight 是機率權重(加起來 100 = 百分比),reward 在 db.js 的 _resolveInstantEvent 發。
+  // 直接得到、不用換:事件文字會寫「你得到了○○，獲得了○○」。最稀有的糖有自由數值點 + 排行分。
+  const CANDIES = [
+    { key: "marshmallow", name: "鬼臉棉花糖", weight: 50, reward: "100~200 幣" },
+    { key: "pumpkin", name: "南瓜夾心糖", weight: 30, reward: "一段經驗(約升級所需的 30%)" },
+    { key: "bat", name: "蝙蝠巧克力", weight: 15, reward: "1 點自由數值點" },
+    { key: "ghost", name: "幽靈彩虹棒棒糖", weight: 5, reward: "2 點自由數值點 + 5 排行分" },
+  ];
+  function rollCandy() {
+    let r = Math.random() * CANDIES.reduce((s, c) => s + c.weight, 0);
+    for (const c of CANDIES) { r -= c.weight; if (r <= 0) return c; }
+    return CANDIES[CANDIES.length - 1];
+  }
 
   // 世界觀第一階段:每個事件一句 flavor text(純文字)，顯示在事件卡片/事件結果上，不影響任何效果。
   // 斗笠人(sparring)、老師傅(reclass)、貴人(benefactor)、走失小孩(lost_child)、
@@ -64,24 +82,27 @@ window.CareerEvents = (function () {
     try_on: "這件是展示品，我不收錢。……因為沒人敢穿。",
     spirit_blessing: "有什麼東西在你身上停了一下，然後離開。",
     blind_boxes: "老闆說:「每個都是獎，只是有些是獎中的獎。」",
+    trick_or_treat: "小孩說:「謝謝！我下次不嚇你了。」然後他在你背後做了個鬼臉。",
   };
   EVENTS.forEach((e) => { e.flavor = FLAVOR[e.key] || ""; });
 
   const EVENT_TRIGGER_CHANCE = 0.25; // 挑戰樓層時,25%機率變事件、75%正常打怪
 
-  function pickWeighted() {
-    const total = EVENTS.reduce((s, e) => s + e.weight, 0);
+  // themeKey:今夜主題。限定事件(onlyTheme)只有主題對得上才會被抽到
+  function pickWeighted(themeKey) {
+    const pool = EVENTS.filter((e) => !e.onlyTheme || e.onlyTheme === themeKey);
+    const total = pool.reduce((s, e) => s + e.weight, 0);
     let r = Math.random() * total;
-    for (const e of EVENTS) {
+    for (const e of pool) {
       r -= e.weight;
       if (r <= 0) return e;
     }
-    return EVENTS[EVENTS.length - 1];
+    return pool[pool.length - 1];
   }
 
   function getEvent(key) {
     return EVENTS.find((e) => e.key === key) || null;
   }
 
-  return { EVENTS, EVENT_TRIGGER_CHANCE, pickWeighted, getEvent };
+  return { EVENTS, EVENT_TRIGGER_CHANCE, CANDIES, rollCandy, pickWeighted, getEvent };
 })();

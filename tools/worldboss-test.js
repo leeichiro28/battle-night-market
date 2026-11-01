@@ -53,3 +53,42 @@ const sql = fs.readFileSync(root + "migration-world-boss.sql", "utf8"), schema =
 });
 ok(/for update/.test(sql.split("function deal_career_world_boss")[1].split("$$;")[0]), "deal 先鎖 Boss 那一列再加傷害(防同時覆蓋)");
 ok(/reward_claimed = true/.test(sql.split("function claim_career_world_boss")[1]) && sql.indexOf("reward_claimed = true") < sql.indexOf("update career_progress set coins"), "claim 先把已領取翻成 true 再發獎(防重複領)");
+
+// ---- 手動回合制(2026-11-01):每回合自己出招,打完 15 回合 / 倒下 / 撤退才結算 ----
+{
+  const E = sb.CareerEngine;
+  const stats = { ...CD.applyProgress("warrior", { atk: 30, def: 10, hp: 20 }, null) }; stats.hp = stats.maxHp;
+  const manual = (cap) => {
+    let st = E.initialMatchState(sideFor("warrior", stats), { classKey: W.classKey, stats: { ...W.stats } }, { hp1: stats.maxHp, mp1: stats.maxMp });
+    ok(st.round === 1 && st.hp2 === W.stats.maxHp, "開打時第 1 回合、Boss 滿血");
+    let n = 0;
+    for (;;) {
+      st = { ...st, m1: { action: "attack" } };
+      st.m2 = PVE.decideAction(st, 2);
+      st = E.resolveRound(st).state; n++;
+      if (st.hp1 <= 0 || st.round - 1 >= cap) break;
+      if (n > 100) break;
+    }
+    return { st, n };
+  };
+  const a = manual(W.rounds);
+  ok(a.n <= W.rounds && Math.round(W.stats.maxHp - a.st.hp2) > 0, `手動連打普攻:${a.n} 回合內結束,有造成傷害`);
+  const tough = (() => { // 堆很高的防禦與血量,確認「打滿回合上限」會停下來,不會無限打
+    const st2 = { ...CD.applyProgress("guardian", { def: 400, hp: 400, atk: 100 }, null) }; st2.hp = st2.maxHp;
+    let st = E.initialMatchState(sideFor("guardian", st2), { classKey: W.classKey, stats: { ...W.stats } }, { hp1: st2.maxHp, mp1: st2.maxMp });
+    let n = 0;
+    for (;;) { st = { ...st, m1: { action: "attack" } }; st.m2 = PVE.decideAction(st, 2); st = E.resolveRound(st).state; n++; if (st.hp1 <= 0 || st.round - 1 >= W.rounds) break; if (n > 100) break; }
+    return { n, alive: st.hp1 > 0 };
+  })();
+  ok(tough.alive && tough.n === W.rounds, `打不死的玩家打滿 ${W.rounds} 回合就結算(實際 ${tough.n} 回合)`);
+}
+// ---- 程式檢查:手動戰的結算只回報傷害,不動爬塔的 HP/MP、不給關主獎勵 ----
+{
+  const src = fs.readFileSync(root + "assets/db.js", "utf8");
+  const settle = src.slice(src.indexOf("async function _settleWorldBossBattle"), src.indexOf("async function _submitWorldBossMove"));
+  ok(settle.includes("deal_career_world_boss") && settle.includes("active_boss_battle: null"), "結算:回報傷害、清掉進行中的戰鬥");
+  ok(!/current_hp|current_mp|_applyFloorWinRewards|coins/.test(settle), "結算不碰爬塔 HP/MP、幣、關主獎勵");
+  ok(settle.indexOf("deal_career_world_boss") < settle.indexOf("active_boss_battle: null"), "先回報傷害、再清戰鬥(清失敗重送會被冷卻擋下,不會重複計傷害)");
+  ok(/if \(active\.worldBoss\) return _submitWorldBossMove/.test(src) && /if \(active\.worldBoss\) return _settleWorldBossBattle/.test(src), "出招與撤退都有轉進打烊鐘專用流程");
+  ok(/HP_PER_PLAYER constant int := 10000/.test(fs.readFileSync(root + "migration-world-boss.sql", "utf8")) && /HP_PER_PLAYER constant int := 10000/.test(fs.readFileSync(root + "supabase-schema.sql", "utf8")), "migration 與 schema 的每人血量一致(10000)");
+}

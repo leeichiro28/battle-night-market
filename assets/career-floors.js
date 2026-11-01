@@ -18,7 +18,15 @@ window.CareerFloors = (function () {
   // 51~59 層是「招牌」章,61~69 層是「塔心」章。60、70 是關主層,名字在 SPECIAL_BOSS_NAME。
   const MONSTER_NAMES_SIGN = ["熄燈的招牌精", "鐵捲門怪", "過期的號碼牌", "欠帳簿精", "最後一班的餛飩攤", "收攤後的燈泡串"];
   const MONSTER_NAMES_CORE = ["無名的攤位", "沒點亮的燈", "空位的排隊人", "逼聲的回音", "還沒命名的夜市", "沒人排的隊"];
+  // 2026-11-01 71~100 層(塔名「第一攤」,劇情見 docs/worldview-and-story.md 五之三):
+  // 71~79 層「續攤」章、81~89 層「別桌」章、91~99 層「最後一攤」章。80、90、100 是關主層。
+  const MONSTER_NAMES_AFTER = ["喝到第二輪的酒客", "續攤的啤酒塔", "醉倒的炒菜師傅", "搶麥克風的大叔", "沒付錢的老饕", "凌晨兩點的宵夜魂"];
+  const MONSTER_NAMES_OTHER = ["隔壁夜市的看板娘", "借過的外地攤販", "別區夜市的鎮攤獅", "走錯塔的觀光客", "別人家的排隊人龍", "跨區支援的老闆"];
+  const MONSTER_NAMES_LAST = ["最後一攤的熄燈人", "收尾的清潔阿姨", "整夜沒睡的更夫", "數錢到天亮的帳房", "天亮前的豆漿攤", "等第二攤的人"];
   function monsterNameFor(n) {
+    if (n > 90) return MONSTER_NAMES_LAST[n % MONSTER_NAMES_LAST.length];
+    if (n > 80) return MONSTER_NAMES_OTHER[n % MONSTER_NAMES_OTHER.length];
+    if (n > 70) return MONSTER_NAMES_AFTER[n % MONSTER_NAMES_AFTER.length];
     if (n > 60) return MONSTER_NAMES_CORE[n % MONSTER_NAMES_CORE.length];
     if (n > 50) return MONSTER_NAMES_SIGN[n % MONSTER_NAMES_SIGN.length];
     const pool = n <= 10 ? MONSTER_NAMES_EARLY : n <= 20 ? MONSTER_NAMES_LATE : n <= 30 ? MONSTER_NAMES_MID : n <= 40 ? MONSTER_NAMES_HIGH : MONSTER_NAMES_ELITE;
@@ -29,7 +37,7 @@ window.CareerFloors = (function () {
   // 「每個部位限購1件」的名額限制，不會超賣)。
   // 世界觀第一階段:10/20/30層關主也有自己的名字(原本是自動產生的「○○王(n層關主)」)，
   // 完整設定見docs/worldview-and-story.md第五節。
-  const SPECIAL_BOSS_NAME = { 10: "試吃攤大姐頭·阿霞姐", 20: "顧攤老怪·阿公", 30: "廟口總管·八爺", 40: "傳說夜市之王", 50: "終極隱藏關主·夜市之神", 60: "相片攤老闆·阿旺", 70: "第零攤" };
+  const SPECIAL_BOSS_NAME = { 10: "試吃攤大姐頭·阿霞姐", 20: "顧攤老怪·阿公", 30: "廟口總管·八爺", 40: "傳說夜市之王", 50: "終極隱藏關主·夜市之神", 60: "相片攤老闆·阿旺", 70: "第零攤", 80: "帳房先生·算盤伯", 90: "廣播員·阿喇叭", 100: "帶位員·阿一" };
   // 關主戰前/戰後對話(1~3句短文字，純文字，畫面端自己 ui.esc)。只有關主層有，一般樓層沒有 story 欄位。
   const FLOOR_STORY = {
     10: {
@@ -55,6 +63,18 @@ window.CareerFloors = (function () {
     70: {
       pre: "「逼——。」",
       post: "「夜市之神每晚開門，是因為我還沒收攤。」他停了很久，才又說:「你問我是誰?你每次聽到的『逼』，就是我在喊『下一位』。」",
+    },
+    80: {
+      pre: "「來，先結帳。你這一路吃的、拿的、打的，我都記著。」",
+      post: "「……少一筆。不是你的，是老闆的，他當年走得急，沒結。你替他看一眼就好，不用還。」他在帳本上畫了一條線，旁邊寫著小小的三個字:「第一攤」。",
+    },
+    90: {
+      pre: "「各位來賓請注意，夜市即將……咦?有人爬到這裡了?這段稿子我沒寫過。」",
+      post: "「每天打烊前的廣播都是我念的。稿子最後一行永遠一樣:『第二攤，往上走。』」他把麥克風遞給你，「我念了幾十年，從來不知道上面有什麼。你上去看，回來告訴我。」",
+    },
+    100: {
+      pre: "「幾位?……一位。好，這邊請。最後一個位子，我替你留很久了。」",
+      post: "「恭喜，你把第一攤爬完了。」他推開身後那扇門，外面是另一片夜市的燈，更遠的地方還有第三片、第四片。「你以為夜市只有一個?每個夜市都有自己的塔，每座塔頂都有人在喊『下一位』。」他笑了笑，「欸，第二攤，要不要續?」",
     },
     50: {
       pre: "「又到收攤的時間了。」",
@@ -95,6 +115,33 @@ window.CareerFloors = (function () {
       mage: "第零攤的計時鈴法杖",
       healer: "第零攤的點亮法球",
     },
+    80: {
+      novice: "算盤伯送的木尺",
+      warrior: "算盤伯的鐵算盤巨斧",
+      guardian: "算盤伯的帳本拳套",
+      archer: "算盤伯的珠串長弓",
+      assassin: "算盤伯的毛筆雙刃",
+      mage: "算盤伯的對帳法杖",
+      healer: "算盤伯的結清法球",
+    },
+    90: {
+      novice: "阿喇叭送的木劍",
+      warrior: "阿喇叭的擴音巨斧",
+      guardian: "阿喇叭的麥克風拳套",
+      archer: "阿喇叭的天線長弓",
+      assassin: "阿喇叭的雜訊雙刃",
+      mage: "阿喇叭的廣播法杖",
+      healer: "阿喇叭的回音法球",
+    },
+    100: {
+      novice: "阿一留下的木劍",
+      warrior: "阿一的帶位巨斧",
+      guardian: "阿一的候位拳套",
+      archer: "阿一的指路長弓",
+      assassin: "阿一的劃位雙刃",
+      mage: "阿一的叫號法杖",
+      healer: "阿一的留座法球",
+    },
     50: {
       novice: "終極隱藏關主賜下的木劍",
       warrior: "終極隱藏關主的滅世巨斧",
@@ -121,6 +168,30 @@ window.CareerFloors = (function () {
         specialEffect: { key: "dmgReduceRatio", value: 0.16, desc: "受到傷害減免16%" } },
       accessory: { name: "第零攤的計時鈴徽記", rarity: "legendary", statKey: "luck", statValue: 16, setKey: "boss70",
         specialEffect: { key: "critDmgBonus", value: 0.4, desc: "暴擊傷害額外+40%" } },
+    },
+    80: {
+      weapon: { rarity: "legendary", statValue: 20, setKey: "boss80",
+        specialEffect: { key: "lifestealOnHit", value: 0.14, desc: "攻擊命中吸血14%" } },
+      armor: { name: "算盤伯的銅算盤胸甲", rarity: "legendary", statKey: "def", statValue: 17, extraHp: 44, setKey: "boss80",
+        specialEffect: { key: "dmgReduceRatio", value: 0.18, desc: "受到傷害減免18%" } },
+      accessory: { name: "算盤伯的最後一筆帳", rarity: "legendary", statKey: "luck", statValue: 20, setKey: "boss80",
+        specialEffect: { key: "critBonus", value: 0.12, desc: "暴擊率+12%" } },
+    },
+    90: {
+      weapon: { rarity: "legendary", statValue: 24, setKey: "boss90",
+        specialEffect: { key: "critDmgBonus", value: 0.45, desc: "暴擊傷害額外+45%" } },
+      armor: { name: "阿喇叭的擴音器護甲", rarity: "legendary", statKey: "def", statValue: 20, extraHp: 52, setKey: "boss90",
+        specialEffect: { key: "dmgReduceRatio", value: 0.2, desc: "受到傷害減免20%" } },
+      accessory: { name: "阿喇叭的廣播稿", rarity: "legendary", statKey: "luck", statValue: 24, setKey: "boss90",
+        specialEffect: { key: "lifestealOnHit", value: 0.15, desc: "攻擊命中吸血15%" } },
+    },
+    100: {
+      weapon: { rarity: "legendary", statValue: 30, setKey: "boss100",
+        specialEffect: { key: "critBonus", value: 0.2, desc: "暴擊率+20%" } },
+      armor: { name: "阿一的帶位員制服", rarity: "legendary", statKey: "def", statValue: 24, extraHp: 64, setKey: "boss100",
+        specialEffect: { key: "dmgReduceRatio", value: 0.22, desc: "受到傷害減免22%" } },
+      accessory: { name: "最後一個位子的號碼牌", rarity: "legendary", statKey: "luck", statValue: 30, setKey: "boss100",
+        specialEffect: { key: "critDmgBonus", value: 0.5, desc: "暴擊傷害額外+50%" } },
     },
     40: {
       weapon: { rarity: "legendary", statValue: 6, setKey: "boss40",
@@ -149,6 +220,10 @@ window.CareerFloors = (function () {
     // db.js 的 _equipEffectBonus 把它帶進對戰,value 只要 > 0 就代表有。
     boss60: { key: "surviveOnce", value: 1, desc: "舊相片套裝:受到致命傷害時保留 1 點HP(每場戰鬥一次)", name: "舊相片套裝" },
     boss70: { key: "firstRoundCrit", value: 1, desc: "第零攤套裝:第一回合的攻擊必定暴擊", name: "第零攤套裝" },
+    // 80/90/100 層套裝沿用通用數值管道(不新增引擎機制):減傷、暴擊率、暴擊傷害
+    boss80: { key: "dmgReduceRatio", value: 0.06, desc: "算盤伯套裝:受到傷害再減免6%", name: "算盤伯套裝" },
+    boss90: { key: "critBonus", value: 0.08, desc: "阿喇叭套裝:暴擊率額外+8%", name: "阿喇叭套裝" },
+    boss100: { key: "critDmgBonus", value: 0.25, desc: "帶位員套裝:暴擊傷害額外+25%", name: "帶位員套裝" },
   };
 
   // 51 層以後的怪物強度:不能再用 1~50 層那條直線(玩家的力量在 Lv.100 以後成長變慢,但技能/專精/裝備階級會大幅跳升,
@@ -159,13 +234,18 @@ window.CareerFloors = (function () {
     51: { atk: 50, def: 25, spd: 9, hp: 400 },
     60: { atk: 60, def: 30, spd: 11, hp: 440 },
     70: { atk: 78, def: 39, spd: 12, hp: 540 },
+    // 71~100 層錨點(2026-11-01;用 node tools/sim.js calibrate --floors 79,89,99 找出建議等級玩家勝率約 65% 的一般怪強度,
+    // 再取略偏易的整數;建議等級 80 層約 Lv.75、90 層約 Lv.88、100 層約 Lv.100)
+    80: { atk: 94, def: 47, spd: 15, hp: 605 },
+    90: { atk: 108, def: 54, spd: 16, hp: 680 },
+    100: { atk: 122, def: 61, spd: 18, hp: 760 },
   };
   // 關主(60、70 層)的成長:不能像 1~50 層那樣血量/攻擊/防禦全部 ×1.3(三個乘起來約 2.2 倍強度,模擬勝率 0%),
   // 實測連 hp ×1.1 都只剩約 30%(戰鬥是血量 vs 輸出的比賽,血量放大一點，需要的回合數就大幅增加)。
   // 51 層以後只有血量 ×1.05,關主的「難」主要來自它的職業(60 層戰士、70 層法師)與一般樓層的高難度,不是靠數值硬堆。
   const LATE_BOSS_GROWTH = { atk: 1, def: 1, hp: 1.05 };
   function anchorStats(n) {
-    const [a, b] = n <= 60 ? [51, 60] : [60, 70];
+    const [a, b] = n <= 60 ? [51, 60] : n <= 70 ? [60, 70] : n <= 80 ? [70, 80] : n <= 90 ? [80, 90] : [90, 100];
     const t = (n - a) / (b - a);
     const lerp = (k) => FLOOR_ANCHORS[a][k] + (FLOOR_ANCHORS[b][k] - FLOOR_ANCHORS[a][k]) * t;
     return { atk: lerp("atk"), def: lerp("def"), spd: lerp("spd"), hp: lerp("hp") };
@@ -186,7 +266,8 @@ window.CareerFloors = (function () {
     // 玩家基礎HP從20調到100是為了不要感覺被一拳打死，但玩家自己的攻擊力沒有跟著調高，
     // 所以怪物HP不能跟著等比例放大，不然變成打不死人(這是上一版本調過頭的地方，這裡調回來)。
     const hp = late ? Math.round(late.hp * lateGrowth.hp) : Math.round((14 + n * 3) * growth);
-    const luck = Math.floor(n * 0.2);
+    // 幸運同時是怪物的暴擊率(5% + 幸運×2%),71 層以後不再往上加(70 層已經是 14 → 33% 暴擊),不然越往上越是靠暴擊把玩家打死,校準不準
+    const luck = Math.floor(Math.min(n, 70) * 0.2);
     const matk = atk; // 怪物的魔攻直接跟攻擊力同步，樓層資料不用另外調兩條成長曲線
 
     const coinBase = 5 + Math.floor(n * 0.3);
@@ -198,7 +279,7 @@ window.CareerFloors = (function () {
     // 就算不是關主樓層，每一層也都開始有機率掉史詩(機率隨樓層往上小幅提高)。
     let dropChance = isMiniBoss ? 1 : 0.3;
     let dropRarityWeights;
-    const isLegendaryBossFloor = n === 40 || n === 50 || n === 60 || n === 70;
+    const isLegendaryBossFloor = !!BOSS_LEGENDARY_ITEMS[n]; // 40/50/60/70/80/90/100
     if (isLegendaryBossFloor) {
       dropRarityWeights = { epic: 0.5, legendary: 0.5 };
     } else if (isMiniBoss) {
@@ -227,8 +308,10 @@ window.CareerFloors = (function () {
     };
   }
 
+  // 塔名(2026-11-01):「續攤」的第一攤。100 層揭露「這只是第一座塔」,別的夜市還有第二攤、第三攤…
+  const TOWER_NAME = "第一攤";
   const FLOORS = [];
-  for (let n = 1; n <= 70; n++) FLOORS.push(buildFloor(n));
+  for (let n = 1; n <= 100; n++) FLOORS.push(buildFloor(n));
 
   function getFloor(n) {
     return FLOORS.find((f) => f.floor === n) || null;
@@ -431,7 +514,7 @@ window.CareerFloors = (function () {
   // 51~60 層掉「招牌階」(tier 2)、61~70 層掉「塔心階」(tier 3),稀有度的意義不變(普通/稀有/史詩),但數值明顯比
   // 夜市階(tier 1,也就是上面那兩張表)高,名字沿用該章的主題。傳說只有 Boss 套裝(見 BOSS_LEGENDARY_ITEMS)與商店/抽獎。
   // 武器每個職業每個稀有度 1 款,防具/飾品每個稀有度 2 款(不分職業)。物件上帶 tier,合成時用來保留階級。
-  const TIER_LABEL = { 1: "夜市階", 2: "招牌階", 3: "塔心階" };
+  const TIER_LABEL = { 1: "夜市階", 2: "招牌階", 3: "塔心階", 4: "續攤階" };
   const TIER_WEAPON_NAMES = {
     2: {
       warrior: ["拆下來的招牌角鐵", "鐵捲門撐桿重錘", "老招牌鑄鐵巨斧"],
@@ -449,24 +532,35 @@ window.CareerFloors = (function () {
       mage: ["沒點亮的法杖", "空位的占卜杖", "還沒命名的法杖"],
       healer: ["未命名的小法球", "沒點亮的燈籠法球", "逼聲裡的法球"],
     },
+    4: {
+      warrior: ["啤酒箱的鐵把手", "宵夜攤大鐵鍋", "喝到天亮的酒桶巨斧"],
+      guardian: ["桌邊的折疊椅盾", "整張圓桌的桌面盾", "沒人坐的主桌"],
+      archer: ["竹籤長弓", "串燒架長弓", "宵夜攤的最後一串"],
+      assassin: ["牙籤雙刃", "開瓶器短刀", "凌晨兩點的菜刀"],
+      mage: ["酒後吐真言的法杖", "卡拉OK麥克風杖", "續攤的點歌本"],
+      healer: ["解酒茶的小法球", "醒酒湯保溫瓶法球", "天亮前的第一碗粥"],
+    },
   };
   const TIER_ARMOR_NAMES = {
     2: [["熄燈招牌板甲", "鐵捲門片護甲"], ["號碼牌鎖子甲", "舊相片夾層背心"], ["燈泡串披肩甲", "整面招牌的重甲"]],
     3: [["未命名的粗布甲", "空位的外套"], ["逼聲回音披風", "沒點亮的燈籠甲"], ["第零攤的圍裙甲", "還沒命名的戰袍"]],
+    4: [["續攤用的外套", "沾了醬油的圍裙甲"], ["別桌夜市的披風", "散場後的雨衣甲"], ["第二攤的制服", "帶位員的西裝甲"]],
   };
   const TIER_ACCESSORY_NAMES = {
     2: [["招牌小燈泡", "號碼牌掛飾"], ["舊相片吊墜", "鐵捲門鑰匙環"], ["熄燈前的霓虹吊飾", "收攤後的燈泡串項鍊"]],
     3: [["未命名的護符", "空位的小木牌"], ["逼聲的耳墜", "沒點亮的燈芯墜"], ["下一位的號碼牌", "第零攤的計時鈴吊飾"]],
+    4: [["免洗筷掛飾", "酒杯杯墊墜飾"], ["別區夜市的紀念幣", "打包盒的拉環戒"], ["第二攤的入場手環", "還沒撕的號碼單"]],
   };
   // 數值:[普通, 稀有, 史詩]。武器 = 攻擊/魔攻,防具 = 防禦 + 額外 HP,飾品 = 幸運。夜市階史詩約 4/3/4,這裡明顯更高。
   const TIER_VALUES = {
     2: { weapon: [3, 6, 9], armor: [3, 5, 8], armorHp: [6, 12, 18], accessory: [3, 5, 8] },
     3: { weapon: [5, 9, 13], armor: [5, 8, 12], armorHp: [10, 18, 26], accessory: [5, 8, 12] },
+    4: { weapon: [7, 13, 19], armor: [7, 11, 16], armorHp: [14, 24, 34], accessory: [7, 11, 16] },
   };
   const TIER_RARITIES = ["common", "rare", "epic"];
-  const WEAPON_TABLE_TIER = { 2: {}, 3: {} };
-  const EQUIPMENT_TABLE_TIER = { 2: { armor: {}, accessory: {} }, 3: { armor: {}, accessory: {} } };
-  [2, 3].forEach((tier) => {
+  const WEAPON_TABLE_TIER = { 2: {}, 3: {}, 4: {} };
+  const EQUIPMENT_TABLE_TIER = { 2: { armor: {}, accessory: {} }, 3: { armor: {}, accessory: {} }, 4: { armor: {}, accessory: {} } };
+  [2, 3, 4].forEach((tier) => {
     CLASS_KEYS.forEach((c) => {
       const statKey = CD.CLASS_INFO[c] && CD.CLASS_INFO[c].path === "magic" ? "matk" : "atk";
       WEAPON_TABLE_TIER[tier][c] = {};
@@ -479,9 +573,9 @@ window.CareerFloors = (function () {
       EQUIPMENT_TABLE_TIER[tier].accessory[r] = TIER_ACCESSORY_NAMES[tier][i].map((name) => ({ name, rarity: r, statKey: "luck", statValue: TIER_VALUES[tier].accessory[i], tier }));
     });
   });
-  // 這層樓掉的是哪一階:1~50 夜市階、51~60 招牌階、61~70 塔心階
+  // 這層樓掉的是哪一階:1~50 夜市階、51~60 招牌階、61~70 塔心階、71~100 續攤階
   function floorTier(n) {
-    return n >= 61 ? 3 : n >= 51 ? 2 : 1;
+    return n >= 71 ? 4 : n >= 61 ? 3 : n >= 51 ? 2 : 1;
   }
   // 取「這個部位、這個稀有度、這一階」的款式清單。第 1 階 = 原本的 WEAPON_TABLE/EQUIPMENT_TABLE;傳說永遠走原本的表
   // (傳說只有商店/抽獎/合成/Boss 套裝,不分階)。沒有對應的階級款式就退回第 1 階,不會回傳空。
@@ -725,6 +819,7 @@ window.CareerFloors = (function () {
   const REPEAT_BOSS_DROP_CHANCE = 0.35;
 
   return {
+    TOWER_NAME,
     FLOORS,
     getFloor,
     WEAPON_TABLE,

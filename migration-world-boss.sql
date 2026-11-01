@@ -38,8 +38,8 @@ returns jsonb
 language plpgsql
 as $$
 declare
-  HP_PER_PLAYER constant int := 15000;
-  HP_MIN        constant int := 30000;
+  HP_PER_PLAYER constant int := 10000; -- 2026-11-01 改手動回合制;使用者指定每人 10,000
+  HP_MIN        constant int := 20000;
   b career_world_boss%rowtype;
   v_new boolean := false;
   v_cnt int;

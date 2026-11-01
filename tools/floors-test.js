@@ -42,7 +42,7 @@ const fails = async (fn, re, m) => { try { await fn(); ok(false, m + "(應該失
 
 (async () => {
   // ---- 樓層資料 ----
-  ok(CF.FLOORS.length === 70 && CF.getFloor(70) && !CF.getFloor(71), "樓層共 70 層");
+  ok(CF.FLOORS.length === 100 && CF.getFloor(100) && !CF.getFloor(101), "樓層共 100 層");
   ok(CF.getFloor(60).name === "相片攤老闆·阿旺" && CF.getFloor(70).name === "第零攤", "60/70 層關主名字");
   ok(CF.getFloor(60).isMiniBoss && CF.getFloor(70).isMiniBoss && !CF.getFloor(65).isMiniBoss, "60/70 是關主層");
   ok(CF.getFloor(60).story && CF.getFloor(60).story.pre && CF.getFloor(60).story.post && CF.getFloor(70).story.post.includes("下一位"), "60/70 層有戰前戰後對話");
@@ -193,10 +193,10 @@ const fails = async (fn, re, m) => { try { await fn(); ok(false, m + "(應該失
 
   // ---- 圖鑑目錄 ----
   const cat = sb.CareerCodex.catalog();
-  ok(cat.mon.length === 70, "怪物圖鑑 70 筆");
+  ok(cat.mon.length === 100, "怪物圖鑑 100 筆");
   ok(cat.item.length >= 86 + 60 + 6 + 6, `裝備圖鑑含階級裝備與 60/70 層套裝(${cat.item.length} 款)`);
   ok(cat.item.some((i) => i.name === "第零攤的點亮法球" && i.bossFloor === 70) && cat.item.some((i) => i.tier === 2) && cat.item.some((i) => i.tier === 3), "圖鑑含 Boss 套裝與兩個階級");
   const ach = sb.CareerCodex.ACHIEVEMENTS;
-  ok(ach.length === 37 && ach.some((a) => a.key === "floor60") && ach.some((a) => a.key === "floor70"), "成就 37 個(新增 60/70 層)");
+  ok(ach.length === 38 && ach.some((a) => a.key === "floor60") && ach.some((a) => a.key === "floor70"), "成就 38 個(新增 60/70/100 層)");
   console.log(process.exitCode ? "\n有失敗" : "\n全部通過");
 })().catch((e) => { console.error("測試崩潰", e); process.exit(1); });
