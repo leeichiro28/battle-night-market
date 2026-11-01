@@ -2219,6 +2219,19 @@ const db = (function () {
     return data;
   }
 
+  // 攻擊/魔攻的自由數值點是「依系別」二選一的(魔法系只能加魔攻，力量/敏捷系只能加攻擊，見 tower.js 的加點面板)。
+  // 換系之後舊的那欄用不到，等於白白浪費，所以換系時把這欄的點數 1:1 轉進新系的攻擊欄位。
+  // 回傳有沒有真的轉。alloc 會被直接修改(呼叫端傳的是複製品)。
+  function _unifyAttackAlloc(alloc, pathKey) {
+    if (!pathKey || pathKey === "novice") return false;
+    const from = pathKey === "magic" ? "atk" : "matk";
+    const to = pathKey === "magic" ? "matk" : "atk";
+    if (!(alloc[from] > 0)) return false;
+    alloc[to] = (alloc[to] || 0) + alloc[from];
+    alloc[from] = 0;
+    return true;
+  }
+
   // Lv5 選系:除了定案 career_builds.path/final_class(novice_xxx)之外，順便送一筆永久加點
   // (跟被動的 CLASS_EFFECTS.statBonus是兩件事，這是「轉職那一刻」的獎勵，讓轉職有感覺)，
   // 還有一份新手藥水禮包。
@@ -2234,6 +2247,7 @@ const db = (function () {
     const bonus = window.CareerData.PATH_TRANSFER_BONUS[pathKey] || {};
     const alloc = { ...progress.stat_alloc };
     Object.keys(bonus).forEach((k) => (alloc[k] = (alloc[k] || 0) + bonus[k]));
+    _unifyAttackAlloc(alloc, pathKey); // 重選到不同系時，舊系的攻擊/魔攻點數跟著轉過來
     const pack = window.CareerData.STARTER_PACK_POTIONS || {};
     const potions = { hp: (progress.potions.hp || 0) + (pack.hp || 0), mp: (progress.potions.mp || 0) + (pack.mp || 0) };
     // 重選職業(resetCareerClass)時技能點已經整筆退回，build.skill_keys 會留一個 "points_kept" 記號，
@@ -2282,12 +2296,27 @@ const db = (function () {
   // 就轉成目前職業的款式，強化等級保留。tower.js 每次載入都會檢查，沒東西要轉就不會打資料庫。
   async function repairCareerWeapons(eventId, playerId) {
     const [progress, build] = await Promise.all([getOrCreateCareerProgress(eventId, playerId), getCareerBuildFor(eventId, playerId)]);
-    if (!build || !build.final_class || build.final_class.indexOf("novice") === 0) return { changed: false, progress };
-    const wp = _convertWeaponsPatch(progress, build.final_class);
-    if (!wp.changed) return { changed: false, progress };
+    if (!build || !build.final_class || build.final_class === "novice") return { changed: false, progress };
+    const patch = {};
+    let changed = false;
+    // 攻擊/魔攻點數:跟目前的系對不上就轉過來(用舊版換過系的人，舊系的點數會卡在用不到的欄位)
+    const alloc = { ...(progress.stat_alloc || {}) };
+    if (_unifyAttackAlloc(alloc, build.path)) {
+      patch.stat_alloc = alloc;
+      changed = true;
+    }
+    // 武器:只有定案最終職業才轉(見習武器維持原樣)
+    if (build.final_class.indexOf("novice") !== 0) {
+      const wp = _convertWeaponsPatch(progress, build.final_class);
+      if (wp.changed) {
+        Object.assign(patch, wp.patch);
+        changed = true;
+      }
+    }
+    if (!changed) return { changed: false, progress };
     const { data, error } = await client
       .from("career_progress")
-      .update(wp.patch)
+      .update(patch)
       .eq("id", progress.id)
       .eq("inventory_rev", progress.inventory_rev)
       .select();
@@ -2302,6 +2331,7 @@ const db = (function () {
     const bonus = window.CareerData.FINAL_TRANSFER_BONUS[finalClass] || {};
     const alloc = { ...progress.stat_alloc };
     Object.keys(bonus).forEach((k) => (alloc[k] = (alloc[k] || 0) + bonus[k]));
+    _unifyAttackAlloc(alloc, pathKey);
 
     const prevBuild = await getCareerBuildFor(eventId, playerId);
     const prevClass = prevBuild && prevBuild.final_class; // 先記下來,存新 build 之後才拿來比較

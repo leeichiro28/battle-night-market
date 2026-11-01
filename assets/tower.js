@@ -273,8 +273,12 @@
     // 自動修復:已經定案職業、但身上/背包還有別的職業的武器(名字和攻擊屬性綁職業)，轉成目前職業的款式，強化等級保留。
     // 本地先檢查，沒東西要轉就不打資料庫;最多試 2 次，避免一直失敗時每次載入都重打。
     const _cls = myBuild && myBuild.final_class;
-    if (_cls && _cls.indexOf("novice") !== 0 && weaponRepairTries < 2 && window.CareerFloors && CareerFloors.convertWeaponForClass) {
-      const needsConvert = [progress.equipment && progress.equipment.weapon].concat(progress.inventory || []).some((it) => it && CareerFloors.convertWeaponForClass(it, _cls) !== it);
+    if (_cls && _cls !== "novice" && weaponRepairTries < 2 && window.CareerFloors && CareerFloors.convertWeaponForClass) {
+      // 攻擊/魔攻點數跟目前的系對不上(魔法系只能加魔攻，其他系只能加攻擊)
+      const _al = progress.stat_alloc || {};
+      const allocMismatch = myBuild.path === "magic" ? _al.atk > 0 : myBuild.path && myBuild.path !== "novice" ? _al.matk > 0 : false;
+      const weaponMismatch = _cls.indexOf("novice") !== 0 && [progress.equipment && progress.equipment.weapon].concat(progress.inventory || []).some((it) => it && CareerFloors.convertWeaponForClass(it, _cls) !== it);
+      const needsConvert = allocMismatch || weaponMismatch;
       if (needsConvert) {
         weaponRepairTries += 1;
         try {
