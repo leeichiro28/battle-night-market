@@ -411,6 +411,18 @@
     return html;
   }
 
+  // 掛機狀態列的藥水說明:這次掛機累計自動喝了幾瓶;開著自動喝但藥水喝光時提醒
+  function autoPotionNote(r) {
+    const cfg = progress.auto_potion || {};
+    const potions = progress.potions || {};
+    const total = r.potionsTotal || 0;
+    const out = [];
+    if (cfg.hp && !(potions.hp > 0)) out.push("恢復藥水用完了");
+    if (cfg.mp && !(potions.mp > 0)) out.push("魔力藥水用完了");
+    if (!total && !out.length) return "";
+    return `<br/><span style="color:var(--ink-dim);">${ui.icon("flask-round")}${total ? `這次掛機已自動喝了 ${total} 瓶` : ""}${total && out.length ? "，" : ""}${out.length ? `<b style="color:var(--gold);">${out.join("、")}</b>` : ""}</span>`;
+  }
+
   function autoFarmStatusHtml() {
     const r = progress.auto_farm_last_result;
     if (!r) {
@@ -422,6 +434,7 @@
       <p style="text-align:center;font-size:11.5px;margin:8px 0 0;color:${r.won ? "var(--green)" : "var(--ink-dim)"};">
         ${ui.icon(r.won ? "check" : "x")}${r.won ? `第${r.floor}層掛機戰鬥獲勝，+${r.coinGain}幣 +${r.expGain}經驗` : `第${r.floor}層掛機戰鬥落敗，沒有獎勵`}
         (${secAgo}秒前 · 下一場約${nextInSec}秒後)
+        ${autoPotionNote(r)}
       </p>`;
   }
 
@@ -463,6 +476,25 @@
       </div>`;
   }
 
+  // 王戰喝藥水(項目 19 階段 2):直接補戰鬥中的 HP/MP,算一回合(自己不出手、關主照打)。打烊鐘不開放。
+  function bossPotionRowHtml(s) {
+    const potions = progress.potions || { hp: 0, mp: 0 };
+    const CF = CareerFloors;
+    const btn = (type, cur, max) => {
+      const def = CF.POTIONS[type];
+      const full = cur >= max;
+      const none = !(potions[type] > 0);
+      const off = bossSubmitted || full || none;
+      const note = none ? "沒有了" : full ? (type === "hp" ? "HP 已滿" : "魔力已滿") : `+${Math.round(def.healRatio * 100)}%`;
+      return `<button class="btn ghost small" id="boss-potion-${type}" ${off ? "disabled" : ""}>${ui.icon(def.icon)}${ui.esc(def.name)} x${potions[type] || 0}<span style="font-weight:400;color:var(--ink-dim);margin-left:4px;">${note}</span></button>`;
+    };
+    return `
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center;">
+        ${btn("hp", s.hp1, s.maxhp1)}${btn("mp", s.mp1, s.maxmp1)}
+        <span style="font-size:11px;color:var(--ink-dim);">喝藥水算一回合，你不出手、關主照常行動</span>
+      </div>`;
+  }
+
   function renderBossBattleUi() {
     const active = progress.active_boss_battle;
     const s = active.state;
@@ -476,8 +508,11 @@
     const ultCharged = ultCharge1 >= ultChargeMax;
     const ultCost = Math.max(1, (CareerData.ULT_MANA_COST || 0) - (s.ultCostReduce1 || 0)); // 含「大招精修」減免，跟引擎一致
     const ultAffordable = ultCharged && (s.mp1 || 0) >= ultCost;
-    const skillAffordable = s.skillUnlocked1 && (s.mp1 || 0) >= (CareerData.SKILL_MANA_COST || 0);
-    const skill2Affordable = s.skill2Unlocked1 && (s.mp1 || 0) >= (CareerData.SKILL_MANA_COST || 0);
+    // 技能實際魔力花費(專精/覺醒技能比 SKILL_MANA_COST 貴),跟引擎判斷一致
+    const skillCost1 = CareerPve.skillCostOf(s, 1);
+    const skillCost2 = CareerPve.skillCostOf(s, 2);
+    const skillAffordable = s.skillUnlocked1 && (s.mp1 || 0) >= skillCost1;
+    const skill2Affordable = s.skill2Unlocked1 && (s.mp1 || 0) >= skillCost2;
     const ultDisplayName = s.ultName1 || myInfo.ultName; // Phase 4:大招可能被換成大招2，用state裡實際裝備的名字，不是職業固定的預設名字
 
     if (s.round !== bossSeenRound) {
@@ -520,14 +555,14 @@
         ${
           s.skillUnlocked1
             ? `<button class="btn ghost" id="boss-skill-btn" style="flex:1 1 28%;" ${bossSubmitted || !skillAffordable ? "disabled" : ""}>
-                ${ui.icon("wand-sparkles")}${ui.esc(s.skillAName1 || CareerData.SKILL_NAME[s.class1] || "戰技")}(${CareerData.SKILL_MANA_COST || 0}魔力)
+                ${ui.icon("wand-sparkles")}${ui.esc(s.skillAName1 || CareerData.SKILL_NAME[s.class1] || "戰技")}(${skillCost1}魔力)
               </button>`
             : ""
         }
         ${
           s.skill2Unlocked1
             ? `<button class="btn ghost" id="boss-skill2-btn" style="flex:1 1 28%;" ${bossSubmitted || !skill2Affordable ? "disabled" : ""}>
-                ${ui.icon("sparkles")}${ui.esc(s.skillBName1 || "技能B")}(${CareerData.SKILL_MANA_COST || 0}魔力)
+                ${ui.icon("sparkles")}${ui.esc(s.skillBName1 || "技能B")}(${skillCost2}魔力)
               </button>`
             : ""
         }
@@ -535,6 +570,7 @@
           ${ui.icon("flame")}${ui.esc(ultDisplayName)}(${ultCost}魔力)${!ultCharged ? `(大招點 ${Math.round(ultCharge1)}/${ultChargeMax})` : (s.mp1 || 0) < ultCost ? "(魔力不足)" : ""}
         </button>
       </div>
+      ${isWorld ? "" : bossPotionRowHtml(s)}
       <p style="text-align:center;font-size:11.5px;color:var(--ink-dim);margin:10px 0 0;">
         ${bossSubmitted ? "已送出這回合的動作，結算中..." : `第 ${s.round} 回合，剩餘 <span id="boss-round-timer">30</span> 秒`}
       </p>
@@ -657,9 +693,37 @@
       ${body}`;
   }
 
+  // 刷層自動喝藥水(項目 19 階段 3):兩顆開關,預設關。資料庫沒有 auto_potion 欄位(還沒跑 SQL)時停用並說明。
+  function renderAutoPotionSection() {
+    const supported = progress.auto_potion !== undefined;
+    const cfg = progress.auto_potion || {};
+    const potions = progress.potions || { hp: 0, mp: 0 };
+    const CF = CareerFloors;
+    const row = (type, label, rule) => {
+      const on = !!cfg[type];
+      return `
+        <div class="shop-row">
+          <div class="shop-row-name">${ui.esc(label)}(現有 ${potions[type] || 0} 瓶)
+            <span class="shop-row-desc">${ui.esc(rule)}</span></div>
+          <button class="btn small ${on ? "" : "ghost"}" data-auto-potion="${type}" aria-pressed="${on}" ${supported && !busy ? "" : "disabled"}>${ui.icon(on ? "toggle-right" : "toggle-left")}${on ? "已開啟" : "已關閉"}</button>
+        </div>`;
+    };
+    return `
+      <div>
+        <p class="shop-section-title" style="margin-top:16px;">${ui.icon("flask-round")}刷層自動喝藥水</p>
+        <p style="margin:0 0 6px;font-size:11.5px;color:var(--ink-dim);line-height:1.7;">
+          開啟後，<b>掛機</b>和<b>重複挑戰已通關的樓層</b>開打前會自動喝藥水(第一次通關的新樓層、關主戰不會自動喝，要你自己控制)。只會喝你<b>已經擁有</b>的藥水，不會自動去買；喝光就照原樣繼續打。每場開打前每種最多連喝 3 瓶。
+        </p>
+        ${row("hp", CF.POTIONS.hp.name, "HP 低於 50% 時喝")}
+        ${row("mp", CF.POTIONS.mp.name, "魔力不夠放一次技能(低於 7 點)時喝")}
+        ${supported ? "" : `<p style="margin:6px 0 0;font-size:11.5px;color:var(--ink-dim);">${ui.icon("database")}資料庫還沒更新，請先執行 migration-auto-potion.sql 才能使用這個功能。</p>`}
+      </div>`;
+  }
+
   function renderSettingsTab() {
     return `
       <p class="shop-section-title" style="margin-top:0;">${ui.icon("settings")}爬塔設定</p>
+      ${renderAutoPotionSection()}
       ${renderResetClassSection()}
       ${renderRememberedChoices()}`;
   }
@@ -753,6 +817,7 @@
           <p style="margin:0 0 6px;font-weight:700;color:${b.won ? "var(--green)" : "var(--red)"};display:flex;align-items:center;gap:6px;">
             ${ui.icon(b.won ? "trophy" : "skull")}${b.won ? `打贏了 ${ui.esc(b.floorDef.name)}!` : `打輸給 ${ui.esc(b.floorDef.name)}了...`}
           </p>
+          ${b.potionsUsed && (b.potionsUsed.hp || b.potionsUsed.mp) ? `<p style="margin:0 0 6px;font-size:11.5px;color:var(--ink-dim);">${ui.icon("flask-round", { size: "12px" })}開打前自動喝了${b.potionsUsed.hp ? ` 恢復藥水 x${b.potionsUsed.hp}` : ""}${b.potionsUsed.mp ? ` 魔力藥水 x${b.potionsUsed.mp}` : ""}</p>` : ""}
           ${
             b.floorDef && b.floorDef.vendor
               ? `<p style="margin:0 0 6px;font-size:12px;color:var(--gold);overflow-wrap:anywhere;">${ui.icon(b.floorDef.vendor.icon, { size: "13px" })}<b>稀有攤販出現了!</b>${ui.esc(b.floorDef.vendor.title)}・${ui.esc(b.floorDef.vendor.text)}${b.won ? "(打贏必掉稀有以上裝備,幣與經驗 ×1.5)" : ""}</p>`
@@ -972,39 +1037,37 @@
     const baseRate = Math.round(rule.rate * 100);
     const selNext = CF.SYNTHESIS_PATH[selRarity];
     const infoHtml = `
-      <div style="margin:12px auto 0;max-width:340px;padding:10px;border-radius:var(--radius);border:1px solid var(--line);background:var(--panel2);font-size:12px;line-height:1.8;">
-        ${ui.esc(slotLabel(selSlot))}${ui.esc(CF.RARITY_LABEL[selRarity])} → ${ui.esc(CF.RARITY_LABEL[selNext])}<br/>
-        費用:<b style="color:var(--gold);">${rule.fee > 0 ? `${rule.fee} 幣` : "免費"}</b>(你有 ${progress.coins} 幣)<br/>
-        成功機率:<b style="color:var(--gold);">${curRate}%</b>${fails > 0 ? `<span style="color:var(--ink-dim);">(基礎 ${baseRate}% + 保底 ${curRate - baseRate}%,已連續失敗 ${fails} 次)</span>` : `<span style="color:var(--ink-dim);">(基礎機率)</span>`}
+      <div class="syn-info">
+        <div>${ui.esc(slotLabel(selSlot))}${ui.esc(CF.RARITY_LABEL[selRarity])} → ${ui.esc(CF.RARITY_LABEL[selNext])}</div>
+        <div>費用:<b style="color:var(--gold);">${rule.fee > 0 ? `${rule.fee} 幣` : "免費"}</b><span class="dim">(你有 ${progress.coins} 幣)</span></div>
+        <div>成功機率:<b style="color:var(--gold);">${curRate}%</b>${fails > 0 ? `<span class="dim">(基礎 ${baseRate}% + 保底 ${curRate - baseRate}%，已連續失敗 ${fails} 次)</span>` : `<span class="dim">(基礎機率)</span>`}</div>
       </div>`;
 
     let resultHtml = "";
     if (lastSynthesisResult) {
       const r = lastSynthesisResult;
       resultHtml = `
-        <div style="margin-top:16px;padding:12px;border-radius:var(--radius);border:1px solid ${r.success ? "var(--gold-d)" : "var(--line)"};background:var(--panel2);text-align:center;">
-          ${ui.icon(r.success ? "arrow-big-up" : "circle-x")}
-          <p style="margin:6px 0 0;font-size:12.5px;color:${r.success ? "var(--gold)" : "var(--ink)"};">${ui.esc(r.text)}</p>
-        </div>`;
+        <div class="syn-result ${r.success ? "ok" : ""}">${ui.icon(r.success ? "arrow-big-up" : "circle-x")}<span>${ui.esc(r.text)}</span></div>`;
     }
 
     return `
       ${renderEnhanceSection(locked)}
-      <div style="text-align:center;margin-top:26px;padding-top:18px;border-top:1px dashed var(--line);">
-        ${ui.icon("flask-conical", { size: "32px" })}
-        <p style="margin:10px 0 4px;font-weight:700;font-size:15px;">裝備合成</p>
-        <p style="margin:0 0 16px;font-size:11.5px;color:var(--ink-dim);line-height:1.7;">
+      <div style="margin-top:26px;padding-top:18px;border-top:1px dashed var(--line);">
+        <div style="text-align:center;">
+          ${ui.icon("flask-conical", { size: "32px" })}
+          <p style="margin:10px 0 4px;font-weight:700;font-size:15px;">裝備合成</p>
+        </div>
+        <p style="margin:0 0 8px;font-size:11.5px;color:var(--ink-dim);line-height:1.7;">
           同部位、同稀有度的裝備湊滿 ${need} 件就能合成一次，成功變成下一個稀有度，可以一路合成到${ui.icon("crown", { size: "12px" })}傳說。<br/>
           稀有、史詩的合成要付幣；失敗會拿回 1 件同稀有度的裝備，並累積保底，下次成功率更高。<br/>
           合成傳說只會拿到你還沒擁有過的款式，Boss 限定傳說無法合成。
         </p>
-        <select id="synthesis-select" style="max-width:320px;width:100%;">
-          ${options.join("")}
-        </select>
-        ${infoHtml}
-        <div style="margin-top:14px;">
-          <button class="btn" id="synthesize-btn" ${locked ? "disabled" : ""}>${ui.icon("arrow-big-up")}合成(消耗${need}件${rule.fee > 0 ? `+${rule.fee}幣` : ""})</button>
+        <div class="shop-row">
+          <div class="shop-row-name">合成項目
+            <span class="shop-row-desc"><select id="synthesis-select" class="syn-select">${options.join("")}</select></span></div>
+          <button class="btn small" id="synthesize-btn" ${locked ? "disabled" : ""}>${ui.icon("arrow-big-up")}合成(消耗${need}件${rule.fee > 0 ? `+${rule.fee}幣` : ""})</button>
         </div>
+        ${infoHtml}
         ${resultHtml}
       </div>`;
   }
@@ -1372,35 +1435,33 @@
     const lvl = progress.level || 1;
     const chosen = SP.chosenBranch(cls, activeSkills);
     const upgraded = lvl >= SP.SPEC_UPGRADE_LEVEL;
-    const cards = ["a", "b"]
-      .map((br) => {
+    // 項目 19 階段 4:兩條分支改成跟技能頁同一種列版型。每條分支 = 一列分支標題(圖示/名稱/說明/選擇按鈕)
+    // + 縮排的子列(被動、Lv.升階、2 個專精技能)。已選的那條金邊、另一條灰階。文字與 data-choose-spec 按鈕跟以前一樣。
+    const rows = ["a", "b"]
+      .map((br, i) => {
         const sp = SP.SPECS[cls][br];
         const isChosen = chosen === br;
         const blocked = !!chosen && !isChosen;
         const lockedByLevel = lvl < SP.SPEC_LEVEL;
         let action;
-        if (isChosen) action = `<span style="font-size:11px;color:var(--green);font-weight:700;">${ui.icon("check", { size: "12px" })}本場已選擇</span>`;
+        if (isChosen) action = `<span class="sk-ok">${ui.icon("check", { size: "12px" })}本場已選擇</span>`;
         else if (blocked) action = `<span style="font-size:11px;color:var(--ink-dim);">本場已選另一條，不能改選</span>`;
         else if (lockedByLevel) action = `<span style="font-size:11px;color:var(--ink-dim);">${ui.icon("lock", { size: "12px" })}需角色 Lv.${SP.SPEC_LEVEL}(你現在 Lv.${lvl})</span>`;
         else action = `<button class="btn small" data-choose-spec="spec_${br}" ${canSpend ? "" : "disabled"}>${ui.icon("git-merge", { size: "13px" })}花1點選擇這條${canSpend ? "" : "(沒有技能點)"}</button>`;
         const p = sp.passive;
-        return `
-          <div class="st-card" style="flex:1 1 240px;max-width:340px;background:var(--panel2);border:1px solid ${isChosen ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:12px;${blocked ? "opacity:0.5;" : ""}">
-            <div style="display:flex;align-items:center;gap:6px;justify-content:center;">${ui.icon(sp.icon, { size: "18px" })}<b style="font-size:14px;">${ui.esc(sp.name)}</b></div>
-            <p style="margin:4px 0 8px;font-size:11px;color:var(--ink-dim);text-align:center;line-height:1.6;">${ui.esc(sp.desc)}</p>
-            <div style="font-size:11.5px;line-height:1.7;overflow-wrap:anywhere;">
-              <div>${ui.icon("sparkles", { size: "12px" })}<b>被動「${ui.esc(p.name)}」</b>：${ui.esc(p.fmt(p.t1))}</div>
-              <div style="color:${isChosen && upgraded ? "var(--green)" : "var(--ink-dim)"};">${ui.icon("chevrons-up", { size: "12px" })}Lv.${SP.SPEC_UPGRADE_LEVEL} 升階：${ui.esc(p.fmt(p.t2))}${isChosen && upgraded ? "(已升階)" : ""}</div>
-              ${sp.skills.map((sk) => `<div>${ui.icon(sk.icon, { size: "12px" })}<b>${ui.esc(sk.name)}</b>：${ui.esc(sk.desc)}</div>`).join("")}
-            </div>
-            <div style="margin-top:10px;text-align:center;">${action}</div>
-          </div>`;
+        const sub = (o) => skRowHtml({ ...o, cls: "sk-sub", dim: blocked, equipped: false });
+        return (
+          skRowHtml({ icon: sp.icon, name: sp.name, desc: sp.desc, equipped: isChosen, dim: blocked, cls: i ? "sk-branch" : "", action }) +
+          sub({ icon: "sparkles", name: `被動「${p.name}」`, desc: p.fmt(p.t1) }) +
+          sub({ icon: "chevrons-up", name: `Lv.${SP.SPEC_UPGRADE_LEVEL} 升階${isChosen && upgraded ? "(已升階)" : ""}`, desc: p.fmt(p.t2) }) +
+          sp.skills.map((sk) => sub({ icon: sk.icon, name: sk.name, desc: sk.desc })).join("")
+        );
       })
       .join("");
     return `
       <p style="text-align:center;margin:20px 0 4px;font-size:12px;font-weight:700;color:var(--ink-dim);">${ui.icon("git-merge", { size: "13px" })}專精(第二轉職)・Lv.${SP.SPEC_LEVEL} 兩條擇一，Lv.${SP.SPEC_UPGRADE_LEVEL} 升階</p>
       <p style="text-align:center;margin:0 0 10px;font-size:11px;color:var(--ink-dim);line-height:1.7;">選了之後立刻有被動，分支的 2 個技能要再各花 1 點才能學(可升到 Lv.${CareerData.MAX_SKILL_LEVEL})，學了就能跟原本的技能一起 5 選 2 裝備。專精跟技能等級一樣只在這場活動有效，下一場活動可以重新選。</p>
-      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">${cards}</div>`;
+      <div class="sk-list">${rows}</div>`;
   }
 
   // 子分頁3:被動(通用被動8個 + 職業被動)。職業被動的預覽規則跟技能・大招分頁一樣。
@@ -1414,20 +1475,18 @@
       <p style="text-align:center;margin:0 0 12px;font-weight:700;font-size:14px;">
         ${ui.icon("sparkles")}永久被動<span style="font-weight:400;color:var(--ink-dim);font-size:11.5px;"> · 跨活動、跨賽季永久繼承</span>
       </p>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;">
-        ${otherKeys.map((key) => passiveCard(key, skillLevels[key] || 0, canSpend)).join("")}
-      </div>`;
+      <div class="sk-list">${otherKeys.map((key) => passiveCard(key, skillLevels[key] || 0, canSpend)).join("")}</div>`;
 
     html += `<p style="text-align:center;margin:20px 0 12px;font-weight:700;font-size:14px;">${ui.icon("gem")}數值精研<span style="font-weight:400;color:var(--ink-dim);font-size:11.5px;"> · 固定加數值，一樣永久繼承</span></p>`;
-    html += `<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;">${statKeys.map((key) => passiveCard(key, skillLevels[key] || 0, canSpend)).join("")}</div>`;
+    html += `<div class="sk-list">${statKeys.map((key) => passiveCard(key, skillLevels[key] || 0, canSpend)).join("")}</div>`;
 
     html += `<p style="text-align:center;margin:20px 0 12px;font-weight:700;font-size:14px;">${ui.icon("shield")}職業被動<span style="font-weight:400;color:var(--ink-dim);font-size:11.5px;"> · 只能點目前的職業，但等級永久保留</span></p>`;
     if (chosenClass) {
       const masteryDef = CD.CLASS_MASTERY_DEFS[chosenClass];
-      html += `<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;">${classMasteryCard(chosenClass, masteryDef, skillLevels[`class_mastery:${chosenClass}`] || 0, canSpend)}</div>`;
+      html += `<div class="sk-list">${classMasteryCard(chosenClass, masteryDef, skillLevels[`class_mastery:${chosenClass}`] || 0, canSpend)}</div>`;
     } else {
       const classBranches = CD.getSkillTreeChildren(`path_${chosenPath}`);
-      html += `<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;">`;
+      html += `<div class="sk-list">`;
       classBranches.forEach((branch) => {
         const previewClass = branch.effect.unlocksClassKey;
         const masteryDef = CD.CLASS_MASTERY_DEFS[previewClass];
@@ -1455,7 +1514,7 @@
   // 技能列(技能分頁統一版型):圖示方塊 + 名稱/等級/說明 + 右側操作。整齊、省空間;
   // 彩色邊框只有覺醒區塊才有(外面包 awakenFrame),一般技能只有「裝備中」的金色細邊。
   function skRowHtml(o) {
-    return `<div class="sk-row2${o.equipped ? " on" : ""}${o.dim ? " dim" : ""}">
+    return `<div class="sk-row2${o.equipped ? " on" : ""}${o.dim ? " dim" : ""}${o.cls ? " " + o.cls : ""}">
       <span class="sk-ic2">${ui.icon(o.icon, { size: "18px" })}</span>
       <div class="sk-main"><div class="sk-nm"><b>${ui.esc(o.name)}</b>${o.lv > 0 ? `<span class="sk-lv">Lv.${o.lv}</span>` : ""}${o.tag ? `<span class="sk-tag">${ui.esc(o.tag)}</span>` : ""}</div><small>${ui.esc(o.desc || "")}</small></div>
       <div class="sk-act">${o.action || ""}</div>
@@ -1533,27 +1592,25 @@
   // Bug修正(玩家回報):以前把「升級後的效果說明」塞在按鈕文字裡，按鈕不會換行，
   // 說明一長就整排字衝出卡片外框。現在把說明拆成獨立一行(放在名字下面、狀態文字上面，
   // 字體大小跟狀態文字一樣)，按鈕只留「升到 Lv.X」這種短文字，不會再爆版。
+  // 被動頁(項目 19 階段 4):改用跟技能・大招頁同一種列版型 skRowHtml(圖示方塊 + 名稱/等級/說明 + 右側操作),
+  // 一列一個被動,整齊對齊。資料與按鈕行為(data-upgrade-skill)跟以前完全一樣,只改排版。
   function passiveCard(key, lv, canSpend) {
     const CD = CareerData;
     const def = CD.PASSIVE_DEFS[key];
     const MAX_LV = def.maxLevel || CD.MAX_SKILL_LEVEL;
     const atMax = lv >= MAX_LV;
-    const previewDesc = CD.passiveLevelDesc(key, atMax ? lv : lv + 1); // 沒解鎖時預覽「升上去會變怎樣」，已經最高等級就顯示目前效果
-    const statusText = atMax ? "已達最高等級" : lv > 0 ? `目前 Lv.${lv}` : "尚未解鎖";
-    return `
-      <div class="st-card wide" style="display:flex;flex-direction:column;background:var(--panel2);border:1px solid ${!atMax && canSpend ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:12px;text-align:center;">
-        ${ui.icon(def.icon, { size: "22px" })}
-        <p style="margin:8px 0 2px;font-weight:700;font-size:13px;">${ui.esc(def.name)}${lv > 0 ? ` Lv.${lv}` : ""}</p>
-        <p style="margin:0 0 4px;font-size:11px;color:var(--ink-dim);overflow-wrap:break-word;">${ui.esc(previewDesc)}</p>
-        <p style="margin:0 0 8px;font-size:11px;color:${atMax ? "var(--green)" : lv > 0 ? "var(--gold)" : "var(--ink-dim)"};font-weight:700;">${statusText}</p>
-        <div style="margin-top:auto;">
-          ${
-            atMax
-              ? `<span style="font-size:10.5px;color:var(--green);font-weight:700;">${ui.icon("check", { size: "12px" })}已解鎖到頂</span>`
-              : `<button class="btn ghost small" data-upgrade-skill="${key}" ${canSpend && !levelGate(lv + 1) ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "14px" })}升到 Lv.${lv + 1}${gateLabel(lv + 1)}</button>`
-          }
-        </div>
-      </div>`;
+    const desc = CD.passiveLevelDesc(key, atMax ? lv : lv + 1); // 沒解鎖時預覽「升上去會變怎樣」，已經最高等級就顯示目前效果
+    return skRowHtml({
+      icon: def.icon,
+      name: def.name,
+      lv,
+      equipped: lv > 0,
+      tag: atMax ? "已滿級" : "",
+      desc: `${atMax ? "目前效果" : lv > 0 ? "下一級" : "解鎖後"}：${desc}`,
+      action: atMax
+        ? `<span class="sk-ok">${ui.icon("check", { size: "12px" })}已解鎖到頂</span>`
+        : `<button class="btn ghost small" data-upgrade-skill="${key}" ${canSpend && !levelGate(lv + 1) ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "14px" })}升到 Lv.${lv + 1}${gateLabel(lv + 1)}</button>`,
+    });
   }
 
   // 跟 passiveCard 幾乎一樣，只是資料來源是 CLASS_MASTERY_DEFS(職業限定被動)而不是 PASSIVE_DEFS。
@@ -1564,25 +1621,22 @@
     const MAX_LV = CD.MAX_SKILL_LEVEL;
     const effLv = forcePreview ? 0 : lv;
     const atMax = effLv >= MAX_LV;
-    const previewDesc = CD.classMasteryDesc(classKey, atMax ? effLv : effLv + 1);
-    const statusText = atMax ? "已達最高等級" : effLv > 0 ? `目前 Lv.${effLv}` : "尚未解鎖";
+    const desc = CD.classMasteryDesc(classKey, atMax ? effLv : effLv + 1);
     const key = `class_mastery:${classKey}`;
-    return `
-      <div class="st-card wide" style="display:flex;flex-direction:column;background:var(--panel2);border:1px solid ${!atMax && canSpend && !forcePreview ? "var(--gold)" : "var(--line)"};border-radius:var(--radius);padding:12px;text-align:center;${forcePreview ? "opacity:0.55;" : ""}">
-        ${ui.icon(def.icon, { size: "22px" })}
-        <p style="margin:8px 0 2px;font-weight:700;font-size:13px;">${ui.esc(def.name)}${effLv > 0 ? ` Lv.${effLv}` : ""}</p>
-        <p style="margin:0 0 4px;font-size:11px;color:var(--ink-dim);overflow-wrap:break-word;">${ui.esc(previewDesc)}</p>
-        <p style="margin:0 0 8px;font-size:11px;color:${atMax ? "var(--green)" : effLv > 0 ? "var(--gold)" : "var(--ink-dim)"};font-weight:700;">${statusText}</p>
-        <div style="margin-top:auto;">
-          ${
-            forcePreview
-              ? `<span style="font-size:10.5px;color:var(--ink-dim);">選這個職業後才能點</span>`
-              : atMax
-                ? `<span style="font-size:10.5px;color:var(--green);font-weight:700;">${ui.icon("check", { size: "12px" })}已解鎖到頂</span>`
-                : `<button class="btn ghost small" data-upgrade-skill="${key}" ${canSpend && !levelGate(effLv + 1) ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "14px" })}升到 Lv.${effLv + 1}${gateLabel(effLv + 1)}</button>`
-          }
-        </div>
-      </div>`;
+    return skRowHtml({
+      icon: def.icon,
+      name: def.name,
+      lv: effLv,
+      equipped: effLv > 0,
+      dim: !!forcePreview,
+      tag: atMax ? "已滿級" : "",
+      desc: `${atMax ? "目前效果" : effLv > 0 ? "下一級" : "解鎖後"}：${desc}`,
+      action: forcePreview
+        ? `<span style="font-size:10.5px;color:var(--ink-dim);">選這個職業後才能點</span>`
+        : atMax
+          ? `<span class="sk-ok">${ui.icon("check", { size: "12px" })}已解鎖到頂</span>`
+          : `<button class="btn ghost small" data-upgrade-skill="${key}" ${canSpend && !levelGate(effLv + 1) ? "" : "disabled"}>${ui.icon("arrow-big-up", { size: "14px" })}升到 Lv.${effLv + 1}${gateLabel(effLv + 1)}</button>`,
+    });
   }
 
   // ---------------- 分頁4:背包 ----------------
@@ -1656,23 +1710,18 @@
     // P2-9新增:一鍵賣裝，只開放普通/稀有(史詩/傳說一律不給這個功能賣，避免手滑賣掉重要裝備)，
     // 已裝備的東西本來就不在這個列表裡，不用另外排除。
     html += `
-      <div class="shop-row" style="flex-wrap:wrap;gap:8px 14px;">
-        <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;">
-          <input type="checkbox" id="sell-filter-common" ${sellFilters.common ? "checked" : ""}/> 普通
-        </label>
-        <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;">
-          <input type="checkbox" id="sell-filter-rare" ${sellFilters.rare ? "checked" : ""}/> 稀有
-        </label>
-        <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;color:var(--gold);">
-          <input type="checkbox" id="sell-filter-epic" ${sellFilters.epic ? "checked" : ""}/> 史詩(請小心)
-        </label>
-        <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;color:var(--gold);">
-          <input type="checkbox" id="sell-filter-legendary" ${sellFilters.legendary ? "checked" : ""}/> 傳說(請小心)
-        </label>
-        <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;">
-          <input type="checkbox" id="sell-filter-lowlevel" ${sellFilters.lowLevelOnly ? "checked" : ""}/> 只賣低等級門檻(Lv.10以下)
-        </label>
-        <button class="btn ghost small" id="bulk-sell-btn">${ui.icon("coins")}一鍵賣裝</button>
+      <div class="sell-box">
+        <div class="sell-head">${ui.icon("coins")}<b>一鍵賣裝</b><span class="dim">勾選要賣的稀有度</span></div>
+        <div class="sell-chips">
+          <label class="sell-chip"><input type="checkbox" id="sell-filter-common" ${sellFilters.common ? "checked" : ""}/><span>普通</span></label>
+          <label class="sell-chip"><input type="checkbox" id="sell-filter-rare" ${sellFilters.rare ? "checked" : ""}/><span>稀有</span></label>
+          <label class="sell-chip warn"><input type="checkbox" id="sell-filter-epic" ${sellFilters.epic ? "checked" : ""}/><span>史詩・小心</span></label>
+          <label class="sell-chip warn"><input type="checkbox" id="sell-filter-legendary" ${sellFilters.legendary ? "checked" : ""}/><span>傳說・小心</span></label>
+        </div>
+        <label class="sell-chip wide"><input type="checkbox" id="sell-filter-lowlevel" ${sellFilters.lowLevelOnly ? "checked" : ""}/><span>只賣低等級門檻(Lv.10 以下)</span></label>
+        <div class="sell-foot">
+          <button class="btn small" id="bulk-sell-btn">${ui.icon("coins")}一鍵賣裝</button>
+        </div>
       </div>
       ${lastSellResult ? `<p style="text-align:center;font-size:11.5px;color:var(--gold);margin:4px 0 0;">${ui.icon("check")}賣掉了 ${lastSellResult.soldCount} 件，+${lastSellResult.coinsGained} 幣</p>` : ""}
       <p style="font-size:10.5px;color:var(--ink-dim);margin:2px 0 10px;">已裝備的裝備不會出現在這份清單、不會被賣掉;史詩/傳說預設不勾選，要自己勾選才會列入賣出範圍，請小心不要賣掉重要裝備。</p>`;
@@ -1977,6 +2026,10 @@
     if (bossSkillBtn && !bossSkillBtn.disabled) bossSkillBtn.onclick = () => submitBossMove("skill1");
     const bossSkill2Btn = document.getElementById("boss-skill2-btn");
     if (bossSkill2Btn && !bossSkill2Btn.disabled) bossSkill2Btn.onclick = () => submitBossMove("skill2");
+    ["hp", "mp"].forEach((type) => {
+      const potBtn = document.getElementById("boss-potion-" + type);
+      if (potBtn && !potBtn.disabled) potBtn.onclick = () => submitBossMove("potion:" + type);
+    });
     const bossRetreatBtn = document.getElementById("boss-retreat-btn");
     if (bossRetreatBtn) {
       bossRetreatBtn.onclick = async () => {
@@ -2042,6 +2095,25 @@
       btn.onclick = () => {
         skillTreeSubTab = btn.dataset.skilltreeSubtab;
         render();
+      };
+    });
+
+    app.querySelectorAll("[data-auto-potion]").forEach((btn) => {
+      if (btn.disabled) return;
+      btn.onclick = async () => {
+        if (busy) return;
+        busy = true;
+        try {
+          const type = btn.getAttribute("data-auto-potion");
+          const cur = progress.auto_potion || {};
+          progress = await db.setCareerAutoPotion(eventId, myId, { hp: !!cur.hp, mp: !!cur.mp, [type]: !cur[type] });
+          render();
+        } catch (e) {
+          await ui.alert(e.message || "設定失敗", { title: "操作失敗", tone: "danger" });
+          render();
+        } finally {
+          busy = false;
+        }
       };
     });
 
@@ -2758,6 +2830,7 @@
     const ultBtn = document.getElementById("boss-ult-btn");
     const skillBtn = document.getElementById("boss-skill-btn");
     const skill2Btn = document.getElementById("boss-skill2-btn");
+    ["hp", "mp"].forEach((t) => { const b = document.getElementById("boss-potion-" + t); if (b) b.disabled = true; });
     if (atkBtn) atkBtn.disabled = true;
     if (ultBtn) ultBtn.disabled = true;
     if (skillBtn) skillBtn.disabled = true;

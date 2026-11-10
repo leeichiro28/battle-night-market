@@ -42,7 +42,7 @@
     Object.keys(data.event).forEach((k) => (ev[k] = true));
     const stat = {};
     Object.keys(data.stat).forEach((k) => (stat[k] = data.stat[k].times));
-    return { p: {}, stat, set, cat: tot, ev, pvp: null };
+    return { p: {}, stat, set, cat: tot, ev, pvp: null, spec: {}, statCount: (prefix) => Object.keys(stat).filter((k) => k.startsWith(prefix)).length };
   }
 
   function achTab() {

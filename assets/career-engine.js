@@ -294,6 +294,11 @@ window.CareerEngine = (function () {
     let immuneRatio2 = 0;
     let skip1 = false; // 這回合不出手攻擊(守衛「銅牆鐵壁」/巫醫「完全治癒」這種skipAttack:true的大招)
     let skip2 = false;
+    // 王戰喝藥水(項目 19 階段 2):動作 item = 這回合喝了藥水,不出手(但對方照常行動)。藥水的回復在呼叫端(db.js)先改好 state 的 HP/MP,這裡只負責「不出手」與戰報。
+    if (m1.action === "item") {
+      skip1 = true;
+      events.push({ side: 1, type: "item", text: m1.text || "你喝下藥水,這回合沒有出手!" });
+    }
     const startMp1 = mp1;
     const startMp2 = mp2;
     let spent1 = 0; // 這回合實際花掉的魔力(有花才不回魔，見回合結束段)

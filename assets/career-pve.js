@@ -32,6 +32,47 @@ window.CareerPve = (function () {
     return { action: "attack" };
   }
 
+  // 玩家自動 AI(2026-11-10,項目 19 階段 1):只給玩家那一邊(side 1)用,怪物仍走上面的 decideAction。
+  //   1. 大招點滿 + 魔力夠 → 放大招
+  //   2. 否則魔力夠就放技能(不再 50% 隨機);兩個技能都付得起時挑花費較高的。
+  //      例外:大招是治療型(巫醫)且大招點已 >= 85 時,放完技能會湊不出大招魔力就先普攻留魔力(模擬:這個職業不留魔反而變弱)
+  //   3. 技能花費用「技能實際花費」(專精/覺醒技能 6~7 魔力),不是固定的 SKILL_MANA_COST
+  //   4. 其餘普通攻擊
+  function skillCostOf(state, slot) {
+    const eff = slot === 1 ? state.skillEffectA1 : state.skillEffectB1;
+    return (eff && eff.manaCost) || window.CareerData.SKILL_MANA_COST || 0;
+  }
+  // 技能的「總傷害倍率」(多段技能把每下加起來),跟普攻(1.0)比才知道值不值得花魔力
+  const TUNE = { minMult: 0, healReserve: 60 };
+  function skillValueOf(state, slot) {
+    const CD = window.CareerData;
+    const eff = slot === 1 ? state.skillEffectA1 : state.skillEffectB1;
+    const lvl = slot === 1 ? state.skillLevel1 : state.skill2Level1;
+    const base = eff && eff.mult != null ? eff.mult : CD.skillDmgMult ? CD.skillDmgMult(lvl) : CD.SKILL_DMG_MULT || 1.4;
+    return base * ((eff && eff.hits) || 1);
+  }
+  function decidePlayerAction(state) {
+    const CD = window.CareerData;
+    const mp = state.mp1 || 0;
+    const ultCost = Math.max(1, (CD.ULT_MANA_COST || 0) - (state.ultCostReduce1 || 0));
+    const chargeReady = (state.ultCharge1 || 0) >= (CD.ULT_CHARGE_MAX || 100);
+    const healUlt = state.ultEffect1 && state.ultEffect1.kind === "heal";
+    if (chargeReady && mp >= ultCost) return { action: "ult" };
+    const options = [];
+    if (state.skillLevel1 > 0 && mp >= skillCostOf(state, 1)) options.push({ action: "skill1", cost: skillCostOf(state, 1), val: skillValueOf(state, 1) });
+    if (state.skill2Level1 > 0 && mp >= skillCostOf(state, 2)) options.push({ action: "skill2", cost: skillCostOf(state, 2), val: skillValueOf(state, 2) });
+    const worth = options.filter((o) => o.val >= TUNE.minMult);
+    options.length = 0;
+    worth.forEach((o) => options.push(o));
+    if (options.length) {
+      options.sort((a, b) => b.val - a.val);
+      const pick = options[0];
+      if (healUlt && (state.ultCharge1 || 0) >= TUNE.healReserve && mp - pick.cost < ultCost) return { action: "attack" };
+      return { action: pick.action };
+    }
+    return { action: "attack" };
+  }
+
   // playerSide: { classKey, stats }，monsterSide: { classKey, stats }
   // opts: { startHp, startMp, maxRounds } — 爬塔用持續HP/MP起始值，不帶就是滿血滿魔開打(神秘人切磋用這個);maxRounds = 回合上限(詞條用)
   function simulateFloorBattle(playerSide, monsterSide, opts) {
@@ -40,7 +81,7 @@ window.CareerPve = (function () {
     let rounds = 0;
     const limit = opts.maxRounds ? Math.min(opts.maxRounds, MAX_ROUNDS) : MAX_ROUNDS; // 詞條「打烊倒數」會把上限縮短,超過就算輸
     while (state.hp1 > 0 && state.hp2 > 0 && rounds < limit) {
-      state.m1 = decideAction(state, 1);
+      state.m1 = opts.legacyAi ? decideAction(state, 1) : decidePlayerAction(state);
       state.m2 = decideAction(state, 2);
       const result = window.CareerEngine.resolveRound(state);
       state = result.state;
@@ -50,5 +91,5 @@ window.CareerPve = (function () {
     return { won, state, log: state.log, endHp: state.hp1, endMp: state.mp1 };
   }
 
-  return { simulateFloorBattle, decideAction };
+  return { simulateFloorBattle, decideAction, decidePlayerAction, skillCostOf, skillValueOf, TUNE };
 })();

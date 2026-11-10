@@ -1653,6 +1653,7 @@ alter table career_pvp_queue add column if not exists beat_higher int not null d
 --   item   裝備圖鑑(entry_key = 裝備名稱，times = 1)
 --   event  夜市事件圖鑑(entry_key = 事件 key，times = 1)
 --   stat   永久累計數字(entry_key = pveWins / pvpWins / synthSuccess / synthLegend / revive，times = 累計值)
+--          2026-11-10 起另有 enhanceOk / reforge / bountyClaim / vendorWin / bossHit / bossDmg / bossFull / awakenPvpWins，以及「每種只記一次」的 awk_<職業>_<分支>、arena_<規則>(不用改表，entry_key 本來就是任意文字)
 --   pvpm   PVP 場次防重複(entry_key = 場次 id，只用來避免同一場結果被重複計入 stat)
 -- 每個 key 的名稱與說明都放在前端 assets/career-codex.js，資料表不需要跟著改。
 create table if not exists career_codex (
@@ -1862,3 +1863,6 @@ begin
   return jsonb_build_object('defeated', v_win, 'rank', v_rank, 'myDamage', d.damage, 'coins', v_coins, 'statPoints', v_stat, 'skillPoints', v_skill);
 end;
 $$;
+
+-- 刷層自動喝藥水(項目 19 階段 3):設定存成 {"hp":bool,"mp":bool},預設都關
+alter table career_progress add column if not exists auto_potion jsonb not null default '{}'::jsonb;

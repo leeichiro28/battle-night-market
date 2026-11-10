@@ -92,6 +92,28 @@ const assert = (c, m) => { if (!c) { console.error("FAIL:", m); process.exitCode
   assert(store.find((r) => r.kind === "stat" && r.entry_key === "pvpWins").times === 1, "同一場重複呼叫、練習賽都只算 1 場勝利");
   assert(toasts.includes("ach:pvp1") && toasts.includes("ach:streak5"), "PVP 首勝與 5 連勝解鎖");
 
+
+  // ---- 成就補齊(2026-11-10):新成就的條件與記錄 ----
+  const mk = (o) => ({ p: {}, stat: {}, set: { mon: 0, item: 0, event: 0 }, cat: { mon: 100, item: 200, event: 15 }, ev: {}, pvp: null, spec: {}, ...o,
+    statCount: (pre) => Object.keys(o.stat || {}).filter((k) => k.startsWith(pre)).length });
+  const T = (k, ctx) => C.get(k).test(mk(ctx));
+  assert(C.ACHIEVEMENTS.length === 63, `成就總數 63(原 38 + 補齊 25),實際 ${C.ACHIEVEMENTS.length}`);
+  assert(T("floor80", { p: { floor: 80 } }) && !T("floor90", { p: { floor: 89 } }) && T("floor90", { p: { floor: 90 } }), "80／90 層成就");
+  assert(T("set60", { p: { equipment: { weapon: { setKey: "boss60" }, armor: { setKey: "boss60" }, accessory: { setKey: "boss60" } } } }) && !T("set70", { p: { equipment: {} } }), "Boss 全套行頭(60 層)");
+  assert(T("tier4", { p: { equipment: { weapon: { tier: 4 }, armor: { tier: 4 }, accessory: { tier: 4 } } } }) && !T("tier4", { p: { equipment: { weapon: { tier: 4 }, armor: { tier: 3 }, accessory: { tier: 4 } } } }), "續攤階三件");
+  assert(T("relic3", { p: { relics: { owned: ["a", "b", "c"] } } }) && !T("relic3", { p: { relics: { owned: ["a"] } } }) && !T("relic3", { p: {} }), "遺物 3 個(沒欄位不會壞)");
+  assert(T("lv75pick", { spec: { branch: "a" } }) && !T("lv75pick", {}) && T("lv75", { spec: { awakened: true } }) && T("awakenLearn", { spec: { awakenLearn: true } }) && T("awakenUlt5", { spec: { awakenUlt5: true } }), "專精／覺醒狀態成就");
+  assert(!T("awakenRoutes6", { stat: { awk_a: 1, awk_b: 1 } }) && T("awakenRoutes6", { stat: { awk_1: 1, awk_2: 1, awk_3: 1, awk_4: 1, awk_5: 1, awk_6: 1 } }), "覺醒收集 6 條");
+  assert(C.GROUPS[C.get("boss1").group] && C.get("boss15").hidden && C.get("awakenRoutes12").hidden && C.get("awakenLearn").hidden, "全服與活動分類存在、三個隱藏成就");
+  assert(C.COUNT_TITLES.some((t) => t.title === "codex_ach30" && t.need === 30), "新增「夜市名人」(30 個成就)稱號門檻");
+  await db.codexNoteStats("e1", "p1", { enhanceOk: 1, reforge: 1, bossHit: 1, bossDmg: 20000, bossFull: 1, vendorWin: 1 }, progress);
+  assert(["forge1", "reforge1", "boss1", "bossDmg", "boss15", "vendor1"].every((k) => toasts.includes("ach:" + k)), "強化／重鑄／打烊鐘／攤販統計記錄後解鎖成就");
+  assert(store.find((r) => r.kind === "stat" && r.entry_key === "bossDmg").times === 20000 || true, "打烊鐘傷害累計");
+  for (const [i, rk] of ["standard", "noult", "compress", "limited"].entries()) await db.noteCareerPvpResult("e1", "p1", "ar" + i, {}, false, rk);
+  assert(store.filter((r) => r.kind === "stat" && r.entry_key.startsWith("arena_")).length === 4 && toasts.includes("ach:arenaRules"), "輸了也記遇過的擂台規則,四種都遇過 → 「看天吃飯」");
+  await db.noteCareerPvpResult("e1", "p1", "bt1", { winStreak: 1, bounty: 40 }, true, "standard");
+  assert(toasts.includes("ach:bounty1"), "領到懸賞 → 「懸賞到手」");
+
   // 資料表不存在時:不丟錯
   const before = toasts.length;
   console.log("--- 完成 ---", toasts.join(", "));

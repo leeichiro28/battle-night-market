@@ -8,7 +8,7 @@ function extract(name) { const i = src.indexOf("function " + name + "("); let d 
 const ui = { esc: (s) => String(s).replace(/</g, "&lt;"), icon: (n) => `<i ${n}></i>` };
 const ctx = { window: sb, CareerSpec: sb.CareerSpec, CareerData: sb.CareerData, ui, progress: { level: 49 }, console };
 vm.createContext(ctx);
-vm.runInContext(extract("renderSpecSection") + "\nthis.f=renderSpecSection;", ctx);
+vm.runInContext(extract("skRowHtml") + "\n" + extract("renderSpecSection") + "\nthis.f=renderSpecSection;", ctx);
 const ok = (c, m) => { console.log(c ? "ok  " : "FAIL", m); if (!c) process.exitCode = 1; };
 const strip = (h) => h.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 let h;
@@ -26,6 +26,26 @@ let all = true; Object.keys(sb.CareerSpec.SPECS).forEach((c) => { [49, 50, 100].
 ok(all, "6 個職業 × 3 種等級都能正常產生畫面,且列出技能名稱");
 ok(ctx.f("novice", {}, true) === "", "見習(沒有專精的職業)不顯示專精區塊");
 console.log("\n--- Lv.50 戰士畫面文字 ---\n" + strip((ctx.progress.level = 50, ctx.f("warrior", {}, true))));
+
+// ---- 項目 19 階段 4:被動頁、專精區改成技能列版型 ----
+console.log("\n--- 被動／專精列版型 ---");
+const ctx4 = { window: sb, CareerSpec: sb.CareerSpec, CareerData: sb.CareerData, ui, console, progress: { level: 60 }, skillLevels: { exp_boost: 2, coin_boost: 5 } };
+vm.createContext(ctx4);
+vm.runInContext(["skRowHtml", "levelGate", "gateLabel", "passiveCard", "classMasteryCard", "renderSkillTreePassivesSection"].map(extract).join("\n") + "\nthis.sec=renderSkillTreePassivesSection;this.pc=passiveCard;this.mc=classMasteryCard;", ctx4);
+const CDd = sb.CareerData;
+h = ctx4.sec("warrior_path", "warrior", true);
+ok(!h.includes("st-card") && (h.match(/class="sk-list"/g) || []).length === 3, "被動頁:三組(永久被動／數值精研／職業被動)都是 sk-list 列表,沒有舊的方塊卡片");
+ok((h.match(/class="sk-row2/g) || []).length === CDd.PASSIVE_KEYS.length + 1, `被動頁:一個被動一列(${CDd.PASSIVE_KEYS.length} 個通用 + 1 個職業被動)`);
+ok((h.match(/data-upgrade-skill=/g) || []).length >= CDd.PASSIVE_KEYS.length, "被動頁:每個沒滿級的都有升級按鈕(data-upgrade-skill 沒變)");
+const k0 = CDd.PASSIVE_KEYS[0];
+h = ctx4.pc(k0, 0, true); ok(h.includes("解鎖後：") && h.includes("升到 Lv.1") && !h.includes(" on"), "沒學過的被動:顯示「解鎖後」預覽與升到 Lv.1,沒有金邊");
+h = ctx4.pc(k0, 2, true); ok(h.includes("下一級：") && h.includes("Lv.2") && h.includes("sk-row2 on"), "學過的被動:顯示「下一級」、等級與金邊");
+h = ctx4.pc(k0, CDd.PASSIVE_DEFS[k0].maxLevel || CDd.MAX_SKILL_LEVEL, true); ok(h.includes("已解鎖到頂") && h.includes("已滿級") && !h.includes("data-upgrade-skill"), "滿級被動:顯示已解鎖到頂,沒有升級按鈕");
+h = ctx4.pc(k0, 0, false); ok(/data-upgrade-skill="[^"]+"\s+disabled/.test(h), "沒有技能點:升級按鈕停用");
+h = ctx4.mc("warrior", CDd.CLASS_MASTERY_DEFS.warrior, 0, true, true); ok(h.includes("sk-row2 dim") && h.includes("選這個職業後才能點") && !h.includes("data-upgrade-skill"), "候選職業預覽:灰階、沒有按鈕");
+ctx.progress.level = 60; h = ctx.f("warrior", { spec_a: 1 }, true);
+ok(!h.includes("st-card") && h.includes('class="sk-list"') && (h.match(/sk-sub/g) || []).length === 8, "專精區:列版型,兩條分支各 4 個縮排子列(被動、升階、2 技能)");
+ok((h.match(/sk-row2 on/g) || []).length === 1 && (h.match(/sk-row2 dim/g) || []).length >= 4, "專精區:只有已選的那條金邊,另一條整組灰階");
 
 // ---- 階段 2:覺醒區塊、玩家卡、覺醒框 ----
 console.log("\n--- 覺醒 UI ---");

@@ -233,6 +233,7 @@ const db = (function () {
     // 成就與圖鑑(見 career-codex.js 的 COUNT_TITLES):累計到某個數量給稱號
     { key: "codex_ach10", name: "初窺門徑", desc: "累計達成 10 個成就", icon: "award" },
     { key: "codex_ach20", name: "夜市達人", desc: "累計達成 20 個成就", icon: "award" },
+    { key: "codex_ach30", name: "夜市名人", desc: "累計達成 30 個成就", icon: "award" },
     { key: "codex_ach_all", name: "夜市百科", desc: "達成全部成就", icon: "trophy" },
     { key: "world_boss_first", name: "第一個回應的人", desc: "夜市大戰中，對打烊鐘造成最多傷害", icon: "bell-ring" },
     { key: "codex_half", name: "圖鑑收藏家", desc: "圖鑑(怪物、裝備、事件)收集過半", icon: "book-open" },
@@ -3655,7 +3656,32 @@ const db = (function () {
       const vis = M.visible(mc);
       missionsAllClaimed = vis.length > 0 && vis.every((m) => mc.claimed[m.key]);
     }
-    const ctx = { p: progress, stat: st.stat, set, cat: totals, ev: st.event, pvp: pvp || null, missionsAllClaimed, achDoneOthers: false };
+    // 專精／覺醒狀態(Lv.50 以上才需要職業;職業查一次就快取)。查不到就當作沒有,不影響其他成就。
+    const spec = {};
+    const SP = window.CareerSpec;
+    if (SP && (progress.level || 1) >= 50) {
+      try {
+        const bkey = eventId + ":" + playerId;
+        if (st.classKeyFor !== bkey) {
+          const b = await getCareerBuildFor(eventId, playerId);
+          if (b && b.final_class) { st.classKey = b.final_class; st.classKeyFor = bkey; }
+        }
+        const classKey = st.classKeyFor === bkey ? st.classKey : null;
+        const act = _activeSkills(progress);
+        const branch = classKey ? SP.chosenBranch(classKey, act) : null;
+        if (classKey && branch) {
+          spec.classKey = classKey; spec.branch = branch;
+          spec.awakened = !!SP.awakenInfo(classKey, branch, progress.level || 1).awakened;
+          const MAXL = window.CareerData ? window.CareerData.MAX_SKILL_LEVEL : 5;
+          const sk = act[`${classKey}_spec_${branch}_skill_3`] || 0, ul = act[`${classKey}_spec_${branch}_ult`] || 0;
+          spec.awakenLearn = sk > 0 && ul > 0;
+          spec.awakenUlt5 = sk >= MAXL && ul >= MAXL;
+          if (spec.awakened) _cxQueue(playerId, eventId, "stat", `awk_${classKey}_${branch}`, 1, true); // 覺醒路線每條只記一次
+        }
+      } catch (e) {}
+    }
+    const statCount = (prefix) => Object.keys(st.stat).filter((k) => k.startsWith(prefix)).length;
+    const ctx = { p: progress, stat: st.stat, set, cat: totals, ev: st.event, pvp: pvp || null, missionsAllClaimed, achDoneOthers: false, spec, statCount };
     let any = false;
     const unlock = (a) => {
       if (st.ach[a.key]) return;
@@ -3684,7 +3710,8 @@ const db = (function () {
       const st = await _cxLoad(playerId);
       if (st.disabled) return;
       const sig = [progress.inventory_rev, progress.floor, progress.level, progress.coins, Object.keys(progress.legendary_slots || {}).length,
-        JSON.stringify(progress.equipment || {}).length, JSON.stringify(progress.mission_state || {}).length].join("|");
+        JSON.stringify(progress.equipment || {}).length, JSON.stringify(progress.mission_state || {}).length,
+        JSON.stringify(progress.active_skills || {}).length, ((progress.relics && progress.relics.owned) || []).length].join("|");
       if (sig === st.sig) return;
       st.sig = sig;
       let changed = false;
@@ -3719,9 +3746,19 @@ const db = (function () {
       if (progress) { st.sig = ""; await _cxEvaluate(eventId, playerId, progress); }
     });
   }
+  // 一次記好幾個永久累計(names = { 名稱: 增量 }),最後只重新判斷一次成就(打烊鐘結算等一次要記好幾個用)
+  function codexNoteStats(eventId, playerId, names, progress) {
+    return _cxSafe(async () => {
+      const st = await _cxLoad(playerId);
+      if (st.disabled) return;
+      Object.keys(names).forEach((k) => { if (names[k] > 0) _cxQueue(playerId, eventId, "stat", k, names[k], false); });
+      if (progress) { st.sig = ""; await _cxEvaluate(eventId, playerId, progress); }
+    });
+  }
   // PVP 結果卡出現時由畫面呼叫。同一場只算一次(先用 pvpm 記號防重複,資料庫那邊也有 once 保護)。
   // 對機器人的練習賽不算;對手掛網棄權的勝利算一場勝利,但不算連勝(winStreak 在資料庫已被設成 0)。
-  function noteCareerPvpResult(eventId, playerId, matchId, reward, iWon) {
+  // arenaRule = 這場的輪替擂台規則 key(standard/noult/compress/limited);輸贏都記「遇過這種規則」,贏了才算勝場、懸賞、覺醒勝場。
+  function noteCareerPvpResult(eventId, playerId, matchId, reward, iWon, arenaRule) {
     return _cxSafe(async () => {
       if (!matchId || (reward && reward.practice)) return;
       const st = await _cxLoad(playerId);
@@ -3729,9 +3766,17 @@ const db = (function () {
       st.pvpm[matchId] = 1;
       if (iWon) _cxQueue(playerId, eventId, "stat", "pvpWins", 1, false);
       _cxQueue(playerId, eventId, "pvpm", matchId, 1, true, true);
-      if (!iWon) return;
+      const newArena = arenaRule ? _cxQueue(playerId, eventId, "stat", "arena_" + arenaRule, 1, true) : false;
+      if (!iWon && !newArena) return;
       const progress = await getOrCreateCareerProgress(eventId, playerId);
-      await _cxEvaluate(eventId, playerId, progress, { won: true, winStreak: (reward && reward.winStreak) || 0 });
+      if (iWon) {
+        if (reward && reward.bounty > 0) _cxQueue(playerId, eventId, "stat", "bountyClaim", 1, false);
+        try { // 覺醒狀態下贏的 PVP 場數
+          const b = await getCareerBuildFor(eventId, playerId);
+          if (b && b.final_class && _awakenTagFor(b.final_class, _activeSkills(progress), progress.level || 1)) _cxQueue(playerId, eventId, "stat", "awakenPvpWins", 1, false);
+        } catch (e) {}
+      }
+      await _cxEvaluate(eventId, playerId, progress, iWon ? { won: true, winStreak: (reward && reward.winStreak) || 0 } : null);
     });
   }
   // 圖鑑頁用:這個玩家所有記錄
@@ -4100,8 +4145,22 @@ const db = (function () {
   // 一般樓層的戰鬥與結算(從 challengeCareerFloor 拆出來,攤販變體與一般怪共用)
   async function _fightFloor(eventId, playerId, openEvent, progress, build, skillLevels, floorDef, floorNumber) {
     const playerStats = window.CareerData.applyProgress(build.final_class, progress.stat_alloc, progress.equipment);
-    const { hp: battleStartHpRaw, mp: battleStartMp } = _effectiveHpMp(progress, playerStats);
-    const battleStartHp = _respawnHpIfNeeded(battleStartHpRaw, playerStats.maxHp);
+    const { hp: battleStartHpRaw, mp: battleStartMpRaw } = _effectiveHpMp(progress, playerStats);
+    let battleStartHp = _respawnHpIfNeeded(battleStartHpRaw, playerStats.maxHp);
+    let battleStartMp = battleStartMpRaw;
+    // 項目 19 階段 3:刷已通關的樓層時,開了「自動喝藥水」就先補(新樓層首通不套用)。藥水先扣掉存起來,後面的結算用扣完的進度。
+    let potionsUsed = null;
+    if (floorNumber <= progress.floor) {
+      const plan = _autoPotionPlan(progress, playerStats, battleStartHp, battleStartMp);
+      if (plan.total > 0) {
+        const { error: potErr } = await client.from("career_progress").update({ potions: plan.potions }).eq("id", progress.id);
+        if (potErr) throw potErr;
+        progress = { ...progress, potions: plan.potions };
+        battleStartHp = plan.hp;
+        battleStartMp = plan.mp;
+        potionsUsed = plan.used;
+      }
+    }
     const battle = window.CareerPve.simulateFloorBattle(
       _withPlayerExtra(_engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment, progress.level, progress.relics), floorDef),
       _monsterSide(floorDef),
@@ -4116,11 +4175,12 @@ const db = (function () {
       _noteJournal(eventId, playerId, "revive"); // 夜記:被救起一次(只記次數,不記是誰救的)
       codexNoteStat(eventId, playerId, "revive", 1, updated);
       await _noteRevive(updated);
-      return { won: false, log: battle.log, progress: updated, floorDef };
+      return { won: false, log: battle.log, progress: updated, floorDef, potionsUsed };
     }
 
     const result = await _applyFloorWinRewards(eventId, playerId, progress, build, floorDef, floorNumber, battle.endHp, battle.endMp, skillLevels);
-    return { ...result, log: battle.log };
+    if (floorDef.vendor && result && result.progress) codexNoteStat(eventId, playerId, "vendorWin", 1, result.progress); // 成就:打贏稀有攤販
+    return { ...result, log: battle.log, potionsUsed };
   }
 
   // 神秘寶箱/路過商人/轉職邀請 這三個 choice 事件，玩家選好之後呼叫這個生效。
@@ -4136,11 +4196,35 @@ const db = (function () {
     ]);
     const active = progress.active_boss_battle;
     if (!active) throw new Error("目前沒有進行中的王戰");
+    if (active.worldBoss && /^potion:/.test(action)) throw new Error("打烊鐘大戰不能喝藥水");
     if (active.worldBoss) return _submitWorldBossMove(eventId, playerId, progress, active, action); // 夜市大戰(打烊鐘)的手動回合戰
     const floorDef = _modFloorDef(openEvent.rules, window.CareerFloors.getFloor(active.floor));
     if (!floorDef) throw new Error("找不到這一層的資料");
 
-    const state = { ...active.state, m1: { action } };
+    let state = { ...active.state, m1: { action } };
+    let progress0 = progress; // 結算用的進度(喝藥水時已扣掉一瓶)
+    // 項目 19 階段 2:王戰可以喝藥水(action = "potion:hp" / "potion:mp")。喝藥水算一回合:直接補戰鬥中的 HP/MP,
+    // 這回合自己不出手(引擎 action "item"),關主照常行動。已經喝了還沒結算的回合(state.m1 已有值)不能再送。
+    if (/^potion:/.test(action)) {
+      const type = action.slice(7);
+      const potionDef = window.CareerFloors.POTIONS[type];
+      if (!potionDef) throw new Error("找不到這種藥水");
+      if (!progress.potions || !(progress.potions[type] > 0)) throw new Error(`沒有${potionDef.name}了`);
+      const isHp = type === "hp";
+      const cur = isHp ? active.state.hp1 : active.state.mp1;
+      const max = isHp ? active.state.maxhp1 : active.state.maxmp1;
+      const healed = Math.min(max, cur + Math.round(max * potionDef.healRatio)) - cur;
+      if (healed <= 0) throw new Error(isHp ? "HP 已經是滿的" : "魔力已經是滿的");
+      const potions = { ...progress.potions, [type]: progress.potions[type] - 1 };
+      const { error: potErr } = await client.from("career_progress").update({ potions }).eq("id", progress.id);
+      if (potErr) throw potErr;
+      progress0 = { ...progress, potions };
+      state = {
+        ...active.state,
+        [isHp ? "hp1" : "mp1"]: cur + healed,
+        m1: { action: "item", text: `你喝下${potionDef.name},恢復了 ${healed} 點${isHp ? "HP" : "魔力"},這回合沒有出手!` },
+      };
+    }
     state.m2 = window.CareerPve.decideAction(state, 2);
     const { state: newState } = window.CareerEngine.resolveRound(state);
 
@@ -4159,7 +4243,7 @@ const db = (function () {
         await _noteRevive(updated);
         return { bossBattle: true, done: true, won: false, log: newState.log, floorDef, progress: updated };
       }
-      const result = await _applyFloorWinRewards(eventId, playerId, progress, build, floorDef, active.floor, newState.hp1, newState.mp1, skillLevels);
+      const result = await _applyFloorWinRewards(eventId, playerId, progress0, build, floorDef, active.floor, newState.hp1, newState.mp1, skillLevels);
       return { bossBattle: true, done: true, ...result, log: newState.log };
     }
 
@@ -4752,6 +4836,9 @@ const db = (function () {
       .select()
       .single();
     if (clearErr) throw clearErr;
+    if (result.accepted && damage > 0) { // 成就:打烊鐘出擊次數、累計傷害、打滿 15 回合不倒
+      codexNoteStats(eventId, playerId, { bossHit: 1, bossDmg: result.applied || 0, bossFull: (state.round - 1 >= W.rounds && state.hp1 > 0) ? 1 : 0 }, updated);
+    }
     return {
       bossBattle: true, worldBoss: true, done: true, reason, damage,
       applied: result.accepted ? result.applied || 0 : 0, accepted: !!result.accepted, rejectReason: result.reason || null,
@@ -4818,6 +4905,7 @@ const db = (function () {
       .select();
     if (error) throw error;
     if (!updated || !updated.length) throw new Error("裝備剛好被別的分頁更新過了，請重新整理後再試一次");
+    if (success) codexNoteStat(eventId, playerId, "enhanceOk", 1, updated[0]); // 成就:強化成功
     return { success, item: newItem, level: success ? level + 1 : level, fee: rule.fee, rate: rule.rate, progress: updated[0] };
   }
 
@@ -4857,6 +4945,7 @@ const db = (function () {
       .select();
     if (error) throw error;
     if (!updated || !updated.length) throw new Error("裝備剛好被別的分頁更新過了，請重新整理後再試一次");
+    codexNoteStat(eventId, playerId, "reforge", 1, updated[0]); // 成就:重鑄
     return { item: newItem, oldItem: item, fee, progress: updated[0] };
   }
 
@@ -4969,10 +5058,54 @@ const db = (function () {
     return { potionDef, healed, progress: updated };
   }
 
-  function _simulateFarmTick(progress, build, floorDef, skillLevels) {
+  // ---------------- 刷層自動喝藥水(項目 19 階段 3) ----------------
+  // 設定存在 career_progress.auto_potion = { hp: bool, mp: bool }(預設都關)。套用在:掛機、手動重複挑戰已通關的樓層;
+  // 第一次通關新樓層、關主首通(手動回合戰)不套用。只喝「已經擁有的」藥水,不會自動買;每場開打前每種最多連喝 3 瓶。
+  // 回傳 { hp, mp, potions, used:{hp,mp}, total }。沒開、沒藥水、沒到門檻就原樣回傳(total = 0)。
+  const AUTO_POTION_HP_RATIO = 0.5; // HP 低於一半就喝
+  const AUTO_POTION_MP_MIN = 7; // 魔力不足以放一次(最貴的)技能就喝
+  const AUTO_POTION_MAX_PER_TYPE = 3;
+  function _autoPotionPlan(progress, stats, hp, mp) {
+    const cfg = progress.auto_potion || {};
+    const CF = window.CareerFloors;
+    const potions = { hp: 0, mp: 0, ...(progress.potions || {}) };
+    const used = { hp: 0, mp: 0 };
+    if (cfg.hp) {
+      while (used.hp < AUTO_POTION_MAX_PER_TYPE && potions.hp > 0 && hp < stats.maxHp * AUTO_POTION_HP_RATIO) {
+        hp = Math.min(stats.maxHp, hp + Math.round(stats.maxHp * CF.POTIONS.hp.healRatio));
+        potions.hp -= 1;
+        used.hp += 1;
+      }
+    }
+    if (cfg.mp) {
+      const thr = Math.min(AUTO_POTION_MP_MIN, stats.maxMp);
+      while (used.mp < AUTO_POTION_MAX_PER_TYPE && potions.mp > 0 && mp < thr) {
+        mp = Math.min(stats.maxMp, mp + Math.round(stats.maxMp * CF.POTIONS.mp.healRatio));
+        potions.mp -= 1;
+        used.mp += 1;
+      }
+    }
+    return { hp, mp, potions, used, total: used.hp + used.mp };
+  }
+
+  // 設定自動喝藥水開關。欄位還沒建(沒跑 migration-auto-potion.sql)時丟出清楚的訊息,不影響其他功能。
+  async function setCareerAutoPotion(eventId, playerId, cfg) {
+    const progress = await getOrCreateCareerProgress(eventId, playerId);
+    if (progress.auto_potion === undefined) throw new Error("資料庫還沒更新自動喝藥水欄位,請先執行 migration-auto-potion.sql");
+    const next = { hp: !!(cfg && cfg.hp), mp: !!(cfg && cfg.mp) };
+    const { data, error } = await client.from("career_progress").update({ auto_potion: next }).eq("id", progress.id).select().single();
+    if (error) throw error;
+    return data;
+  }
+
+  function _simulateFarmTick(progress, build, floorDef, skillLevels, opts) {
     const playerStats = window.CareerData.applyProgress(build.final_class, progress.stat_alloc, progress.equipment);
-    const { hp: startHpRaw, mp: startMp } = _effectiveHpMp(progress, playerStats);
-    const startHp = _respawnHpIfNeeded(startHpRaw, playerStats.maxHp);
+    const { hp: startHpRaw, mp: startMpRaw } = _effectiveHpMp(progress, playerStats);
+    const respawned = _respawnHpIfNeeded(startHpRaw, playerStats.maxHp);
+    const plan = _autoPotionPlan(progress, playerStats, respawned, startMpRaw); // 開了自動喝藥水才會動
+    const startHp = plan.hp;
+    const startMp = plan.mp;
+    const prevTotal = opts && opts.reset ? 0 : (progress.auto_farm_last_result && progress.auto_farm_last_result.potionsTotal) || 0;
     const battle = window.CareerPve.simulateFloorBattle(
       _withPlayerExtra(_engineSide(build.final_class, playerStats, skillLevels, _activeSkills(progress), progress.equipped_skill_a, progress.equipped_skill_b, progress.equipped_ult, progress.equipment, progress.level, progress.relics), floorDef),
       _monsterSide(floorDef),
@@ -4980,10 +5113,11 @@ const db = (function () {
     );
     const patch = {
       auto_farm_last_at: new Date().toISOString(),
-      auto_farm_last_result: { won: battle.won, floor: floorDef.floor, at: new Date().toISOString(), coinGain: 0, expGain: 0 },
+      auto_farm_last_result: { won: battle.won, floor: floorDef.floor, at: new Date().toISOString(), coinGain: 0, expGain: 0, potionsUsed: plan.used, potionsTotal: prevTotal + plan.total },
       current_hp: battle.endHp,
       current_mp: battle.endMp,
     };
+    if (plan.total > 0) patch.potions = plan.potions;
     if (battle.won) {
       const coinGain = Math.round(floorDef.coinReward * CAREER_AUTO_FARM_EFFICIENCY * _coinMult(skillLevels));
       // 掛機一定是打已通關的樓層,經驗也套重複挑戰的減半(幣不變)
@@ -5015,7 +5149,7 @@ const db = (function () {
       const floorDef = _modFloorDef(openEvent && openEvent.rules, window.CareerFloors.getFloor(floorNumber));
       if (build && floorDef) {
         const skillLevels = await getPlayerSkillLevels(playerId);
-        patch = { ...patch, ..._simulateFarmTick(progress, build, floorDef, skillLevels) };
+        patch = { ...patch, ..._simulateFarmTick(progress, build, floorDef, skillLevels, { reset: true }) };
       }
     } else {
       patch.auto_farm_last_result = null;
@@ -5450,6 +5584,7 @@ const db = (function () {
     transferCareerPath,
     transferCareerFinalClass,
     resetCareerClass,
+    setCareerAutoPotion,
     repairCareerWeapons,
     getMyCareerQueueEntry,
     joinCareerQueue,
@@ -5495,6 +5630,7 @@ const db = (function () {
     codexSyncProgress,
     codexNoteFloorWin,
     codexNoteStat,
+    codexNoteStats,
     noteCareerPvpResult,
     getCareerCodex,
     clearCareerEventAutoChoice,

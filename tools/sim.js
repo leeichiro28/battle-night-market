@@ -6,6 +6,7 @@
 //   node tools/sim.js towers     爬塔難度:建議等級的玩家(統一配點+對應階的裝備,含/不含專精)打指定樓層的勝率(--floors 51,60,70 --n 200)
 //   node tools/sim.js calibrate  校準 51 層以後的怪物:找出讓建議等級玩家勝率 ≈ --target 的怪物強度倍率(--floors 51,60,70 --target 0.65)
 //   node tools/sim.js affixes    樓層詞條/稀有攤販對勝率的影響:每個詞條在指定樓層的勝率與「比沒詞條差幾點」(--floors 30,55,65 --n 100)
+//   node tools/sim.js autoai     自動戰鬥 AI(項目 19):舊 AI vs 新玩家 AI;--floors 70,80 --level 75 --n 200;連續刷(HP/MP 持續、可自動喝藥)用 --farm 1 --potion 1
 //   node tools/sim.js spec       專精平衡:12 條專精分支 vs 6 個沒專精的基準,爬塔勝率與互打勝率(--level 60 --slv 3 --n 150 --gear 0.3)
 // 直接載入 assets/ 底下真正的 career-*.js,所以戰鬥結果跟遊戲裡用的是同一套引擎。
 //
@@ -458,4 +459,36 @@ function awaken() {
   });
   AWK = false;
 }
-({ leveling, winrate, spec, classes, towers, calibrate, affixes, worldboss, awaken })[cmd]();
+function autoai() {
+  GEAR = 0;
+  const N = opt("n", 200), L = opt("level", 75), farm = opt("farm", 0) === 1, potion = opt("potion", 0) === 1;
+  const floors = (args.indexOf("--floors") >= 0 ? args[args.indexOf("--floors") + 1] : "70,80").split(",").map(Number);
+  AWK = true;
+  if (args.includes("--minmult")) PVE.TUNE.minMult = opt("minmult", 1.4);
+  if (args.includes("--reserve")) PVE.TUNE.healReserve = opt("reserve", 85);
+  console.log(`自動戰鬥 AI:Lv.${L} 玩家(含專精與覺醒),${farm ? "連續刷(HP/MP 持續" + (potion ? ",自動喝藥水" : ",不喝藥水") + ")" : "每場滿血滿魔"},每格 ${N} 場\n`);
+  floors.forEach((f) => {
+    const fd = CF.getFloor(f);
+    const row = [];
+    CF.CLASS_KEYS.forEach((c, ci) => {
+      const res = [false, true].map((legacy) => {
+        let w = 0, hp = null, mp = null, pots = 0; seed(500 + ci);
+        ["a", "b"].forEach((br) => {
+          const side = towerSide(c, L, br, f); const maxHp = side.stats.maxHp, maxMp = side.stats.maxMp || side.stats.mp;
+          hp = maxHp; mp = maxMp;
+          for (let i = 0; i < N / 2; i++) {
+            if (farm && potion) { if (mp < 4) { mp = Math.min(maxMp, mp + Math.round(maxMp * 0.5)); pots++; } if (hp < maxHp * 0.5) { hp = Math.min(maxHp, hp + Math.round(maxHp * 0.4)); pots++; } }
+            const r = PVE.simulateFloorBattle(side, { classKey: CF.CLASS_KEYS[f % CF.CLASS_KEYS.length], stats: { ...fd.stats } }, { startHp: farm ? Math.max(1, hp) : maxHp, startMp: farm ? mp : maxMp, legacyAi: legacy });
+            if (r.won) w++;
+            if (farm) { hp = r.endHp <= 0 ? Math.round(maxHp * 0.3) : r.endHp; mp = r.endMp; }
+          }
+        });
+        return w / N;
+      });
+      row.push(CD.CLASS_INFO[c].name + " " + Math.round(res[1] * 100) + "→" + Math.round(res[0] * 100) + "%");
+    });
+    console.log(String(f).padEnd(5) + "(舊→新) " + row.join("  "));
+  });
+  AWK = false;
+}
+({ leveling, autoai, winrate, spec, classes, towers, calibrate, affixes, worldboss, awaken })[cmd]();

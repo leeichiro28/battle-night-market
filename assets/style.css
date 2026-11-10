@@ -2278,3 +2278,28 @@ input,select,textarea{max-width:100%;min-width:0;}
 .sk-act>div{margin:0!important}
 @media (max-width:520px){.sk-row2{flex-wrap:wrap}.sk-act{max-width:100%;width:100%;justify-content:flex-start;padding-left:44px}}
 .awk-sec .sk-row2{background:transparent;border-color:transparent;padding:4px 0}
+
+/* 背包一鍵賣裝(勾選改成整齊的格子)、裝備合成(靠左，跟強化同一種列版型) */
+.sell-box{border:1px solid var(--line);border-radius:var(--radius);background:var(--panel2);padding:10px 12px;margin:0 0 6px;display:flex;flex-direction:column;gap:8px}
+.sell-head{display:flex;align-items:center;gap:6px;font-size:13px}
+.sell-head .dim,.syn-info .dim{color:var(--ink-dim);font-size:11px;font-weight:400}
+.sell-chips{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.sell-chip{display:flex;align-items:center;gap:6px;min-width:0;padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-size:12px;cursor:pointer;white-space:nowrap;background:var(--bg,transparent)}
+.sell-chip input[type="checkbox"]{width:auto;height:auto;padding:0;margin:0;flex:none}
+.sell-chip span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.sell-chip.warn{color:var(--gold)}
+.sell-chip:has(input:checked){border-color:var(--gold)}
+.sell-chip.wide{width:100%}
+.sell-foot{display:flex;justify-content:flex-end}
+@media (max-width:520px){.sell-chips{grid-template-columns:repeat(2,1fr)}}
+.syn-select{width:100%;max-width:340px;margin-top:4px}
+.syn-info{padding:8px 0 2px;font-size:12px;line-height:1.8}
+.syn-result{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;color:var(--ink-dim)}
+.syn-result.ok{color:var(--gold)}
+
+/* 被動頁與專精區:沿用技能列版型(項目 19 階段 4) */
+.sk-row2.sk-sub{margin-left:18px;padding:6px 10px}
+.sk-row2.sk-sub .sk-ic2{width:26px;height:26px;border-radius:6px}
+.sk-row2.sk-sub .sk-ic2 svg,.sk-row2.sk-sub .sk-ic2 i{width:14px;height:14px}
+.sk-row2.sk-branch{margin-top:10px}
+@media (max-width:520px){.sk-row2.sk-sub{margin-left:10px}.sk-row2.sk-sub .sk-act{padding-left:34px}}

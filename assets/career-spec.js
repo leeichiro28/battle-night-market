@@ -1,4 +1,4 @@
-// 職業養成對決 · 第二轉職／專精(玩法擴充階段三項目 9,設計見 docs/bug-optimization-requirements.md「項目 9」)
+// 職業養成對決 · 第二轉職／專精(玩法擴充階段三項目 9,設計見 docs/bug-optimization-requirements.md「項目 9」(CLASS-12))
 //
 // 規則:
 //   - 角色 Lv.50 起,每個最終職業可以從兩條分支(A/B)擇一,**互斥**,每場活動重選(資料存在 career_progress.active_skills,
@@ -28,7 +28,7 @@ window.CareerSpec = (function () {
   const SPEC_LEVEL = 50; // 選分支需要的角色等級
   const SPEC_UPGRADE_LEVEL = 100; // 升階需要的角色等級
   const UPGRADE_SKILL_MULT = 0.05; // 升階後專精技能的傷害倍率加成
-  const AWAKEN_LEVEL = 75; // 覺醒(第三轉職)需要的角色等級,設計見 docs/bug-optimization-requirements.md「項目 10」
+  const AWAKEN_LEVEL = 75; // 覺醒(第三轉職)需要的角色等級,設計見 docs/bug-optimization-requirements.md「項目 10-B」(覺醒，CLASS-13)
 
   const SPECS = {
     warrior: {

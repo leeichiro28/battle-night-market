@@ -197,6 +197,6 @@ const fails = async (fn, re, m) => { try { await fn(); ok(false, m + "(應該失
   ok(cat.item.length >= 86 + 60 + 6 + 6, `裝備圖鑑含階級裝備與 60/70 層套裝(${cat.item.length} 款)`);
   ok(cat.item.some((i) => i.name === "第零攤的點亮法球" && i.bossFloor === 70) && cat.item.some((i) => i.tier === 2) && cat.item.some((i) => i.tier === 3), "圖鑑含 Boss 套裝與兩個階級");
   const ach = sb.CareerCodex.ACHIEVEMENTS;
-  ok(ach.length === 38 && ach.some((a) => a.key === "floor60") && ach.some((a) => a.key === "floor70"), "成就 38 個(新增 60/70/100 層)");
+  ok(ach.length === 63 && ach.some((a) => a.key === "floor60") && ach.some((a) => a.key === "floor70"), "成就 63 個(含 60/70/100 層與 2026-11-10 補齊的 25 個)");
   console.log(process.exitCode ? "\n有失敗" : "\n全部通過");
 })().catch((e) => { console.error("測試崩潰", e); process.exit(1); });
