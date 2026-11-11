@@ -2376,7 +2376,6 @@ input,select,textarea{max-width:100%;min-width:0;}
 .ac-dtext{margin:4px 0;overflow-wrap:anywhere;} .ac-dtext.dim{color:var(--ink-dim);} .ac-dtext.dim.on{color:var(--gold);}
 .ac-blist{margin:4px 0 6px;padding-left:18px;} .ac-blist li{margin:2px 0;color:var(--ink-dim);} .ac-blist li.on{color:var(--ink);}
 .ac-detail .action-row{margin-top:8px;}
-.btn.danger{color:var(--red);border-color:var(--red);}
 .ac-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;}
 .ac-actions .btn{padding:10px 8px;font-size:13px;}
 .ac-seal{margin-top:12px;} .ac-seal .btn{width:100%;padding:14px;font-size:16px;}
@@ -2418,3 +2417,41 @@ input,select,textarea{max-width:100%;min-width:0;}
   .ac-wrap{padding-left:12px;padding-right:12px;}
   .ac-card .ac-name{font-size:9px;}
 }
+
+/* ---- 夜市自走棋 v53:稀有度/費用醒目、浮窗說明、羈絆列、機率列、戰報 ---- */
+:root{--r1:#9A95AE;--r2:#4C9BE8;--r3:#A56CE6;--r5:#F2B705;}
+.rc-1{--rc:var(--r1);} .rc-2{--rc:var(--r2);} .rc-3{--rc:var(--r3);} .rc-5{--rc:var(--r5);}
+.ac-card.r-1,.ac-card.r-2,.ac-card.r-3,.ac-card.r-5{border:3px solid var(--rc);}
+.ac-card .ac-cost{background:var(--rc);color:#fff;font-weight:800;font-size:11px;padding:1px 5px;border-radius:5px;text-shadow:0 1px 1px rgba(0,0,0,.45);}
+.ac-card.r-5 .ac-cost,.ac-card.r-1 .ac-cost{color:#17130A;text-shadow:none;}
+.ac-card.shop .ac-cost{font-size:13px;padding:2px 7px;border-radius:6px;}
+.ac-card.shop .ac-cost .ico{width:12px;height:12px;}
+.ac-rowtop{display:flex;align-items:center;justify-content:space-between;width:100%;gap:2px;}
+.ac-rar{font-size:10px;font-weight:700;color:var(--rc);}
+.ac-card.shop{min-height:104px;}
+.ac-ttag{font-size:9px;color:var(--ink-dim);line-height:1.1;text-align:center;overflow-wrap:anywhere;}
+.ac-grid.shop .ac-slot,.ac-slot.empty{min-height:104px;}
+.ac-bondrow{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
+.ac-bondrow .ac-bond{font-size:12px;padding:5px 11px;opacity:.55;}
+.ac-bondrow .ac-bond.part{opacity:.9;}
+.ac-bondrow .ac-bond.on{opacity:1;box-shadow:0 0 8px -1px var(--c);background:color-mix(in srgb,var(--c) 22%,var(--panel2));}
+.ac-odds{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin:2px 0 6px;font-size:11px;}
+.ac-odds.next{margin-top:-2px;opacity:.75;}
+.ac-odd{display:inline-flex;padding:2px 7px;border-radius:99px;border:1px solid var(--rc);color:var(--rc);font-weight:700;white-space:nowrap;}
+.ac-tip{position:fixed;z-index:300;display:none;width:max-content;max-width:min(300px,calc(100vw - 16px));background:var(--panel);border:1px solid var(--gold-d);border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.5;box-shadow:0 8px 24px rgba(0,0,0,.55);pointer-events:none;}
+.ac-tip.show{display:block;}
+.ac-tip-h{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:6px;font-size:13px;}
+.ac-tip-rar{font-size:11px;font-weight:800;color:var(--rc);border:1px solid var(--rc);border-radius:99px;padding:0 7px;}
+.ac-tip-cost{margin-left:auto;display:inline-flex;align-items:center;gap:3px;font-size:11px;color:var(--ink-dim);}
+.ac-tip .ac-blist{list-style:none;padding:0;margin:6px 0 0;}
+.ac-tip .ac-blist li{display:flex;gap:5px;align-items:flex-start;margin:3px 0;} .ac-tip .ac-blist .ico{width:13px;height:13px;margin-top:2px;flex-shrink:0;}
+.ac-tip .ac-blist li.on .ico{color:var(--green);}
+.ac-gap{height:6px;}
+.ac-sp.active{background:var(--gold);color:#1B1706;border-color:var(--gold);}
+.ac-logcard{padding:12px;margin-top:10px;}
+.ac-logbox{max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:10px;background:var(--panel2);padding:6px 8px;font-size:12px;line-height:1.7;overscroll-behavior:contain;}
+.ac-ll{overflow-wrap:anywhere;} .ac-ll.my{color:#9CC8FF;} .ac-ll.foe{color:#FFA9A0;} .ac-ll.round{color:var(--gold);font-weight:700;text-align:center;margin-top:4px;} .ac-ll.sys{color:var(--ink-dim);text-align:center;}
+.ac-logtabs{display:flex;gap:5px;flex-wrap:wrap;margin:8px 0;}
+.ac-logtab{border:1px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:8px;padding:4px 9px;font:inherit;font-size:12px;cursor:pointer;}
+.ac-logtab.on{border-color:var(--gold);color:var(--gold);} .ac-logtab.win{border-bottom:3px solid var(--green);} .ac-logtab.lose{border-bottom:3px solid var(--red);}
+.ac-loghead{font-size:12px;color:var(--ink-dim);margin-bottom:6px;}

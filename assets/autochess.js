@@ -7,9 +7,11 @@
   const esc = ui.esc, ic = (n, o) => ui.icon(n, o);
   const TAG_ICON = { burn: "flame", frost: "snowflake", guard: "shield", game: "dices" };
   const pad2 = (n) => String(n).padStart(2, "0");
+  const fmtSecs = (n) => (n >= 60 ? `${Math.floor(n / 60)} 分${n % 60 ? ` ${n % 60} 秒` : ""}` : `${n} 秒`);
 
-  let g = null, sel = null, view = "intro", timerOn = true, deadline = 0, timerId = null, msg = null, msgTimer = null, bondInfo = null;
+  let g = null, sel = null, view = "intro", timerOn = true, deadline = 0, timerId = null, msg = null, msgTimer = null;
   let battleToken = 0, battleSpeed = 1;
+  let history = [], showLog = false, logRound = null; // 戰報:每場戰鬥的文字紀錄,準備階段可回頭看
 
   // ---------------- 小工具 ----------------
   const cardDef = (c) => AD.CARD_BY_ID[c.id];
@@ -27,18 +29,69 @@
     if (text) msgTimer = setTimeout(() => setMsg(null), 2600);
   }
 
+  const rarName = (cost) => AD.RARITY[AD.COST_TO_RARITY[cost]].name;
+  const tipAttrs = (c) => `data-tip="card" data-cid="${c.id}" data-star="${c.star}" data-ba="${c.bonusAtk || 0}" data-bh="${c.bonusHp || 0}"`;
   function cardHtml(c, o) {
     o = o || {};
     const d = cardDef(c), st = unitStats(c), t0 = d.tags[0] || "none";
     const icon = TAG_ICON[t0] || "store";
-    const cls = `ac-card ${o.mode || "mini"} t-${t0}${d.tags.length > 1 ? " dual" : ""} r-${d.cost} s-${c.star}${o.sel ? " sel" : ""}${o.dim ? " dim" : ""}`;
-    const data = o.data || "";
+    const cls = `ac-card ${o.mode || "mini"} t-${t0}${d.tags.length > 1 ? " dual" : ""} r-${d.cost} rc-${d.cost} s-${c.star}${o.sel ? " sel" : ""}${o.dim ? " dim" : ""}`;
+    const data = (o.data || "") + " " + (o.noTip ? "" : tipAttrs(c));
     const badge = o.pos ? `<i class="ac-pos">${o.pos}</i>` : "";
     if (o.mode === "shop") {
-      return `<button class="${cls}" ${data}><span class="ac-cost">${ic("coins")}${d.cost}</span>${ic(icon, { cls: "ac-ticon" })}<b class="ac-name">${esc(d.name)}</b><span class="ac-st">${st.atk}/${st.hp}</span></button>`;
+      const tags = d.tags.length ? d.tags.map(tagName).join("・") : "通用";
+      return `<button class="${cls}" ${data}><span class="ac-rowtop"><span class="ac-cost">${ic("coins")}${d.cost}</span><span class="ac-rar">${rarName(d.cost)}</span></span>${ic(icon, { cls: "ac-ticon" })}<b class="ac-name">${esc(d.name)}</b><span class="ac-ttag">${esc(tags)}</span><span class="ac-st">${st.atk}/${st.hp}</span></button>`;
     }
     return `<button class="${cls}" ${data}><span class="ac-cost">${d.cost}</span><span class="ac-stars">${stars(c.star)}</span>${ic(icon, { cls: "ac-ticon" })}<b class="ac-name">${esc(d.name.slice(0, 2))}</b><span class="ac-st">${st.atk}/${st.hp}</span>${badge}</button>`;
   }
+
+  // ---------------- 說明浮窗(滑鼠移上去 / 長按 / 右鍵 / 羈絆點一下)----------------
+  const tip = document.createElement("div");
+  tip.id = "ac-tip"; tip.className = "ac-tip"; document.body.appendChild(tip);
+  let tipTimer = null, pressTimer = null, suppressUntil = 0, tipAnchor = null;
+  function bondTipHtml(tag) {
+    const me = g.me, b = E.computeBonds(me.board, G.extraFor(me)), n = b.counts[tag] || 0, reached = b.active[tag] || 0;
+    const nxt = AD.BOND_TIERS.find((x) => x > n), max = AD.BOND_TIERS[AD.BOND_TIERS.length - 1];
+    const rows = AD.BONDS[tag].map((t) => `<li class="${reached >= t.need ? "on" : ""}">${ic(reached >= t.need ? "circle-check" : "circle")}<b>${t.need} 張</b> ${esc(t.desc)}</li>`).join("");
+    return `<div class="ac-tip-h">${ic(TAG_ICON[tag])}<b>${tagName(tag)}羈絆</b><span class="ac-tip-cost">${n}/${nxt || max}${reached ? ` · 已觸發 ${reached} 張級` : " · 尚未觸發"}</span></div><div class="ac-dim">${esc(AD.TAGS[tag].desc)}。只算<b>不同名</b>的卡,雙流派卡兩邊都算。</div><ul class="ac-blist">${rows}</ul>`;
+  }
+  function cardTipHtml(a) {
+    const c = { id: a.dataset.cid, star: Number(a.dataset.star), bonusAtk: Number(a.dataset.ba), bonusHp: Number(a.dataset.bh) };
+    const d = cardDef(c), st = unitStats(c);
+    const tags = d.tags.length ? d.tags.map((t) => `<span class="tag t-${t}">${ic(TAG_ICON[t])}${tagName(t)}</span>`).join("") : `<span class="tag">${ic("store")}通用</span>`;
+    return `<div class="ac-tip-h"><b>${esc(d.name)}</b><span class="ac-stars big">${stars(c.star)}</span><span class="ac-tip-rar rc-${d.cost}">${rarName(d.cost)}</span><span class="ac-tip-cost">${ic("coins")}${d.cost}</span></div>
+      <div class="tag-row">${tags}</div>
+      <div class="ac-dstats"><span>${ic("sword")}攻 <b>${st.atk}</b></span><span>${ic("heart")}血 <b>${st.hp}</b></span><span>${ic("zap")}速 <b>${st.spd}</b></span></div>
+      <div class="ac-dtext">${esc(d.desc)}</div><div class="ac-dtext dim${c.star === 3 ? " on" : ""}">${esc(d.star3.desc)}</div>`;
+  }
+  function showTip(a) {
+    if (!a || !g) return;
+    const html = a.dataset.tip === "bond" ? bondTipHtml(a.dataset.tag) : cardTipHtml(a);
+    tip.innerHTML = html; tip.classList.add("show"); tipAnchor = a;
+    const r = a.getBoundingClientRect(), tw = tip.offsetWidth, th = tip.offsetHeight, vw = document.documentElement.clientWidth, vh = window.innerHeight;
+    let top = r.bottom + 8; if (top + th > vh - 8) top = Math.max(8, r.top - th - 8);
+    let left = Math.min(Math.max(8, r.left + r.width / 2 - tw / 2), vw - tw - 8);
+    tip.style.top = top + "px"; tip.style.left = left + "px";
+  }
+  function hideTip() { clearTimeout(tipTimer); clearTimeout(pressTimer); tip.classList.remove("show"); tipAnchor = null; }
+  const canHover = window.matchMedia && window.matchMedia("(hover: hover)").matches;
+  root.addEventListener("mouseover", (e) => {
+    if (!canHover) return;
+    const a = e.target.closest("[data-tip]"); if (!a || a === tipAnchor) return;
+    clearTimeout(tipTimer); tipTimer = setTimeout(() => showTip(a), 140);
+  });
+  root.addEventListener("mouseout", (e) => {
+    if (!canHover) return;
+    const a = e.target.closest("[data-tip]"); if (!a || (e.relatedTarget && a.contains(e.relatedTarget))) return;
+    hideTip();
+  });
+  root.addEventListener("contextmenu", (e) => { const a = e.target.closest("[data-tip]"); if (!a) return; e.preventDefault(); suppressUntil = Date.now() + 800; showTip(a); });
+  root.addEventListener("touchstart", (e) => {
+    const a = e.target.closest("[data-tip]"); clearTimeout(pressTimer); if (!a) return;
+    pressTimer = setTimeout(() => { suppressUntil = Date.now() + 900; showTip(a); }, 420);
+  }, { passive: true });
+  ["touchend", "touchmove", "touchcancel"].forEach((n) => root.addEventListener(n, () => clearTimeout(pressTimer), { passive: true }));
+  document.addEventListener("pointerdown", (e) => { if (!e.target.closest("[data-tip]")) hideTip(); });
 
   // ---------------- 計時 ----------------
   function startTimer() {
@@ -86,7 +139,7 @@
           <li>${ic("piggy-bank")}<b>金庫</b>:結算時每持有 10 銅板多拿 1 銅板(最多 +3)。</li>
           <li>${ic("sparkles")}<b>R3 / R6 / R9</b> 各有一次「攤位加碼」三選一。</li>
         </ul>
-        <label class="ac-check"><input type="checkbox" id="ac-timer-on" ${timerOn ? "checked" : ""} /> 準備階段倒數計時(R1～3 30 秒、R4～11 40 秒、之後 45 秒)</label>
+        <label class="ac-check"><input type="checkbox" id="ac-timer-on" ${timerOn ? "checked" : ""} /> 準備階段倒數計時(每輪 ${fmtSecs(AD.prepSeconds(1))},可提前按「完成準備」)</label>
         <div class="action-row"><button class="btn" id="ac-start">${ic("play")}開始練習</button></div>
       </div>`;
     document.getElementById("ac-start").onclick = () => {
@@ -98,9 +151,9 @@
   function newGame() {
     stopTimer(); battleToken++;
     const seed = new URLSearchParams(location.search).get("seed") || String(Math.floor(Math.random() * 1e9));
-    g = G.create({ seed, name: "你" });
+    g = G.create({ seed, name: "你" }); history = []; showLog = false; logRound = null;
     G.startRound(g);
-    sel = null; bondInfo = null; view = "prep";
+    sel = null; view = "prep";
     render(); startTimer(); openPerkIfAny();
   }
 
@@ -114,14 +167,27 @@
       <div class="ac-vault-top">${ic("piggy-bank")}<span>金庫 利息 <b>+${interest}</b>${full ? "(已滿)" : ` · 再存 ${next - gold} 個多 +1`}</span></div>
       <div class="ac-vault-bar"><i style="width:${pctFill}%"></i><s style="left:33.3%"></s><s style="left:66.6%"></s></div></div>`;
   }
-  function bondChips(board, extra) {
-    const b = E.computeBonds(board, extra), items = [];
-    Object.keys(AD.TAGS).forEach((t) => {
-      const n = b.counts[t] || 0; if (!n) return;
-      const reached = b.active[t] || 0, nxt = AD.BOND_TIERS.find((x) => x > n) || AD.BOND_TIERS[AD.BOND_TIERS.length - 1];
-      items.push(`<button class="ac-bond t-${t}${reached ? " on" : ""}${bondInfo === t ? " sel" : ""}" data-act="bond" data-tag="${t}">${ic(TAG_ICON[t])}${tagName(t)} ${n}/${reached && n >= 6 ? 6 : nxt}</button>`);
-    });
-    return items.join("") || `<span class="ac-dim">上陣同流派的卡就會啟動羈絆</span>`;
+  // 羈絆列:四個流派永遠都在,已觸發的亮起來;只放圖示 + 名字,細節(目前張數、各級效果)用浮窗看
+  function bondRow(board, extra) {
+    const b = E.computeBonds(board, extra);
+    return Object.keys(AD.TAGS).map((t) => {
+      const n = b.counts[t] || 0, on = !!b.active[t];
+      return `<button class="ac-bond t-${t}${on ? " on" : n ? " part" : ""}" data-act="bond" data-tip="bond" data-tag="${t}">${ic(TAG_ICON[t])}${tagName(t)}</button>`;
+    }).join("");
+  }
+  const RARITY_COST = [1, 2, 3, 5];
+  function oddsHtml(level) {
+    const row = (lv) => AD.SHOP_ODDS[lv].map((p, i) => (p ? `<span class="ac-odd rc-${RARITY_COST[i]}">${AD.RARITY[i].name} ${p}%</span>` : "")).join("");
+    const next = level < AD.MAX_LEVEL ? `<div class="ac-odds next"><span class="ac-dim">升到 Lv${level + 1}:</span>${row(level + 1)}</div>` : "";
+    return `<div class="ac-odds"><span class="ac-dim">Lv${level} 出現機率:</span>${row(level)}</div>${next}`;
+  }
+  function logLinesHtml(lines) { return lines.map((l) => `<div class="ac-ll ${l.k}">${esc(l.text)}</div>`).join(""); }
+  function logCardHtml() {
+    if (!history.length) return "";
+    const cur = history.find((h) => h.round === logRound) || history[history.length - 1];
+    const tabs = history.map((h) => `<button class="ac-logtab${h === cur ? " on" : ""} ${h.res}" data-act="logsel" data-r="${h.round}">R${h.round}</button>`).join("");
+    return `<div class="card ac-logcard"><div class="ac-sec">${ic("scroll-text")}戰報<button class="btn ghost ac-mini-btn" data-act="logtoggle" style="margin-left:auto;">${ic(showLog ? "chevron-up" : "chevron-down")}${showLog ? "收合" : "展開"}</button></div>
+      ${showLog ? `<div class="ac-logtabs">${tabs}</div><div class="ac-loghead">R${cur.round} ${cur.res === "win" ? "勝利" : cur.res === "lose" ? "落敗" : "平手"} · 對手 ${esc(cur.foe)}</div><div class="ac-logbox">${logLinesHtml(cur.lines)}</div>` : `<div class="ac-dim">看回前幾輪的戰鬥過程(共 ${history.length} 場)</div>`}</div>`;
   }
   function perkChips(me) {
     const p = me.perks, out = me.perkPicks.map((id) => {
@@ -136,6 +202,7 @@
   }
 
   function renderPrep() {
+    hideTip();
     const me = g.me, slots = G.slotsOf(me), cost = G.refreshCost(me);
     const needXp = me.level < AD.MAX_LEVEL ? AD.XP_TO_LEVEL[me.level + 1] : 0;
     const xpCost = Math.max(0, AD.BUY_XP.cost - (me.perks.xpCoupon > 0 ? AD.PERK_BY_ID.xp_coupon.off : 0));
@@ -173,15 +240,16 @@
       ${pp ? `<button class="btn ac-perk-btn" id="ac-perk-open">${ic("sparkles")}攤位加碼 第 ${pp.n} 次:選一張(封板前沒選會隨機替你選)</button>` : ""}
       ${me.perkPicks.length ? `<div class="tag-row ac-perks">${perkChips(me)}</div>` : ""}
       <div class="card ac-board-card">
+        <div class="ac-bondrow">${bondRow(me.board, G.extraFor(me))}</div>
         <div class="ac-sec">${ic("swords")}上陣 <em>${me.board.length}/${slots}</em><span class="ac-hint">第 1 位先鋒・最後一位壓軸</span></div>
         <div class="ac-grid" style="--cols:${slots}">${boardCells.join("")}</div>
-        <div class="ac-bonds">${bondChips(me.board, G.extraFor(me))}</div>
         <div class="ac-sec">${ic("archive")}待命席 <em>${me.bench.length}/${AD.BENCH_SLOTS}</em></div>
         <div class="ac-grid" style="--cols:${AD.BENCH_SLOTS}">${benchCells.join("")}</div>
         <div id="ac-detail" class="ac-detail"></div>
       </div>
       <div class="card ac-shop-card">
-        <div class="ac-sec">${ic("store")}商店${me.shopLocked ? ` <span class="tag running">${ic("lock")}已鎖定</span>` : ""}</div>
+        <div class="ac-sec">${ic("store")}商店${me.shopLocked ? ` <span class="tag running">${ic("lock")}已鎖定</span>` : ""}<span class="ac-hint">${canHover ? "滑鼠移到卡上看說明" : "長按卡片看說明"}・點一下購買</span></div>
+        ${oddsHtml(me.level)}
         <div class="ac-grid shop" style="--cols:${me.shop.length}">${shopCells}</div>
         <div class="ac-actions">
           <button class="btn ghost" data-act="refresh">${ic("refresh-cw")}刷新 ${cost ? cost : "免費"}</button>
@@ -190,6 +258,7 @@
           <button class="btn ghost" data-act="undo"${me.undo ? "" : " disabled"}>${ic("undo-2")}撤銷購買</button>
         </div>
       </div>
+      ${logCardHtml()}
       <div class="action-row ac-seal"><button class="btn block" id="ac-seal">${ic("swords")}完成準備,開始對戰</button></div>`;
     renderDetail();
     paintTimer();
@@ -202,12 +271,7 @@
   function renderDetail() {
     const el = document.getElementById("ac-detail"); if (!el) return;
     const me = g.me;
-    if (bondInfo && !sel) {
-      const rows = AD.BONDS[bondInfo].map((t) => `<li class="${(E.computeBonds(me.board, G.extraFor(me)).active[bondInfo] || 0) >= t.need ? "on" : ""}"><b>${t.need} 張</b> ${esc(t.desc)}</li>`).join("");
-      el.innerHTML = `<div class="ac-dhead">${ic(TAG_ICON[bondInfo])}<b>${tagName(bondInfo)}羈絆</b><span class="ac-dim">${esc(AD.TAGS[bondInfo].desc)}</span></div><ul class="ac-blist">${rows}</ul><div class="ac-dim">只算不同名的卡;雙流派卡兩個流派都算。</div>`;
-      return;
-    }
-    if (!sel) { el.innerHTML = `<div class="ac-dim">點一張卡看說明;再點另一格就能移動 / 交換位置。點商店的卡直接購買。</div>`; return; }
+    if (!sel) { el.innerHTML = `<div class="ac-dim">點一張卡看說明與賣出;再點另一格就能移動 / 交換位置。點商店的卡直接購買。</div>`; return; }
     const arr = sel.zone === "board" ? me.board : me.bench, c = arr[sel.idx];
     if (!c) { sel = null; el.innerHTML = ""; return; }
     const d = cardDef(c), st = unitStats(c), sellV = AD.sellValue(d, c.star);
@@ -220,24 +284,26 @@
       <div class="ac-dim">效果數值:2★ ×1.5、3★ ×2;屬性:2★ ×1.8、3★ ×3.5</div>
       <div class="action-row">
         <button class="btn ghost" data-act="toggle">${ic(sel.zone === "board" ? "arrow-down" : "arrow-up")}${sel.zone === "board" ? "下場" : "上陣"}</button>
-        <button class="btn ghost danger" data-act="sell">${ic("trash-2")}賣出 +${sellV}</button>
+        <button class="btn ghost outline-danger" data-act="sell">${ic("trash-2")}賣出 +${sellV}</button>
         <button class="btn ghost" data-act="desel">${ic("x")}取消</button>
       </div>`;
   }
 
   // ---------------- 準備階段的點擊 ----------------
   root.addEventListener("click", async (e) => {
+    if (Date.now() < suppressUntil) return; // 長按看說明放開手指時,不要當成點擊(不會誤買)
     const b = e.target.closest("[data-act]"); if (!b || view !== "prep") return;
     const act = b.dataset.act, me = g.me, i = Number(b.dataset.i), zone = b.dataset.zone;
     let r = null;
-    if (act === "shop") { r = G.buy(g, i); if (r.ok) { sel = null; bondInfo = null; if (r.merged.length) setMsg("合成!" + r.merged.map((m) => `${cardDef(m).name} ${m.star}★`).join("、"), "good"); } }
+    if (act === "shop") { r = G.buy(g, i); if (r.ok) { sel = null; if (r.merged.length) setMsg("合成!" + r.merged.map((m) => `${cardDef(m).name} ${m.star}★`).join("、"), "good"); } }
     else if (act === "own") {
-      bondInfo = null;
       if (sel && !(sel.zone === zone && sel.idx === i)) { r = G.move(g, sel, { zone, idx: i }); if (r.ok) sel = null; }
       else sel = sel && sel.zone === zone && sel.idx === i ? null : { zone, idx: i };
     }
     else if (act === "slot") { if (sel) { r = G.move(g, sel, { zone, idx: i }); if (r.ok) sel = null; } }
-    else if (act === "bond") { sel = null; bondInfo = bondInfo === b.dataset.tag ? null : b.dataset.tag; }
+    else if (act === "bond") { if (tipAnchor === b) hideTip(); else showTip(b); return; }
+    else if (act === "logtoggle") showLog = !showLog;
+    else if (act === "logsel") logRound = Number(b.dataset.r);
     else if (act === "desel") sel = null;
     else if (act === "toggle" && sel) { r = G.move(g, sel, { zone: sel.zone === "board" ? "bench" : "board", idx: 99 }); if (r.ok) sel = null; }
     else if (act === "sell" && sel) {
@@ -315,67 +381,82 @@
     }).join("");
   }
 
+  // 把一個引擎事件套用到演出狀態 bs,回傳 { text, side, delay, flashTag, flash }(文字同時是戰報的一行)
+  function applyEvent(ev, bs, nameOf, mySide) {
+    const u = (tag) => bs[tag[0]][Number(tag.slice(1))], sideOf = (tag) => (tag[0] === mySide ? "my" : "foe");
+    switch (ev.t) {
+      case "round": return { text: `第 ${ev.n} 回合`, side: "round", delay: 350, round: ev.n };
+      case "atk": return { text: `${nameOf(ev.from)} 攻擊 ${nameOf(ev.to)}${ev.crit ? "(暴擊!)" : ""}`, side: sideOf(ev.from), delay: 450, flashTag: ev.from, flash: "atk" };
+      case "dmg": {
+        const t = u(ev.to); t.shield = Math.max(0, t.shield - (ev.ab || 0)); t.hp -= ev.n;
+        if (ev.kind === "burn") t.burn = Math.max(0, t.burn - 1);
+        const text = ev.kind === "burn" ? `${nameOf(ev.to)} 灼傷 -${ev.n}` : ev.kind === "bell" ? `打烊鐘!${nameOf(ev.to)} -${ev.n}` : ev.kind === "reflect" ? `${nameOf(ev.to)} 受到反彈 -${ev.n}` : `${nameOf(ev.to)} -${ev.n}${ev.ab ? `(護盾吸收 ${ev.ab})` : ""}`;
+        return { text, side: sideOf(ev.to), delay: 380, flashTag: ev.to, flash: "hit" };
+      }
+      case "die": u(ev.to).dead = true; return { text: `${nameOf(ev.to)} 被擊敗`, side: sideOf(ev.to), delay: 480 };
+      case "burn": u(ev.to).burn += ev.n; return { text: `${nameOf(ev.to)} 灼傷 +${ev.n} 層`, side: sideOf(ev.to), delay: 220 };
+      case "freeze": u(ev.to).frozen = 1; return { text: `${nameOf(ev.to)} 被凍結`, side: sideOf(ev.to), delay: 300 };
+      case "skip": u(ev.from).frozen = 0; return { text: `${nameOf(ev.from)} 凍結中,跳過行動`, side: sideOf(ev.from), delay: 300 };
+      case "shield": u(ev.to).shield += ev.n; return { text: `${nameOf(ev.to)} 獲得 ${ev.n} 點護盾`, side: sideOf(ev.to), delay: 200 };
+      case "buff": u(ev.to).atk += ev.atk; return { text: `${nameOf(ev.to)} 攻擊 +${ev.atk}`, side: sideOf(ev.to), delay: 200 };
+      case "bell": return { text: `打烊鐘響起:全體受到遞增傷害`, side: "round", delay: 350 };
+      default: return null;
+    }
+  }
+
   async function playBattle(rep, auto) {
     const token = ++battleToken, mine = rep.mine, mySide = mine.side, foeSide = mySide === "a" ? "b" : "a";
-    const init = mine.r.init, bs = bstateFrom(init), events = mine.r.events || [];
+    const bs = bstateFrom(mine.r.init), events = mine.r.events || [];
     const foeName = mine.ghost ? `幽靈(${mine.foe.name} 的陣容)` : mine.foe.name;
-    const nameOf = (tag) => { const u = bs[tag[0]][Number(tag.slice(1))]; return (tag[0] === mySide ? "我方" : "敵方") + AD.CARD_BY_ID[u.id].name; };
-    let log = auto ? "時間到,自動封板!" : "對戰開始";
+    const nameOf = (tag) => (tag[0] === mySide ? "我方" : "敵方") + AD.CARD_BY_ID[bs[tag[0]][Number(tag.slice(1))].id].name;
     const bondLine = (side) => { const b = side === mySide ? (mySide === "a" ? mine.r.bondsA : mine.r.bondsB) : (mySide === "a" ? mine.r.bondsB : mine.r.bondsA); return Object.keys(b).map((t) => `<span class="ac-bond on t-${t}">${ic(TAG_ICON[t])}${tagName(t)} ${b[t]}</span>`).join("") || `<span class="ac-dim">沒有羈絆</span>`; };
+    const lines = [], entry = { round: rep.round, res: mine.res, foe: foeName, lines };
+    history = history.filter((h) => h.round !== rep.round).concat(entry); logRound = rep.round;
+    root.innerHTML = `
+      <div class="ac-top"><div class="ac-top-row"><span class="tag running">${ic("flask-conical")}練習模式</span><span class="ac-round">R${rep.round} 戰鬥</span><span class="ac-timer" id="ac-bround">第 1 回合</span></div>
+        <div class="ac-top-row" style="margin-top:8px;"><span class="ac-dim">演出速度</span><span class="ac-speed">${[1, 2, 4].map((n) => `<button class="btn ghost ac-mini-btn ac-sp" data-sp="${n}">x${n}</button>`).join("")}<button class="btn ghost ac-mini-btn" id="ac-skip">${ic("skip-forward")}跳過</button></span></div></div>
+      <div class="card ac-battle">
+        <div class="ac-bname">${ic("user")}${esc(foeName)}</div><div class="ac-bonds">${bondLine(foeSide)}</div>
+        <div id="ac-bfield"></div>
+        <div class="ac-blog" id="ac-blog"></div>
+        <div class="ac-bonds">${bondLine(mySide)}</div><div class="ac-bname me">${ic("user-round")}你</div>
+      </div>
+      <div class="card ac-logcard"><div class="ac-sec">${ic("scroll-text")}戰報<span class="ac-hint">可以往上捲回頭看</span></div><div class="ac-logbox" id="ac-logbox"></div></div>`;
+    const fieldEl = document.getElementById("ac-bfield"), blogEl = document.getElementById("ac-blog"), boxEl = document.getElementById("ac-logbox"), roundEl = document.getElementById("ac-bround");
     let skipped = false;
-    const draw = (round) => {
-      if (token !== battleToken) return;
-      root.innerHTML = `
-        <div class="ac-top"><div class="ac-top-row"><span class="tag running">${ic("flask-conical")}練習模式</span><span class="ac-round">R${rep.round} 戰鬥</span><span class="ac-timer">第 ${round || 1} 回合</span>
-          <span class="ac-speed"><button class="btn ghost ac-mini-btn" id="ac-x2">${ic("fast-forward")}x${battleSpeed === 1 ? 2 : 1} 速</button><button class="btn ghost ac-mini-btn" id="ac-skip">${ic("skip-forward")}跳過</button></span></div></div>
-        <div class="card ac-battle">
-          <div class="ac-bname">${ic("user")}${esc(foeName)}</div>
-          <div class="ac-bonds">${bondLine(foeSide)}</div>
-          <div class="ac-brow" style="--cols:${bs[foeSide].length}">${battleRowHtml(bs[foeSide], false)}</div>
-          <div class="ac-blog" id="ac-blog">${esc(log)}</div>
-          <div class="ac-brow" style="--cols:${bs[mySide].length}">${battleRowHtml(bs[mySide], true)}</div>
-          <div class="ac-bonds">${bondLine(mySide)}</div>
-          <div class="ac-bname me">${ic("user-round")}你</div>
-        </div>`;
-      document.getElementById("ac-x2").onclick = () => { battleSpeed = battleSpeed === 1 ? 2 : 1; document.getElementById("ac-x2").innerHTML = ic("fast-forward") + `x${battleSpeed === 1 ? 2 : 1} 速`; };
-      document.getElementById("ac-skip").onclick = () => { skipped = true; };
+    const paintSpeed = () => root.querySelectorAll(".ac-sp").forEach((b) => b.classList.toggle("active", Number(b.dataset.sp) === battleSpeed));
+    root.querySelectorAll(".ac-sp").forEach((b) => (b.onclick = () => { battleSpeed = Number(b.dataset.sp); paintSpeed(); }));
+    document.getElementById("ac-skip").onclick = () => { skipped = true; };
+    paintSpeed();
+    const draw = () => { // 只重畫戰場,速度鈕與戰報不會被洗掉
+      fieldEl.innerHTML = `<div class="ac-brow" style="--cols:${bs[foeSide].length}">${battleRowHtml(bs[foeSide], false)}</div><div class="ac-gap"></div><div class="ac-brow" style="--cols:${bs[mySide].length}">${battleRowHtml(bs[mySide], true)}</div>`;
     };
-    let round = 1; draw(round);
+    const addLine = (k, text) => {
+      const l = { k, text }; lines.push(l);
+      const atBottom = boxEl.scrollHeight - boxEl.scrollTop - boxEl.clientHeight < 40;
+      const d = document.createElement("div"); d.className = "ac-ll " + k; d.textContent = text; boxEl.appendChild(d);
+      if (atBottom) boxEl.scrollTop = boxEl.scrollHeight;
+    };
+    const say = (t) => { blogEl.textContent = t; };
+    say(auto ? "時間到,自動封板!" : "對戰開始"); addLine("sys", auto ? "時間到,自動封板" : "對戰開始");
+    draw();
     await sleep(700 / battleSpeed);
     for (const ev of events) {
       if (token !== battleToken) return;
-      let delay = 250, text = null, flashTag = null, flash = "";
-      const u = (tag) => bs[tag[0]][Number(tag.slice(1))];
-      switch (ev.t) {
-        case "round": round = ev.n; text = `第 ${ev.n} 回合`; delay = 350; break;
-        case "atk": text = `${nameOf(ev.from)} 攻擊 ${nameOf(ev.to)}${ev.crit ? "(暴擊!)" : ""}`; flashTag = ev.from; flash = "atk"; delay = 450; break;
-        case "dmg": {
-          const t = u(ev.to); t.shield = Math.max(0, t.shield - (ev.ab || 0)); t.hp -= ev.n;
-          if (ev.kind === "burn") t.burn = Math.max(0, t.burn - 1);
-          text = ev.kind === "burn" ? `${nameOf(ev.to)} 灼傷 -${ev.n}` : ev.kind === "bell" ? `打烊鐘!${nameOf(ev.to)} -${ev.n}` : ev.kind === "reflect" ? `${nameOf(ev.to)} 受到反彈 -${ev.n}` : `${nameOf(ev.to)} -${ev.n}${ev.ab ? `(護盾吸收 ${ev.ab})` : ""}`;
-          flashTag = ev.to; flash = "hit"; delay = 380; break;
-        }
-        case "die": u(ev.to).dead = true; text = `${nameOf(ev.to)} 被擊敗`; delay = 480; break;
-        case "burn": u(ev.to).burn += ev.n; text = `${nameOf(ev.to)} 灼傷 +${ev.n} 層`; delay = 220; break;
-        case "freeze": u(ev.to).frozen = 1; text = `${nameOf(ev.to)} 被凍結`; delay = 300; break;
-        case "skip": u(ev.from).frozen = 0; text = `${nameOf(ev.from)} 凍結中,跳過行動`; delay = 300; break;
-        case "shield": u(ev.to).shield += ev.n; text = `${nameOf(ev.to)} 獲得 ${ev.n} 點護盾`; delay = 200; break;
-        case "buff": u(ev.to).atk += ev.atk; text = `${nameOf(ev.to)} 攻擊 +${ev.atk}`; delay = 200; break;
-        case "bell": text = `打烊鐘響起:全體受到遞增傷害`; delay = 350; break;
-        default: break;
-      }
+      const r = applyEvent(ev, bs, nameOf, mySide);
+      if (!r) continue;
+      if (r.round) roundEl.textContent = `第 ${r.round} 回合`;
+      addLine(r.side === "round" ? "round" : r.side, r.side === "round" ? `— ${r.text} —` : r.text);
       if (skipped) continue;
-      if (text != null) log = text;
-      if (flashTag) u(flashTag).flash = flash;
-      draw(round);
-      await sleep(delay / battleSpeed);
-      if (flashTag) u(flashTag).flash = "";
+      say(r.text);
+      if (r.flashTag) bs[r.flashTag[0]][Number(r.flashTag.slice(1))].flash = r.flash;
+      draw();
+      await sleep(r.delay / battleSpeed);
+      if (r.flashTag) bs[r.flashTag[0]][Number(r.flashTag.slice(1))].flash = "";
     }
     if (token !== battleToken) return;
-    // 最終畫面
-    const res = mine.res;
-    log = res === "win" ? "你贏了!" : res === "lose" ? "你輸了…" : "平手";
-    draw(round);
+    const res = mine.res, endText = res === "win" ? "你贏了!" : res === "lose" ? "你輸了…" : "平手";
+    say(endText); addLine("sys", `結果:${endText}`); draw();
     await sleep(skipped ? 300 : 900 / battleSpeed);
     if (token !== battleToken) return;
     view = "result"; render();
@@ -405,13 +486,15 @@
         <div class="ac-rline">${ic("coins")}銅板 ${m.goldBefore} → <b>${me.gold}</b> ${ic("flame")}連勝 <b>${me.streak}</b></div>
         ${m.eliminated ? `<div class="ac-rline bad">${ic("skull")}你被淘汰了</div>` : ""}
         ${notes.map((n) => `<div class="ac-rline dim">${ic("info")}${esc(n)}</div>`).join("")}
+        <div class="ac-sec">${ic("scroll-text")}本輪戰報</div>
+        <div class="ac-logbox">${logLinesHtml((history.find((h) => h.round === rep.round) || { lines: [] }).lines)}</div>
         <div class="ac-sec">${ic("users")}全場血量</div>
         <ul class="ac-rank">${ranking}</ul>
         <div class="action-row"><button class="btn block" id="ac-next">${ic(g.over ? "trophy" : "arrow-right")}${g.over ? "查看總結" : `進入 R${g.round + 1}`}</button></div>
       </div>`;
     document.getElementById("ac-next").onclick = () => {
       if (g.over) { view = "over"; render(); return; }
-      G.nextRound(g); sel = null; bondInfo = null; view = "prep"; render(); startTimer(); openPerkIfAny();
+      G.nextRound(g); sel = null; view = "prep"; render(); startTimer(); openPerkIfAny();
     };
   }
 

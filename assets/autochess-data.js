@@ -152,6 +152,9 @@ window.AutochessData = (function () {
     hpMult: 1, // 全體單位生命倍率:數值調平衡用的旋鈕(戰鬥太短、先手方太佔便宜時調高)
   };
 
+  // 準備階段秒數:[起始輪次, 秒數](v53 起整場都是 90 秒;之後想前短後長改這裡就好)
+  const PREP_SECONDS = [[1, 90], [4, 90], [12, 90]];
+
   // ---- 經濟 / 血量(企劃 3-2、3-3)----
   const START_HP = 100;
   const START_GOLD = 5;
@@ -209,6 +212,11 @@ window.AutochessData = (function () {
     ROUND_BASE_DAMAGE.forEach(([from, dmg]) => { if (round >= from) d = dmg; });
     return d;
   }
+  function prepSeconds(round) {
+    let s = PREP_SECONDS[0][1];
+    PREP_SECONDS.forEach(([from, sec]) => { if (round >= from) s = sec; });
+    return s;
+  }
   // 基本收入 I(R)
   function baseIncome(round) {
     return round <= 4 ? 4 : round <= 9 ? 5 : round <= 14 ? 6 : 7;
@@ -241,6 +249,6 @@ window.AutochessData = (function () {
     DATA_VERSION, TAGS, RARITY, COST_TO_RARITY, STAR, CARDS, CARD_BY_ID, BOND_TIERS, BOND_COIN_CAP, BONDS, BATTLE,
     START_HP, START_GOLD, BENCH_SLOTS, SHOP_SLOTS, WIN_BONUS, ROUND_BASE_DAMAGE, SURVIVOR_STAR_CAP, INTEREST, SELL_PENALTY,
     XP_TO_LEVEL, PASSIVE_XP, BUY_XP, MAX_LEVEL, SLOTS_BY_LEVEL, LEVEL_PERKS, SHOP_ODDS, PERK_ROUNDS, PERK_CATS, PERKS, PERK_BY_ID,
-    roundBaseDamage, baseIncome, streakBonus, interestOf, slotsFor, shopSlotsFor, sellValue, addXp,
+    PREP_SECONDS, prepSeconds, roundBaseDamage, baseIncome, streakBonus, interestOf, slotsFor, shopSlotsFor, sellValue, addXp,
   };
 })();

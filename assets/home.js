@@ -77,7 +77,8 @@ function eventRow(ev) {
   // 職業養成對決先進爬塔頁面(訓練期在那邊進行)，PVP對戰頁面裡有明顯的按鈕可以再切過去。
   const isAuction = ev.game_type === "auction";
   const isCareer = ev.game_type === "career";
-  const playPage = isAuction ? "auction.html" : isCareer ? "tower.html" : "lobby.html";
+  const isAutochess = ev.game_type === "autochess";
+  const playPage = isAuction ? "auction.html" : isCareer ? "tower.html" : isAutochess ? "autochess.html" : "lobby.html";
   div.innerHTML = `
     <div class="meta">
       <h3>${ui.esc(ev.name)}</h3>
@@ -138,6 +139,22 @@ function eventRow(ev) {
     watchBtn.innerHTML = ui.icon("eye") + "觀戰";
     watchBtn.onclick = () => window.open(`${playPage}?event=${ev.id}`, "_blank");
     actions.appendChild(watchBtn);
+  }
+
+  // 練習模式(夜市自走棋):報名中與進行中都顯示,已結束不顯示;不用登入、不寫資料庫;主辦人可在建立活動時關閉
+  if (isAutochess && ev.status !== "closed" && !(ev.rules && ev.rules.autochess && ev.rules.autochess.practice === false)) {
+    const practiceBtn = document.createElement("button");
+    practiceBtn.className = "btn ghost";
+    practiceBtn.innerHTML = ui.icon("graduation-cap") + "練習";
+    practiceBtn.onclick = async () => {
+      // 正式場進行中離開去練習,正式場的計時不會暫停,先提醒避免被當成掛網
+      if (ev.locked) {
+        const ok = await ui.confirm("正式場的計時不會暫停,離開太久可能被當成掛網。確定要去練習嗎?", { title: "正式場進行中", confirmText: "仍要練習", tone: "question" });
+        if (!ok) return;
+      }
+      window.open("autochess.html?mode=practice", "_blank");
+    };
+    actions.appendChild(practiceBtn);
   }
 
   actions.appendChild(btn);

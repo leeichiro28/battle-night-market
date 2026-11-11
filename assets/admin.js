@@ -1,4 +1,4 @@
-const GAME_PAGE = { dice: "dice.html", rps5: "rps5.html", auction: "auction.html", career: "tower.html" };
+const GAME_PAGE = { dice: "dice.html", rps5: "rps5.html", auction: "auction.html", career: "tower.html", autochess: "autochess.html" };
 
 // 後台勾選用的進階規則說明(圖示與名稱共用 ui.RULE，這裡只補上說明文字)
 const RULE_ROWS = [
@@ -79,8 +79,9 @@ document.getElementById("new-type").onchange = (e) => {
   document.getElementById("dice-rules-box").style.display = type === "dice" ? "block" : "none";
   document.getElementById("rps5-rules-box").style.display = type === "rps5" ? "block" : "none";
   document.getElementById("auction-settings-box").style.display = type === "auction" ? "block" : "none";
+  document.getElementById("autochess-settings-box").style.display = type === "autochess" ? "block" : "none";
   // 夜市拍賣、職業養成對決都不是賽程對戰(career是持續配對的PVP佇列)，沒有敗部復活賽這個概念
-  document.getElementById("losers-field").style.display = type === "auction" || type === "career" ? "none" : "block";
+  document.getElementById("losers-field").style.display = type === "auction" || type === "career" || type === "autochess" ? "none" : "block";
 };
 
 // ---------- 獎勵設定區 ----------
@@ -797,6 +798,10 @@ document.getElementById("create-btn").onclick = async () => {
   if (type === "career") {
     const theme = document.getElementById("new-theme").value;
     if (theme && theme !== "normal") rules.storyTheme = theme; // 一般夜不存，跟舊活動一樣沒有這個欄位
+  }
+  if (type === "autochess") {
+    // 練習模式預設開放;主辦人取消勾選才關閉(首頁就不顯示「練習」按鈕)
+    rules.autochess = { practice: document.getElementById("new-ac-practice").checked };
   }
   if (type === "auction") {
     rules.startingBudget = Math.max(1, parseInt(document.getElementById("auction-budget").value) || AUCTION_DEFAULT_BUDGET);

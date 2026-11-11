@@ -29,7 +29,7 @@ window.AutochessGame = (function () {
   }
 
   const slotsOf = (me) => AD.slotsFor(me.level) + me.perks.stallPlus;
-  const prepSeconds = (round) => (round <= 3 ? 30 : round <= 11 ? 40 : 45);
+  const prepSeconds = (round) => AD.prepSeconds(round);
   const capacityOf = (me) => slotsOf(me) + AD.BENCH_SLOTS;
   const cardsOf = (me) => me.board.concat(me.bench);
   const fail = (msg) => ({ ok: false, msg });

@@ -57,6 +57,8 @@ t("鎖定:下一輪商店原封不動,買走的格子留空,鎖定只管一輪",
 t("Lv9 每輪第一次刷新免費", () => { const g = fresh(); g.me.level = 9; g.me.gold = 0; ok(G.refresh(g).ok); ok(!G.refresh(g).ok); });
 t("非準備階段不能操作", () => { const g = fresh(); G.seal(g); ok(!G.buy(g, 0).ok); ok(!G.refresh(g).ok); ok(!G.buyXp(g).ok); });
 
+t("準備時間:整場 90 秒(可由資料表調整)", () => { eq([1, 3, 4, 11, 12, 30].map(G.prepSeconds), [90, 90, 90, 90, 90, 90]); eq(AD.prepSeconds(1), 90); });
+
 console.log("== 攤位加碼 ==");
 const toPerkRound = (g) => { while (g.round < 3) { G.seal(g); G.nextRound(g); } };
 t("R3 / R6 / R9 才有候選,其他輪沒有", () => {
