@@ -52,7 +52,7 @@ t("同樣輸入跑 1000 次結果完全一致(含事件紀錄)", () => {
 });
 t("開不開 log 不影響結果", () => {
   const a = E.simulate(bigA, bigB, "s1"), b = E.simulate(bigA, bigB, "s1", { log: true });
-  delete b.events; delete a.events; eq(a, b);
+  delete b.events; delete a.events; delete b.init; delete a.init; eq(a, b);
 });
 t("不同種子會有不同走向(同一組陣容 200 種子不會全部同結果)", () => {
   const res = new Set(); for (let i = 0; i < 200; i++) { const r = E.simulate(bigA, bigB, "k" + i); res.add(r.winner + r.rounds + r.hpA + "/" + r.hpB); }

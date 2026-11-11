@@ -105,6 +105,8 @@ window.AutochessEngine = (function () {
     return t;
   }
 
+  const unitView = (u) => ({ id: u.id, star: u.star, atk: u.atk, hp: u.hp, maxHp: u.maxHp, spd: u.spd });
+
   // ---------------- 戰鬥 ----------------
   // opts.log = true 時回傳 events(演出/回放用的簡短事件,不影響結果)
   function simulate(boardA, boardB, seed, opts) {
@@ -114,6 +116,8 @@ window.AutochessEngine = (function () {
     const teams = { a: ta, b: tb };
     const foe = (side) => (side === "a" ? tb : ta);
     const events = opts.log ? [] : null;
+    // 演出用:開場時各單位的數值(opts.log 才附上,不影響結果)
+    const initStats = opts.log ? { a: ta.units.map(unitView), b: tb.units.map(unitView) } : null;
     const ev = (e) => { if (events) events.push(e); };
     const aliveOf = (t) => t.units.filter((u) => u.hp > 0);
     const tag = (u) => u.side + u.idx;
@@ -158,7 +162,7 @@ window.AutochessEngine = (function () {
       const raw = amt;
       const ab = Math.min(tgt.shield, amt); tgt.shield -= ab; amt -= ab;
       tgt.hp -= amt;
-      ev({ t: "dmg", from: src ? tag(src) : kind, to: tag(tgt), n: amt, kind });
+      ev({ t: "dmg", from: src ? tag(src) : kind, to: tag(tgt), n: amt, ab, kind }); // n = 實際扣血、ab = 護盾吸收量(演出用)
       if (kind === "attack" && tgt.hp > 0) {
         fire(tgt, "hurt", { src });
         if (tt.flags.frontReflectPct && aliveOf(tt)[0] === tgt && src && src.hp > 0) hit(tgt, src, Math.floor(raw * tt.flags.frontReflectPct / 100), "reflect");
@@ -254,25 +258,38 @@ window.AutochessEngine = (function () {
       survivorsA: surv(la), survivorsB: surv(lb), starsA: stars(la), starsB: stars(lb), hpA, hpB,
       bonusCoinsA: ta.bonusCoins, bonusCoinsB: tb.bonusCoins,
       bondsA: ta.bonds.active, bondsB: tb.bonds.active,
-      events,
+      events, init: initStats,
     };
   }
 
   // ---------------- 商店(用種子推算,不另外存;企劃 3-4)----------------
   // baseSeed 建議傳 `${活動種子}|${玩家id}`;同樣的(輪次、本輪刷新次數)永遠抽到同一排,重新整理網頁刷不出新卡
+  // opts:extraSlots 多幾格 / tagBoost { tag, mult } 該流派出現權重倍數(預購單) / guaranteeEpic 保證至少 1 張史詩以上(老主顧)
   function rollShop(baseSeed, round, refreshCount, level, opts) {
     opts = opts || {};
     const rng = makeRng(`${baseSeed}|shop|${round}|${refreshCount}`);
     const odds = AD.SHOP_ODDS[Math.min(AD.MAX_LEVEL, Math.max(1, level))];
     const slots = AD.shopSlotsFor(level) + (opts.extraSlots || 0);
     const pools = AD.RARITY.map((r) => AD.CARDS.filter((c) => AD.COST_TO_RARITY[c.cost] === AD.RARITY.indexOf(r)));
+    const boost = opts.tagBoost;
+    const pickFrom = (pool) => {
+      if (!boost) return rng.pick(pool);
+      const w = pool.map((c) => (c.tags.includes(boost.tag) ? boost.mult : 1));
+      let x = rng.next() * w.reduce((a, b) => a + b, 0);
+      for (let i = 0; i < pool.length; i++) { x -= w[i]; if (x < 0) return pool[i]; }
+      return pool[pool.length - 1];
+    };
     const out = [];
     for (let i = 0; i < slots; i++) {
       let r = rng.next() * 100, k = 0, acc = 0;
       for (k = 0; k < odds.length; k++) { acc += odds[k]; if (r < acc) break; }
       k = Math.min(k, odds.length - 1);
       while (k > 0 && !pools[k].length) k--;
-      out.push(rng.pick(pools[k]).id);
+      out.push(pickFrom(pools[k]).id);
+    }
+    if (opts.guaranteeEpic && !out.some((id) => AD.CARD_BY_ID[id].cost >= 3)) {
+      const pool = pools[2].concat(rng.next() < 0.25 ? pools[3] : []);
+      out[rng.int(out.length)] = rng.pick(pool).id;
     }
     return out;
   }

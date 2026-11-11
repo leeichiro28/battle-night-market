@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>夜市自走棋 · 擂台夜市</title>
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+<link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <div id="site-header"></div>
+  <div class="wrap ac-wrap">
+    <div class="marquee">
+      <span class="eyebrow"><i data-lucide="dices" class="ico"></i>夜市自走棋</span>
+      <h1>夜市自走棋 <span>練習場</span></h1>
+    </div>
+
+    <div id="ac-root"></div>
+
+    <div class="footer-nav"><a href="index.html"><i data-lucide="arrow-left" class="ico"></i>回活動列表</a></div>
+  </div>
+
+  <div class="modal-overlay" id="ac-modal"><div class="modal-card" id="ac-modal-card"></div></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@1.27.0/dist/umd/lucide.min.js"></script>
+  <script src="assets/supabase-config.js"></script>
+  <script src="assets/db.js"></script>
+  <script src="assets/ui.js"></script>
+  <script src="assets/header.js"></script>
+  <script src="assets/autochess-data.js"></script>
+  <script src="assets/autochess-engine.js"></script>
+  <script src="assets/autochess-bot.js"></script>
+  <script src="assets/autochess-game.js"></script>
+  <script src="assets/autochess.js"></script>
+</body>
+</html>

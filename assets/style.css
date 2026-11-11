@@ -2303,3 +2303,118 @@ input,select,textarea{max-width:100%;min-width:0;}
 .sk-row2.sk-sub .sk-ic2 svg,.sk-row2.sk-sub .sk-ic2 i{width:14px;height:14px}
 .sk-row2.sk-branch{margin-top:10px}
 @media (max-width:520px){.sk-row2.sk-sub{margin-left:10px}.sk-row2.sk-sub .sk-act{padding-left:34px}}
+
+
+/* ============ 夜市自走棋(autochess.html)============ */
+.ac-wrap .marquee{padding:22px 10px 14px;}
+.ac-wrap .marquee h1{font-size:clamp(24px,6vw,40px);}
+:root{
+  --ac-burn:#E5703C; --ac-frost:#4FB5D9; --ac-guard:#C9A24A; --ac-game:#C45FA8; --ac-none:#7D7890;
+}
+.ac-top{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px;margin-bottom:10px;}
+.ac-top-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.ac-round{font-weight:700;color:var(--gold);}
+.ac-timer{font-variant-numeric:tabular-nums;font-weight:700;margin-left:auto;}
+.ac-timer.urgent{color:var(--red);}
+.ac-speed{display:inline-flex;gap:6px;margin-left:auto;}
+.ac-mini-btn{padding:6px 10px;font-size:12px;}
+.ac-top .timer-bar{margin:8px 0;}
+.ac-stats{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:14px;}
+.ac-stat{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;}
+.ac-stat.gold b{color:var(--gold);}
+.ac-stat em{font-style:normal;color:var(--ink-dim);font-size:12px;}
+.ac-vault{margin-top:8px;}
+.ac-vault-top{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-dim);}
+.ac-vault-top b{color:var(--gold);}
+.ac-vault-bar{position:relative;height:6px;border-radius:99px;background:var(--panel2);margin-top:4px;overflow:hidden;}
+.ac-vault-bar i{position:absolute;inset:0 auto 0 0;background:var(--gold);border-radius:99px;transition:width .2s;}
+.ac-vault-bar s{position:absolute;top:0;bottom:0;width:2px;background:var(--bg);}
+.ac-msg{min-height:20px;font-size:13px;margin:0 2px 8px;color:var(--ink-dim);overflow-wrap:anywhere;}
+.ac-msg.bad{color:var(--red);} .ac-msg.good{color:var(--green);}
+.ac-perk-btn{width:100%;margin-bottom:10px;white-space:normal;text-align:left;}
+.ac-perks{margin-bottom:10px;}
+.ac-board-card,.ac-shop-card{padding:12px;}
+.ac-sec{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--gold);font-weight:700;margin:10px 0 6px;flex-wrap:wrap;}
+.ac-sec:first-child{margin-top:0;}
+.ac-sec em{font-style:normal;color:var(--ink-dim);font-weight:400;}
+.ac-hint{margin-left:auto;font-size:11px;color:var(--ink-dim);font-weight:400;}
+.ac-dim{color:var(--ink-dim);font-size:12px;}
+.ac-grid{display:grid;grid-template-columns:repeat(var(--cols,5),minmax(0,1fr));gap:3px;}
+/* 卡牌:迷你(上陣/待命)與商店兩種尺寸,顏色依主流派、邊框依費用 */
+.ac-card{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:space-between;gap:1px;min-width:0;width:100%;min-height:62px;padding:3px 1px;border-radius:7px;border:2px solid var(--line);background:linear-gradient(160deg,var(--c,var(--ac-none)) -80%,var(--panel2) 70%);color:var(--ink);font:inherit;cursor:pointer;overflow:hidden;}
+.ac-card.t-burn{--c:var(--ac-burn);} .ac-card.t-frost{--c:var(--ac-frost);} .ac-card.t-guard{--c:var(--ac-guard);} .ac-card.t-game{--c:var(--ac-game);} .ac-card.t-none{--c:var(--ac-none);}
+.ac-card.dual{box-shadow:inset 0 -4px 0 var(--ac-game);}
+.ac-card.r-1{border-color:#6F6A82;} .ac-card.r-2{border-color:var(--green);} .ac-card.r-3{border-color:var(--epic,#8B7FD1);} .ac-card.r-5{border-color:var(--gold);}
+.ac-card.s-2{box-shadow:0 0 0 1px rgba(255,255,255,.35);} .ac-card.s-3{box-shadow:0 0 8px 1px var(--gold);}
+.ac-card.sel{outline:2px solid var(--gold);outline-offset:1px;}
+.ac-card.dim{opacity:.45;}
+.ac-card .ac-cost{align-self:flex-start;font-size:9px;line-height:1;background:rgba(0,0,0,.4);border-radius:4px;padding:1px 3px;display:inline-flex;align-items:center;gap:2px;}
+.ac-card .ac-stars{display:flex;justify-content:center;min-height:8px;color:var(--gold);}
+.ac-card .ac-star{width:8px;height:8px;fill:currentColor;}
+.ac-card .ac-ticon{width:15px;height:15px;color:var(--c,var(--ac-none));}
+.ac-card .ac-name{font-size:10px;line-height:1.1;font-weight:700;overflow-wrap:anywhere;text-align:center;}
+.ac-card .ac-st{font-size:9px;color:var(--ink-dim);line-height:1;}
+.ac-card .ac-pos{position:absolute;right:1px;bottom:12px;font-style:normal;font-size:8px;background:var(--gold);color:#1B1706;border-radius:3px;padding:0 2px;line-height:1.3;}
+.ac-card.shop{min-height:92px;padding:5px 3px;}
+.ac-card.shop .ac-name{font-size:11px;} .ac-card.shop .ac-st{font-size:11px;}
+.ac-card.shop .ac-cost{font-size:11px;} .ac-card.shop .ac-cost .ico{width:11px;height:11px;}
+.ac-card.shop .ac-ticon{width:20px;height:20px;}
+.ac-slot{min-height:62px;width:100%;border:1px dashed var(--line);border-radius:7px;background:transparent;color:var(--ink-dim);font-size:10px;cursor:pointer;padding:0;}
+.ac-slot.empty{min-height:92px;cursor:default;}
+.ac-grid.shop .ac-slot{min-height:92px;}
+.ac-bonds{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0;}
+.ac-bond{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:99px;border:1px solid var(--line);background:var(--panel2);color:var(--ink-dim);white-space:nowrap;cursor:pointer;font-family:inherit;}
+.ac-bond.on{color:var(--ink);border-color:var(--c,var(--gold-d));}
+.ac-bond.t-burn{--c:var(--ac-burn);} .ac-bond.t-frost{--c:var(--ac-frost);} .ac-bond.t-guard{--c:var(--ac-guard);} .ac-bond.t-game{--c:var(--ac-game);}
+.ac-bond.on .ico{color:var(--c);} .ac-bond.sel{outline:1px solid var(--gold);}
+.ac-detail{margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);font-size:13px;min-height:44px;}
+.ac-dhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;}
+.ac-dhead .tag-row{margin:0;}
+.ac-stars.big .ac-star{width:12px;height:12px;fill:currentColor;color:var(--gold);}
+.ac-dstats{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:6px;}
+.ac-dstats span{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;}
+.ac-dtext{margin:4px 0;overflow-wrap:anywhere;} .ac-dtext.dim{color:var(--ink-dim);} .ac-dtext.dim.on{color:var(--gold);}
+.ac-blist{margin:4px 0 6px;padding-left:18px;} .ac-blist li{margin:2px 0;color:var(--ink-dim);} .ac-blist li.on{color:var(--ink);}
+.ac-detail .action-row{margin-top:8px;}
+.btn.danger{color:var(--red);border-color:var(--red);}
+.ac-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;}
+.ac-actions .btn{padding:10px 8px;font-size:13px;}
+.ac-seal{margin-top:12px;} .ac-seal .btn{width:100%;padding:14px;font-size:16px;}
+/* 戰鬥 */
+.ac-battle{padding:12px 8px;}
+.ac-bname{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;}
+.ac-bname.me{color:var(--gold);}
+.ac-brow{display:grid;grid-template-columns:repeat(var(--cols,5),minmax(0,1fr));gap:3px;margin:6px 0;}
+.ac-bunit{min-width:0;transition:opacity .3s,transform .15s;}
+.ac-bunit.dead{opacity:.2;filter:grayscale(1);}
+.ac-bunit.hit{animation:ac-shake .3s;} .ac-bunit.atk{transform:translateY(-4px);}
+@keyframes ac-shake{0%,100%{transform:translateX(0);}25%{transform:translateX(-3px);}75%{transform:translateX(3px);}}
+.ac-bunit .ac-card{cursor:default;}
+.ac-hpbar{height:5px;border-radius:99px;background:var(--panel2);overflow:hidden;margin-top:3px;} .ac-hpbar i{display:block;height:100%;background:var(--green);transition:width .25s;}
+.ac-hpnum{text-align:center;font-size:10px;font-variant-numeric:tabular-nums;}
+.ac-bstat{display:flex;justify-content:center;gap:2px;min-height:12px;flex-wrap:wrap;}
+.ac-bstat .bs{display:inline-flex;align-items:center;font-size:9px;gap:1px;} .ac-bstat .bs .ico{width:9px;height:9px;}
+.ac-bstat .burn{color:var(--ac-burn);} .ac-bstat .frost{color:var(--ac-frost);} .ac-bstat .guard{color:var(--ac-guard);}
+.ac-blog{text-align:center;font-size:13px;min-height:38px;display:flex;align-items:center;justify-content:center;padding:6px;color:var(--gold);border-top:1px dashed var(--line);border-bottom:1px dashed var(--line);overflow-wrap:anywhere;}
+/* 結算與總結 */
+.ac-result.good{border-color:var(--green);} .ac-result.bad{border-color:var(--red);}
+.ac-rtitle{display:flex;align-items:center;gap:8px;font-size:20px;margin-bottom:8px;}
+.ac-rline{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:6px 0;font-size:14px;} .ac-rline.bad{color:var(--red);} .ac-rline.dim{color:var(--ink-dim);font-size:12px;}
+.ac-eco{width:100%;border-collapse:collapse;margin:8px 0;font-size:14px;} .ac-eco td{padding:5px 2px;border-bottom:1px solid var(--line);} .ac-eco td:last-child{text-align:right;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;} .ac-eco .sum td{font-weight:700;color:var(--gold);}
+.ac-rank{list-style:none;margin:6px 0 12px;padding:0;} .ac-rank li{display:grid;grid-template-columns:minmax(0,1fr) 70px 44px;gap:8px;align-items:center;padding:4px 0;font-size:13px;} .ac-rank li.me{color:var(--gold);font-weight:700;} .ac-rank li.dead{opacity:.45;}
+.ac-rank li span:first-child{overflow-wrap:anywhere;} .ac-rank li b{text-align:right;}
+.ac-hpb{height:6px;border-radius:99px;background:var(--panel2);overflow:hidden;} .ac-hpb i{display:block;height:100%;background:var(--green);}
+.ac-rank.final{list-style:decimal;padding-left:22px;} .ac-rank.final li{display:list-item;} .ac-rank.final li b,.ac-rank.final li span{display:inline;} .ac-rank.final li b{float:right;}
+.ac-intro .ac-rules{list-style:none;padding:0;margin:8px 0 14px;} .ac-intro .ac-rules li{display:flex;gap:8px;align-items:flex-start;margin:8px 0;font-size:14px;line-height:1.5;} .ac-intro .ac-rules .ico{margin-top:3px;color:var(--gold);flex-shrink:0;}
+.ac-check{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:var(--ink-dim);margin-bottom:12px;}
+/* 攤位加碼彈窗 */
+.ac-perk-list{display:grid;gap:8px;margin:10px 0;}
+.ac-perk-opt{display:flex;gap:10px;align-items:flex-start;text-align:left;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);color:var(--ink);cursor:pointer;font:inherit;}
+.ac-perk-opt:hover{border-color:var(--gold-d);}
+.ac-perk-opt .ico{color:var(--gold);flex-shrink:0;margin-top:2px;}
+.ac-perk-opt span{display:grid;gap:4px;min-width:0;} .ac-perk-opt small{color:var(--ink-dim);font-size:12px;line-height:1.5;overflow-wrap:anywhere;} .ac-perk-opt em{justify-self:start;font-style:normal;}
+.ac-target-tags{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+@media (max-width:420px){
+  .ac-wrap{padding-left:12px;padding-right:12px;}
+  .ac-card .ac-name{font-size:9px;}
+}

@@ -179,6 +179,30 @@ window.AutochessData = (function () {
     [30, 40, 25, 5], [20, 35, 35, 10], [15, 25, 40, 20], [10, 20, 40, 30], [5, 10, 35, 50],
   ];
 
+
+  // ---- 攤位加碼(企劃 3-12):R3 / R6 / R9 準備階段開始時三選一 ----
+  // 候選:從 4 個類別(econ 經濟 / shop 商店 / growth 成長 / power 戰力)抽 3 個類別各出 1 張;onlyPick 限定第幾次才會出現。
+  // target:選了之後還要指定對象('card' 一張卡 / 'tag' 一個流派)。value 為約略銅板等值(平衡標尺:第 1 次≈10、第 2 次≈12、第 3 次≈15)。
+  const PERK_ROUNDS = [3, 6, 9];
+  const PERK_CATS = { econ: "經濟", shop: "商店", growth: "成長", power: "戰力" };
+  const PERKS = [
+    { id: "free_refresh", cat: "econ", name: "免費刷新券", icon: "ticket", desc: "接下來 10 次刷新免費(不限輪次,用完為止)。", value: 10, n: 10 },
+    { id: "petty_cash", cat: "econ", name: "零用金", icon: "coins", desc: "立刻 +8 銅板。", value: 8, n: 8 },
+    { id: "good_rapport", cat: "econ", name: "好人緣", icon: "heart-handshake", desc: "之後 3 輪,每輪結算基本收入 +2。", value: 8, n: 2, rounds: 3 },
+    { id: "regular", cat: "shop", name: "老主顧", icon: "star", desc: "下一輪商店保證出現 1 張史詩以上。", value: 10 },
+    { id: "preorder", cat: "shop", name: "預購單", icon: "clipboard-list", desc: "選 1 個流派,接下來 3 輪商店該流派出現機率 ×2。", value: 10, target: "tag", mult: 2, rounds: 3 },
+    { id: "expand", cat: "shop", name: "擴大營業", icon: "store", desc: "接下來 3 輪商店多 1 格。", value: 8, rounds: 3 },
+    { id: "xp_coupon", cat: "growth", name: "升級折扣券", icon: "ticket-percent", desc: "接下來 3 次買經驗各 -2 銅板。", value: 6, n: 3, off: 2 },
+    { id: "tutoring", cat: "growth", name: "補習班", icon: "graduation-cap", desc: "立刻獲得 8 點經驗值。", value: 8, n: 8 },
+    { id: "stall_plus", cat: "growth", name: "加開攤位", icon: "layout-grid", desc: "上陣位置 +1(永久)。強力選項,只在第 3 次出現。", value: 15, onlyPick: 3 },
+    { id: "free_star", cat: "power", name: "免費升星券", icon: "sparkles", desc: "選 1 張 1 費或 2 費的 1★ 卡,立刻升 2★。", value: 10, target: "card" },
+    { id: "seasoning", cat: "power", name: "加料", icon: "chef-hat", desc: "選 1 張卡永久 +3 攻擊 / +3 血量。", value: 8, target: "card", atk: 3, hp: 3 },
+    { id: "tag_assist", cat: "power", name: "流派助陣", icon: "users", desc: "選 1 個流派,該流派羈絆視為多 1 張(永久,最多算到 4 級)。", value: 12, target: "tag", cap: 4 },
+    { id: "streak_guard", cat: "power", name: "連勝保險", icon: "shield-check", desc: "下一次戰敗不中斷連勝(一次性)。", value: 8 },
+  ];
+  const PERK_BY_ID = {};
+  PERKS.forEach((p) => (PERK_BY_ID[p.id] = p));
+
   // ---- 純函式 ----
   function roundBaseDamage(round) {
     let d = ROUND_BASE_DAMAGE[0][1];
@@ -216,7 +240,7 @@ window.AutochessData = (function () {
   return {
     DATA_VERSION, TAGS, RARITY, COST_TO_RARITY, STAR, CARDS, CARD_BY_ID, BOND_TIERS, BOND_COIN_CAP, BONDS, BATTLE,
     START_HP, START_GOLD, BENCH_SLOTS, SHOP_SLOTS, WIN_BONUS, ROUND_BASE_DAMAGE, SURVIVOR_STAR_CAP, INTEREST, SELL_PENALTY,
-    XP_TO_LEVEL, PASSIVE_XP, BUY_XP, MAX_LEVEL, SLOTS_BY_LEVEL, LEVEL_PERKS, SHOP_ODDS,
+    XP_TO_LEVEL, PASSIVE_XP, BUY_XP, MAX_LEVEL, SLOTS_BY_LEVEL, LEVEL_PERKS, SHOP_ODDS, PERK_ROUNDS, PERK_CATS, PERKS, PERK_BY_ID,
     roundBaseDamage, baseIncome, streakBonus, interestOf, slotsFor, shopSlotsFor, sellValue, addXp,
   };
 })();
