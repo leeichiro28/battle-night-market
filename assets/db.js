@@ -271,6 +271,73 @@ const db = (function () {
   });
   TITLE_CATALOG.push({ key: "awaken_all", name: "十二路歸一", desc: "12 條覺醒路線全部覺醒過(要跨很多場活動)", icon: "sparkles", group: "覺醒稱號" });
 
+  // ---- 夜市自走棋稱號(階段 3 先做 12 個;key 一律 ac_ 開頭;只有榮譽,練習模式不發)----
+  const AC_TITLE_MIN_PLAYERS = 4; // 名次類稱號:實際打過對戰的人數要 ≥ 4,避免少人測試場刷冠軍
+  const AC_TITLES = [
+    ["ac_first_run", "初試攤位", "完成第一場夜市自走棋正式場", "store"],
+    ["ac_champion", "夜市棋王", "拿下一場夜市自走棋冠軍(≥4 人場)", "crown"],
+    ["ac_triple_champion", "三屆棋王", "累計 3 次夜市自走棋冠軍(≥4 人場)", "crown"],
+    ["ac_runner_up", "差一步打烊", "拿下夜市自走棋亞軍(≥4 人場)", "medal"],
+    ["ac_regular", "棋桌常客", "累計 5 次進入夜市自走棋前三名(≥4 人場)", "armchair"],
+    ["ac_flawless", "滴水不漏", "拿冠軍且最終血量 ≥ 80(≥4 人場)", "shield-check"],
+    ["ac_close_call", "一口氣的距離", "拿冠軍且最終血量 ≤ 10(≥4 人場)", "heart-pulse"],
+    ["ac_streak5", "手氣正旺", "單場連勝 5 輪", "flame"],
+    ["ac_streak8", "勢不可擋", "單場連勝 8 輪", "flame"],
+    ["ac_vault_full", "金庫大戶", "單場有 10 輪以上利息拿滿(+3)", "landmark"],
+    ["ac_reroll_addict", "刷新狂人", "單輪刷新商店 10 次以上", "refresh-cw"],
+    ["ac_three_star", "三星攤主", "第一次合成出 3★ 卡牌", "sparkles"],
+  ];
+  // 階段 4:8 流派、隱藏羈絆與搭配類稱號。tag = 對應流派(累計贏 10 場且該流派羈絆 ≥ 4 級)
+  const AC_TAG_TITLES = [
+    ["burn", "炭火師傅", "flame"], ["frost", "冰鎮達人", "snowflake"], ["guard", "把式高手", "shield"], ["game", "遊戲攤老手", "dices"],
+    ["potion", "藥燉名醫", "soup"], ["thief", "順手神偷", "hand-coins"], ["fortune", "卜卦半仙", "scroll"], ["clock", "發條工匠", "cog"],
+  ];
+  AC_TAG_TITLES.forEach(([t, name, icon]) => AC_TITLES.push(["ac_tag_" + t, name, "累計 10 場勝利時,該流派羈絆達 4 級以上", icon]));
+  AC_TITLES.push(
+    ["ac_mono", "專一老闆", "上陣 6 張以上同一流派的卡,並贏下那場戰鬥", "target"],
+    ["ac_hodgepodge", "大雜燴", "同時啟動 3 個以上流派羈絆,並贏下那場戰鬥", "blend"],
+    ["ac_bookend", "首尾呼應", "先鋒與壓軸都有站位效果的陣容,並贏下那場戰鬥", "align-horizontal-space-between"],
+    ["ac_three_star_trio", "三星連線", "同一場戰鬥上陣 3 張 3★ 卡牌", "stars"],
+    ["ac_all_bonds", "八方來財", "8 個流派的羈絆都曾達到 4 級以上(跨場累計)", "gem"],
+    ["ac_hidden_bond", "夜市祕密", "觸發隱藏羈絆並贏下那場戰鬥", "sparkles", true],
+  );
+  AC_TITLES.forEach(([key, name, desc, icon, hidden]) => TITLE_CATALOG.push({ key, name, desc, icon, group: "夜市自走棋稱號", ...(hidden ? { hidden: true } : {}) }));
+
+  // 純函式(測試用):i = { rank, nPlayers, hp, state, stats:[stat...], champs, top3 }
+  //   champs / top3 = 這位玩家「含本場」在 ≥4 人場的冠軍次數 / 前三名次數(由呼叫端從資料庫算)
+  function autochessTitleKeys(i) {
+    const out = [];
+    const st = i.state || {}, stats = (i.stats || []).filter((x) => x && !x.afk);
+    const enough = (i.nPlayers || 0) >= AC_TITLE_MIN_PLAYERS;
+    out.push("ac_first_run");
+    if (enough && i.rank === 1) {
+      out.push("ac_champion");
+      if (i.hp >= 80) out.push("ac_flawless");
+      if (i.hp <= 10) out.push("ac_close_call");
+    }
+    if (enough && i.rank === 2) out.push("ac_runner_up");
+    if ((i.champs || 0) >= 3) out.push("ac_triple_champion");
+    if ((i.top3 || 0) >= 5) out.push("ac_regular");
+    if ((st.bestStreak || 0) >= 5) out.push("ac_streak5");
+    if ((st.bestStreak || 0) >= 8) out.push("ac_streak8");
+    // 利息拿滿:當輪封板時銅板 ≥ per × max(= 30)
+    const full = (window.AutochessData && window.AutochessData.INTEREST) ? window.AutochessData.INTEREST.per * window.AutochessData.INTEREST.max : 30;
+    if (stats.filter((x) => (x.gold || 0) >= full).length >= 10) out.push("ac_vault_full");
+    if (stats.some((x) => (x.refresh || 0) >= 10)) out.push("ac_reroll_addict");
+    if ((st.threeStar || 0) >= 1) out.push("ac_three_star");
+    // 階段 4:以玩家「跨場」的對局紀錄判定(i.hist = autochess_stats 的 stat 陣列)
+    const hist = (i.hist || []).filter((x) => x && !x.afk), won = hist.filter((x) => x.res === "win");
+    if (won.some((x) => (x.mono || 0) >= 6)) out.push("ac_mono");
+    if (won.some((x) => Object.keys(x.bonds || {}).length >= 3)) out.push("ac_hodgepodge");
+    if (won.some((x) => x.bookend)) out.push("ac_bookend");
+    if (hist.some((x) => (x.three || 0) >= 3)) out.push("ac_three_star_trio");
+    if (won.some((x) => (x.hidden || []).length)) out.push("ac_hidden_bond");
+    const tags = Object.keys((window.AutochessData && window.AutochessData.TAGS) || {});
+    tags.forEach((t) => { if (won.filter((x) => ((x.bonds || {})[t] || 0) >= 4).length >= 10) out.push("ac_tag_" + t); });
+    if (tags.length && tags.every((t) => hist.some((x) => ((x.bonds || {})[t] || 0) >= 4))) out.push("ac_all_bonds");
+    return out;
+  }
+
   async function getOrCreatePlayerProfile(playerId) {
     const { data, error } = await client.from("player_profiles").select("*").eq("player_id", playerId).maybeSingle();
     if (error) throw error;
@@ -5474,6 +5541,136 @@ const db = (function () {
     }
   }
 
+
+  // ================= 夜市自走棋(多人)=================
+  // 資料表與 RPC 見 migration-autochess.sql。時間、配對、結算、淘汰、名次都在伺服器;前端只負責畫面與「算戰鬥」。
+  async function _acRpc(name, args) {
+    const { data, error } = await client.rpc(name, args);
+    if (error) throw error;
+    return data;
+  }
+  const autochessClock = (eventId) => _acRpc("autochess_clock", { p_event_id: eventId });
+  const autochessStart = (eventId, run) => _acRpc("autochess_start", { p_event_id: eventId, p_run: run || {} });
+  const autochessControl = (eventId, action, sec) => _acRpc("autochess_control", { p_event_id: eventId, p_action: action, p_sec: sec || 0 });
+  const autochessSaveState = (eventId, playerId, rev, state, round) =>
+    _acRpc("autochess_save_state", { p_event_id: eventId, p_player_id: playerId, p_rev: rev, p_state: state, p_round: round });
+  const autochessPairRound = (eventId, round) => _acRpc("autochess_pair_round", { p_event_id: eventId, p_round: round });
+  const autochessSettleRound = (eventId, round, k, by, outcomes) =>
+    _acRpc("autochess_settle_round", { p_event_id: eventId, p_round: round, p_k: k, p_by: by, p_outcomes: outcomes });
+  const autochessReportMismatch = (eventId, round, k, by, mine) =>
+    _acRpc("autochess_report_mismatch", { p_event_id: eventId, p_round: round, p_k: k, p_by: by, p_mine: mine });
+  const autochessHeartbeat = (eventId, playerId) => _acRpc("autochess_heartbeat", { p_event_id: eventId, p_player_id: playerId });
+
+  async function getAutochessPlayer(eventId, playerId) {
+    const { data, error } = await client.from("autochess_players").select("*").eq("event_id", eventId).eq("player_id", playerId).maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+  // 全場名單(含名字);呼叫端自己排序
+  async function listAutochessPlayers(eventId) {
+    const { data, error } = await client.from("autochess_players").select("*, players(name, is_bot)").eq("event_id", eventId);
+    if (error) throw error;
+    return data || [];
+  }
+  // 這一輪我的那場(p1 或 p2 是我);幽靈戰我只會是 p1
+  async function getAutochessMatch(eventId, round, playerId) {
+    const { data, error } = await client
+      .from("autochess_rounds").select("*")
+      .eq("event_id", eventId).eq("round", round)
+      .or(`p1.eq.${playerId},p2.eq.${playerId}`)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+  async function listAutochessUnresolved(eventId) {
+    const { data, error } = await client
+      .from("autochess_rounds").select("*")
+      .eq("event_id", eventId).eq("resolved", false)
+      .order("round", { ascending: true }).order("k", { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+
+  // 平衡數據:eventId 省略 = 全部場次累計(後台跨場比較用)。每列 { event_id, round, player_id, stat }
+  async function listAutochessStats(eventId) {
+    let q = client.from("autochess_stats").select("event_id, round, player_id, stat").order("round", { ascending: true }).limit(20000);
+    if (eventId) q = q.eq("event_id", eventId);
+    const { data, error } = await q;
+    if (error) throw error;
+    return data || [];
+  }
+  async function listAutochessLog(eventId) {
+    const { data, error } = await client.from("autochess_log").select("round, kind, detail, created_at").eq("event_id", eventId).order("created_at", { ascending: false }).limit(200);
+    if (error) throw error;
+    return data || [];
+  }
+
+  // 單一玩家的自走棋稱號:冪等(稱號是集合,重複呼叫不會重複發),回傳這次「新拿到」的 key。
+  // rows / stats 可由呼叫端先載好共用;練習模式不寫資料庫,不會走到這裡。
+  async function awardAutochessTitlesFor(eventId, playerId, ctx) {
+    try {
+      const rows = (ctx && ctx.rows) || (await listAutochessPlayers(eventId));
+      const me = rows.find((r) => r.player_id === playerId);
+      if (!me || me.final_rank == null || (me.players && me.players.is_bot)) return [];
+      const nPlayers = rows.filter((r) => (r.settled_round || 0) > 0).length;
+      const allStats = (ctx && ctx.stats) || (await listAutochessStats(eventId));
+      const mine = allStats.filter((x) => x.player_id === playerId).map((x) => x.stat);
+      // 累計:這位玩家所有「≥4 人場」的冠軍 / 前三名次數(含本場,因為 final_rank 已寫入)
+      let champs = 0, top3 = 0;
+      const { data: hist, error } = await client.from("autochess_players").select("event_id, final_rank").eq("player_id", playerId).in("final_rank", [1, 2, 3]);
+      if (error) throw error;
+      const evIds = (hist || []).map((h) => h.event_id);
+      if (evIds.length) {
+        const { data: all, error: e2 } = await client.from("autochess_players").select("event_id, settled_round").in("event_id", evIds);
+        if (e2) throw e2;
+        const cnt = {};
+        (all || []).forEach((r) => { if ((r.settled_round || 0) > 0) cnt[r.event_id] = (cnt[r.event_id] || 0) + 1; });
+        (hist || []).forEach((h) => { if ((cnt[h.event_id] || 0) >= AC_TITLE_MIN_PLAYERS) { top3++; if (h.final_rank === 1) champs++; } });
+      }
+      // 跨場對局紀錄(搭配類、流派類稱號用);讀不到就只判前面那些
+      let statHist = [];
+      try {
+        const { data: hs, error: e3 } = await client.from("autochess_stats").select("stat").eq("player_id", playerId).limit(5000);
+        if (e3) throw e3;
+        statHist = (hs || []).map((r) => r.stat);
+      } catch (e) { statHist = mine; }
+      const want = autochessTitleKeys({ rank: me.final_rank, nPlayers, hp: Math.max(0, me.hp), state: me.state, stats: mine, champs, top3, hist: statHist });
+      const profile = await getOrCreatePlayerProfile(playerId);
+      const have = new Set(profile.titles || []);
+      const fresh = want.filter((k) => !have.has(k));
+      if (fresh.length) await grantTitleAndStats(playerId, fresh, {});
+      return fresh;
+    } catch (e) {
+      console.warn("[autochess] 發放稱號失敗(不影響名次與獎勵)", e);
+      return [];
+    }
+  }
+
+  // 活動結束後(autochess_finish 已經算好 final_rank)套用獎勵並把活動設成 closed。
+  // 可以被好幾個客戶端同時呼叫:獎勵寫入是冪等的,已經 closed 就什麼都不做。
+  async function closeAutochessEvent(eventId) {
+    const ev = await getEvent(eventId);
+    if (!ev || ev.status === "closed") return { already: true };
+    const rows = (await listAutochessPlayers(eventId)).filter((r) => r.final_rank != null).sort((a, b) => a.final_rank - b.final_rank);
+    if (!rows.length) return { already: false, standings: [] };
+    for (const r of rows) {
+      const reward = rewardForRank(ev, r.final_rank);
+      await client.from("autochess_players").update({ reward }).eq("event_id", eventId).eq("player_id", r.player_id);
+      await client.from("event_participants").update({ reward, final_rank: r.final_rank }).eq("event_id", eventId).eq("player_id", r.player_id);
+    }
+    // 稱號:每位真人玩家各自判定(失敗只警告,不擋結算)
+    const stats = await listAutochessStats(eventId).catch(() => []);
+    const allRows = await listAutochessPlayers(eventId);
+    const titles = {};
+    for (const r of rows) {
+      if (r.players && r.players.is_bot) continue;
+      const fresh = await awardAutochessTitlesFor(eventId, r.player_id, { rows: allRows, stats });
+      if (fresh.length) titles[r.player_id] = fresh;
+    }
+    await setEventStatus(eventId, "closed");
+    return { already: false, standings: rows, titles };
+  }
+
   return {
     client,
     cancelAllRequests,
@@ -5651,6 +5848,23 @@ const db = (function () {
     maybeAdvanceCareerPhase,
     computeCareerStandings,
     closeCareerEvent,
+    autochessClock,
+    autochessStart,
+    autochessControl,
+    autochessSaveState,
+    autochessPairRound,
+    autochessSettleRound,
+    autochessReportMismatch,
+    autochessHeartbeat,
+    getAutochessPlayer,
+    listAutochessPlayers,
+    getAutochessMatch,
+    listAutochessUnresolved,
+    listAutochessStats,
+    listAutochessLog,
+    closeAutochessEvent,
+    awardAutochessTitlesFor,
+    autochessTitleKeys,
     getCareerJournal,
     setCareerStoryTheme,
     awardCareerTitles,

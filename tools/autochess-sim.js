@@ -102,19 +102,21 @@ if (cmd === "game") {
   console.log("淘汰輪次分布(每場 " + (PL - 1) + " 人被淘汰):");
   Object.keys(elim).map(Number).sort((a, b) => a - b).forEach((k) => console.log("  R" + pad(k, 3) + " " + "#".repeat(Math.round(elim[k] / N / (PL - 1) * 100)) + " " + pct(elim[k] / N / (PL - 1))));
 } else if (cmd === "tags") {
-  header(`流派勝率:8 人場(每流派 2 位專攻)× ${N} 場`);
-  const strats = []; TAGS.forEach((t) => { strats.push(S.normal(t)); strats.push(S.normal(t)); });
-  const byFocus = {}, byMain = {};
+  header(`流派勝率:${TAGS.length} 人場(每流派 1 位專攻)× ${N} 場`);
+  const strats = TAGS.map((t) => S.normal(t));
+  const byFocus = {}, byMain = {}, three = { n: 0, p: 0 };
   for (let g = 0; g < N; g++) {
     const r = playGame(strats, g);
     r.ps.forEach((p) => {
       const f = p.strat.focus; const o = byFocus[f] || (byFocus[f] = { rank: [], w: 0, l: 0, first: 0 });
       o.rank.push(p.rank); if (p.rank === 1) o.first++;
+      three.n++; if (p.board.concat(p.bench).some((c) => c.star >= 3)) three.p++;
       p.battles.forEach((b) => { if (b.res === "win") o.w++; else if (b.res === "lose") o.l++; const k = b.tag || "none"; const m = byMain[k] || (byMain[k] = { w: 0, l: 0 }); if (b.res === "win") m.w++; else if (b.res === "lose") m.l++; });
     });
   }
+  console.log("三星達成率(整場有人合成出 3★):" + pct(three.p / three.n));
   console.log("專攻流派       平均名次   冠軍率    對戰勝率(不含平手)");
-  TAGS.forEach((t) => { const o = byFocus[t]; console.log(pad(AD.TAGS[t].name, 14) + pad(avg(o.rank).toFixed(2), 11) + pad(pct(o.first / (N * 2)), 10) + pct(o.w / (o.w + o.l))); });
+  TAGS.forEach((t) => { const o = byFocus[t]; console.log(pad(AD.TAGS[t].name, 14) + pad(avg(o.rank).toFixed(2), 11) + pad(pct(o.first / N), 10) + pct(o.w / (o.w + o.l))); });
   console.log("\n實際上陣主流派(不同名張數最多且 ≥2)的對戰勝率:");
   Object.keys(byMain).forEach((k) => { const m = byMain[k]; console.log(pad(k === "none" ? "無羈絆主流派" : AD.TAGS[k].name, 14) + pad(pct(m.w / (m.w + m.l)), 9) + `(${m.w + m.l} 場)`); });
   console.log("目標:各流派勝率 40%~60%");

@@ -46,6 +46,7 @@ window.AutochessEngine = (function () {
     return counts;
   }
   // 回傳 { counts, active: { 流派: 目前達到的門檻 }, fx: 合併後的羈絆效果旗標 }
+  // hidden:湊齊的隱藏羈絆 id 清單;hiddenFx 的數值效果合進 fx(同名旗標以隱藏羈絆為準,加成類旗標用累加)
   function computeBonds(board, extra) {
     const counts = countTags(board, extra), active = {}, fx = {};
     Object.keys(AD.BONDS).forEach((tag) => {
@@ -55,7 +56,26 @@ window.AutochessEngine = (function () {
       });
       if (reached) active[tag] = reached;
     });
-    return { counts, active, fx };
+    const ids = {}; board.forEach((c) => (ids[c.id] = true));
+    const hidden = [];
+    (AD.HIDDEN_BONDS || []).forEach((h) => {
+      if (!h.cards.every((id) => ids[id])) return;
+      hidden.push(h.id);
+      Object.keys(h.fx).forEach((k) => { fx[k] = typeof h.fx[k] === "number" && typeof fx[k] === "number" ? fx[k] + h.fx[k] : h.fx[k]; });
+    });
+    return { counts, active, fx, hidden };
+  }
+  // 換位(企劃 3-9「換位」):依序處理有 deploy 的卡(由左到右),換位後才判定先鋒/壓軸與站位效果
+  function applyDeploy(board) {
+    const out = board.map((c) => ({ ...c }));
+    for (let i = 0; i < out.length; i++) {
+      const def = AD.CARD_BY_ID[out[i].id];
+      const mode = def.deploy || (def.star3 && out[i].star >= 3 && def.star3.deploy);
+      if (!mode) continue;
+      const j = mode === "swapFront" ? 0 : out.length - 1;
+      if (j !== i) { const t = out[i]; out[i] = out[j]; out[j] = t; }
+    }
+    return out;
   }
   // 主流派:不同名張數最多的流派(至少 2 張才算,同數取 DATA 順序前者),沒有則 null
   function pickMainTag(board) {
@@ -76,9 +96,9 @@ window.AutochessEngine = (function () {
       atk: Math.round(def.atk * sm) + (card.bonusAtk || 0),
       hp: Math.round(def.hp * sm * B.hpMult) + (card.bonusHp || 0),
       spd: def.spd,
-      shield: 0, burn: 0, burnSrc: null, frozen: 0, critPct: 0, attackLast: false,
+      shield: 0, burn: 0, burnSrc: null, poison: 0, dr: 0, frozen: 0, critPct: 0, attackLast: false,
       tie: rng.next(), // 同速度時的先後,由種子決定
-      isVanguard: idx === 0, isFinale: idx === total - 1,
+      isVanguard: idx === 0, isFinale: idx === total - 1, isFront: idx < Math.ceil(total / 2),
       fx: { start: [], roundStart: [], attack: [], hurt: [], kill: [], death: [], roundEnd: [], crit: [] },
       passives: [],
     };
@@ -87,6 +107,8 @@ window.AutochessEngine = (function () {
     effects.forEach((e) => {
       if (e.when === "vanguard" && !u.isVanguard) return;
       if (e.when === "finale" && !u.isFinale) return;
+      if (e.when === "front" && !u.isFront) return;
+      if (e.when === "back" && u.isFront) return;
       const eff = { ...e };
       ["n", "flat", "pct", "chance"].forEach((k) => { if (eff[k] != null) eff[k] = scale(eff[k], fm); });
       if (e.on === "passive") u.passives.push(eff); else u.fx[e.on].push(eff);
@@ -95,13 +117,27 @@ window.AutochessEngine = (function () {
   }
   function makeTeam(side, board, rng, extra) {
     const bonds = computeBonds(board, extra);
-    const t = { side, bonds, flags: { burnMult: 1, burnFlat: 0, dmgReduction: 0, critPct: 0, frozenDmgPct: 0, ...bonds.fx }, bonusCoins: 0, units: [] };
+    const t = { side, bonds, flags: { burnMult: 1, burnFlat: 0, dmgReduction: 0, critPct: 0, frozenDmgPct: 0, winCoin: 0, ...bonds.fx }, bonusCoins: 0, reviveLeft: 0, units: [] };
     t.units = board.map((c, i) => buildUnit(side, c, i, board.length, rng));
     t.units.forEach((u) => u.passives.forEach((p) => {
       if (p.do === "crit") u.critPct += p.pct;
       else if (p.do === "attackLast") u.attackLast = true;
       else if (p.do === "burnFlat") t.flags.burnFlat += p.n;
+      else if (p.do === "winCoin") t.flags.winCoin += p.n;
+      else if (p.do === "reviveFirst") t.flags.reviveFirstPct = Math.max(t.flags.reviveFirstPct || 0, p.pct);
     }));
+    const f = t.flags;
+    t.reviveLeft = f.reviveFirstPct ? 1 : 0;
+    // 羈絆的全隊加成:全隊暴擊率(遊戲攤等)、隱藏羈絆的全隊攻擊
+    t.units.forEach((u) => { if (f.critPct) u.critPct += f.critPct; if (f.allAtk) u.atk += f.allAtk; });
+    // 卜卦:先鋒與壓軸(只有 1 張時算一次)
+    const ends = t.units.length ? (t.units.length > 1 ? [t.units[0], t.units[t.units.length - 1]] : [t.units[0]]) : [];
+    ends.forEach((u) => {
+      if (f.endsAtk) u.atk += f.endsAtk;
+      if (f.endsMult) u.atk = Math.round(u.atk * (1 + f.endsMult / 100));
+      if (f.endsCrit) u.critPct += f.endsCrit;
+      if (f.endsDef) u.dr += f.endsDef;
+    });
     return t;
   }
 
@@ -112,7 +148,7 @@ window.AutochessEngine = (function () {
   function simulate(boardA, boardB, seed, opts) {
     opts = opts || {};
     const rng = makeRng(seed);
-    const ta = makeTeam("a", boardA, rng, opts.extraA), tb = makeTeam("b", boardB, rng, opts.extraB);
+    const ta = makeTeam("a", applyDeploy(boardA), rng, opts.extraA), tb = makeTeam("b", applyDeploy(boardB), rng, opts.extraB);
     const teams = { a: ta, b: tb };
     const foe = (side) => (side === "a" ? tb : ta);
     const events = opts.log ? [] : null;
@@ -123,6 +159,11 @@ window.AutochessEngine = (function () {
     const tag = (u) => u.side + u.idx;
 
     function addBurn(tgt, n, srcSide) { if (!tgt || tgt.hp <= 0 || n <= 0) return; tgt.burn += n; tgt.burnSrc = srcSide; ev({ t: "burn", to: tag(tgt), n }); }
+    function addPoison(tgt, n, srcSide) { if (!tgt || tgt.hp <= 0 || n <= 0) return; tgt.poison = Math.min(6, tgt.poison + n); ev({ t: "poison", to: tag(tgt), n }); }
+    function heal(u, n) { if (!u || u.hp <= 0 || n <= 0 || u.hp >= u.maxHp) return; const g = Math.min(n, u.maxHp - u.hp); u.hp += g; ev({ t: "heal", to: tag(u), n: g }); }
+    function buffAtk(u, n) { if (!u || u.hp <= 0 || !n) return; u.atk = Math.max(1, u.atk + n); ev({ t: "buff", to: tag(u), atk: n }); }
+    function growHp(u, n) { if (!u || u.hp <= 0 || n <= 0) return; u.maxHp += n; u.hp += n; ev({ t: "buff", to: tag(u), atk: 0, hp: n }); }
+    function addCoins(side, n) { const t = teams[side]; t.bonusCoins = Math.min(AD.BOND_COIN_CAP, t.bonusCoins + n); }
     function addShield(u, n) { if (u.hp > 0 && n > 0) { u.shield += n; ev({ t: "shield", to: tag(u), n }); } }
     function freeze(u, n) { if (u && u.hp > 0) { u.frozen = Math.max(u.frozen, n); ev({ t: "freeze", to: tag(u) }); } }
     function fastest(list) { return list.slice().sort((x, y) => y.spd - x.spd || x.idx - y.idx)[0]; }
@@ -144,11 +185,45 @@ window.AutochessEngine = (function () {
       shieldAllies: (u, e) => aliveOf(teams[u.side]).forEach((x) => addShield(x, e.flat)),
       reflect: (u, e, c) => { if (c.src && c.src.hp > 0) hit(u, c.src, e.flat, "reflect"); },
       buffAdjAtk: (u, e) => adjacent(u).forEach((x) => { x.atk += e.n; ev({ t: "buff", to: tag(x), atk: e.n }); }),
-      coin: (u, e) => { teams[u.side].bonusCoins = Math.min(AD.BOND_COIN_CAP, teams[u.side].bonusCoins + e.n); },
+      coin: (u, e) => addCoins(u.side, e.n),
+      poison: (u, e, c) => addPoison(c.target, e.n, u.side),
+      poisonNext: (u, e, c) => {
+        if (!c.target) return;
+        const list = aliveOf(foe(u.side)), i = list.indexOf(c.target);
+        if (i >= 0 && list[i + 1]) addPoison(list[i + 1], e.n, u.side);
+      },
+      poisonAll: (u, e) => aliveOf(foe(u.side)).forEach((x) => addPoison(x, e.n, u.side)),
+      freezeSrc: (u, e, c) => { if (c.src && c.src.hp > 0 && rng.next() * 100 < e.chance) freeze(c.src, 1); },
+      burnIfFrozen: (u, e, c) => { if (c.target && c.target.hp > 0 && c.target.frozen > 0) addBurn(c.target, e.n, u.side); },
+      healSelf: (u, e) => heal(u, e.flat),
+      healAllies: (u, e) => aliveOf(teams[u.side]).forEach((x) => heal(x, e.flat)),
+      healAdj: (u, e) => adjacent(u).forEach((x) => heal(x, e.flat)),
+      healLowest: (u, e) => { const l = aliveOf(teams[u.side]).filter((x) => x.hp < x.maxHp).sort((x, y) => x.hp / x.maxHp - y.hp / y.maxHp || x.idx - y.idx); if (l.length) heal(l[0], e.flat); },
+      growAtk: (u, e) => buffAtk(u, e.n),
+      growHp: (u, e) => growHp(u, e.n),
+      growAllyHp: (u, e) => aliveOf(teams[u.side]).forEach((x) => growHp(x, e.n)),
+      buffSelfAtk: (u, e) => buffAtk(u, e.n),
+      buffAllyAtk: (u, e) => aliveOf(teams[u.side]).forEach((x) => buffAtk(x, e.n)),
+      buffFinaleAtk: (u, e) => { const l = aliveOf(teams[u.side]); if (l.length) buffAtk(l[l.length - 1], e.n); },
+      doubleAtk: (u) => buffAtk(u, u.atk),
+      shieldAdj: (u, e) => adjacent(u).forEach((x) => addShield(x, e.flat)),
+      shieldVanguard: (u, e) => { const l = aliveOf(teams[u.side]); if (l.length) addShield(l[0], e.flat); },
+      dmgAll: (u, e) => aliveOf(foe(u.side)).forEach((x) => hit(u, x, e.n, "fx")),
+      dmgRandom: (u, e) => { const l = aliveOf(foe(u.side)); if (l.length) hit(u, rng.pick(l), e.n, "fx"); },
+      weakenTop: (u, e) => weaken(foe(u.side), e.n),
+      stealAtk: (u, e, c) => { const t = c.target; if (t && t.hp > 0 && t.atk > 1) { const g = Math.min(e.n, t.atk - 1); buffAtk(t, -g); buffAtk(u, g); } },
       extraAttack: (u, e, c) => { if (!c.extra) attack(u, true); },
     };
+    // 敵方攻擊最高者(同攻擊取站位靠前)攻擊 -n
+    function weaken(team, n) {
+      const l = aliveOf(team).sort((x, y) => y.atk - x.atk || x.idx - y.idx);
+      if (l.length) buffAtk(l[0], -n);
+    }
     function fire(u, hook, ctx) {
-      u.fx[hook].forEach((e) => { if (u.hp > 0 || hook === "death") ACTIONS[e.do](u, e, ctx || {}); });
+      u.fx[hook].forEach((e) => {
+        if (e.atRound && (!ctx || ctx.round !== e.atRound)) return;
+        if (u.hp > 0 || hook === "death") ACTIONS[e.do](u, e, ctx || {});
+      });
     }
 
     // kind:attack / burn / bell / reflect。回傳實際造成(未被護盾吸收)的傷害
@@ -157,19 +232,26 @@ window.AutochessEngine = (function () {
       const tt = teams[tgt.side], st = src ? teams[src.side] : null;
       if (kind === "attack") {
         if (tgt.frozen > 0 && st && st.flags.frozenDmgPct) amt = Math.floor(amt * (1 + st.flags.frozenDmgPct / 100));
-        amt = Math.max(1, amt - tt.flags.dmgReduction);
+        amt = Math.max(1, amt - tt.flags.dmgReduction - (tgt.dr || 0));
       }
       const raw = amt;
-      const ab = Math.min(tgt.shield, amt); tgt.shield -= ab; amt -= ab;
+      const ab = kind === "poison" ? 0 : Math.min(tgt.shield, amt); tgt.shield -= ab; amt -= ab; // 中毒無視護盾
       tgt.hp -= amt;
       ev({ t: "dmg", from: src ? tag(src) : kind, to: tag(tgt), n: amt, ab, kind }); // n = 實際扣血、ab = 護盾吸收量(演出用)
       if (kind === "attack" && tgt.hp > 0) {
         fire(tgt, "hurt", { src });
         if (tt.flags.frontReflectPct && aliveOf(tt)[0] === tgt && src && src.hp > 0) hit(tgt, src, Math.floor(raw * tt.flags.frontReflectPct / 100), "reflect");
       }
+      if (tgt.hp <= 0 && tt.reviveLeft > 0) { // 復活:每隊每場 1 次,第一位陣亡的友軍
+        tt.reviveLeft--;
+        tgt.hp = Math.max(1, Math.round(tgt.maxHp * tt.flags.reviveFirstPct / 100)); tgt.burn = 0; tgt.poison = 0; tgt.frozen = 0;
+        ev({ t: "revive", to: tag(tgt), n: tgt.hp });
+        return amt;
+      }
       if (tgt.hp <= 0) {
         tgt.hp = 0;
         ev({ t: "die", to: tag(tgt) });
+        if (kind === "attack" && src && src.hp > 0 && st && st.flags.killCoin) addCoins(src.side, st.flags.killCoin);
         if (kind === "attack" && src && src.hp > 0) fire(src, "kill", { target: tgt });
         fire(tgt, "death", {});
       }
@@ -189,6 +271,7 @@ window.AutochessEngine = (function () {
       const t = teams[u.side];
       const ctx = { target: tgt, extra };
       if (t.flags.burnOnAttack) addBurn(tgt, t.flags.burnOnAttack, u.side);
+      if (t.flags.poisonOnAttack) addPoison(tgt, t.flags.poisonOnAttack, u.side);
       fire(u, "attack", ctx);
       if (crit) {
         fire(u, "crit", ctx);
@@ -203,6 +286,8 @@ window.AutochessEngine = (function () {
       if (f.vanguardShieldPct && t.units[0]) addShield(t.units[0], Math.floor(t.units[0].maxHp * f.vanguardShieldPct / 100));
       if (f.startBurnAll) aliveOf(foe(t.side)).forEach((x) => addBurn(x, f.startBurnAll, t.side));
       if (f.startFreezeFastest) { const l = aliveOf(foe(t.side)); if (l.length) freeze(fastest(l), f.startFreezeFastest); }
+      if (f.startWeakenTop) weaken(foe(t.side), f.startWeakenTop);
+      if (f.startShieldAll) aliveOf(t).forEach((x) => addShield(x, f.startShieldAll));
     });
     [ta, tb].forEach((t) => t.units.forEach((u) => fire(u, "start")));
 
@@ -215,7 +300,7 @@ window.AutochessEngine = (function () {
       ev({ t: "round", n: round });
       // 回合開始:效果 + 冰鎮羈絆 4 級的機率凍結
       [ta, tb].forEach((t) => {
-        t.units.forEach((u) => fire(u, "roundStart"));
+        t.units.forEach((u) => fire(u, "roundStart", { round }));
         if (t.flags.roundFreezeChance && rng.next() * 100 < t.flags.roundFreezeChance) { const l = aliveOf(foe(t.side)); if (l.length) freeze(rng.pick(l), 1); }
       });
       // 行動順序:速度快的先,同速由種子決定
@@ -228,7 +313,16 @@ window.AutochessEngine = (function () {
       }
       if (result()) { endedBy = "wipe"; break; }
       // 回合結束:效果 → 灼傷 → 打烊鐘
-      [ta, tb].forEach((t) => t.units.forEach((u) => fire(u, "roundEnd")));
+      [ta, tb].forEach((t) => t.units.forEach((u) => fire(u, "roundEnd", { round })));
+      [ta, tb].forEach((t) => {
+        const f = t.flags;
+        if (f.healAll) aliveOf(t).forEach((x) => heal(x, f.healAll));
+        if (f.tickAtk) aliveOf(t).forEach((x) => buffAtk(x, f.tickAtk));
+        if (f.tickHp) aliveOf(t).forEach((x) => growHp(x, f.tickHp));
+      });
+      [ta, tb].forEach((t) => t.units.forEach((u) => {
+        if (u.hp > 0 && u.poison > 0) hit(null, u, u.poison, "poison"); // 中毒:不消退
+      }));
       [ta, tb].forEach((t) => t.units.forEach((u) => {
         if (u.hp > 0 && u.burn > 0) {
           const sf = teams[u.burnSrc || (u.side === "a" ? "b" : "a")].flags;
@@ -251,13 +345,15 @@ window.AutochessEngine = (function () {
     else if (lb.length === 0) winner = "a";
     else if (la.length === 0) winner = "b";
     else { endedBy = "limit"; winner = hpA > hpB ? "a" : hpB > hpA ? "b" : "draw"; }
+    if (winner === "a" && ta.flags.winCoin) addCoins("a", ta.flags.winCoin);
+    if (winner === "b" && tb.flags.winCoin) addCoins("b", tb.flags.winCoin);
     const surv = (l) => l.map((u) => ({ id: u.id, star: u.star }));
     const stars = (l) => l.reduce((s, u) => s + u.star, 0);
     return {
       winner, rounds: Math.min(round, B.maxRounds), endedBy, bellRounds,
       survivorsA: surv(la), survivorsB: surv(lb), starsA: stars(la), starsB: stars(lb), hpA, hpB,
       bonusCoinsA: ta.bonusCoins, bonusCoinsB: tb.bonusCoins,
-      bondsA: ta.bonds.active, bondsB: tb.bonds.active,
+      bondsA: ta.bonds.active, bondsB: tb.bonds.active, hiddenA: ta.bonds.hidden, hiddenB: tb.bonds.hidden,
       events, init: initStats,
     };
   }
@@ -343,5 +439,5 @@ window.AutochessEngine = (function () {
     return AD.roundBaseDamage(round) + Math.min(AD.SURVIVOR_STAR_CAP, winnerSurvivorStars);
   }
 
-  return { makeRng, hashSeed, computeBonds, countTags, pickMainTag, simulate, rollShop, mergeCards, settleEconomy, loseDamage };
+  return { makeRng, hashSeed, computeBonds, applyDeploy, countTags, pickMainTag, simulate, rollShop, mergeCards, settleEconomy, loseDamage };
 })();

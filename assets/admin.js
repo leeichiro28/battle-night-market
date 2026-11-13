@@ -506,12 +506,87 @@ function careerBattleCountdownText(ev) {
   return `剩餘 ${min} 分 ${sec} 秒`;
 }
 
+// ---------- 夜市自走棋:主辦人控制台 + 平衡數據 ----------
+// 控制台每 3 秒更新一次(分頁在背景或卡片被換掉就停);暫停/加時/強制結束都走 autochess_control RPC。
+const acTimers = new Set();
+function stopAutochessPolling() { acTimers.forEach((t) => clearInterval(t)); acTimers.clear(); }
+
+function wireAutochessAdmin(card, ev, isClosed) {
+  const live = card.querySelector(".ac-adm-live");
+  if (live && !isClosed) {
+    let busy = false;
+    const refresh = async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        const [clk, players] = await Promise.all([db.autochessClock(ev.id), db.listAutochessPlayers(ev.id)]);
+        live.innerHTML = AutochessAdmin.panelHtml(clk, players);
+      } catch (e) {
+        live.innerHTML = `<div class="ac-adm-note warn">讀取失敗:${ui.esc(e.message || "未知錯誤")}</div>`;
+      } finally { busy = false; }
+    };
+    refresh();
+    const timer = setInterval(() => {
+      if (!card.isConnected) { clearInterval(timer); acTimers.delete(timer); return; }
+      if (document.visibilityState === "visible") refresh();
+    }, 3000);
+    acTimers.add(timer);
+    live.onclick = async (e) => {
+      const btn = e.target.closest("[data-ac]");
+      if (!btn || btn.disabled) return;
+      const act = btn.dataset.ac;
+      if (act === "finish") {
+        const ok = await ui.confirm("強制結束後會立刻依目前血量與勝場算名次,不能復原。結束後請再按「結束活動」發獎。確定嗎?", { title: "強制結束", confirmText: "強制結束", tone: "danger" });
+        if (!ok) return;
+      }
+      btn.disabled = true;
+      try {
+        const r = await db.autochessControl(ev.id, act, Number(btn.dataset.sec) || 0);
+        if (r && r.ok === false) {
+          const why = { not_prep: "只有準備階段可以加時。", ended: "活動已經結束。", not_started: "活動還沒開始。" }[r.reason] || ("操作失敗:" + r.reason);
+          await ui.alert(why, { title: "無法執行", tone: "info" });
+        }
+      } catch (err) {
+        await ui.alert(err.message || "操作失敗", { title: "操作失敗", tone: "danger" });
+      }
+      refresh();
+    };
+  }
+
+  const det = card.querySelector(".ac-adm-bal");
+  const body = card.querySelector(".ac-adm-bal-body");
+  if (det && body) {
+    let scopeAll = false, loaded = false;
+    const load = async () => {
+      body.innerHTML = `<div class="ac-adm-note">載入中...</div>`;
+      try {
+        const [rows, log] = await Promise.all([db.listAutochessStats(scopeAll ? null : ev.id), db.listAutochessLog(ev.id)]);
+        body.innerHTML = `<div class="action-row" style="margin-bottom:8px;">
+            <button class="btn ghost small" data-bal="reload">${ui.icon("refresh-cw")}重新整理</button>
+            <button class="btn ghost small" data-bal="scope">${ui.icon("layers")}${scopeAll ? "改看這一場" : "改看全部場次累計"}</button>
+          </div>
+          <div class="ac-adm-note">${scopeAll ? "範圍:全部自走棋場次累計" : "範圍:這一場"}</div>` + AutochessAdmin.balanceHtml(AutochessAdmin.aggregate(rows), log);
+      } catch (e) {
+        body.innerHTML = `<div class="ac-adm-note warn">讀取失敗:${ui.esc(e.message || "未知錯誤")}(是否已執行 migration-autochess.sql?)</div>`;
+      }
+    };
+    det.addEventListener("toggle", () => { if (det.open && !loaded) { loaded = true; load(); } });
+    body.onclick = (e) => {
+      const b = e.target.closest("[data-bal]");
+      if (!b) return;
+      if (b.dataset.bal === "scope") scopeAll = !scopeAll;
+      load();
+    };
+  }
+}
+
 function eventAdminCard(ev) {
   const card = document.createElement("div");
   card.className = "card";
   const isClosed = ev.status === "closed";
   const isAuction = ev.game_type === "auction";
   const isCareer = ev.game_type === "career";
+  const isAutochess = ev.game_type === "autochess";
   const careerPhase = isCareer ? (ev.rules && ev.rules.careerPhase) : null;
 
   // 職業養成對決不用「鎖定名單/產生賽程」這一步:玩家在活動開放中就能直接進 career.html
@@ -523,6 +598,10 @@ function eventAdminCard(ev) {
       : ""
     : isCareer
     ? ""
+    : isAutochess
+    ? !ev.locked && !isClosed
+      ? `<button class="btn small" data-action="start-autochess">${ui.icon("play")}開始夜市自走棋(15 秒倒數後開打)</button>`
+      : ""
     : !ev.locked && !isClosed
     ? `<button class="btn small" data-action="lock">${ui.icon("lock")}鎖定名單，產生賽程</button>`
     : "";
@@ -576,10 +655,16 @@ function eventAdminCard(ev) {
       </div>
       ${careerPhaseRow}
       ${careerThemeRow}
+      ${isAutochess && ev.locked ? `<div class="ac-adm-box">
+        ${!isClosed ? `<div class="ac-adm-live"><div class="ac-adm-note">載入中...</div></div>` : ""}
+        <details class="ac-adm-bal"><summary>${ui.icon("chart-bar")}平衡數據(卡牌 / 流派 / 加碼卡勝率)</summary><div class="ac-adm-bal-body"></div></details>
+      </div>` : ""}
     </div>
     <div class="bracket-summary"></div>
     <div class="participants"></div>
   `;
+
+  if (isAutochess && ev.locked) wireAutochessAdmin(card, ev, isClosed);
 
   const addBotBtn = card.querySelector('[data-action="add-bot"]');
   if (addBotBtn) {
@@ -612,6 +697,10 @@ function eventAdminCard(ev) {
           await db.closeAuctionEvent(ev.id); // 順便結算名次、套用獎勵設定
         } else if (isCareer) {
           await db.closeCareerEvent(ev.id); // 順便結算名次、套用獎勵設定、判定稱號
+        } else if (isAutochess) {
+          // 還在打就先強制結束(伺服器算名次),再套用獎勵並關閉;沒開打過就直接關閉
+          if (ev.locked) { await db.autochessControl(ev.id, "finish"); await db.closeAutochessEvent(ev.id); }
+          else await db.setEventStatus(ev.id, "closed");
         } else {
           await db.setEventStatus(ev.id, "closed");
         }
@@ -676,6 +765,24 @@ function eventAdminCard(ev) {
       } catch (e) {
         await ui.alert(e.message || "操作失敗", { title: "操作失敗", tone: "danger" });
         endTrainingBtn.disabled = false;
+      }
+    };
+  }
+  const startAcBtn = card.querySelector('[data-action="start-autochess"]');
+  if (startAcBtn) {
+    startAcBtn.onclick = async () => {
+      let n = 0;
+      try { n = (await db.listParticipants(ev.id)).length; } catch (e) {}
+      const tip = n < 4 ? `目前只有 ${n} 人報名,人太少不好玩(建議 4 人以上;可以先「加入測試機器人」湊數)。` : `目前 ${n} 人報名。`;
+      const ok = await ui.confirm(`${tip}開始後名單就鎖定,不能再加入。確定開始嗎?`, { title: "開始夜市自走棋", confirmText: "開始", tone: "question" });
+      if (!ok) return;
+      startAcBtn.disabled = true;
+      try {
+        await db.autochessStart(ev.id, { leadSec: 15, prepSec: [90], battleSec: 25, resultSec: 5, dataVersion: (window.AutochessData && AutochessData.DATA_VERSION) || 1 });
+        loadAll();
+      } catch (e) {
+        await ui.alert(/need_2_players/.test(e.message || "") ? "至少要 2 人報名才能開始。" : (e.message || "開始失敗"), { title: "操作失敗", tone: "danger" });
+        startAcBtn.disabled = false;
       }
     };
   }
@@ -747,6 +854,7 @@ let archiveOpen = false;
 
 // 後台列表跟首頁一樣，已結束的活動收進下面可展開的「活動已結束」區，避免舊活動一直往下堆
 async function loadAll() {
+  stopAutochessPolling();
   const list = document.getElementById("events-admin-list");
   list.innerHTML = "";
   const events = await db.listEvents();

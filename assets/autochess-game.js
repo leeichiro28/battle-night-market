@@ -245,10 +245,9 @@ window.AutochessGame = (function () {
   function ranking(g) {
     return g.players.slice().sort((x, y) => (y.alive - x.alive) || (y.elimRound - x.elimRound) || (x.overflow - y.overflow) || (y.wins - x.wins));
   }
-  // 封板:自動補位 → 全場配對戰鬥結算 → 回傳 report(畫面拿去演出)
-  function seal(g) {
+  // 封板前的收尾:沒選的加碼系統替選、上陣位置沒滿就把待命席最強的補上去(單機與連線版共用)
+  function sealPrep(g) {
     const me = g.me;
-    if (g.phase !== "prep") return fail("現在不是準備階段");
     const autoPicked = autoPickPerk(g);
     let filled = 0;
     if (g.autoFill) {
@@ -259,6 +258,13 @@ window.AutochessGame = (function () {
       }
     }
     me.undo = null;
+    return { autoPicked, filled };
+  }
+  // 封板:自動補位 → 全場配對戰鬥結算 → 回傳 report(畫面拿去演出)
+  function seal(g) {
+    const me = g.me;
+    if (g.phase !== "prep") return fail("現在不是準備階段");
+    const { autoPicked, filled } = sealPrep(g);
     const outcomes = roundCore(g, true);
     const mine = outcomes.find((o) => o.p === me);
     g.phase = "result";
@@ -287,5 +293,88 @@ window.AutochessGame = (function () {
   }
   function stats(g) { const me = g.me; return { rank: g.rank, wins: me.wins, losses: me.losses, bestStreak: me.bestStreak, level: me.level, threeStar: me.threeStar, rounds: me.alive ? g.round : me.elimRound, perks: me.perkPicks.slice() }; }
 
-  return { create, startRound, buy, undo, sell, move, buyXp, refresh, refreshCost, toggleLock, pickPerk, targetsFor, seal, nextRound, bondsPreview, slotsOf, capacityOf, prepSeconds, stats, ranking, extraFor };
+  // ================= 多人(正式場)用的純函式 =================
+  // 單機版整局狀態在記憶體裡;連線版的「事實」存在資料庫(autochess_players.state),這裡負責:
+  //   存檔序列化 / 還原 / 補跑錯過的輪次 / 用「雙方封板快照 + 種子」算出決定性的戰鬥與結算(誰算都一樣)。
+  const STATE_KEYS = ["gold", "level", "xp", "streak", "board", "bench", "shop", "shopLocked", "refreshCount", "freeFirstUsed", "roundOpts", "perks", "perkPicks", "pendingPerk", "bestStreak", "threeStar"];
+  const clone = (x) => JSON.parse(JSON.stringify(x));
+  const newPerks = () => ({ freeRefresh: 0, goodRapport: 0, xpCoupon: 0, expandRounds: 0, preorder: null, regular: false, stallPlus: 0, tagAssist: {}, streakGuard: false });
+
+  // 統計用(稱號):陣容裡同一流派的卡張數(同名重複也算,最多的那個流派);首尾是否各有先鋒/壓軸效果
+  function monoCount(board) {
+    const n = {}; let best = 0;
+    board.forEach((c) => (AD.CARD_BY_ID[c.id].tags || []).forEach((t) => { n[t] = (n[t] || 0) + 1; if (n[t] > best) best = n[t]; }));
+    return best;
+  }
+  function bookendOf(board) {
+    if (board.length < 2) return false;
+    const has = (c, when) => { const d = AD.CARD_BY_ID[c.id]; return d.fx.concat(c.star >= 3 && d.star3 ? d.star3.fx : []).some((e) => e.when === when); };
+    return has(board[0], "vanguard") && has(board[board.length - 1], "finale");
+  }
+  function createOnline(opts) {
+    const g = create({ seed: opts.seed, name: opts.name, players: 1 }); // 1 人 = 沒有電腦玩家
+    g.online = true; g.round = 0; g.phase = "prep";
+    return g;
+  }
+  // 要寫進資料庫的狀態(不含血量與勝敗:那些是伺服器欄位;不含 undo:重新整理後撤銷就失效,可接受)
+  function serialize(g) {
+    const me = g.me, st = {};
+    STATE_KEYS.forEach((k) => { st[k] = me[k] === undefined ? null : clone(me[k]); });
+    st.stateRound = g.round; st.name = me.name;
+    return st;
+  }
+  // 把資料庫裡的狀態套回 g(沒有的欄位保留開局預設;空物件 = 還沒初始化)
+  function restore(g, state, row) {
+    const me = g.me; state = state || {};
+    STATE_KEYS.forEach((k) => { if (state[k] !== undefined && state[k] !== null) me[k] = clone(state[k]); });
+    if (!state.pendingPerk) me.pendingPerk = null;
+    me.perks = Object.assign(newPerks(), me.perks);
+    me.undo = null; me.phase = null;
+    g.round = state.stateRound || 0; g.phase = "prep"; g.report = null;
+    if (row) { me.hp = row.hp; me.wins = row.wins; me.losses = row.losses; me.alive = row.alive; if (row.players && row.players.name) me.name = row.players.name; }
+    return g;
+  }
+  // 錯過的輪次(離線、斷線、晚進場)補跑 startRound:被動經驗、加碼持續效果、商店都照規則走
+  function catchUp(g, round) {
+    let guard = 0;
+    while (g.round < round && guard++ < 300) startRound(g);
+    return g;
+  }
+  // 快照裡的狀態可能是空的(沒進過頁面的人、測試機器人)或缺欄位(結算只補了部分):補成完整的
+  function normState(st) {
+    const s = clone(st || {});
+    s.board = s.board || []; s.bench = s.bench || [];
+    if (s.gold == null) s.gold = AD.START_GOLD;
+    s.level = s.level || 1; s.xp = s.xp || 0; s.streak = s.streak || 0; s.bestStreak = s.bestStreak || 0;
+    s.perks = Object.assign(newPerks(), s.perks || {}); s.perkPicks = s.perkPicks || [];
+    return s;
+  }
+  // 一場對戰:snapA / snapB 是資料庫的封板快照({player_id, hp, afk, state}),ghost = B 是幽靈(只有 A 有結算)。
+  // 回傳 { r(模擬結果,含演出事件), outcomes:[{player_id,res,dmg,eco,insured,hpBefore,goldBefore,afk,side,patch,stat}] }
+  function battleOnline(round, snapA, snapB, ghost, seed, wantLog) {
+    const A = normState(snapA.state), B = normState(snapB.state);
+    const r = E.simulate(A.board.map(copy), B.board.map(copy), seed, { log: !!wantLog, extraA: extraFor(A), extraB: ghost ? null : extraFor(B) });
+    const mk = (S, snap, side) => {
+      const other = side === "a" ? "b" : "a";
+      const res = r.winner === side ? "win" : r.winner === other ? "lose" : "draw";
+      const dmg = res === "lose" ? E.loseDamage(round, side === "a" ? r.starsB : r.starsA) : 0;
+      const coins = side === "a" ? r.bonusCoinsA : r.bonusCoinsB;
+      const rapport = S.perks.goodRapport > 0 ? AD.PERK_BY_ID.good_rapport.n : 0;
+      const eco = E.settleEconomy({ result: res, round, gold: S.gold, streak: S.streak, level: S.level, bonusCoins: (coins || 0) + rapport });
+      const perks = clone(S.perks); let insured = false;
+      if (res === "lose" && perks.streakGuard) { eco.streak = S.streak; perks.streakGuard = false; insured = true; }
+      if (rapport) perks.goodRapport--;
+      if (snap.afk && eco.streakBonus) { eco.gold -= eco.streakBonus; eco.gain -= eco.streakBonus; eco.streakBonus = 0; } // 掛網:照打,不發連勝加成
+      return {
+        player_id: snap.player_id, res, dmg, eco, insured, side, afk: !!snap.afk, hpBefore: snap.hp, goldBefore: S.gold,
+        patch: { gold: eco.gold, streak: eco.streak, bestStreak: Math.max(S.bestStreak || 0, eco.streak), perks },
+        stat: { round, res, dmg, level: S.level, gold: S.gold, refresh: S.refreshCount || 0, afk: !!snap.afk, cards: S.board.map((c) => c.id + "★" + c.star), bonds: clone(side === "a" ? r.bondsA : r.bondsB), picks: S.perkPicks.slice(), hidden: clone((side === "a" ? r.hiddenA : r.hiddenB) || []), mono: monoCount(S.board), three: S.board.filter((c) => c.star >= 3).length, bookend: bookendOf(S.board) },
+      };
+    };
+    const outcomes = [mk(A, snapA, "a")];
+    if (!ghost) outcomes.push(mk(B, snapB, "b"));
+    return { r, outcomes };
+  }
+
+  return { createOnline, serialize, restore, catchUp, normState, battleOnline, sealPrep, create, startRound, buy, undo, sell, move, buyXp, refresh, refreshCost, toggleLock, pickPerk, targetsFor, seal, nextRound, bondsPreview, slotsOf, capacityOf, prepSeconds, stats, ranking, extraFor };
 })();

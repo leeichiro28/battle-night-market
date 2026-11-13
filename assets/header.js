@@ -78,7 +78,9 @@
       (db.TITLE_CATALOG || []).forEach((meta) => {
         if (meta.group && meta.group !== lastGroup) html += `<div class="title-pick-group">${ui.esc(meta.group)}</div>`; // 覺醒稱號分組顯示
         lastGroup = meta.group || "";
-        html += rowHtml(meta.key, meta.name, meta.desc, meta.icon, !unlocked.includes(meta.key));
+        const locked = !unlocked.includes(meta.key);
+        // 隱藏稱號:拿到之前只顯示「？？？」(夜市自走棋的隱藏羈絆)
+        html += meta.hidden && locked ? rowHtml(meta.key, "？？？", "隱藏稱號:還沒有人發現它", "circle-help", true) : rowHtml(meta.key, meta.name, meta.desc, meta.icon, locked);
       });
       return html;
     }

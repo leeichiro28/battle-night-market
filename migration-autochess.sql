@@ -112,6 +112,7 @@ declare
   v_phase text;
   v_left numeric;
   v_limit numeric;
+  v_pe numeric;
 begin
   select rules->'autochess'->'run' into run from events where id = p_event_id;
   if run is null or jsonb_typeof(run) <> 'object' then
@@ -129,7 +130,7 @@ begin
   if elapsed < 0 then
     return jsonb_build_object(
       'now', now(), 'started', true, 'phase', 'countdown', 'round', 0, 'left', ceil(-elapsed),
-      'elapsed', elapsed, 'paused', paused is not null, 'over', false,
+      'elapsed', elapsed, 'paused', paused is not null, 'over', false, 'phaseElapsed', 0,
       'endedAt', run->>'endedAt', 'limitSec', v_limit
     );
   end if;
@@ -144,16 +145,16 @@ begin
   end loop;
 
   if t < prep then
-    v_phase := 'prep'; v_left := prep - t;
+    v_phase := 'prep'; v_left := prep - t; v_pe := t;
   elsif t < prep + battle then
-    v_phase := 'battle'; v_left := prep + battle - t;
+    v_phase := 'battle'; v_left := prep + battle - t; v_pe := t - prep;
   else
-    v_phase := 'result'; v_left := len - t;
+    v_phase := 'result'; v_left := len - t; v_pe := t - prep - battle;
   end if;
 
   return jsonb_build_object(
     'now', now(), 'started', true, 'phase', v_phase, 'round', r, 'left', ceil(v_left),
-    'prepSec', prep, 'elapsed', elapsed, 'paused', paused is not null,
+    'prepSec', prep, 'phaseElapsed', round(v_pe, 2), 'elapsed', elapsed, 'paused', paused is not null,
     'over', (v_limit is not null and elapsed >= v_limit),
     'endedAt', run->>'endedAt', 'limitSec', v_limit
   );
@@ -301,8 +302,11 @@ begin
     return jsonb_build_object('ok', false, 'reason', 'not_running');
   end if;
   v_phase := clk->>'phase';
-  -- 倒數期間允許存「第 1 輪」的初始狀態;其餘只能在「目前這一輪」的準備階段存
-  if not ((v_phase = 'prep' and (clk->>'round')::int = p_round) or (v_phase = 'countdown' and p_round = 1)) then
+  -- 倒數期間允許存「第 1 輪」的初始狀態;其餘只能在「目前這一輪」的準備階段存。
+  -- 準備結束後 2 秒內(還沒被封板配對前)仍收,讓最後一刻的操作與「時間到自動補位」不會因網路延遲遺失。
+  if not ((v_phase = 'prep' and (clk->>'round')::int = p_round)
+       or (v_phase = 'countdown' and p_round = 1)
+       or (v_phase = 'battle' and (clk->>'round')::int = p_round and (clk->>'phaseElapsed')::numeric < 2)) then
     return jsonb_build_object('ok', false, 'reason', 'not_prep');
   end if;
   if pl.sealed_round >= p_round then return jsonb_build_object('ok', false, 'reason', 'sealed'); end if;
@@ -368,8 +372,10 @@ begin
   clk := autochess_clock(p_event_id);
   if not coalesce((clk->>'started')::boolean, false) then return jsonb_build_object('ok', false, 'reason', 'not_started'); end if;
   if clk->>'endedAt' is not null then return jsonb_build_object('ok', false, 'reason', 'ended'); end if;
-  -- 只能配對「準備階段已經結束」的輪次
-  if p_round > (clk->>'round')::int or (p_round = (clk->>'round')::int and clk->>'phase' in ('prep', 'countdown')) then
+  -- 只能配對「準備階段已經結束、且存檔緩衝(2 秒)也過了」的輪次
+  if p_round > (clk->>'round')::int
+     or (p_round = (clk->>'round')::int and (clk->>'phase' in ('prep', 'countdown')
+         or (clk->>'phase' = 'battle' and (clk->>'phaseElapsed')::numeric < 2))) then
     return jsonb_build_object('ok', false, 'reason', 'too_early');
   end if;
   -- 一輪一輪來,前一輪要全部結算完
