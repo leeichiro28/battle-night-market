@@ -336,6 +336,7 @@
   // ---------------- 準備階段的點擊 ----------------
   root.addEventListener("click", async (e) => {
     if (Date.now() < suppressUntil) return; // 長按看說明放開手指時,不要當成點擊(不會誤買)
+    const w = e.target.closest("[data-watch]"); if (w && view === "spectate") { olWatch(Number(w.dataset.watch)); return; } // 觀戰:看這場對戰
     const b = e.target.closest("[data-act]"); if (!b || view !== "prep") return;
     const act = b.dataset.act, me = g.me, i = Number(b.dataset.i), zone = b.dataset.zone;
     let r = null;
@@ -480,6 +481,7 @@
   async function playBattle(rep, auto, budgetMs, replay) {
     const token = ++battleToken, mine = rep.mine, mySide = mine.side, foeSide = mySide === "a" ? "b" : "a";
     const bs = bstateFrom(mine.r.init), events = mine.r.events || [];
+    const spec = rep.spectator || null; // 觀戰:左右兩邊都不是「你」,下方那一邊用這位玩家的名字
     const foeName = mine.ghost ? `幽靈(${mine.foe.name} 的陣容)` : mine.foe.name;
     const mkNameOf = (b) => (tag) => (tag[0] === mySide ? "我方" : "敵方") + AD.CARD_BY_ID[b[tag[0]][Number(tag.slice(1))].id].name;
     const nameOf = mkNameOf(bs);
@@ -491,11 +493,11 @@
       autoFactor = Math.max(1, total / Math.max(4000, budgetMs - 1500));
     }
     const spd = () => battleSpeed * autoFactor;
-    const stale = () => token !== battleToken || (replay && view !== "battle"); // 重播時,如果已經換到別的畫面(下一輪開始了)就停手
-    if (replay) view = "battle"; else sfx("seal");
+    const stale = () => token !== battleToken || ((replay || spec) && view !== "battle"); // 重播時,如果已經換到別的畫面(下一輪開始了)就停手
+    if (replay || spec) view = "battle"; else sfx("seal");
     const bondLine = (side) => { const b = side === mySide ? (mySide === "a" ? mine.r.bondsA : mine.r.bondsB) : (mySide === "a" ? mine.r.bondsB : mine.r.bondsA); return Object.keys(b).map((t) => `<span class="ac-bond on t-${t}">${ic(TAG_ICON[t])}${tagName(t)} ${b[t]}</span>`).join("") || `<span class="ac-dim">沒有羈絆</span>`; };
     const lines = [], entry = { round: rep.round, res: mine.res, foe: foeName, lines };
-    history = history.filter((h) => h.round !== rep.round).concat(entry); logRound = rep.round;
+    if (!spec) { history = history.filter((h) => h.round !== rep.round).concat(entry); logRound = rep.round; } // 觀戰的不進自己的戰報
     root.innerHTML = `
       <div class="ac-top"><div class="ac-top-row"><span class="tag running">${OL ? ic("swords") + "正式場" : ic("flask-conical") + "練習模式"}</span><span class="ac-round">R${rep.round} 戰鬥</span><span class="ac-timer" id="ac-bround">第 1 回合</span></div>
         <div class="ac-top-row" style="margin-top:8px;"><span class="ac-dim">演出速度</span><span class="ac-speed">${[1, 2, 4].map((n) => `<button class="btn ghost ac-mini-btn ac-sp" data-sp="${n}">x${n}</button>`).join("")}<button class="btn ghost ac-mini-btn" id="ac-skip">${ic("skip-forward")}跳過</button></span></div></div>
@@ -503,7 +505,7 @@
         <div class="ac-bname">${ic("user")}${esc(foeName)}${mine.foe.badge || ""}</div><div class="ac-bonds">${bondLine(foeSide)}</div>
         <div id="ac-bfield"></div>
         <div class="ac-blog" id="ac-blog"></div>
-        <div class="ac-bonds">${bondLine(mySide)}</div><div class="ac-bname me">${ic("user-round")}你</div>
+        <div class="ac-bonds">${bondLine(mySide)}</div><div class="ac-bname me">${ic("user-round")}${spec ? esc(spec.name) : "你"}</div>
       </div>
       <div class="card ac-logcard"><div class="ac-sec">${ic("scroll-text")}戰報<span class="ac-hint">可以往上捲回頭看</span></div><div class="ac-logbox" id="ac-logbox"></div></div>`;
     const fieldEl = document.getElementById("ac-bfield"), blogEl = document.getElementById("ac-blog"), boxEl = document.getElementById("ac-logbox"), roundEl = document.getElementById("ac-bround");
@@ -539,11 +541,12 @@
       if (r.flashTag) bs[r.flashTag[0]][Number(r.flashTag.slice(1))].flash = "";
     }
     if (stale()) return;
-    const res = mine.res, endText = res === "win" ? "你贏了!" : res === "lose" ? "你輸了…" : "平手";
+    const res = mine.res, endText = spec ? (res === "win" ? `${spec.name} 贏了` : res === "lose" ? `${spec.name} 輸了` : "平手") : res === "win" ? "你贏了!" : res === "lose" ? "你輸了…" : "平手";
     say(endText); addLine("sys", `結果:${endText}`); draw();
-    sfx(res === "win" ? "win" : res === "lose" ? "lose" : "seal");
+    if (!spec) sfx(res === "win" ? "win" : res === "lose" ? "lose" : "seal");
     await sleep(skipped ? 300 : 900 / spd());
     if (stale()) return;
+    if (spec) { OL.watching = false; view = "spectate"; if (OL.clk) olSpectate(OL.clk); return; } // 看完回到觀戰列表
     view = "result"; render();
   }
 
@@ -903,21 +906,62 @@
   }
 
   // ---------- 觀戰 / 結束 ----------
+  // 觀戰:淘汰的人與非參賽者可以看本輪(準備階段看上一輪)所有對戰、展開雙方陣容、重播任何一場。
+  // 戰鬥是「封板快照 + 種子」算出來的,觀眾在自己的瀏覽器重算一遍演出,不需要伺服器多做任何事。
   async function olSpectate(clk, note) {
+    if (OL.watching && Date.now() < (OL.watchUntil || 0)) { OL.nextDelay = 2000; return; } // 正在看某場演出,不要被定時更新蓋掉(最多 40 秒,避免卡住)
     stopTimer(); view = "spectate";
     const rows = olSortRows(await olLoadStandings()), mine = rows.find((r) => r.player_id === OL.playerId), idx = mine ? rows.indexOf(mine) + 1 : 0;
     const alive = rows.filter((r) => r.alive).length;
+    const watchRound = clk.phase === "prep" ? clk.round - 1 : clk.round;
+    let matches = [];
+    if (watchRound >= 1) { try { matches = await db.listAutochessMatches(OL.eventId, watchRound); } catch (e) { matches = []; } }
+    if (OL.watching || view !== "spectate") return; // 讀資料期間使用者已經點了某一場
+    OL.specMatches = matches; OL.specRound = watchRound;
+    OL.specOpen = OL.specOpen || {};
+    const rowOf = (id) => rows.find((r) => r.player_id === id);
+    const nm = (id) => OL.names[id] || (rowOf(id) && olName(rowOf(id))) || "玩家";
+    const boardOf = (snap) => ((snap && snap.state && snap.state.board) || []).map((c) => ({ id: c.id, star: c.star }));
+    const grid = (cards) => (cards.length ? `<div class="ac-grid" style="--cols:${cards.length}">${cards.map((c) => cardHtml({ ...c, bonusAtk: 0, bonusHp: 0 }, { noTip: true })).join("")}</div>` : `<div class="ac-dim">沒有上陣的卡</div>`);
+    const matchHtml = matches.map((m) => {
+      const ghost = m.p2 == null, a = nm(m.p1), b = ghost ? `幽靈(${nm(m.ghost_of)} 的陣容)` : nm(m.p2);
+      const oc = m.result && (m.result.outcomes || m.result);
+      const first = Array.isArray(oc) ? oc.find((o) => o.player_id === m.p1) : null;
+      const stat = !m.resolved ? `<span class="tag running">${ic("swords")}對戰中</span>` : first ? `<span class="tag">${first.res === "win" ? esc(a) + " 勝" : first.res === "lose" ? esc(b) + " 勝" : "平手"}</span>` : `<span class="tag">已結算</span>`;
+      const hp = (snap) => (snap && snap.hp != null ? Math.max(0, snap.hp) : "?");
+      return `<div class="ac-spec-match">
+        <div class="ac-spec-h"><b>${esc(a)}</b><span class="ac-dim">${hp(m.board1)} 血</span><span class="vs">VS</span><b>${esc(b)}</b>${ghost ? "" : `<span class="ac-dim">${hp(m.board2)} 血</span>`}${stat}</div>
+        <details data-k="${m.k}"${OL.specOpen[m.k] ? " open" : ""}><summary>${ic("layout-grid")}看雙方陣容</summary>
+          <div class="ac-dim">${esc(a)}</div>${grid(boardOf(m.board1))}<div class="ac-dim">${esc(b)}</div>${grid(boardOf(m.board2))}
+        </details>
+        <div class="action-row"><button class="btn small" data-watch="${m.k}">${ic("play")}看這場對戰</button></div>
+      </div>`;
+    }).join("");
     root.innerHTML = `
       <div class="card ac-result">
         <div class="tag-row"><span class="tag running">${ic("eye")}觀戰中</span><span class="tag">R${clk.round} ${PHASE_NAME[clk.phase] || ""}</span><span class="tag">${ic("users")}存活 ${alive} 人</span></div>
-        ${mine && !mine.alive ? `<div class="ac-rline bad">${ic("skull")}你在 R${mine.eliminated_round} 被淘汰,目前暫列第 ${idx} 名</div>` : ""}
+        ${mine && !mine.alive ? `<div class="ac-rline bad">${ic("skull")}你在 R${mine.eliminated_round} 被淘汰,目前暫列第 ${idx} 名。留下來看看誰是棋王吧!</div>` : ""}
         ${note ? `<div class="ac-rline dim">${ic("info")}${esc(note)}</div>` : ""}
+        <div class="ac-sec">${ic("swords")}${watchRound >= 1 ? `R${watchRound} 的對戰` : "對戰"}${clk.phase === "prep" ? "(這一輪還在準備,先看上一輪)" : ""}</div>
+        ${matchHtml || `<div class="ac-dim">還沒有對戰可以看,下一輪配對後會出現在這裡。</div>`}
         <div class="ac-sec">${ic("users")}全場血量</div>
         <ul class="ac-rank">${olStandingsHtml(rows)}</ul>
         <div class="ac-dim">名次依存活、血量與淘汰順序即時更新;結束後會公布最終名次與獎勵。</div>
         <div class="action-row"><a class="btn ghost" href="index.html">${ic("arrow-left")}回活動列表</a></div>
       </div>`;
+    root.querySelectorAll("details[data-k]").forEach((d) => { d.ontoggle = () => { OL.specOpen[d.dataset.k] = d.open; }; });
     OL.nextDelay = 2000;
+  }
+  function olWatch(k) {
+    const m = (OL.specMatches || []).find((x) => x.k === k);
+    if (!m) return;
+    const ghost = m.p2 == null;
+    const res = G.battleOnline(m.round, m.board1, m.board2, ghost, m.seed, true);
+    const a = res.outcomes[0], aName = OL.names[m.p1] || "玩家", bName = ghost ? (OL.names[m.ghost_of] || "玩家") : (OL.names[m.p2] || "玩家");
+    // 左右畫面用 A(= p1)當「主角」:下方標 A 的名字、上方是對手
+    const rep = { round: m.round, spectator: { name: aName }, mine: { side: "a", r: res.r, res: a.res, ghost, foe: { name: bName, badge: ghost ? "" : olBadge(m.p2) } } };
+    OL.watching = true; OL.watchUntil = Date.now() + 40000; view = "battle";
+    playBattle(rep, true, 24000);
   }
   async function olFinish() {
     stopTimer(); battleToken++; closeModal(); olBanner(null);

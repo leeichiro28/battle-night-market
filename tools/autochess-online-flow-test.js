@@ -169,6 +169,7 @@ function makeClient(pid, name, { search } = {}) {
     getAutochessPlayer: wrap("getPlayer", async (e, p) => (S.players[p] ? clone(S.players[p]) : null)),
     listAutochessPlayers: wrap("listPlayers", async () => rowsOf().map(clone)),
     getAutochessMatch: wrap("getMatch", async (e, r, p) => { const m = S.rounds.find((x) => x.round === r && (x.p1 === p || x.p2 === p)); return m ? clone(m) : null; }),
+    listAutochessMatches: wrap("matches", async (e, r) => S.rounds.filter((m) => m.round === r).map(clone)),
     listAutochessUnresolved: wrap("unresolved", async () => S.rounds.filter((m) => !m.resolved).map(clone)),
     TITLE_CATALOG: [],
     getPlayerProfiles: wrap("profiles", async () => ({})),
@@ -183,6 +184,7 @@ function makeClient(pid, name, { search } = {}) {
   vm.runInContext("Date.now = () => __vnow();", ctx);
   me.root = root; me.html = () => html;
   me.load = () => vm.runInContext(fs.readFileSync(path.join(ASSETS, "autochess.js"), "utf8"), ctx, { filename: "autochess.js" });
+  me.clickWatch = (k) => me.handlers.click && me.handlers.click({ target: { closest: (sel) => (sel === "[data-watch]" ? { dataset: { watch: String(k) } } : null) } });
   me.click = (dataset) => me.handlers.click && me.handlers.click({ target: { closest: (sel) => (sel === "[data-act]" ? { dataset } : null) } });
   clients.push(me); return me;
 }
@@ -283,7 +285,9 @@ const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new
   };
   addTimer(null, watcher, 1000);
   // 旁觀者與每個人的畫面統計
-  const sampler = () => { clients.forEach((c) => { const h = c.html(); if (h.includes("觀戰中")) c.stats.spectate++; if (h.includes("戰報") && h.includes("ac-bfield")) c.stats.battles++; if (h.includes("本輪獲得")) c.stats.results++; if (h.includes("最終名次")) c.stats.over++; }); addTimer(null, sampler, 2000); };
+  const sampler = () => { clients.forEach((c) => { const h = c.html(); if (h.includes("觀戰中")) c.stats.spectate++; if (h.includes("戰報") && h.includes("ac-bfield")) c.stats.battles++; if (h.includes("本輪獲得")) c.stats.results++; if (h.includes("最終名次")) c.stats.over++; if (h.includes("看這場對戰") && h.includes("VS")) c.stats.matchList = (c.stats.matchList || 0) + 1; });
+    // 旁觀者第一次看到對戰列表時,點「看這場對戰」,之後要能自己回到列表
+    if (!spec.clickedWatch) { const m = /data-watch="(\d+)"/.exec(spec.html()); if (m) { spec.clickedWatch = true; spec.clickWatch(m[1]); spec.watchStartBattles = spec.stats.battles; } } addTimer(null, sampler, 2000); };
   addTimer(null, sampler, 2000);
 
   await pump(V.now + 200 * 120 * 1000, () => S.ev.rules.autochess.run.endedAt && S.ev.status === "closed");
@@ -308,6 +312,12 @@ const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new
   t("斷線的 p4 一樣被其他人幫忙結算(沒有卡在 unsettled)", () => { ok(S.players.p4.wins + S.players.p4.losses >= 3, "p4 只打了 " + (S.players.p4.wins + S.players.p4.losses) + " 場"); });
   t("活動被關閉、獎勵發放(第 1 名拿到「金」)", () => { eq(S.ev.status, "closed"); eq(rowsOf().find((p) => p.final_rank === 1).reward, "金"); });
   t("正常玩家看到了戰鬥演出與結算卡", () => { [c1, c2, c3].forEach((c) => { if (c.stats.battles + c.stats.results === 0) throw new Error(c.name + " 沒看到戰鬥或結算畫面"); }); });
+  t("觀戰:旁觀者看得到本輪對戰列表、點了能看演出、演完回到列表", () => {
+    ok((spec.stats.matchList || 0) >= 1, "旁觀者沒有看到對戰列表");
+    ok(spec.clickedWatch, "沒有點到「看這場對戰」");
+    ok(spec.stats.battles > (spec.watchStartBattles || 0), "點了之後沒有出現戰鬥演出");
+    ok(spec.stats.spectate > 5 && spec.html().includes("最終名次"), "演完要回到觀戰、最後看到最終名次");
+  });
   t("旁觀者全程在觀戰、最後看到最終名次", () => { ok(spec.stats.spectate > 5, "觀戰畫面次數:" + spec.stats.spectate); ok(spec.html().includes("最終名次")); });
   t("被淘汰的玩家轉成觀戰,最後看到最終名次", () => { const dead = [c1, c2, c3].filter((c) => !S.players[c.pid].alive); dead.forEach((c) => ok(c.html().includes("最終名次"), c.name + " 沒看到最終名次")); });
   t("獲勝的玩家看到「夜市棋王」", () => { const w = rowsOf().find((p) => p.final_rank === 1); const c = clients.find((x) => x.pid === w.player_id); if (c && !c.dead) ok(c.html().includes("夜市棋王"), "冠軍畫面:" + c.html().slice(0, 120)); });

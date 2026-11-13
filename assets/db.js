@@ -5589,6 +5589,12 @@ const db = (function () {
     if (error) throw error;
     return data;
   }
+  // 某一輪全部的對戰(觀戰用):含雙方封板快照、種子、結算結果。封板快照本來就是公開讀取,不含任何個資。
+  async function listAutochessMatches(eventId, round) {
+    const { data, error } = await client.from("autochess_rounds").select("*").eq("event_id", eventId).eq("round", round).order("k", { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
   async function listAutochessUnresolved(eventId) {
     const { data, error } = await client
       .from("autochess_rounds").select("*")
@@ -5867,6 +5873,7 @@ const db = (function () {
     listAutochessPlayers,
     getAutochessMatch,
     listAutochessUnresolved,
+    listAutochessMatches,
     listAutochessStats,
     listAutochessLog,
     closeAutochessEvent,
