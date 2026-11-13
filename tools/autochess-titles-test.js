@@ -48,7 +48,7 @@ const stat = (o) => Object.assign({ res: "win", afk: false, gold: 0, refresh: 0 
 
 (async () => {
   const cat = db.TITLE_CATALOG.filter((t) => t.group === "夜市自走棋稱號"), keys = cat.map((t) => t.key);
-  ok(cat.length === 26, "自走棋稱號共 26 個(階段 3:12、階段 4:14),得到 " + cat.length);
+  ok(cat.length === 27, "自走棋稱號共 27 個(階段 3:12、階段 4:14、階段 5:1),得到 " + cat.length);
   ok(cat.filter((t) => t.hidden).length === 1 && cat.find((t) => t.key === "ac_hidden_bond").hidden, "只有隱藏羈絆稱號是隱藏稱號");
   ok(new Set(db.TITLE_CATALOG.map((t) => t.key)).size === db.TITLE_CATALOG.length, "全部稱號 key 不重複");
   ok(keys.every((k) => /^ac_/.test(k)), "自走棋稱號 key 都是 ac_ 前綴");
@@ -74,6 +74,14 @@ const stat = (o) => Object.assign({ res: "win", afk: false, gold: 0, refresh: 0 
   ok(K({ ...base, state: { threeStar: 1 } }).includes("ac_three_star") && !K({ ...base, state: { threeStar: 0 } }).includes("ac_three_star"), "三星攤主");
   ok(K({ ...base }).every((k) => keys.includes(k)), "判定出來的 key 都在目錄裡");
 
+  // ---- 階段 5:翻盤王 ----
+  const dm = (...ds) => ds.map((d) => stat({ dmg: d }));
+  ok(K({ ...base, stats: dm(30, 30, 20) }).includes("ac_comeback"), "翻盤王:冠軍,血量曾掉到 20(100-30-30-20)");
+  ok(K({ ...base, stats: dm(30, 30, 10) }).includes("ac_comeback"), "翻盤王:剛好 30 算");
+  ok(!K({ ...base, stats: dm(30, 30, 9) }).includes("ac_comeback"), "翻盤王:血量 31 不算(30+30+9=69,剩 31)") ;
+  ok(!K({ ...base, rank: 2, stats: dm(80) }).includes("ac_comeback"), "亞軍不給翻盤王");
+  ok(!K({ ...base, nPlayers: 3, stats: dm(80) }).includes("ac_comeback"), "3 人場不給翻盤王");
+  ok(!K({ ...base, stats: dm(10, 10) }).includes("ac_comeback"), "沒掉到 30 以下不給");
   // ---- 走資料庫的完整流程 ----
   const ev1 = mkEvent(four(P("a", { hp: 85, state: { bestStreak: 5, threeStar: 1 } })));
   tables.autochess_stats.push(...Array.from({ length: 10 }, (_, r) => ({ event_id: ev1, round: r + 1, player_id: "a", stat: stat({ gold: 31, refresh: r === 3 ? 12 : 0 }) })));

@@ -481,3 +481,80 @@
       </table>
     </div>`;
 })();
+
+// 夜市自走棋:規則表(來源:assets/autochess-data.js 與 db.js 的稱號目錄,資料直接讀遊戲本體,
+// 流派 / 卡牌 / 加碼 / 稱號有調整這裡自動跟著變,不用另外維護)
+(function () {
+  const AD = window.AutochessData;
+  if (!AD || !document.getElementById("ac-bond-table")) return;
+  const el = (id) => document.getElementById(id);
+  const esc = (t) => ui.esc(t);
+  const tagName = (k) => (AD.TAGS[k] ? AD.TAGS[k].name : k);
+  const tbl = (heads, rows, cls) => `<div class="rule-table-wrap"><table class="rule-table ${cls || ""}"><thead><tr>${heads.map((h) => `<th${h.num ? ' class="num"' : ""}>${h.num ? h.t : h}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table></div>`;
+  const icons = () => { if (window.lucide) lucide.createIcons(); };
+
+  // 等級表
+  (function () {
+    const rows = [];
+    for (let lv = 1; lv <= AD.MAX_LEVEL; lv++) {
+      const odds = (AD.SHOP_ODDS[lv] || []).map((p, i) => (p ? `${AD.RARITY[i].name} ${p}%` : null)).filter(Boolean).join("・");
+      rows.push(`<tr><td><b>Lv.${lv}</b></td><td class="num">${AD.XP_TO_LEVEL[lv] != null ? AD.XP_TO_LEVEL[lv] : "—"}</td><td class="num">${AD.SLOTS_BY_LEVEL[lv]}</td><td>${odds}</td></tr>`);
+    }
+    const lp = AD.LEVEL_PERKS || {};
+    el("ac-level-table").innerHTML = tbl(["等級", { t: "升到這級要的經驗", num: 1 }, { t: "可上陣張數", num: 1 }, "商店出現機率"], rows) +
+      `<p style="font-size:11px;color:var(--ink-dim);margin-top:6px;">※ Lv.${lp.shopSlots6} 起商店變 6 格;Lv.${lp.freeFirstRefresh} 起每輪第一次刷新免費;Lv.${lp.extraIncome} 起每輪多 +${lp.extraIncomeAmount} 銅板。</p>`;
+  })();
+
+  // 羈絆表
+  el("ac-bond-table").innerHTML = tbl(["流派", "特色", "2 張", "4 張", "6 張"], Object.keys(AD.TAGS).map((k) => {
+    const t = AD.TAGS[k], b = AD.BONDS[k];
+    return `<tr><td><i data-lucide="${t.icon}" class="ico"></i> <b>${esc(t.name)}</b></td><td>${esc(t.desc)}</td>${b.map((x) => `<td>${esc(x.desc)}</td>`).join("")}</tr>`;
+  }));
+
+  // 卡牌表(依流派分頁)
+  (function () {
+    const tabsEl = el("ac-card-tabs"), listEl = el("ac-card-table");
+    el("ac-card-count").textContent = AD.CARDS.length;
+    const groups = Object.keys(AD.TAGS).map((k) => ({ key: k, label: tagName(k), test: (c) => c.tags.length === 1 && c.tags[0] === k }))
+      .concat([{ key: "dual", label: "雙流派", test: (c) => c.tags.length === 2 }, { key: "none", label: "通用", test: (c) => c.tags.length === 0 }]);
+    tabsEl.innerHTML = groups.map((g, i) => `<button class="rule-tab${i === 0 ? " active" : ""}" data-ac-tab="${g.key}">${esc(g.label)}</button>`).join("");
+    function render(key) {
+      const g = groups.find((x) => x.key === key);
+      const cards = AD.CARDS.filter(g.test).sort((a, b) => a.cost - b.cost);
+      listEl.innerHTML = tbl(["卡牌", { t: "費用", num: 1 }, "流派", { t: "攻", num: 1 }, { t: "血", num: 1 }, { t: "速", num: 1 }, "效果", "3★ 質變"], cards.map((c) =>
+        `<tr><td><b>${esc(c.name)}</b></td><td class="num">${c.cost}</td><td>${c.tags.length ? c.tags.map(tagName).join(" + ") : "通用"}</td><td class="num">${c.atk}</td><td class="num">${c.hp}</td><td class="num">${c.spd}</td><td>${esc(c.desc)}</td><td>${esc(c.star3 ? c.star3.desc.replace(/^3★:/, "") : "—")}</td></tr>`), "equipment-table");
+      icons();
+    }
+    tabsEl.querySelectorAll("[data-ac-tab]").forEach((b) => (b.onclick = () => { render(b.dataset.acTab); tabsEl.querySelectorAll("[data-ac-tab]").forEach((t) => t.classList.toggle("active", t === b)); }));
+    render(groups[0].key);
+  })();
+
+  // 攤位加碼
+  el("ac-perk-table").innerHTML = tbl(["加碼", "類別", "效果"], AD.PERKS.map((p) => `<tr><td><b>${esc(p.name)}</b></td><td>${esc(AD.PERK_CATS[p.cat] || "")}</td><td>${esc(p.desc)}</td></tr>`));
+
+  // 每輪基本傷害
+  (function () {
+    const d = AD.ROUND_BASE_DAMAGE;
+    const rows = d.map((x, i) => { const next = d[i + 1]; const range = next ? (next[0] - 1 === x[0] ? `R${x[0]}` : `R${x[0]}~${next[0] - 1}`) : `R${x[0]} 起`; return `<tr><td><b>${range}</b></td><td class="num">${x[1]}</td></tr>`; });
+    el("ac-damage-table").innerHTML = tbl(["輪次", { t: "該輪基本傷害(輸的人扣)", num: 1 }], rows);
+  })();
+
+  // 稱號(分類列表;隱藏稱號不公開內容)
+  (function () {
+    const cat = (db.TITLE_CATALOG || []).filter((t) => t.group === "夜市自走棋稱號");
+    const kinds = [
+      ["名次與表現", (t) => !/^ac_tag_/.test(t.key) && !t.hidden && !["ac_mono", "ac_hodgepodge", "ac_bookend", "ac_three_star_trio", "ac_all_bonds"].includes(t.key)],
+      ["流派(累計)", (t) => /^ac_tag_/.test(t.key)],
+      ["搭配", (t) => ["ac_mono", "ac_hodgepodge", "ac_bookend", "ac_three_star_trio", "ac_all_bonds"].includes(t.key)],
+      ["隱藏", (t) => !!t.hidden],
+    ];
+    const rows = [];
+    kinds.forEach(([label, test]) => {
+      const list = cat.filter(test); if (!list.length) return;
+      rows.push(`<tr><td colspan="2" style="color:var(--gold);font-weight:700;">${label}(${list.length})</td></tr>`);
+      list.forEach((t) => rows.push(t.hidden ? `<tr><td>？？？</td><td>隱藏稱號,拿到之前不公開條件</td></tr>` : `<tr><td><i data-lucide="${t.icon}" class="ico"></i> <b>${esc(t.name)}</b></td><td>${esc(t.desc)}</td></tr>`));
+    });
+    el("ac-title-table").innerHTML = tbl(["稱號", "取得條件"], rows) + `<p style="font-size:11px;color:var(--ink-dim);margin-top:6px;">共 ${cat.length} 個。</p>`;
+  })();
+  icons();
+})();

@@ -6,6 +6,8 @@
   const root = document.getElementById("ac-root");
   const esc = ui.esc, ic = (n, o) => ui.icon(n, o);
   const TAG_ICON = {}; Object.keys(AD.TAGS).forEach((k) => (TAG_ICON[k] = AD.TAGS[k].icon));
+  const sfx = (k) => { try { if (window.AutochessSfx) AutochessSfx.play(k); } catch (e) { /* 音效失敗不影響遊戲 */ } };
+  let sfxRound = 0; // 每一輪的準備階段只響一次「逼——」
   const pad2 = (n) => String(n).padStart(2, "0");
   const fmtSecs = (n) => (n >= 60 ? `${Math.floor(n / 60)} 分${n % 60 ? ` ${n % 60} 秒` : ""}` : `${n} 秒`);
 
@@ -168,7 +170,22 @@
     g = G.create({ seed, name: "你" }); history = []; showLog = false; logRound = null;
     G.startRound(g);
     sel = null; view = "prep";
-    render(); startTimer(); openPerkIfAny();
+    render(); startTimer(); openPerkIfAny(); maybeTutorial();
+  }
+
+  // ---------------- 賽後展示:前三名最終陣容、MVP 卡、趣味獎項(階段 5)----------------
+  function lineupHtml(rank, name, cards, badge) {
+    if (!cards || !cards.length) return "";
+    const mvp = AutochessAwards.mvpCard(cards), mi = mvp ? cards.indexOf(mvp) : -1;
+    const b = E.computeBonds(cards);
+    const chips = Object.keys(b.active).map((t) => `<span class="ac-bond on t-${t}">${ic(TAG_ICON[t])}${tagName(t)} ${b.active[t]}</span>`).concat(b.hidden.map((id) => `<span class="ac-bond on hidden">${ic("sparkles")}${esc(AD.HIDDEN_BONDS.find((h) => h.id === id).name)}</span>`)).join("");
+    return `<div class="ac-lineup"><div class="ac-lu-h">${ic(rank === 1 ? "crown" : "medal")}<b>第 ${rank} 名・${esc(name)}</b>${badge || ""}</div>
+      <div class="ac-grid" style="--cols:${cards.length}">${cards.map((c, i) => cardHtml({ ...c, bonusAtk: 0, bonusHp: 0 }, { noTip: true, data: i === mi ? 'data-mvp="1"' : "" })).join("")}</div>
+      ${chips ? `<div class="ac-bonds">${chips}</div>` : ""}${mvp ? `<div class="ac-dim">${ic("star")}MVP 卡:<b>${esc(cardDef(mvp).name)} ${mvp.star}★</b>(最終陣容戰力最高)</div>` : ""}</div>`;
+  }
+  function awardsHtml(list) {
+    if (!list.length) return "";
+    return `<div class="ac-sec">${ic("party-popper")}趣味獎項</div><div class="ac-awards">${list.map((a) => `<div class="ac-award">${ic(a.icon)}<b>${a.name}</b><span>${esc(a.who)}</span><em>${esc(a.detail)}</em></div>`).join("")}</div>`;
   }
 
   // ---------------- 準備階段 ----------------
@@ -225,6 +242,7 @@
 
   function renderPrep() {
     hideTip();
+    if (sfxRound !== g.round) { sfxRound = g.round; sfx("bell"); }
     const me = g.me, slots = G.slotsOf(me), cost = G.refreshCost(me);
     const needXp = me.level < AD.MAX_LEVEL ? AD.XP_TO_LEVEL[me.level + 1] : 0;
     const xpCost = Math.max(0, AD.BUY_XP.cost - (me.perks.xpCoupon > 0 ? AD.PERK_BY_ID.xp_coupon.off : 0));
@@ -247,6 +265,8 @@
           <span class="tag running">${OL ? ic("swords") + "正式場" : ic("flask-conical") + "練習模式"}</span>
           <span class="ac-round">R${g.round} 準備</span>
           <span class="ac-timer" id="ac-timer">--</span>
+          <button class="btn ghost ac-mini-btn" id="ac-help" title="新手教學">${ic("circle-help")}</button>
+          <button class="btn ghost ac-mini-btn" id="ac-sound" title="音效開關">${ic(window.AutochessSfx && AutochessSfx.isMuted() ? "volume-x" : "volume-2")}</button>
           ${OL ? "" : `<button class="btn ghost ac-mini-btn" id="ac-restart">${ic("rotate-ccw")}重來</button>`}
         </div>
         <div class="timer-bar"><div id="ac-timer-fill" style="width:100%"></div></div>
@@ -263,7 +283,7 @@
       ${me.perkPicks.length ? `<div class="tag-row ac-perks">${perkChips(me)}</div>` : ""}
       <div class="card ac-board-card">
         <div class="ac-bondrow">${bondRow(me.board, G.extraFor(me))}</div>
-        <div class="ac-sec">${ic("swords")}上陣 <em>${me.board.length}/${slots}</em><span class="ac-hint">第 1 位先鋒・最後一位壓軸</span></div>
+        <div class="ac-sec">${ic("swords")}上陣 <em>${me.board.length}/${slots}</em><span class="ac-hint">第 1 位先鋒・最後一位壓軸</span><button class="btn ghost ac-mini-btn" data-act="autoarrange" title="依先鋒/壓軸/鄰接效果自動排">${ic("wand-sparkles")}自動排站位</button></div>
         <div class="ac-grid" style="--cols:${slots}">${boardCells.join("")}</div>
         <div class="ac-sec">${ic("archive")}待命席 <em>${me.bench.length}/${AD.BENCH_SLOTS}</em></div>
         <div class="ac-grid" style="--cols:${AD.BENCH_SLOTS}">${benchCells.join("")}</div>
@@ -286,6 +306,8 @@
     paintTimer();
     if (msg) setMsg(msg.text, msg.tone);
     const rs = document.getElementById("ac-restart"); if (rs) rs.onclick = restart;
+    const hp = document.getElementById("ac-help"); if (hp) hp.onclick = () => openTutorial(0);
+    const sd = document.getElementById("ac-sound"); if (sd) sd.onclick = () => { AutochessSfx.setMuted(!AutochessSfx.isMuted()); sfx("bell"); renderPrep(); };
     const sl = document.getElementById("ac-seal"); if (sl) sl.onclick = () => doSeal(false);
     const po = document.getElementById("ac-perk-open"); if (po) po.onclick = openPerkIfAny;
   }
@@ -337,6 +359,7 @@
     else if (act === "lock") r = G.toggleLock(g);
     else if (act === "xp") r = G.buyXp(g);
     else if (act === "undo") { r = G.undo(g); if (r.ok) setMsg("已撤銷上一次購買,全額退費"); }
+    else if (act === "autoarrange") { r = G.autoArrange(g); if (r.ok) { sel = null; setMsg(r.changed ? "已依先鋒/壓軸/鄰接效果重新排好(不滿意可以再手動調整)" : "現在的排法已經是最適合的了"); } }
     if (r && !r.ok) setMsg(r.msg, "bad");
     if (OL && r && r.ok) persist(); // 連線版:每次操作立刻整批存檔
     renderPrep();
@@ -350,6 +373,26 @@
   // ---------------- 攤位加碼(彈窗)----------------
   const modal = document.getElementById("ac-modal"), modalCard = document.getElementById("ac-modal-card");
   function closeModal() { modal.classList.remove("show"); }
+  // 新手教學:5 頁,練習模式第一次進來自動跳出,之後準備畫面的 ? 鈕可以重看
+  const TUTORIAL = [
+    { icon: "store", title: "1. 買卡", body: "每輪先有一段準備時間。點商店裡的卡就能買(花銅板),不喜歡可以「刷新」,喜歡的先「鎖定」留到下一輪。買到的卡先進待命席,點一下再點場上的位置就能上陣。" },
+    { icon: "swords", title: "2. 站位很重要", body: "場上從左到右排成一排:第 1 位是「先鋒」,最先挨打;最後一位是「壓軸」。很多卡的效果看站位,例如「先鋒:獲得護盾」「鄰接:替左右友軍加攻擊」。不想自己想,按「自動排站位」。" },
+    { icon: "flame", title: "3. 流派羈絆與升星", body: "同一個流派的卡湊到 2 / 4 / 6 張(要不同名字)會啟動羈絆,整隊變強。兩張同名同星會自動合成更高星,3★ 還會多一個質變效果。有些特定幾張卡湊在一起,會觸發隱藏羈絆……" },
+    { icon: "piggy-bank", title: "4. 銅板與升級", body: "每輪結算有基本收入;贏了多拿、連勝再加。手上存的銅板每 10 個多 +1 利息(最多 +3)。買經驗可以升級,等級越高能上陣的卡越多、商店出好卡的機率也越高。" },
+    { icon: "heart", title: "5. 對戰與淘汰", body: "時間到(或按「完成準備」)就會封板,雙方陣容自動對打,不用操作。輸了扣血,血量歸零就淘汰,最後留下的是棋王。第 3、6、9 輪有「攤位加碼」三選一,沒選會替你隨機選。" },
+  ];
+  function openTutorial(i) {
+    const st = TUTORIAL[i];
+    modalCard.innerHTML = `<div class="ac-tut"><div class="ac-tut-h">${ic(st.icon)}<b>${st.title}</b><span class="ac-dim">${i + 1}/${TUTORIAL.length}</span></div><p>${esc(st.body)}</p>
+      <div class="action-row"><button class="btn ghost" id="ac-tut-skip">${i === TUTORIAL.length - 1 ? "關閉" : "跳過"}</button>${i > 0 ? `<button class="btn ghost" id="ac-tut-prev">上一頁</button>` : ""}${i < TUTORIAL.length - 1 ? `<button class="btn" id="ac-tut-next">下一頁</button>` : `<button class="btn" id="ac-tut-done">開始玩</button>`}</div></div>`;
+    modal.classList.add("show");
+    const done = () => { try { localStorage.setItem("ac_tutorial_done", "1"); } catch (e) { /* ignore */ } closeModal(); };
+    document.getElementById("ac-tut-skip").onclick = done;
+    const nx = document.getElementById("ac-tut-next"); if (nx) nx.onclick = () => openTutorial(i + 1);
+    const pv = document.getElementById("ac-tut-prev"); if (pv) pv.onclick = () => openTutorial(i - 1);
+    const dn = document.getElementById("ac-tut-done"); if (dn) dn.onclick = done;
+  }
+  function maybeTutorial() { try { if (!OL && !localStorage.getItem("ac_tutorial_done")) openTutorial(0); } catch (e) { /* ignore */ } }
   function openPerkIfAny() {
     const pp = g && g.me.pendingPerk;
     if (!pp || view !== "prep") return;
@@ -434,7 +477,7 @@
     }
   }
 
-  async function playBattle(rep, auto, budgetMs) {
+  async function playBattle(rep, auto, budgetMs, replay) {
     const token = ++battleToken, mine = rep.mine, mySide = mine.side, foeSide = mySide === "a" ? "b" : "a";
     const bs = bstateFrom(mine.r.init), events = mine.r.events || [];
     const foeName = mine.ghost ? `幽靈(${mine.foe.name} 的陣容)` : mine.foe.name;
@@ -448,6 +491,8 @@
       autoFactor = Math.max(1, total / Math.max(4000, budgetMs - 1500));
     }
     const spd = () => battleSpeed * autoFactor;
+    const stale = () => token !== battleToken || (replay && view !== "battle"); // 重播時,如果已經換到別的畫面(下一輪開始了)就停手
+    if (replay) view = "battle"; else sfx("seal");
     const bondLine = (side) => { const b = side === mySide ? (mySide === "a" ? mine.r.bondsA : mine.r.bondsB) : (mySide === "a" ? mine.r.bondsB : mine.r.bondsA); return Object.keys(b).map((t) => `<span class="ac-bond on t-${t}">${ic(TAG_ICON[t])}${tagName(t)} ${b[t]}</span>`).join("") || `<span class="ac-dim">沒有羈絆</span>`; };
     const lines = [], entry = { round: rep.round, res: mine.res, foe: foeName, lines };
     history = history.filter((h) => h.round !== rep.round).concat(entry); logRound = rep.round;
@@ -481,7 +526,7 @@
     draw();
     await sleep(700 / spd());
     for (const ev of events) {
-      if (token !== battleToken) return;
+      if (stale()) return;
       const r = applyEvent(ev, bs, nameOf, mySide);
       if (!r) continue;
       if (r.round) roundEl.textContent = `第 ${r.round} 回合`;
@@ -493,11 +538,12 @@
       await sleep(r.delay / spd());
       if (r.flashTag) bs[r.flashTag[0]][Number(r.flashTag.slice(1))].flash = "";
     }
-    if (token !== battleToken) return;
+    if (stale()) return;
     const res = mine.res, endText = res === "win" ? "你贏了!" : res === "lose" ? "你輸了…" : "平手";
     say(endText); addLine("sys", `結果:${endText}`); draw();
+    sfx(res === "win" ? "win" : res === "lose" ? "lose" : "seal");
     await sleep(skipped ? 300 : 900 / spd());
-    if (token !== battleToken) return;
+    if (stale()) return;
     view = "result"; render();
   }
 
@@ -529,8 +575,9 @@
         <div class="ac-logbox">${logLinesHtml((history.find((h) => h.round === rep.round) || { lines: [] }).lines)}</div>
         <div class="ac-sec">${ic("users")}全場血量</div>
         <ul class="ac-rank">${ranking}</ul>
-        <div class="action-row"><button class="btn block" id="ac-next">${ic(g.over ? "trophy" : "arrow-right")}${g.over ? "查看總結" : `進入 R${g.round + 1}`}</button></div>
+        <div class="action-row"><button class="btn ghost" id="ac-replay">${ic("rotate-ccw")}重播這場戰鬥</button><button class="btn block" id="ac-next">${ic(g.over ? "trophy" : "arrow-right")}${g.over ? "查看總結" : `進入 R${g.round + 1}`}</button></div>
       </div>`;
+    document.getElementById("ac-replay").onclick = () => playBattle(rep, false, 0, true);
     document.getElementById("ac-next").onclick = () => {
       if (g.over) { view = "over"; render(); return; }
       G.nextRound(g); sel = null; view = "prep"; render(); startTimer(); openPerkIfAny();
@@ -540,6 +587,9 @@
   // ---------------- 總結 ----------------
   function renderOver() {
     const s = G.stats(g), top = s.rank === 1;
+    if (!g.overSfx) { g.overSfx = true; sfx(top ? "champ" : "out"); }
+    const lineups = g.finalRanking.slice(0, 3).map((p) => lineupHtml(p.rank, p.name + (p.human ? "(你)" : ""), p.board)).join("");
+    const awards = awardsHtml(AutochessAwards.awards(g.finalRanking.map((p) => ({ player_id: p.name, name: p.name, final_rank: p.rank, state: { board: p.board, bench: p.bench, bestStreak: p.bestStreak } }))));
     root.innerHTML = `
       <div class="card ac-result ${top ? "good" : ""}">
         <div class="ac-rtitle">${ic(top ? "crown" : "flag")}<b>${top ? "你是夜市棋王!" : `第 ${s.rank} 名`}</b></div>
@@ -550,6 +600,7 @@
           <tr><td>合成出 3★</td><td>${s.threeStar} 次</td></tr>
           <tr><td>選過的加碼</td><td>${s.perks.length ? s.perks.map((id) => esc(AD.PERK_BY_ID[id].name)).join("、") : "沒有"}</td></tr>
         </table>
+        <div class="ac-sec">${ic("trophy")}前三名最終陣容</div>${lineups}${awards}
         <div class="ac-sec">${ic("list-ordered")}最終名次</div>
         <ol class="ac-rank final">${g.finalRanking.map((p) => `<li class="${p.human ? "me" : ""}"><span>${esc(p.name)}</span><b>${p.elimRound ? "R" + p.elimRound + " 淘汰" : "存活"}</b></li>`).join("")}</ol>
         <div class="action-row"><button class="btn" id="ac-again">${ic("rotate-ccw")}再玩一場</button><a class="btn ghost" href="index.html">${ic("arrow-left")}回活動列表</a></div>
@@ -799,6 +850,7 @@
     if (!OL.standings.length) await olLoadStandings();
     const foeId = ghost ? m.ghost_of : meP1 ? m.p2 : m.p1;
     const rep = { round: R, mine: { side: mine.side, r: res.r, res: mine.res, ghost, foe: { name: OL.names[foeId] || "對手", badge: ghost ? "" : olBadge(foeId) } } };
+    OL.lastRep = rep;
     if (clk.phase === "battle") { view = "battle"; playBattle(rep, !!(OL.sealInfo && OL.sealInfo), clk.left * 1000 + 2000); }
     else { view = "result"; render(); }
   }
@@ -838,14 +890,16 @@
         ${res === "lose" ? `<div class="ac-rline bad">${ic("heart-crack")}扣血 -${o.dmg}(血量 ${o.hpBefore} → ${Math.max(0, hpAfter)})</div>` : `<div class="ac-rline">${ic("heart")}血量 ${Math.max(0, hpAfter)}</div>`}
         <table class="ac-eco">${rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("")}<tr class="sum"><td>本輪獲得</td><td>+${e.gain} 銅板</td></tr></table>
         <div class="ac-rline">${ic("coins")}銅板 ${o.goldBefore} → <b>${o.patch.gold}</b> ${ic("flame")}連勝 <b>${o.patch.streak}</b></div>
-        ${hpAfter <= 0 ? `<div class="ac-rline bad">${ic("skull")}你的血量歸零,這輪結算完就淘汰了</div>` : ""}
+        ${hpAfter <= 0 && !OL["outSfx" + o.round] && (OL["outSfx" + o.round] = 1) && (sfx("out"), true) ? "" : ""}${hpAfter <= 0 ? `<div class="ac-rline bad">${ic("skull")}你的血量歸零,這輪結算完就淘汰了</div>` : ""}
         ${notes.map((n) => `<div class="ac-rline dim">${ic("info")}${esc(n)}</div>`).join("")}
         <div class="ac-sec">${ic("scroll-text")}本輪戰報</div>
         <div class="ac-logbox">${logLinesHtml((history.find((h) => h.round === o.round) || { lines: [] }).lines)}</div>
         <div class="ac-sec">${ic("users")}全場血量</div>
         <ul class="ac-rank" id="ac-ranklist">${olStandingsHtml(OL.standings)}</ul>
+        ${OL.lastRep ? `<div class="action-row"><button class="btn ghost" id="ac-replay">${ic("rotate-ccw")}重播這場戰鬥</button></div>` : ""}
         <div class="ac-dim ac-seal-note">${ic("clock")}下一輪的準備階段會自動開始</div>
       </div>`;
+    const rp = document.getElementById("ac-replay"); if (rp) rp.onclick = () => playBattle(OL.lastRep, false, 0, true);
   }
 
   // ---------- 觀戰 / 結束 ----------
@@ -883,10 +937,17 @@
   }
   function renderOverOnline() {
     view = "over";
+    if (!OL.statRows && !OL.statLoading) { // 翻盤王要看每輪扣血:讀一次對局紀錄,讀不到就沒有這個獎
+      OL.statLoading = true;
+      db.listAutochessStats(OL.eventId).then((r) => { OL.statRows = r; }).catch(() => { OL.statRows = []; }).then(() => { OL.statLoading = false; if (view === "over") renderOverOnline(); });
+    }
     const rows = olSortRows(OL.standings), mine = rows.find((r) => r.player_id === OL.playerId), rank = mine && mine.final_rank;
     const st = (mine && mine.state) || {}, top = rank === 1;
     const reward = mine && (mine.reward || ((OL.ev.reward_plan && OL.ev.reward_plan.items) || [])[rank - 1]);
     const lastRound = mine && mine.eliminated_round ? mine.eliminated_round : (OL.clk && OL.clk.round) || 0;
+    if (!OL.overSfx && mine) { OL.overSfx = true; sfx(top ? "champ" : "out"); }
+    const lineups = rows.filter((r) => r.final_rank && r.final_rank <= 3 && r.state && !(r.players && r.players.is_bot)).slice(0, 3).map((r) => lineupHtml(r.final_rank, olName(r), (r.state.board || []).map((c) => ({ id: c.id, star: c.star })), olBadge(r.player_id))).join("");
+    const awards = awardsHtml(AutochessAwards.awards(rows, OL.statRows || null));
     root.innerHTML = `
       <div class="card ac-result ${top ? "good" : ""}">
         <div class="ac-rtitle">${ic(top ? "crown" : "flag")}<b>${mine ? (top ? "你是夜市棋王!" : `第 ${rank} 名`) : "活動結束"}</b></div>
@@ -898,6 +959,7 @@
           <tr><td>合成出 3★</td><td>${st.threeStar || 0} 次</td></tr>
           <tr><td>選過的加碼</td><td>${(st.perkPicks || []).length ? st.perkPicks.map((id) => esc((AD.PERK_BY_ID[id] || { name: id }).name)).join("、") : "沒有"}</td></tr>
         </table>` : ""}
+        ${lineups ? `<div class="ac-sec">${ic("trophy")}前三名最終陣容</div>${lineups}` : ""}${awards}
         <div class="ac-sec">${ic("list-ordered")}最終名次</div>
         <ol class="ac-rank final">${rows.map((r) => `<li class="${r.player_id === OL.playerId ? "me" : ""}"><span>${esc(olName(r))}${olBadge(r.player_id)}</span><b>${r.alive ? "存活" : "R" + r.eliminated_round + " 淘汰"}</b></li>`).join("")}</ol>
         <div class="action-row"><a class="btn" href="index.html">${ic("arrow-left")}回活動列表</a><a class="btn ghost" href="autochess.html?mode=practice">${ic("flask-conical")}去練習場</a></div>

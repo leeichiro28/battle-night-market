@@ -85,6 +85,43 @@ window.AutochessEngine = (function () {
     return best;
   }
 
+
+  // ---------------- 自動排站位(企劃點子 17;給新手用的按鈕)----------------
+  // 依「先鋒 / 壓軸 / 前排 / 後排 / 鄰接」效果、血厚的放前面、卜卦羈絆的兩端加成,替上陣的卡找一個分數最高的排法。
+  // 最多 8 張 → 全排列 40320 種,純算分數不跑戰鬥,幾十毫秒內完成。分數相同維持原本的順序;回傳「換位前」的新順序。
+  const ADJ_ACTIONS = { buffAdjAtk: 1, shieldAdj: 1, healAdj: 1 };
+  function arrangeScore(d, ends) {
+    const n = d.length; let sc = 0;
+    d.forEach((c, i) => {
+      const def = AD.CARD_BY_ID[c.id], sm = AD.STAR.stat[c.star || 1];
+      const effects = def.fx.concat((c.star || 1) >= 3 && def.star3 ? def.star3.fx : []);
+      const front = i < Math.ceil(n / 2);
+      effects.forEach((e) => {
+        if (e.when === "vanguard" && i === 0) sc += 4;
+        else if (e.when === "finale" && i === n - 1) sc += 4;
+        else if (e.when === "front" && front) sc += 3;
+        else if (e.when === "back" && !front) sc += 3;
+        if (ADJ_ACTIONS[e.do]) sc += (i > 0 ? 1.5 : 0) + (i < n - 1 ? 1.5 : 0);
+      });
+      sc += def.hp * sm * (n - 1 - i) / Math.max(1, n) * 0.04;      // 血厚的站前面
+      sc += def.atk * sm * i / Math.max(1, n) * 0.05;               // 輸出放後面比較活得久
+      if (ends && (i === 0 || i === n - 1)) sc += def.atk * sm * 0.15; // 卜卦羈絆:先鋒與壓軸有加成,放強的
+    });
+    return sc;
+  }
+  function autoArrange(board) {
+    const n = board.length;
+    if (n < 2) return board.map((c) => ({ ...c }));
+    const ends = !!computeBonds(board).fx.endsAtk;
+    let best = board.map((c, i) => i), bestSc = arrangeScore(applyDeploy(best.map((i) => board[i])), ends);
+    const idx = best.slice(), c = new Array(n).fill(0);
+    const test = () => { const sc = arrangeScore(applyDeploy(idx.map((i) => board[i])), ends); if (sc > bestSc + 1e-9) { bestSc = sc; best = idx.slice(); } };
+    for (let i = 0; i < n;) { // Heap's algorithm(非遞迴)
+      if (c[i] < i) { const k = i % 2 === 0 ? 0 : c[i]; const t = idx[k]; idx[k] = idx[i]; idx[i] = t; test(); c[i]++; i = 0; } else { c[i] = 0; i++; }
+    }
+    return best.map((i) => ({ ...board[i] }));
+  }
+
   // ---------------- 建立戰鬥單位 ----------------
   const scale = (v, m) => Math.max(1, Math.round(v * m));
   function buildUnit(side, card, idx, total, rng) {
@@ -439,5 +476,5 @@ window.AutochessEngine = (function () {
     return AD.roundBaseDamage(round) + Math.min(AD.SURVIVOR_STAR_CAP, winnerSurvivorStars);
   }
 
-  return { makeRng, hashSeed, computeBonds, applyDeploy, countTags, pickMainTag, simulate, rollShop, mergeCards, settleEconomy, loseDamage };
+  return { makeRng, hashSeed, computeBonds, applyDeploy, autoArrange, countTags, pickMainTag, simulate, rollShop, mergeCards, settleEconomy, loseDamage };
 })();

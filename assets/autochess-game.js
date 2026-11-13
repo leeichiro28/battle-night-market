@@ -157,6 +157,16 @@ window.AutochessGame = (function () {
     return okr({ value: v });
   }
   // 移動:from / to = { zone: 'board'|'bench', idx }。目標有卡 → 交換;目標是空位 → 放到該區最後
+  // 自動排站位:只重排上陣的卡(不動待命席、不花銅板);已經是最佳排法就回報沒有變動
+  function autoArrange(g) {
+    const me = g.me;
+    if (g.phase !== "prep") return fail("現在不是準備階段");
+    if (me.board.length < 2) return fail("上陣的卡不到 2 張,不需要排站位");
+    const next = E.autoArrange(me.board);
+    const changed = next.some((c, i) => c !== me.board[i] && (c.id !== me.board[i].id || c.star !== me.board[i].star));
+    me.board = next;
+    return okr({ changed });
+  }
   function move(g, from, to) {
     const me = g.me;
     if (g.phase !== "prep") return fail("現在不是準備階段");
@@ -284,7 +294,7 @@ window.AutochessGame = (function () {
     g.over = true;
     const rk = ranking(g);
     g.rank = rk.indexOf(g.me) + 1;
-    g.finalRanking = rk.map((p) => ({ name: p.name, human: !!p.human, hp: Math.max(0, p.hp), elimRound: p.elimRound, wins: p.wins }));
+    g.finalRanking = rk.map((p, i) => ({ name: p.name, human: !!p.human, hp: Math.max(0, p.hp), elimRound: p.elimRound, wins: p.wins, rank: i + 1, bestStreak: p.bestStreak || 0, board: (p.board || []).map((c) => ({ id: c.id, star: c.star })), bench: (p.bench || []).map((c) => ({ id: c.id, star: c.star })) }));
   }
   function nextRound(g) {
     if (g.over) return fail("對局已經結束");
@@ -376,5 +386,5 @@ window.AutochessGame = (function () {
     return { r, outcomes };
   }
 
-  return { createOnline, serialize, restore, catchUp, normState, battleOnline, sealPrep, create, startRound, buy, undo, sell, move, buyXp, refresh, refreshCost, toggleLock, pickPerk, targetsFor, seal, nextRound, bondsPreview, slotsOf, capacityOf, prepSeconds, stats, ranking, extraFor };
+  return { createOnline, serialize, restore, catchUp, normState, battleOnline, sealPrep, create, startRound, buy, undo, sell, move, buyXp, autoArrange, refresh, refreshCost, toggleLock, pickPerk, targetsFor, seal, nextRound, bondsPreview, slotsOf, capacityOf, prepSeconds, stats, ranking, extraFor };
 })();

@@ -300,6 +300,7 @@ const db = (function () {
     ["ac_three_star_trio", "三星連線", "同一場戰鬥上陣 3 張 3★ 卡牌", "stars"],
     ["ac_all_bonds", "八方來財", "8 個流派的羈絆都曾達到 4 級以上(跨場累計)", "gem"],
     ["ac_hidden_bond", "夜市祕密", "觸發隱藏羈絆並贏下那場戰鬥", "sparkles", true],
+    ["ac_comeback", "翻盤王", "拿冠軍,而且整場血量曾掉到 30 以下(≥4 人場)", "trending-up"],
   );
   AC_TITLES.forEach(([key, name, desc, icon, hidden]) => TITLE_CATALOG.push({ key, name, desc, icon, group: "夜市自走棋稱號", ...(hidden ? { hidden: true } : {}) }));
 
@@ -316,6 +317,12 @@ const db = (function () {
       if (i.hp <= 10) out.push("ac_close_call");
     }
     if (enough && i.rank === 2) out.push("ac_runner_up");
+    // 翻盤王:冠軍且整場血量曾掉到 30 以下(用 stats 的每輪扣血累計回推,stats 要照輪次排好)
+    if (enough && i.rank === 1) {
+      let hp = (window.AutochessData && window.AutochessData.START_HP) || 100, low = hp;
+      (i.stats || []).forEach((x) => { hp -= (x && x.dmg) || 0; if (hp < low) low = hp; });
+      if (low <= 30) out.push("ac_comeback");
+    }
     if ((i.champs || 0) >= 3) out.push("ac_triple_champion");
     if ((i.top3 || 0) >= 5) out.push("ac_regular");
     if ((st.bestStreak || 0) >= 5) out.push("ac_streak5");

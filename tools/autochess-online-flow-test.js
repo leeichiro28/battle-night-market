@@ -173,12 +173,13 @@ function makeClient(pid, name, { search } = {}) {
     TITLE_CATALOG: [],
     getPlayerProfiles: wrap("profiles", async () => ({})),
     awardAutochessTitlesFor: wrap("award", async () => []),
+    listAutochessStats: wrap("stats", async () => []),
     closeAutochessEvent: wrap("close", async () => {
       if (S.ev.status === "closed") return { already: true };
       rowsOf().filter((r) => r.final_rank != null).forEach((r) => { r.reward = (S.ev.reward_plan.items || [])[r.final_rank - 1] || null; }); S.ev.status = "closed"; return { already: false };
     }),
   };
-  for (const f of ["autochess-data.js", "autochess-engine.js", "autochess-bot.js", "autochess-game.js"]) vm.runInContext(fs.readFileSync(path.join(ASSETS, f), "utf8"), ctx, { filename: f });
+  for (const f of ["autochess-data.js", "autochess-engine.js", "autochess-bot.js", "autochess-game.js", "autochess-awards.js", "autochess-sfx.js"]) vm.runInContext(fs.readFileSync(path.join(ASSETS, f), "utf8"), ctx, { filename: f });
   vm.runInContext("Date.now = () => __vnow();", ctx);
   me.root = root; me.html = () => html;
   me.load = () => vm.runInContext(fs.readFileSync(path.join(ASSETS, "autochess.js"), "utf8"), ctx, { filename: "autochess.js" });

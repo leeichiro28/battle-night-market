@@ -656,6 +656,7 @@ function eventAdminCard(ev) {
       ${careerPhaseRow}
       ${careerThemeRow}
       ${isAutochess && ev.locked ? `<div class="ac-adm-box">
+        <div class="action-row" style="margin-bottom:8px;"><a class="btn ghost small" href="autochess-board.html?event=${ev.id}" target="_blank" rel="noopener">${ui.icon("monitor")}開大螢幕總表(投影用)</a></div>
         ${!isClosed ? `<div class="ac-adm-live"><div class="ac-adm-note">載入中...</div></div>` : ""}
         <details class="ac-adm-bal"><summary>${ui.icon("chart-bar")}平衡數據(卡牌 / 流派 / 加碼卡勝率)</summary><div class="ac-adm-bal-body"></div></details>
       </div>` : ""}

@@ -16,16 +16,6 @@
       <p>這裡把每個機制「這是做什麼的、怎麼用」都寫清楚。每場活動實際啟用哪些進階規則，以該場活動對戰畫面裡的「規則說明」按鈕為準。</p>
     </div>
 
-    <div class="card">
-      <h3><i data-lucide="trophy" class="ico"></i> 賽制怎麼玩</h3>
-      <p style="color:var(--ink-dim);line-height:1.9;">
-      依報名人數自動排出「勝部」賽程樹(人數不是 2 的次方時，系統會自動安排輪空 —— 這是正規單淘汰賽制的標準做法，跟真的體育賽事一樣，輪空的人隨機決定，並不是誰比較強)。輸一場原則上就出局。<br/><br/>
-      如果活動有開啟 <b style="color:var(--gold);"><i data-lucide="medal" class="ico"></i> 敗部復活賽</b>(報名人數要達到 6 人以上才會開放):勝部輸一場不會馬上出局，而是掉進「敗部」繼續打;敗部再輸一場才真的淘汰。<br/><br/>
-      勝部打到最後一輪時，如果有開敗部復活賽，會標示「<b style="color:var(--ink);">勝部決賽</b>」而不是「決賽」——因為這還不是整場活動的結束，贏的人要等敗部也打完，再跟敗部冠軍打一場「<b style="color:var(--gold);">總冠軍賽</b>」才是真正的最後一戰。總冠軍賽從活動一開始就會顯示在賽程最下面(先寫「待定」)，不會等敗部打完才突然冒出來。<br/><br/>
-      同一時間整個活動只會有「一場」對戰在進行，其他人請留在等候室，系統會自動幫你排隊叫號、配對到就自動帶你進場，不用手動刷新。勝部跟敗部的場次會盡量交錯進行，不會讓其中一邊整個賽程一次衝完、另一邊卻遠遠落後。
-      </p>
-    </div>
-
     <div class="game-group" data-group="dice">
       <button type="button" class="game-toggle">
         <i data-lucide="dices" class="ico"></i>
@@ -34,6 +24,16 @@
         <i data-lucide="chevron-down" class="ico chev"></i>
       </button>
       <div class="game-body" hidden>
+
+        <div class="game-section">
+          <h4 data-tab-label="賽制"><i data-lucide="trophy" class="ico"></i> 賽制怎麼玩(勝部、敗部復活賽)</h4>
+          <p style="color:var(--ink-dim);line-height:1.9;">
+      依報名人數自動排出「勝部」賽程樹(人數不是 2 的次方時，系統會自動安排輪空 —— 這是正規單淘汰賽制的標準做法，跟真的體育賽事一樣，輪空的人隨機決定，並不是誰比較強)。輸一場原則上就出局。<br/><br/>
+      如果活動有開啟 <b style="color:var(--gold);"><i data-lucide="medal" class="ico"></i> 敗部復活賽</b>(報名人數要達到 6 人以上才會開放):勝部輸一場不會馬上出局，而是掉進「敗部」繼續打;敗部再輸一場才真的淘汰。<br/><br/>
+      勝部打到最後一輪時，如果有開敗部復活賽，會標示「<b style="color:var(--ink);">勝部決賽</b>」而不是「決賽」——因為這還不是整場活動的結束，贏的人要等敗部也打完，再跟敗部冠軍打一場「<b style="color:var(--gold);">總冠軍賽</b>」才是真正的最後一戰。總冠軍賽從活動一開始就會顯示在賽程最下面(先寫「待定」)，不會等敗部打完才突然冒出來。<br/><br/>
+      同一時間整個活動只會有「一場」對戰在進行，其他人請留在等候室，系統會自動幫你排隊叫號、配對到就自動帶你進場，不用手動刷新。勝部跟敗部的場次會盡量交錯進行，不會讓其中一邊整個賽程一次衝完、另一邊卻遠遠落後。
+      </p>
+        </div>
 
         <div class="game-section">
           <h4><i data-lucide="dices" class="ico"></i> 基礎規則</h4>
@@ -752,17 +752,6 @@
       </div>
     </div>
 
-    <div class="card">
-      <h3><i data-lucide="hourglass" class="ico"></i> 沒有進場、掛機了怎麼辦</h3>
-      <p style="color:var(--ink-dim);line-height:1.9;">
-      場次一開打，系統會給雙方時間進場:<br/><br/>
-      <b style="color:var(--ink);">只有一方沒進場</b>:超過 1 分鐘，系統會開始自動幫他出普通招式(不會用防禦骰、加注、大招等技能)，讓對戰可以繼續進行，不會平白判他棄權。他隨時進場都能接手繼續玩。<br/><br/>
-      <b style="color:var(--ink);">雙方都沒進場</b>:超過 3 分鐘，系統會判定其中一方直接晉級，畫面會用明顯的大字公告「雙方掛機，已自動棄權」，幾秒後自動帶所有人(玩家跟觀眾)回到等候室，不會卡在對戰畫面不知道發生什麼事。<br/><br/>
-      這些巡邏機制不需要對戰畫面本身開著才會生效，只要有人開著等候室或後台頁面，就會持續運作，確保整場活動不會被單一場對戰卡死。<br/><br/>
-      <b style="color:var(--ink);">職業養成對決的PVP</b>另外是「先進先配」的持續配對池，30秒沒動作會自動幫你出普通攻擊;如果對手掛網(關掉頁面/分頁睡著)，在場的你會自動替他代打普通攻擊，連續 3 回合他都沒回來就直接判他棄權、你獲勝。拉機器人練習的對戰不計分、不發獎勵。
-      </p>
-    </div>
-
     <div class="game-group" data-group="autochess">
       <button type="button" class="game-toggle">
         <i data-lucide="chess-knight" class="ico"></i>
@@ -773,65 +762,98 @@
       <div class="game-body" hidden>
 
         <div class="game-section">
-          <h4><i data-lucide="play" class="ico"></i> 怎麼玩</h4>
-          <p style="color:var(--ink-dim);line-height:1.9;">
-          夜市自走棋是多人同場的自走棋:每輪先有一段<b style="color:var(--ink);">準備時間</b>(預設 <b style="color:var(--gold);">90</b> 秒),你在攤位商店買卡、放上場、升級;時間到系統自動<b style="color:var(--ink);">封板</b>,全場隨機兩兩配對,雙方陣容自動對打,不用你操作。輸的人扣血,血量歸零就淘汰,最後留下來的(或時間到時血量最多的)名次最高。<br/><br/>
-          想先熟悉的話,首頁「練習」按鈕可以單人打電腦(沒登入也行),練習<b style="color:var(--ink);">不計分、不發獎勵、不給稱號</b>。
-          </p>
+          <h4 data-tab-label="流程"><i data-lucide="play" class="ico"></i> 怎麼玩(一輪的流程)</h4>
+          <div class="rule-table-wrap"><table class="rule-table">
+            <thead><tr><th>階段</th><th>做什麼</th></tr></thead>
+            <tbody>
+              <tr><td><b style="color:var(--ink);">① 準備</b></td><td>買卡、刷新、鎖定商店、升級、調站位(預設 <b style="color:var(--gold);">90</b> 秒,可「完成準備」提前結束)。</td></tr>
+              <tr><td><b style="color:var(--ink);">② 封板配對</b></td><td>時間到系統自動封板,全場隨機兩兩配對;人數是奇數時,落單的人打「幽靈」(某位存活玩家這一輪的陣容複製品,本尊不受影響)。</td></tr>
+              <tr><td><b style="color:var(--ink);">③ 自動對戰</b></td><td>雙方陣容自動對打,不用操作。輸的人扣血,贏的與平手不扣。</td></tr>
+              <tr><td><b style="color:var(--ink);">④ 結算</b></td><td>發銅板(基本收入、贏場、連勝、利息),血量歸零的人淘汰,然後進下一輪。</td></tr>
+            </tbody>
+          </table></div>
+          <p style="color:var(--ink-dim);line-height:1.9;margin:0 0 10px;">想先熟悉的話,首頁「練習」按鈕可以單人打電腦(不用登入),練習<b style="color:var(--ink);">不計分、不發獎勵、不給稱號</b>。準備畫面右上角的 ? 可以重看新手教學,「自動排站位」按鈕可以一鍵排好先鋒 / 壓軸 / 鄰接。</p>
         </div>
 
         <div class="game-section">
-          <h4><i data-lucide="coins" class="ico"></i> 銅板、商店與升級</h4>
-          <p style="color:var(--ink-dim);line-height:1.9;">
-          開場有 <b style="color:var(--gold);">5</b> 銅板。每輪結算:基本收入(R1~4 <b style="color:var(--gold);">4</b>、R5~9 <b style="color:var(--gold);">5</b>、R10~14 <b style="color:var(--gold);">6</b>、R15 起 <b style="color:var(--gold);">7</b>)、贏的話 <b style="color:var(--gold);">+2</b>、連勝加成(2 連勝 +1、3~4 連勝 +2、5 連勝以上 +3)。<br/><br/>
-          <b style="color:var(--ink);">金庫利息</b>:輪末每持有 <b style="color:var(--gold);">10</b> 銅板多 +1,最多 +3(要存到 30 銅板才拿滿),想拿利息就得克制花錢。<br/><br/>
-          商店每次 <b style="color:var(--gold);">5</b> 格,可以鎖定、刷新(刷新要付銅板)。<b style="color:var(--gold);">4</b> 銅板買 <b style="color:var(--gold);">4</b> 點經驗,每輪另送 <b style="color:var(--gold);">2</b> 點;最高 <b style="color:var(--gold);">10</b> 級,等級越高可上陣的卡越多(最多 8 張),待命席有 <b style="color:var(--gold);">6</b> 格。同名卡 3 張自動合成升星(最高 3★),賣掉升星卡會少拿 1 銅板。
-          </p>
+          <h4 data-tab-label="經濟與升級"><i data-lucide="coins" class="ico"></i> 銅板、商店與升級</h4>
+          <div class="rule-table-wrap"><table class="rule-table">
+            <thead><tr><th>項目</th><th>規則</th></tr></thead>
+            <tbody>
+              <tr><td><b style="color:var(--ink);">開場銅板</b></td><td><b style="color:var(--gold);">5</b></td></tr>
+              <tr><td><b style="color:var(--ink);">基本收入</b></td><td>R1~4 <b style="color:var(--gold);">4</b>、R5~9 <b style="color:var(--gold);">5</b>、R10~14 <b style="color:var(--gold);">6</b>、R15 起 <b style="color:var(--gold);">7</b></td></tr>
+              <tr><td><b style="color:var(--ink);">贏場獎勵</b></td><td>贏了 <b style="color:var(--gold);">+2</b>(平手、輸了沒有)</td></tr>
+              <tr><td><b style="color:var(--ink);">連勝加成</b></td><td>2 連勝 +1、3~4 連勝 +2、5 連勝以上 +3(連敗沒有額外懲罰;掛網不發)</td></tr>
+              <tr><td><b style="color:var(--ink);">金庫利息</b></td><td>輪末每持有 <b style="color:var(--gold);">10</b> 銅板多 +1,最多 <b style="color:var(--gold);">+3</b>(存到 30 才拿滿)</td></tr>
+              <tr><td><b style="color:var(--ink);">商店</b></td><td>每次 <b style="color:var(--gold);">5</b> 格(Lv.8 起 6 格);可「鎖定」留到下一輪,「刷新」要付銅板</td></tr>
+              <tr><td><b style="color:var(--ink);">買經驗</b></td><td><b style="color:var(--gold);">4</b> 銅板買 <b style="color:var(--gold);">4</b> 點經驗,每輪另送 <b style="color:var(--gold);">2</b> 點</td></tr>
+              <tr><td><b style="color:var(--ink);">待命席</b></td><td><b style="color:var(--gold);">6</b> 格;同名卡 3 張自動合成升星(最高 3★),賣掉升星卡會少拿 1 銅板</td></tr>
+              <tr><td><b style="color:var(--ink);">銅板上限</b></td><td>羈絆與卡牌效果在戰鬥中額外賺的銅板,每場最多 <b style="color:var(--gold);">5</b></td></tr>
+            </tbody>
+          </table></div>
+          <div id="ac-level-table"></div>
         </div>
 
         <div class="game-section">
-          <h4><i data-lucide="flame" class="ico"></i> 流派與羈絆</h4>
-          <p style="color:var(--ink-dim);line-height:1.9;">
-          目前有 <b style="color:var(--gold);">8</b> 個流派:炭火(灼傷持續傷害)、冰鎮(凍結讓敵人跳過行動)、把式(護盾減傷、前排坦克)、遊戲攤(暴擊與運氣)、藥燉(治療、中毒、復活)、順手(戰鬥中賺銅板、削弱敵人)、卜卦(吃先鋒與壓軸的站位獎勵)、發條(越打越強的慢熱流)。上陣的卡同流派湊到 <b style="color:var(--gold);">2 / 4 / 6</b> 張會啟動羈絆(只算不同名字的卡),數量越多效果越強;<b style="color:var(--ink);">雙流派卡</b>兩邊都算,是混搭的橋樑;<b style="color:var(--ink);">通用卡</b>不佔羈絆,但有補洞、換位、鄰接等效果。<br/><br/>
-          <b style="color:var(--ink);">站位</b>也有影響:第 1 位是<b style="color:var(--ink);">先鋒</b>(最先挨打)、最後一位是<b style="color:var(--ink);">壓軸</b>;有些卡看「前排 / 後排」或「左右鄰接」,少數卡會在開場<b style="color:var(--ink);">換位</b>(換位後才判定先鋒與壓軸)。卡牌合成到 <b style="color:var(--gold);">3★</b> 時,每張卡都會多一個質變效果。<br/><br/>
-          另外,夜市裡藏著<b style="color:var(--ink);">隱藏羈絆</b>:特定幾位攤主同台就會觸發。湊到一半時羈絆列會冒出「？？？」當線索,湊齊才會揭曉名字和效果。
-          </p>
+          <h4 data-tab-label="流派羈絆"><i data-lucide="flame" class="ico"></i> 流派與羈絆</h4>
+          <p style="color:var(--ink-dim);line-height:1.9;margin:0 0 10px;">上陣的卡,同一流派湊到 <b style="color:var(--gold);">2 / 4 / 6</b> 張(只算不同名字的卡)就會啟動羈絆。<b style="color:var(--ink);">雙流派卡</b>兩邊都算,是混搭的橋樑;<b style="color:var(--ink);">通用卡</b>不佔羈絆,但有補洞、換位、鄰接等效果。</p>
+          <div id="ac-bond-table"></div>
+          <p style="color:var(--ink-dim);line-height:1.9;margin:0 0 10px;"><b style="color:var(--ink);">站位</b>也有影響:第 1 位是<b style="color:var(--ink);">先鋒</b>(最先挨打)、最後一位是<b style="color:var(--ink);">壓軸</b>;有些卡看「前排 / 後排」或「左右鄰接」,少數卡會在開場<b style="color:var(--ink);">換位</b>(換位後才判定先鋒與壓軸)。<b style="color:var(--ink);">隱藏羈絆</b>:特定幾位攤主同台就會觸發,湊到一半羈絆列會冒出「？？？」當線索,湊齊才揭曉。</p>
         </div>
 
         <div class="game-section">
-          <h4><i data-lucide="sparkles" class="ico"></i> 攤位加碼</h4>
-          <p style="color:var(--ink-dim);line-height:1.9;">
-          在第 <b style="color:var(--gold);">3 / 6 / 9</b> 輪準備時會跳出攤位加碼:三選一的永久或限時好處(例如免費刷新券、零用金、升級折扣券、加料、免費升星券、連勝保險等,共 13 種)。<b style="color:var(--ink);">封板前沒選,系統會替你隨機選一張</b>,不會卡住流程。
-          </p>
+          <h4 data-tab-label="卡牌"><i data-lucide="layout-grid" class="ico"></i> 卡牌一覽</h4>
+          <p style="color:var(--ink-dim);line-height:1.9;margin:0 0 10px;">共 <b style="color:var(--gold);"><span id='ac-card-count'>53</span></b> 張,每張卡合成到 <b style="color:var(--gold);">3★</b> 都會多一個質變效果。依流派分頁看:</p>
+          <div id="ac-card-tabs" class="rule-tabs"></div>
+          <div id="ac-card-table"></div>
         </div>
 
         <div class="game-section">
-          <h4><i data-lucide="skull" class="ico"></i> 扣血、淘汰與名次</h4>
-          <p style="color:var(--ink-dim);line-height:1.9;">
-          輸的人扣血 = <b style="color:var(--ink);">該輪基本傷害</b>(R1 起 <b style="color:var(--gold);">2</b>、R4 起 <b style="color:var(--gold);">4</b>、R7 起 <b style="color:var(--gold);">6</b>、R10 起 <b style="color:var(--gold);">9</b>,越晚越痛)+ 對手存活單位的星級(最多算 <b style="color:var(--gold);">10</b>);贏的與平手不扣血。每人 <b style="color:var(--gold);">100</b> 血,歸零的人在<b style="color:var(--ink);">當輪結算完</b>才淘汰。<br/><br/>
-          名次:活到最後的在前;同輪淘汰的,血量溢出少的名次較高,再比累積勝場。<b style="color:var(--ink);">人數是奇數時,落單的人打「幽靈」</b>——某位存活玩家這一輪的陣容複製品,打贏照拿銅板,打輸照扣血,被複製的本人不受影響。若活動時間到或主辦人強制結束,依剩餘血量、再比勝場排名。
-          </p>
+          <h4 data-tab-label="攤位加碼"><i data-lucide="sparkles" class="ico"></i> 攤位加碼</h4>
+          <p style="color:var(--ink-dim);line-height:1.9;margin:0 0 10px;">第 <b style="color:var(--gold);">3 / 6 / 9</b> 輪準備時跳出三選一(來自不同類別),<b style="color:var(--ink);">封板前沒選,系統會替你隨機選一張</b>,不會卡住流程。</p>
+          <div id="ac-perk-table"></div>
         </div>
 
         <div class="game-section">
-          <h4><i data-lucide="wifi-off" class="ico"></i> 掛網、斷線與暫停</h4>
-          <p style="color:var(--ink-dim);line-height:1.9;">
-          時間由伺服器統一計算,手機時間不準也沒關係。你的每個操作都會即時存檔,斷線重連或換裝置會接回原本的進度。<b style="color:var(--ink);">連續 3 輪沒有任何操作視為掛網</b>:系統仍會用你最後的陣容照打,但<b style="color:var(--ink);">不發連勝加成</b>。<b style="color:var(--ink);">主辦人可以暫停</b>(暫停的時間不計入倒數),也能在準備階段替全場加時。同一帳號開兩個分頁時,後存檔的會被擋下,避免互相覆蓋。
-          </p>
+          <h4 data-tab-label="扣血與名次"><i data-lucide="skull" class="ico"></i> 扣血、淘汰與名次</h4>
+          <p style="color:var(--ink-dim);line-height:1.9;margin:0 0 10px;">輸的人扣血 = <b style="color:var(--ink);">該輪基本傷害</b> + 對手存活單位的星級(最多算 <b style="color:var(--gold);">10</b>);贏的與平手不扣血。每人 <b style="color:var(--gold);">100</b> 血,歸零的人在<b style="color:var(--ink);">當輪結算完</b>才淘汰。</p>
+          <div id="ac-damage-table"></div>
+          <div class="rule-table-wrap"><table class="rule-table">
+            <thead><tr><th>名次怎麼排</th><th>說明</th></tr></thead>
+            <tbody>
+              <tr><td><b style="color:var(--ink);">活到最後</b></td><td>最後留下來的人第 1 名</td></tr>
+              <tr><td><b style="color:var(--ink);">同一輪淘汰</b></td><td>血量溢出(扣到負數)少的名次較高,再比累積勝場</td></tr>
+              <tr><td><b style="color:var(--ink);">時間到 / 強制結束</b></td><td>依剩餘血量,再比勝場</td></tr>
+              <tr><td><b style="color:var(--ink);">幽靈戰</b></td><td>打贏照拿銅板、打輸照扣血;被複製的本人不受影響</td></tr>
+            </tbody>
+          </table></div>
         </div>
 
         <div class="game-section">
-          <h4><i data-lucide="crown" class="ico"></i> 稱號</h4>
-          <p style="color:var(--ink-dim);line-height:1.9;">
-          夜市自走棋有專屬稱號(共 26 個,只有榮譽,不影響下一場起跑線,<b style="color:var(--ink);">練習模式不發</b>):<br/>
-          <b style="color:var(--ink);">名次與表現</b>:初試攤位、夜市棋王、三屆棋王、差一步打烊、棋桌常客、滴水不漏(冠軍且血量 ≥ 80)、一口氣的距離(冠軍且血量 ≤ 10)、手氣正旺(單場連勝 5)、勢不可擋(連勝 8)、金庫大戶(10 輪以上利息拿滿)、刷新狂人(單輪刷新 10 次以上)、三星攤主(合成出 3★)。<br/>
-          <b style="color:var(--ink);">流派</b>:炭火師傅、冰鎮達人、把式高手、遊戲攤老手、藥燉名醫、順手神偷、卜卦半仙、發條工匠(各自累計 10 場勝利時,該流派羈絆達 4 級以上)。<br/>
-          <b style="color:var(--ink);">搭配</b>:專一老闆(上陣 6 張以上同流派並獲勝)、大雜燴(同時啟動 3 個以上羈絆並獲勝)、首尾呼應(先鋒與壓軸都有站位效果並獲勝)、三星連線(同場上陣 3 張 3★)、八方來財(8 個流派的羈絆都曾達 4 級以上)。另有 1 個隱藏稱號,拿到之前只會顯示「？？？」。<br/>
-          <b style="color:var(--ink);">名次類稱號要實際打過對戰的人數 ≥ 4 人才發</b>。活動結束時自動發放,可在右上角稱號選單裝備,名字旁會顯示。
-          </p>
+          <h4 data-tab-label="稱號"><i data-lucide="crown" class="ico"></i> 稱號</h4>
+          <p style="color:var(--ink-dim);line-height:1.9;margin:0 0 10px;">夜市自走棋專屬稱號,只有榮譽、不影響下一場起跑線,<b style="color:var(--ink);">練習模式不發</b>。活動結束時自動發放,可在右上角稱號選單裝備,名字旁會顯示。<b style="color:var(--ink);">名次類稱號要實際打過對戰的人數 ≥ 4 人才發</b>。</p>
+          <div id="ac-title-table"></div>
         </div>
 
       </div>
+    </div>
+
+    <div class="card">
+      <h3><i data-lucide="hourglass" class="ico"></i> 沒有進場、掛機了怎麼辦</h3>
+      <p style="color:var(--ink-dim);line-height:1.9;">
+      場次一開打，系統會給雙方時間進場:<br/><br/>
+      <b style="color:var(--ink);">只有一方沒進場</b>:超過 1 分鐘，系統會開始自動幫他出普通招式(不會用防禦骰、加注、大招等技能)，讓對戰可以繼續進行，不會平白判他棄權。他隨時進場都能接手繼續玩。<br/><br/>
+      <b style="color:var(--ink);">雙方都沒進場</b>:超過 3 分鐘，系統會判定其中一方直接晉級，畫面會用明顯的大字公告「雙方掛機，已自動棄權」，幾秒後自動帶所有人(玩家跟觀眾)回到等候室，不會卡在對戰畫面不知道發生什麼事。<br/><br/>
+      這些巡邏機制不需要對戰畫面本身開著才會生效，只要有人開著等候室或後台頁面，就會持續運作，確保整場活動不會被單一場對戰卡死。<br/><br/>
+      <b style="color:var(--ink);">夜市自走棋</b>是多人同場、沒有「進場」這件事,規則另外算:<br/>
+      ・<b style="color:var(--ink);">時間全由伺服器統一計算</b>,手機時間不準也沒關係;暫停的時間不計入倒數。主辦人可以暫停 / 繼續,也能在準備階段替全場加時。<br/>
+      ・<b style="color:var(--ink);">斷線、關掉頁面</b>:你的每個操作都會即時存檔,重新打開(或換裝置)會接回原本的進度。一輪一到時間,系統會用你「最後存下來的陣容」自動封板、照常對戰,不會讓全場等你。<br/>
+      ・<b style="color:var(--ink);">連續 3 輪沒有任何操作</b>算掛網:照樣用最後的陣容打(輸了照扣血、血量歸零照淘汰),但<b style="color:var(--ink);">不發連勝加成</b>。回來操作一次就恢復正常。掛網的對局不列入後台的平衡數據。<br/>
+      ・<b style="color:var(--ink);">沒進場就開打</b>:一次都沒操作過的人,陣容是空的,每輪都吃敗仗扣血,直到淘汰。<br/>
+      ・<b style="color:var(--ink);">同一帳號開兩個分頁</b>:後存檔的會被擋下,避免互相覆蓋。<br/>
+      ・<b style="color:var(--ink);">只剩 1 位玩家存活</b>或活動時間到(有設上限時),比賽自動結束;主辦人也可以按「強制結束」,依剩餘血量與勝場排名。<br/><br/>
+      <b style="color:var(--ink);">職業養成對決的PVP</b>另外是「先進先配」的持續配對池，30秒沒動作會自動幫你出普通攻擊;如果對手掛網(關掉頁面/分頁睡著)，在場的你會自動替他代打普通攻擊，連續 3 回合他都沒回來就直接判他棄權、你獲勝。拉機器人練習的對戰不計分、不發獎勵。
+      </p>
     </div>
 
     <div class="footer-nav"><a href="index.html"><i data-lucide="arrow-left" class="ico"></i>回活動列表</a></div>
@@ -849,6 +871,7 @@
   <script src="assets/career-floors.js"></script>
   <script src="assets/career-events.js"></script>
   <script src="assets/career-affixes.js"></script>
+  <script src="assets/autochess-data.js"></script>
   <script src="assets/rules.js"></script>
 </body>
 </html>
