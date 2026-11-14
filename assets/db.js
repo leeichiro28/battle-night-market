@@ -301,6 +301,7 @@ const db = (function () {
     ["ac_all_bonds", "八方來財", "8 個流派的羈絆都曾達到 4 級以上(跨場累計)", "gem"],
     ["ac_hidden_bond", "夜市祕密", "觸發隱藏羈絆並贏下那場戰鬥", "sparkles", true],
     ["ac_comeback", "翻盤王", "拿冠軍,而且整場血量曾掉到 30 以下(≥4 人場)", "trending-up"],
+    ["ac_exorcist", "夜市驅邪人", "累計擊敗怪物輪的怪物 5 次(跨場累計)", "shield-check"],
   );
   AC_TITLES.forEach(([key, name, desc, icon, hidden]) => TITLE_CATALOG.push({ key, name, desc, icon, group: "夜市自走棋稱號", ...(hidden ? { hidden: true } : {}) }));
 
@@ -339,6 +340,7 @@ const db = (function () {
     if (won.some((x) => x.bookend)) out.push("ac_bookend");
     if (hist.some((x) => (x.three || 0) >= 3)) out.push("ac_three_star_trio");
     if (won.some((x) => (x.hidden || []).length)) out.push("ac_hidden_bond");
+    if (hist.filter((x) => x.pve && x.won).length >= 5) out.push("ac_exorcist"); // 怪物輪的 stat:res = draw、pve = true、won = 有沒有打贏怪物
     const tags = Object.keys((window.AutochessData && window.AutochessData.TAGS) || {});
     tags.forEach((t) => { if (won.filter((x) => ((x.bonds || {})[t] || 0) >= 4).length >= 10) out.push("ac_tag_" + t); });
     if (tags.length && tags.every((t) => hist.some((x) => ((x.bonds || {})[t] || 0) >= 4))) out.push("ac_all_bonds");

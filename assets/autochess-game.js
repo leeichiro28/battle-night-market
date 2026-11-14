@@ -18,7 +18,7 @@ window.AutochessGame = (function () {
     const me = Bot.newPlayer("me", { name: "玩家", focus: null, reserve: 0 });
     Object.assign(me, {
       name: opts.name || "你", human: true, shop: [], shopLocked: false, refreshCount: 0, freeFirstUsed: false, roundOpts: {}, undo: null,
-      perks: { freeRefresh: 0, goodRapport: 0, xpCoupon: 0, expandRounds: 0, preorder: null, regular: false, stallPlus: 0, tagAssist: {}, streakGuard: false },
+      perks: { freeRefresh: 0, goodRapport: 0, xpCoupon: 0, expandRounds: 0, preorder: null, regular: false, stallPlus: 0, tagAssist: {}, streakGuard: false, drop: null },
       perkPicks: [], pendingPerk: null, bestStreak: 0, threeStar: 0,
     });
     const bots = BOT_NAMES.slice(0, (opts.players || 8) - 1).map((n, i) => {
@@ -41,11 +41,40 @@ window.AutochessGame = (function () {
     return E.rollShop(`${g.evSeed}|me`, g.round, me.refreshCount, me.level, me.roundOpts);
   }
 
+  // ---------------- 怪物輪 ----------------
+  // 怪物輪掉落:結算時只把卡片 id 記在 perks.drop(連線版結算只收 gold / streak / perks 這幾個欄位),
+  // 下一輪準備階段開始時才真的進待命席(能合成就合成;格子滿了就直接折成銅板)。
+  function giveDrop(me) {
+    const id = me.perks && me.perks.drop;
+    if (!id) return null;
+    me.perks.drop = null;
+    const card = AD.CARD_BY_ID[id]; if (!card) return null;
+    const m = E.mergeCards(me.board, me.bench.concat([{ id, star: 1 }]));
+    if (m.bench.length > AD.BENCH_SLOTS) { me.gold += AD.sellValue(card, 1); return { id, sold: true }; }
+    me.board = m.board; me.bench = m.bench; m.merged.forEach((x) => { if (x.star === 3) me.threeStar = (me.threeStar || 0) + 1; });
+    return { id, sold: false };
+  }
+  // 一個人打怪物:回傳結果(單機與連線版共用)。res 是真實勝負(win / lose / draw);結算一律按「平手」算
+  // (基本收入 + 利息,不扣血、連勝不變、不計勝敗場),贏了另加 MONSTER_WIN_COINS 銅板與一張掉落卡。
+  function monsterFight(round, S, board, key, wantLog) {
+    const r = E.simulate(board.map(copy), AD.monsterBoard(round), `${key}|mon`, { log: !!wantLog, extraA: extraFor(S), extraB: null });
+    const res = r.winner === "a" ? "win" : r.winner === "b" ? "lose" : "draw";
+    const eco = E.settleEconomy({ result: "draw", round, gold: S.gold, streak: S.streak, level: S.level, bonusCoins: r.bonusCoinsA || 0 });
+    let drop = null;
+    if (res === "win") {
+      eco.gold += AD.MONSTER_WIN_COINS; eco.gain += AD.MONSTER_WIN_COINS; eco.monsterCoins = AD.MONSTER_WIN_COINS;
+      const shop = E.rollShop(`drop|${key}`, round, 7, S.level, {}).filter(Boolean);
+      drop = shop.length ? shop[0] : null;
+    }
+    return { r, res, eco, drop };
+  }
+
   // ---------------- 回合開始(準備階段)----------------
   function startRound(g) {
     g.round++; g.phase = "prep"; g.report = null;
     const me = g.me;
     if (g.round > 1) { const r = AD.addXp(me.level, me.xp, AD.PASSIVE_XP); me.level = r.level; me.xp = r.xp; }
+    giveDrop(me); // 上一輪怪物輪的掉落卡
     g.bots.filter((b) => b.alive).forEach((b) => Bot.playPrep(b, g.round, g.evSeed)); // 電腦玩家的被動 XP 在 playPrep 裡面算
     // 本輪商店選項(攤位加碼的持續效果在這裡結算一次)
     const p = me.perks;
@@ -225,6 +254,15 @@ window.AutochessGame = (function () {
     const round = g.round, rng = E.makeRng(`g|${g.evSeed}|${round}`);
     const live = g.players.filter((p) => p.alive);
     const snap = {}; live.forEach((p) => (snap[p.id] = p.board.map(copy)));
+    if (AD.isMonsterRound(round)) { // 怪物輪:每個人各打一次同一隻怪物,不配對、不扣血、不計勝敗與連勝
+      return live.map((p) => {
+        const f = monsterFight(round, p, snap[p.id], `${g.evSeed}|${round}|${p.id}`, !!mineLog && !!p.human);
+        const mon = AD.MONSTERS[round], o = { p, foe: { name: mon.name }, monster: true, ghost: false, side: "a", r: f.r, res: f.res, dmg: 0, coins: f.r.bonusCoinsA, board: snap[p.id], foeBoard: AD.monsterBoard(round), eco: f.eco, hpBefore: p.hp, goldBefore: p.gold, drop: f.drop, pve: true };
+        p.gold = f.eco.gold; // 連勝、血量、勝敗場都不動
+        if (f.drop) { if (p.human) p.perks.drop = f.drop; else p.gold += AD.CARD_BY_ID[f.drop].cost; } // 電腦玩家沒有待命席掉落,折成銅板
+        return o;
+      });
+    }
     const order = rng.shuffle(live), pairs = [];
     for (let i = 0; i + 1 < order.length; i += 2) pairs.push([order[i], order[i + 1], false]);
     if (order.length % 2) { const lone = order[order.length - 1]; pairs.push([lone, rng.pick(live.filter((x) => x !== lone)), true]); }
@@ -308,7 +346,7 @@ window.AutochessGame = (function () {
   //   存檔序列化 / 還原 / 補跑錯過的輪次 / 用「雙方封板快照 + 種子」算出決定性的戰鬥與結算(誰算都一樣)。
   const STATE_KEYS = ["gold", "level", "xp", "streak", "board", "bench", "shop", "shopLocked", "refreshCount", "freeFirstUsed", "roundOpts", "perks", "perkPicks", "pendingPerk", "bestStreak", "threeStar"];
   const clone = (x) => JSON.parse(JSON.stringify(x));
-  const newPerks = () => ({ freeRefresh: 0, goodRapport: 0, xpCoupon: 0, expandRounds: 0, preorder: null, regular: false, stallPlus: 0, tagAssist: {}, streakGuard: false });
+  const newPerks = () => ({ freeRefresh: 0, goodRapport: 0, xpCoupon: 0, expandRounds: 0, preorder: null, regular: false, stallPlus: 0, tagAssist: {}, streakGuard: false, drop: null });
 
   // 統計用(稱號):陣容裡同一流派的卡張數(同名重複也算,最多的那個流派);首尾是否各有先鋒/壓軸效果
   function monoCount(board) {
@@ -362,6 +400,7 @@ window.AutochessGame = (function () {
   // 一場對戰:snapA / snapB 是資料庫的封板快照({player_id, hp, afk, state}),ghost = B 是幽靈(只有 A 有結算)。
   // 回傳 { r(模擬結果,含演出事件), outcomes:[{player_id,res,dmg,eco,insured,hpBefore,goldBefore,afk,side,patch,stat}] }
   function battleOnline(round, snapA, snapB, ghost, seed, wantLog) {
+    if (AD.isMonsterRound(round)) return battleMonsterOnline(round, snapA, snapB, ghost, seed, wantLog);
     const A = normState(snapA.state), B = normState(snapB.state);
     const r = E.simulate(A.board.map(copy), B.board.map(copy), seed, { log: !!wantLog, extraA: extraFor(A), extraB: ghost ? null : extraFor(B) });
     const mk = (S, snap, side) => {
@@ -386,6 +425,25 @@ window.AutochessGame = (function () {
     return { r, outcomes };
   }
 
+  // 怪物輪的連線版對戰:配對照舊(資料庫不用改),但雙方各自打怪物,互相沒有關係。
+  // 送給資料庫的結算一律是 res = draw、dmg = 0(不扣血、不計勝敗、連勝不變);真實勝負放在 pve 欄位,畫面與稱號才看得到。
+  // rBy = { player_id: 該玩家打怪物的模擬結果 },畫面演出用(每個人自己都是 A 方)。
+  function battleMonsterOnline(round, snapA, snapB, ghost, seed, wantLog) {
+    const rBy = {}, outcomes = [];
+    [snapA].concat(ghost ? [] : [snapB]).forEach((snap) => {
+      const S = normState(snap.state), f = monsterFight(round, S, S.board, `${seed}|${snap.player_id}`, wantLog);
+      rBy[snap.player_id] = f.r;
+      const perks = clone(S.perks); if (f.drop) perks.drop = f.drop;
+      outcomes.push({
+        player_id: snap.player_id, res: "draw", dmg: 0, eco: f.eco, insured: false, side: "a", afk: !!snap.afk, hpBefore: snap.hp, goldBefore: S.gold,
+        patch: { gold: f.eco.gold, streak: S.streak, bestStreak: S.bestStreak || 0, perks },
+        pve: { won: f.res === "win", res: f.res, drop: f.drop },
+        stat: { round, res: "draw", dmg: 0, pve: true, won: f.res === "win", level: S.level, gold: S.gold, refresh: S.refreshCount || 0, afk: !!snap.afk, cards: S.board.map((c) => c.id + "★" + c.star), bonds: clone(f.r.bondsA), picks: S.perkPicks.slice() },
+      });
+    });
+    return { r: rBy[snapA.player_id], rBy, monster: true, outcomes };
+  }
+
   // ---- 連線版:測試機器人 / 補位機器人的準備階段 ----
   // 機器人沒有人在操作,所以由在線的客戶端「代打」:把它存在資料庫的 state 讀出來,用單機版同一套電腦 AI(autochess-bot.js)
   // 買卡、升級、排陣,再存回去。全部由 botId + 種子決定,誰代打結果都一樣(多個客戶端同時代打,只有第一個存得進去,其餘被版本鎖擋掉)。
@@ -399,6 +457,11 @@ window.AutochessGame = (function () {
     const st = normState(state);
     const done = st.stateRound || 0;
     if (done >= round) return null;
+    if (st.perks && st.perks.drop) { // 怪物輪的掉落:電腦玩家直接放進待命席(買卡時會自己合成);放不下就折成銅板
+      const id = st.perks.drop, m = E.mergeCards(st.board, st.bench.concat([{ id, star: 1 }]));
+      st.perks.drop = null;
+      if (m.bench.length <= AD.BENCH_SLOTS) { st.board = m.board; st.bench = m.bench; } else if (AD.CARD_BY_ID[id]) st.gold += AD.CARD_BY_ID[id].cost;
+    }
     const p = Bot.newPlayer(botId, botStrategy(botId));
     Object.assign(p, { gold: st.gold, level: st.level, xp: st.xp, streak: st.streak, board: st.board.map(copy), bench: st.bench.map(copy), hp: hp == null ? AD.START_HP : hp });
     for (let r = done + 1; r <= round; r++) Bot.playPrep(p, r, evSeed); // 被動經驗在 playPrep 裡面算;漏掉的輪次補跑
@@ -413,5 +476,5 @@ window.AutochessGame = (function () {
     return st;
   }
 
-  return { createOnline, botPrepOnline, botStrategy, serialize, restore, catchUp, normState, battleOnline, sealPrep, create, startRound, buy, undo, sell, move, buyXp, autoArrange, refresh, refreshCost, toggleLock, pickPerk, targetsFor, seal, nextRound, bondsPreview, slotsOf, capacityOf, prepSeconds, stats, ranking, extraFor };
+  return { monsterFight, giveDrop, createOnline, botPrepOnline, botStrategy, serialize, restore, catchUp, normState, battleOnline, sealPrep, create, startRound, buy, undo, sell, move, buyXp, autoArrange, refresh, refreshCost, toggleLock, pickPerk, targetsFor, seal, nextRound, bondsPreview, slotsOf, capacityOf, prepSeconds, stats, ranking, extraFor };
 })();

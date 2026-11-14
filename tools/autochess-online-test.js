@@ -138,5 +138,41 @@ t("一整場模擬:6 人場跑到只剩 1 人,名次不重複(模擬伺服器 se
   eq(new Set(rk).size, 6); ok(ids.filter((i) => P[i].alive).length <= 1);
 });
 
+console.log("== 怪物輪(連線版)==");
+const strongS = G.normState({ board: [{ id: "squid_boss", star: 3 }, { id: "snow_queen", star: 3 }, { id: "iron_cloth_grandmaster", star: 3 }], gold: 17, streak: 4, bestStreak: 4 });
+const weakS = G.normState({ board: [{ id: "passerby", star: 1 }], gold: 9, streak: 2 });
+t("怪物輪結算:一律 res = draw / dmg = 0、連勝不變;真實勝負在 pve 欄位;每人各打各的", () => {
+  const x = G.battleOnline(5, snap("a", strongS), snap("b", weakS), false, "mseed", true);
+  ok(x.monster); eq(x.outcomes.length, 2); eq(x.outcomes.map((o) => [o.res, o.dmg]), [["draw", 0], ["draw", 0]]);
+  eq([x.outcomes[0].patch.streak, x.outcomes[1].patch.streak], [4, 2]);
+  eq([x.outcomes[0].pve.won, x.outcomes[1].pve.won], [true, false], "強陣容贏、一隻路人輸");
+  ok(x.rBy.a && x.rBy.b && x.rBy.a !== x.rBy.b);
+});
+t("怪物輪:贏了 +3 銅板並把掉落卡 id 記在 patch.perks.drop;輸了沒有", () => {
+  const x = G.battleOnline(10, snap("a", strongS), snap("b", weakS), false, "mseed2", false), [w, l] = x.outcomes;
+  eq(w.eco.monsterCoins, AD.MONSTER_WIN_COINS); ok(w.patch.perks.drop && AD.CARD_BY_ID[w.patch.perks.drop]); eq(w.pve.drop, w.patch.perks.drop);
+  ok(l.patch.perks.drop == null && !l.eco.monsterCoins);
+  eq(w.patch.gold, w.eco.gold); ok(w.patch.gold >= strongS.gold + w.eco.base + AD.MONSTER_WIN_COINS);
+});
+t("怪物輪:決定性(同快照 + 種子結果一樣),幽靈配對(只有 A)只有 1 筆結算", () => {
+  const x = G.battleOnline(15, snap("a", strongS), snap("b", weakS), false, "m3", false), y = G.battleOnline(15, snap("a", J(strongS)), snap("b", J(weakS)), false, "m3", true);
+  eq(x.outcomes, y.outcomes); const gh = G.battleOnline(5, snap("a", strongS), snap("b", weakS), true, "m4", false); eq(gh.outcomes.length, 1); eq(gh.outcomes[0].player_id, "a");
+});
+t("結算只含資料庫白名單欄位(gold / streak / bestStreak / perks),整包能轉成 JSON", () => {
+  const o = G.battleOnline(5, snap("a", strongS), snap("b", weakS), false, "m5", false).outcomes[0];
+  eq(Object.keys(o.patch).sort(), ["bestStreak", "gold", "perks", "streak"]); ok(JSON.stringify(G.battleOnline(5, snap("a", strongS), snap("b", weakS), false, "m5", false).outcomes).length > 10);
+});
+t("掉落卡在「下一輪準備階段」進待命席(catchUp → startRound 會處理 perks.drop)", () => {
+  const g = mkG(); G.catchUp(g, 5); g.me.perks.drop = "chili_lady"; const n0 = g.me.board.length + g.me.bench.length; G.startRound(g);
+  eq(g.me.perks.drop, null); ok(g.me.board.concat(g.me.bench).some((c) => c.id === "chili_lady") || g.me.board.length + g.me.bench.length >= n0, "掉落沒有進手上");
+});
+t("電腦玩家(補位機器人)的掉落:botPrepOnline 會收進去", () => {
+  const st = G.normState({ board: [{ id: "passerby", star: 1 }], gold: 0, stateRound: 5, perks: { drop: "chili_lady" } });
+  const n = G.botPrepOnline(st, 6, "bot-q", "evQ", 100); eq(n.perks.drop, null); ok(n.board.concat(n.bench).some((c) => c.id === "chili_lady"), "沒有收進掉落卡");
+});
+t("R4 / R6 照舊(res 有 win / lose、會扣血)", () => {
+  const x = G.battleOnline(6, snap("a", strongS), snap("b", weakS), false, "n1", false); ok(!x.monster); eq(x.outcomes.map((o) => o.res), ["win", "lose"]); ok(x.outcomes[1].dmg > 0);
+});
+
 console.log(`\n${fail ? "✗" : "✓"} ${pass} 通過 / ${fail} 失敗`);
 process.exit(fail ? 1 : 0);

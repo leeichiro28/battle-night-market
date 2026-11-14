@@ -162,5 +162,16 @@ t("隨機陣容 3000 場不丟例外、一定有結果", () => {
   for (let i = 0; i < 3000; i++) { const r = E.simulate(mk(), mk(), "f" + i); ok(["a", "b", "draw"].includes(r.winner), "沒有結果"); ok(r.rounds <= AD.BATTLE.maxRounds); }
 });
 
+t("怪物輪:R5 / R10 / R15,每隻怪物的陣容都是存在的卡、不超過上陣格數、有台詞", () => {
+  eq(AD.MONSTER_ROUNDS, [5, 10, 15]);
+  AD.MONSTER_ROUNDS.forEach((r) => {
+    const mon = AD.MONSTERS[r]; ok(mon && mon.name && mon.title && mon.intro && mon.win && mon.lose, "R" + r + " 缺資料");
+    const b = AD.monsterBoard(r); ok(b.length >= 4 && b.length <= 8, "R" + r + " 張數 " + b.length);
+    b.forEach((c) => ok(AD.CARD_BY_ID[c.id] && c.star >= 1 && c.star <= 3, "R" + r + " 壞卡 " + c.id));
+  });
+  ok(AD.isMonsterRound(5) && AD.isMonsterRound(10) && AD.isMonsterRound(15) && !AD.isMonsterRound(6) && !AD.isMonsterRound(1));
+  const a = AD.monsterBoard(5); a[0].star = 3; eq(AD.monsterBoard(5)[0].star, 1, "monsterBoard 要回傳副本");
+});
+
 console.log(`\n${pass} 通過,${fail} 失敗`);
 process.exit(fail ? 1 : 0);

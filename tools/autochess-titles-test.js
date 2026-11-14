@@ -48,7 +48,7 @@ const stat = (o) => Object.assign({ res: "win", afk: false, gold: 0, refresh: 0 
 
 (async () => {
   const cat = db.TITLE_CATALOG.filter((t) => t.group === "夜市自走棋稱號"), keys = cat.map((t) => t.key);
-  ok(cat.length === 27, "自走棋稱號共 27 個(階段 3:12、階段 4:14、階段 5:1),得到 " + cat.length);
+  ok(cat.length === 28, "自走棋稱號共 28 個(階段 3:12、階段 4:14、階段 5:1、怪物輪:1),得到 " + cat.length);
   ok(cat.filter((t) => t.hidden).length === 1 && cat.find((t) => t.key === "ac_hidden_bond").hidden, "只有隱藏羈絆稱號是隱藏稱號");
   ok(new Set(db.TITLE_CATALOG.map((t) => t.key)).size === db.TITLE_CATALOG.length, "全部稱號 key 不重複");
   ok(keys.every((k) => /^ac_/.test(k)), "自走棋稱號 key 都是 ac_ 前綴");
@@ -121,6 +121,9 @@ const stat = (o) => Object.assign({ res: "win", afk: false, gold: 0, refresh: 0 
   ok(H([W({ bookend: true })]).includes("ac_bookend") && !H([stat({ res: "lose", bookend: true })]).includes("ac_bookend"), "首尾呼應:要贏");
   ok(H([stat({ res: "lose", three: 3 })]).includes("ac_three_star_trio") && !H([stat({ three: 2 })]).includes("ac_three_star_trio"), "三星連線:3 張 3★(輸也算)");
   ok(H([W({ hidden: ["bosses_meetup"] })]).includes("ac_hidden_bond") && !H([W({ hidden: [] })]).includes("ac_hidden_bond"), "夜市祕密:隱藏羈絆且贏");
+  const M = (won) => stat({ res: "draw", pve: true, won });
+  ok(H(Array.from({ length: 5 }, () => M(true))).includes("ac_exorcist") && !H(Array.from({ length: 4 }, () => M(true))).includes("ac_exorcist") && !H(Array.from({ length: 9 }, () => M(false))).includes("ac_exorcist"), "夜市驅邪人:累計擊敗怪物 5 次(打輸的不算)");
+  ok(!H([M(true)]).includes("ac_mono") && !H([M(true)]).includes("ac_hodgepodge"), "怪物輪的 res 是 draw,不會誤觸「贏下那場戰鬥」的稱號");
   const tenWins = (tag, tier) => Array.from({ length: 10 }, () => W({ bonds: { [tag]: tier } }));
   ok(H(tenWins("potion", 4)).includes("ac_tag_potion") && !H(tenWins("potion", 2)).includes("ac_tag_potion") && !H(tenWins("potion", 4).slice(1)).includes("ac_tag_potion"), "藥燉名醫:累計 10 場贏且 4 級以上");
   ok(!H(tenWins("potion", 4)).includes("ac_tag_clock"), "流派稱號只看該流派");

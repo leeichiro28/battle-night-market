@@ -492,6 +492,23 @@ window.AutochessData = (function () {
     if (round != null && round < INTEREST.startRound) return 0;
     return Math.min(INTEREST.max, Math.floor(Math.max(0, gold) / INTEREST.per));
   }
+  // ---------------- 怪物輪(PVE 輪)----------------
+  // R5 / R10 / R15:全場不打玩家,改打同一個夜市怪物(陣容固定,全場公平)。不扣血、不計連勝、不中斷連勝;
+  // 贏了 +3 銅板並掉落一張卡(下一輪準備階段進待命席)。輸了只拿基本收入與利息。
+  // 強度用 tools/autochess-sim.js 的電腦玩家校準:R5 / R10 / R15 勝率約 69% / 65% / 69%(目標「正常成長的玩家約 70% 打得贏」)。
+  const MONSTER_ROUNDS = [5, 10, 15];
+  const MONSTER_WIN_COINS = 3;
+  const MONSTERS = {
+    5: { name: "野貓幫", title: "夜市野貓幫", intro: "一群覓食的野貓擋住了通道:「喵——這攤的魚是我們的!」", win: "野貓們叼著戰利品一溜煙跑了。", lose: "野貓幫大搖大擺地走過你的攤位。",
+         board: [{ id: "stall_cat", star: 1 }, { id: "night_patrol", star: 1 }, { id: "street_strongman", star: 1 }, { id: "iron_head_master", star: 1 }, { id: "dart_uncle", star: 1 }] },
+    10: { name: "阿旺", title: "相片攤老闆·阿旺", intro: "阿旺舉起三腳架:「想過關?先讓我替你拍張定裝照!」", win: "阿旺放下相機大笑:「這張拍得好,送你一個紀念品!」", lose: "阿旺對著你按下快門:「很好,苦瓜臉也是一種風格。」",
+          board: [{ id: "awang", star: 1 }, { id: "chili_lady", star: 1 }, { id: "claw_machine_boss", star: 1 }, { id: "dojo_master", star: 1 }, { id: "arm_wrestle_champ", star: 1 }, { id: "wooden_dummy_man", star: 2 }] },
+    15: { name: "夜市之王", title: "傳說夜市之王", intro: "人聲忽然安靜下來,夜市之王緩緩起身:「年輕人,讓我看看你的攤位。」", win: "夜市之王點點頭:「今晚的夜市,有你的位置。」", lose: "夜市之王搖頭:「再回去多磨練幾個夜晚。」",
+          board: [{ id: "awang", star: 1 }, { id: "dojo_master", star: 1 }, { id: "iron_palm_boss", star: 1 }, { id: "snow_queen", star: 1 }, { id: "market_tycoon", star: 1 }, { id: "herbal_pharmacist", star: 1 }] },
+  };
+  const isMonsterRound = (round) => MONSTER_ROUNDS.indexOf(round) >= 0;
+  const monsterBoard = (round) => (MONSTERS[round] ? MONSTERS[round].board.map((c) => ({ id: c.id, star: c.star })) : []);
+
   function slotsFor(level) { return SLOTS_BY_LEVEL[Math.min(MAX_LEVEL, Math.max(1, level))]; }
   function shopSlotsFor(level) { return level >= LEVEL_PERKS.shopSlots6 ? SHOP_SLOTS + 1 : SHOP_SLOTS; }
   // 賣出退費:1★ 全額;2★ = 3 張費用 -1;3★ = 9 張費用 -1(升星花的錢只少退 1 銅板)
@@ -512,5 +529,6 @@ window.AutochessData = (function () {
     START_HP, START_GOLD, BENCH_SLOTS, SHOP_SLOTS, WIN_BONUS, ROUND_BASE_DAMAGE, SURVIVOR_STAR_CAP, INTEREST, SELL_PENALTY,
     XP_TO_LEVEL, PASSIVE_XP, BUY_XP, MAX_LEVEL, SLOTS_BY_LEVEL, LEVEL_PERKS, SHOP_ODDS, PERK_ROUNDS, PERK_CATS, PERKS, PERK_BY_ID,
     PREP_SECONDS, prepSeconds, roundBaseDamage, baseIncome, streakBonus, interestOf, slotsFor, shopSlotsFor, sellValue, addXp,
+    MONSTER_ROUNDS, MONSTER_WIN_COINS, MONSTERS, isMonsterRound, monsterBoard,
   };
 })();

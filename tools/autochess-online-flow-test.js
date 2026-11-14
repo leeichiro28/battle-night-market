@@ -286,6 +286,11 @@ async function scenarioC() {
   t("C:每一輪、每隻還活著的機器人,封板時都有上陣卡牌", () => {
     S.rounds.forEach((m) => [["board1", m.p1], ["board2", m.p2]].forEach(([k, pid]) => { if (pid && pid.startsWith("bot")) ok(((m[k].state || {}).board || []).length >= 1, `R${m.round} ${pid} 空陣容`); }));
   });
+  t("C:怪物輪(R5 / R10 / R15)全場都打怪物:結算是 draw / 不扣血,真實勝負在 pve;其餘輪照舊會扣血", () => {
+    const mon = S.rounds.filter((m) => [5, 10, 15].includes(m.round)); ok(mon.length > 0 && Math.max(...S.rounds.map((m) => m.round)) >= 5, "這場沒打到 R5");
+    mon.forEach((m) => { const oc = (m.result && m.result.outcomes) || []; ok(oc.length >= 1, `R${m.round} 沒結算`); oc.forEach((o) => { eq([o.res, o.dmg], ["draw", 0], `R${m.round} 結算`); ok(o.pve && typeof o.pve.won === "boolean", `R${m.round} 沒有 pve`); }); });
+    const norm = S.rounds.filter((m) => ![5, 10, 15].includes(m.round)); ok(norm.some((m) => ((m.result && m.result.outcomes) || []).some((o) => o.res !== "draw")), "一般輪應該有分勝負");
+  });
   t("C:機器人每輪的 stateRound 都有跟上(沒有停在第 1 輪)", () => { const live = ["bot1", "bot2"].filter((id) => S.players[id].alive); live.forEach((id) => ok(S.players[id].state.stateRound >= lastRound - 1, `${id} stateRound=${S.players[id].state.stateRound}、最後一輪 ${lastRound}`)); });
   t("C:機器人有打出勝負(不是一開打就被秒殺 / 平手)", () => { const wl = ["bot1", "bot2"].reduce((a, id) => a + S.players[id].wins + S.players[id].losses, 0); ok(wl >= 2, "機器人勝敗總數 " + wl); });
   t("C:所有場次結算、沒有不一致、前端沒有例外", () => { ok(S.rounds.every((m) => m.resolved)); eq(S.log.filter((l) => l.kind === "mismatch"), []); eq(errors.slice(0, 3), []); eq(warns.filter((w) => /TypeError|ReferenceError|RangeError/.test(w)).slice(0, 3), []); });

@@ -254,6 +254,22 @@
     return out.join("");
   }
 
+  // ---- 怪物輪(R5 / R10 / R15):全場打同一隻怪物,不扣血、不計連勝 ----
+  function monsterBannerHtml(round) {
+    if (!AD.isMonsterRound(round)) return "";
+    const mon = AD.MONSTERS[round], names = AD.monsterBoard(round).map((c) => AD.CARD_BY_ID[c.id].name + (c.star > 1 ? "★" + c.star : ""));
+    return `<div class="card ac-monster"><div class="ac-sec">${ic("skull")}怪物輪 · ${esc(mon.title)}</div>
+      <div class="ac-dim">${esc(mon.intro)}</div>
+      <div class="ac-dim">這一輪<b>全場都打同一隻怪物</b>,不扣血、不計勝敗、連勝不變。打贏 +${AD.MONSTER_WIN_COINS} 銅板,並掉落一張卡(下一輪進待命席);輸了只拿基本收入與利息。</div>
+      <div class="ac-dim">怪物陣容:${esc(names.join("、"))}</div></div>`;
+  }
+  // 結算畫面的怪物輪區塊(單機 o.pve = true;連線版 o.pve = { won, res, drop })
+  function pveNotes(round, won, drop) {
+    const mon = AD.MONSTERS[round], out = [];
+    out.push(esc(won ? mon.win : mon.lose));
+    if (won && drop && AD.CARD_BY_ID[drop]) out.push(`掉落「${esc(AD.CARD_BY_ID[drop].name)}」,下一輪準備階段進你的待命席`);
+    return out;
+  }
   function renderPrep() {
     hideTip();
     if (sfxRound !== g.round) { sfxRound = g.round; sfx("bell"); }
@@ -297,7 +313,8 @@
       ${me.perkPicks.length ? `<div class="tag-row ac-perks">${perkChips(me)}</div>` : ""}
       <div class="card ac-board-card">
         <div class="ac-bondrow">${bondRow(me.board, G.extraFor(me))}</div>
-        <div class="ac-sec">${ic("swords")}上陣 <em>${me.board.length}/${slots}</em><span class="ac-hint">第 1 位先鋒・最後一位壓軸</span><button class="btn ghost ac-mini-btn" data-act="autoarrange" title="依先鋒/壓軸/鄰接效果自動排">${ic("wand-sparkles")}自動排站位</button></div>
+        ${monsterBannerHtml(g.round)}
+      <div class="ac-sec">${ic("swords")}上陣 <em>${me.board.length}/${slots}</em><span class="ac-hint">第 1 位先鋒・最後一位壓軸</span><button class="btn ghost ac-mini-btn" data-act="autoarrange" title="依先鋒/壓軸/鄰接效果自動排">${ic("wand-sparkles")}自動排站位</button></div>
         <div class="ac-grid" style="--cols:${slots}">${boardCells.join("")}</div>
         <div class="ac-sec">${ic("archive")}待命席 <em>${me.bench.length}/${AD.BENCH_SLOTS}</em></div>
         <div class="ac-grid" style="--cols:${AD.BENCH_SLOTS}">${benchCells.join("")}</div>
@@ -396,7 +413,7 @@
     { icon: "swords", title: "2. 站位很重要", body: "場上從左到右排成一排:第 1 位是「先鋒」,最先挨打;最後一位是「壓軸」。很多卡的效果看站位,例如「先鋒:獲得護盾」「鄰接:替左右友軍加攻擊」。不想自己想,按「自動排站位」。" },
     { icon: "flame", title: "3. 流派羈絆與升星", body: "同一個流派的卡湊到 2 / 4 / 6 張(要不同名字)會啟動羈絆,整隊變強。三張同名同星會自動合成更高星,3★ 還會多一個質變效果。有些特定幾張卡湊在一起,會觸發隱藏羈絆……" },
     { icon: "piggy-bank", title: "4. 銅板與升級", body: "每輪結算有基本收入;贏了多拿、連勝再加。手上存的銅板每 10 個多 +1 利息(最多 +3)。買經驗可以升級,等級越高能上陣的卡越多、商店出好卡的機率也越高。" },
-    { icon: "heart", title: "5. 對戰與淘汰", body: "時間到(或按「完成準備」)就會封板,雙方陣容自動對打,不用操作。輸了扣血,血量歸零就淘汰,最後留下的是棋王。第 3、6、9 輪有「攤位加碼」三選一,沒選會替你隨機選。" },
+    { icon: "heart", title: "5. 對戰與淘汰", body: "時間到(或按「完成準備」)就會封板,雙方陣容自動對打,不用操作。輸了扣血,血量歸零就淘汰,最後留下的是棋王。第 3、6、9 輪有「攤位加碼」三選一,沒選會替你隨機選。第 5、10、15 輪是「怪物輪」:全場一起打同一隻怪物,不扣血、不影響連勝,打贏還有銅板和掉落卡。" },
   ];
   function openTutorial(i) {
     const st = TUTORIAL[i];
@@ -569,10 +586,11 @@
   // ---------------- 結算卡 ----------------
   function renderResult() {
     const rep = g.report, m = rep.mine, me = g.me, e = m.eco;
-    const res = m.res, title = res === "win" ? "勝利" : res === "lose" ? "落敗" : "平手";
+    const res = m.res, title = (m.pve ? "怪物輪 " : "") + (res === "win" ? "勝利" : res === "lose" ? "落敗" : "平手");
     const tone = res === "win" ? "good" : res === "lose" ? "bad" : "info";
     const rows = [];
     rows.push(["基本收入", `+${e.base}`]);
+    if (e.monsterCoins) rows.push(["擊敗怪物獎勵", `+${e.monsterCoins}`]);
     if (e.win) rows.push(["勝利獎金", `+${e.win}`]);
     if (e.streakBonus) rows.push([`連勝 ${e.streak} 場加成`, `+${e.streakBonus}`]);
     if (e.interest) rows.push(["金庫利息", `+${e.interest}`]);
@@ -582,10 +600,11 @@
     if (m.insured) notes.push("連勝保險生效,連勝沒有中斷");
     if (rep.autoPicked) notes.push(`時間到,系統替你選了加碼「${rep.autoPicked.name}」`);
     if (rep.filled) notes.push(`系統把待命席的 ${rep.filled} 張卡補上場`);
+    if (m.pve) pveNotes(rep.round, res === "win", m.drop).forEach((n) => notes.unshift(n));
     root.innerHTML = `
       <div class="card ac-result ${tone}">
         <div class="ac-rtitle">${ic(res === "win" ? "trophy" : res === "lose" ? "swords" : "equal")}<b>R${rep.round} ${title}</b></div>
-        ${res === "lose" ? `<div class="ac-rline bad">${ic("heart-crack")}扣血 -${m.dmg}(血量 ${m.hpBefore} → ${me.hp})</div>` : `<div class="ac-rline">${ic("heart")}血量 ${me.hp}</div>`}
+        ${m.pve ? `<div class="ac-rline">${ic("heart")}血量 ${me.hp}(怪物輪不扣血)</div>` : res === "lose" ? `<div class="ac-rline bad">${ic("heart-crack")}扣血 -${m.dmg}(血量 ${m.hpBefore} → ${me.hp})</div>` : `<div class="ac-rline">${ic("heart")}血量 ${me.hp}</div>`}
         <table class="ac-eco">${rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("")}<tr class="sum"><td>本輪獲得</td><td>+${e.gain} 銅板</td></tr></table>
         <div class="ac-rline">${ic("coins")}銅板 ${m.goldBefore} → <b>${me.gold}</b> ${ic("flame")}連勝 <b>${me.streak}</b></div>
         ${m.eliminated ? `<div class="ac-rline bad">${ic("skull")}你被淘汰了</div>` : ""}
@@ -966,7 +985,9 @@
     if (meP1) db.autochessSettleRound(OL.eventId, R, m.k, OL.playerId, res.outcomes).catch((e) => console.warn("結算送出失敗,稍後由補送處理", e));
     if (!OL.standings.length) await olLoadStandings();
     const foeId = ghost ? m.ghost_of : meP1 ? m.p2 : m.p1;
-    const rep = { round: R, mine: { side: mine.side, r: res.r, res: mine.res, ghost, foe: { name: OL.names[foeId] || "對手", badge: ghost ? "" : olBadge(foeId) } } };
+    const rep = res.monster
+      ? { round: R, mine: { side: "a", r: res.rBy[OL.playerId], res: mine.pve.res, ghost: false, foe: { name: AD.MONSTERS[R].title, badge: "" } } } // 怪物輪:每個人自己都是 A 方
+      : { round: R, mine: { side: mine.side, r: res.r, res: mine.res, ghost, foe: { name: OL.names[foeId] || "對手", badge: ghost ? "" : olBadge(foeId) } } };
     OL.lastRep = rep;
     if (clk.phase === "battle") { view = "battle"; playBattle(rep, !!(OL.sealInfo && OL.sealInfo), clk.left * 1000 + 2000); }
     else { view = "result"; render(); }
@@ -989,14 +1010,16 @@
   }
   function renderResultOnline() {
     const o = OL.outcome; if (!o) return;
-    const e = o.eco, res = o.res, title = res === "win" ? "勝利" : res === "lose" ? "落敗" : "平手", tone = res === "win" ? "good" : res === "lose" ? "bad" : "info";
+    const e = o.eco, res = o.pve ? o.pve.res : o.res, title = (o.pve ? "怪物輪 " : "") + (res === "win" ? "勝利" : res === "lose" ? "落敗" : "平手"), tone = res === "win" ? "good" : res === "lose" ? "bad" : "info";
     const hpAfter = o.hpBefore - o.dmg;
     const rows = [["基本收入", `+${e.base}`]];
+    if (e.monsterCoins) rows.push(["擊敗怪物獎勵", `+${e.monsterCoins}`]);
     if (e.win) rows.push(["勝利獎金", `+${e.win}`]);
     if (e.streakBonus) rows.push([`連勝 ${e.streak} 場加成`, `+${e.streakBonus}`]);
     if (e.interest) rows.push(["金庫利息", `+${e.interest}`]);
     if (e.bonusCoins) rows.push(["暴擊 / 加碼獎勵", `+${e.bonusCoins}`]);
     const notes = [];
+    if (o.pve) pveNotes(o.round, o.pve.won, o.pve.drop).forEach((n) => notes.push(n));
     if (o.insured) notes.push("連勝保險生效,連勝沒有中斷");
     if (o.afk) notes.push("你已連續 3 輪沒有操作,這輪不發連勝加成");
     if (OL.sealInfo && OL.sealInfo.autoPicked) notes.push(`時間到,系統替你選了加碼「${OL.sealInfo.autoPicked.name}」`);
@@ -1004,7 +1027,7 @@
     root.innerHTML = `
       <div class="card ac-result ${tone}">
         <div class="ac-rtitle">${ic(res === "win" ? "trophy" : res === "lose" ? "swords" : "equal")}<b>R${o.round} ${title}</b></div>
-        ${res === "lose" ? `<div class="ac-rline bad">${ic("heart-crack")}扣血 -${o.dmg}(血量 ${o.hpBefore} → ${Math.max(0, hpAfter)})</div>` : `<div class="ac-rline">${ic("heart")}血量 ${Math.max(0, hpAfter)}</div>`}
+        ${o.pve ? `<div class="ac-rline">${ic("heart")}血量 ${Math.max(0, hpAfter)}(怪物輪不扣血)</div>` : res === "lose" ? `<div class="ac-rline bad">${ic("heart-crack")}扣血 -${o.dmg}(血量 ${o.hpBefore} → ${Math.max(0, hpAfter)})</div>` : `<div class="ac-rline">${ic("heart")}血量 ${Math.max(0, hpAfter)}</div>`}
         <table class="ac-eco">${rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("")}<tr class="sum"><td>本輪獲得</td><td>+${e.gain} 銅板</td></tr></table>
         <div class="ac-rline">${ic("coins")}銅板 ${o.goldBefore} → <b>${o.patch.gold}</b> ${ic("flame")}連勝 <b>${o.patch.streak}</b></div>
         ${hpAfter <= 0 && !OL["outSfx" + o.round] && (OL["outSfx" + o.round] = 1) && (sfx("out"), true) ? "" : ""}${hpAfter <= 0 ? `<div class="ac-rline bad">${ic("skull")}你的血量歸零,這輪結算完就淘汰了</div>` : ""}
@@ -1038,6 +1061,19 @@
     const boardOf = (snap) => ((snap && snap.state && snap.state.board) || []).map((c) => ({ id: c.id, star: c.star }));
     const grid = (cards) => (cards.length ? `<div class="ac-grid" style="--cols:${cards.length}">${cards.map((c) => cardHtml({ ...c, bonusAtk: 0, bonusHp: 0 }, { noTip: true })).join("")}</div>` : `<div class="ac-dim">沒有上陣的卡</div>`);
     const matchHtml = matches.map((m) => {
+      if (AD.isMonsterRound(m.round)) { // 怪物輪:配對的兩人各打各的怪物,互相不對戰
+        const mon = AD.MONSTERS[m.round], oc2 = m.result && (m.result.outcomes || m.result), arr = Array.isArray(oc2) ? oc2 : [];
+        const stat2 = (pid) => { const o = arr.find((x) => x.player_id === pid); return !m.resolved ? `<span class="tag running">${ic("swords")}對戰中</span>` : o && o.pve ? `<span class="tag">${o.pve.won ? "擊敗怪物" : "被怪物擊退"}</span>` : `<span class="tag">已結算</span>`; };
+        const monGrid = grid(AD.monsterBoard(m.round));
+        return `<div class="ac-spec-match">
+          <div class="ac-spec-h"><b>${esc(nm(m.p1))}</b><span class="vs">VS</span><b>${esc(mon.title)}</b>${stat2(m.p1)}</div>
+          ${m.p2 ? `<div class="ac-spec-h"><b>${esc(nm(m.p2))}</b><span class="vs">VS</span><b>${esc(mon.title)}</b>${stat2(m.p2)}</div>` : ""}
+          <details data-k="${m.k}"${OL.specOpen[m.k] ? " open" : ""}><summary>${ic("layout-grid")}看陣容</summary>
+            <div class="ac-dim">${esc(nm(m.p1))}</div>${grid(boardOf(m.board1))}${m.p2 ? `<div class="ac-dim">${esc(nm(m.p2))}</div>${grid(boardOf(m.board2))}` : ""}<div class="ac-dim">${esc(mon.title)}</div>${monGrid}
+          </details>
+          <div class="action-row"><button class="btn small" data-watch="${m.k}">${ic("play")}看 ${esc(nm(m.p1))} 打怪物</button></div>
+        </div>`;
+      }
       const ghost = m.p2 == null, a = nm(m.p1), b = ghost ? `幽靈(${nm(m.ghost_of)} 的陣容)` : nm(m.p2);
       const oc = m.result && (m.result.outcomes || m.result);
       const first = Array.isArray(oc) ? oc.find((o) => o.player_id === m.p1) : null;
@@ -1071,9 +1107,9 @@
     if (!m) return;
     const ghost = m.p2 == null;
     const res = G.battleOnline(m.round, m.board1, m.board2, ghost, m.seed, true);
-    const a = res.outcomes[0], aName = OL.names[m.p1] || "玩家", bName = ghost ? (OL.names[m.ghost_of] || "玩家") : (OL.names[m.p2] || "玩家");
+    const a = res.outcomes[0], aName = OL.names[m.p1] || "玩家", bName = res.monster ? AD.MONSTERS[m.round].title : ghost ? (OL.names[m.ghost_of] || "玩家") : (OL.names[m.p2] || "玩家");
     // 左右畫面用 A(= p1)當「主角」:下方標 A 的名字、上方是對手
-    const rep = { round: m.round, spectator: { name: aName }, mine: { side: "a", r: res.r, res: a.res, ghost, foe: { name: bName, badge: ghost ? "" : olBadge(m.p2) } } };
+    const rep = { round: m.round, spectator: { name: aName }, mine: { side: "a", r: res.r, res: res.monster ? a.pve.res : a.res, ghost: res.monster ? false : ghost, foe: { name: bName, badge: ghost || res.monster ? "" : olBadge(m.p2) } } };
     OL.watching = true; OL.watchUntil = Date.now() + 40000; view = "battle";
     playBattle(rep, true, 24000);
   }

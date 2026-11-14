@@ -157,5 +157,51 @@ t("結算報告:演出用事件與初始數值齊全,我方永遠有 log", () =>
 t("玩家淘汰後快轉算出名次,最終名次表 8 人", () => { const g = fresh("dead"); g.me.hp = 1; g.me.board = []; G.seal(g); eq(g.over, true); ok(g.rank >= 1); eq(g.finalRanking.length, 8); eq(G.stats(g).rank, g.rank); });
 t("練習模式沒有任何隨機 API", () => { const src = require("fs").readFileSync(path.join(__dirname, "..", "assets", "autochess-game.js"), "utf8").replace(/\/\/.*$/gm, ""); ok(!/Math\.random|Date\.now|new Date/.test(src)); });
 
+console.log("== 怪物輪(R5 / R10 / R15)==");
+// 把遊戲推進到某一輪的準備階段:每輪讓玩家有一支強陣容(才打得贏怪物),血量給很多避免中途淘汰
+const toRound = (seed, round) => { const g = fresh(seed); g.me.hp = 1e6; while (g.round < round) { g.me.gold = 0; G.seal(g); G.nextRound(g); } return g; };
+t("怪物輪:不扣血、不計勝敗場、連勝不變、不配對(每位活著的玩家都打怪物)", () => {
+  const g = toRound("mon1", 5); g.me.streak = 3; g.me.bestStreak = 3; const hp = g.me.hp, w = g.me.wins, l = g.me.losses, botHp = g.bots.map((b) => b.hp);
+  const r = G.seal(g); ok(r.ok);
+  eq([g.me.hp, g.me.wins, g.me.losses, g.me.streak], [hp, w, l, 3]); eq(g.bots.map((b) => b.hp), botHp, "電腦玩家也不扣血");
+  ok(r.report.mine.pve && r.report.mine.dmg === 0 && r.report.mine.foe.name === AD.MONSTERS[5].name);
+  eq(r.report.outcomes.length, g.players.filter((p) => p.alive).length, "每位活著的玩家一場");
+});
+t("怪物輪:打贏 +3 銅板並掉落一張卡,下一輪進待命席;打輸只拿基本收入", () => {
+  let won = null, lost = null;
+  for (let n = 0; n < 40 && !(won && lost); n++) {
+    const g = toRound("mon-s" + n, 5); const gold0 = g.me.gold; const strong = n % 2 === 0;
+    g.me.board = strong ? [{ id: "squid_boss", star: 3 }, { id: "snow_queen", star: 3 }, { id: "iron_cloth_grandmaster", star: 3 }] : []; g.me.bench = []; g.me.perks.drop = null;
+    const r = G.seal(g), m = r.report.mine, gain = m.eco.base + m.eco.interest + (m.eco.bonusCoins || 0);
+    if (m.res === "win" && !won) won = { g, m, gold0 }; if (m.res === "lose" && !lost) lost = { g, m, gold0 };
+  }
+  ok(won && lost, "要能同時湊出打贏與打輸的案例");
+  eq(won.m.eco.monsterCoins, AD.MONSTER_WIN_COINS); eq(won.m.eco.gain, won.m.eco.base + won.m.eco.interest + (won.m.eco.bonusCoins || 0) + AD.MONSTER_WIN_COINS, "贏:收入 + 3");
+  ok(won.m.drop && AD.CARD_BY_ID[won.m.drop], "贏了有掉落"); eq(won.g.me.perks.drop, won.m.drop);
+  ok(!lost.m.eco.monsterCoins && !lost.m.drop && !lost.g.me.perks.drop, "輸了沒有獎勵、沒有掉落");
+  const n0 = won.g.me.bench.length, cards0 = won.g.me.board.length + n0; G.nextRound(won.g);
+  eq(won.g.me.perks.drop, null); ok(won.g.me.board.length + won.g.me.bench.length >= cards0 + 1 - 2, "掉落卡進了手上(能合成時會合掉)");
+  ok(won.g.me.bench.some((c) => c.id === won.m.drop) || won.g.me.board.some((c) => c.id === won.m.drop && c.star >= 1), "掉落的卡在待命席 / 場上");
+});
+t("怪物輪:待命席滿了又沒得合成 → 掉落折成銅板", () => {
+  const g = fresh("dropfull"); g.me.bench = Array.from({ length: AD.BENCH_SLOTS }, (_, i) => ({ id: ["passerby", "onlooker", "dart_uncle", "ring_toss_girl", "street_strongman", "shaved_ice_boy"][i], star: 1 })); g.me.perks.drop = "chili_lady";
+  const gold = g.me.gold, d = G.giveDrop(g.me); ok(d && d.sold); eq(g.me.gold, gold + AD.sellValue(AD.CARD_BY_ID.chili_lady, 1)); eq(g.me.bench.length, AD.BENCH_SLOTS);
+});
+t("非怪物輪(R4、R6)照舊:會配對、會扣血 / 計勝敗", () => {
+  const g = toRound("mon-n", 4); g.me.board = []; const l0 = g.me.losses; const r = G.seal(g); ok(!r.report.mine.pve && r.report.mine.foe && r.report.mine.res === "lose" && r.report.mine.dmg > 0); eq(g.me.losses, l0 + 1);
+});
+t("怪物輪的整場結果是決定性的(同種子兩次一樣)", () => {
+  const run = () => { const g = toRound("mon-det", 10); const r = G.seal(g); return [r.report.mine.res, r.report.mine.eco.gain, r.report.mine.drop, g.me.gold]; };
+  eq(run(), run());
+});
+t("電腦玩家的怪物輪掉落折成銅板(沒有待命席掉落)", () => {
+  const g = toRound("mon-bot", 5); const before = g.bots.map((b) => b.gold); G.seal(g);
+  ok(g.bots.every((b, i) => !b.alive || b.gold >= 0), "金額正常"); ok(g.bots.some((b, i) => b.gold !== before[i]), "電腦玩家有結算");
+});
+t("整場流程跑過 R5 / R10 / R15 不出錯,最後有名次", () => {
+  const g = fresh("mon-full"); let guard = 0; while (!g.over && guard++ < 40) { g.me.gold = 0; G.seal(g); if (!g.over) G.nextRound(g); }
+  ok(g.over && g.rank >= 1 && g.rank <= 8);
+});
+
 console.log(`\n${fail ? "✗" : "✓"} ${pass} 通過 / ${fail} 失敗`);
 process.exit(fail ? 1 : 0);
