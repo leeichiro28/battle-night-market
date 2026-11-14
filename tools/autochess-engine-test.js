@@ -95,19 +95,20 @@ t("先鋒條件:炭爐阿伯站第 1 位才增加灼傷傷害", () => {
 });
 
 console.log("== 星級與合成 ==");
-t("1★ 兩張合成 2★,數值 ×1.8", () => {
-  const m = E.mergeCards(B("passerby"), B("passerby")); eq(m.board, [{ id: "passerby", star: 2 }]); eq(m.bench, []); eq(m.merged, [{ id: "passerby", star: 2 }]);
+t("1★ 三張合成 2★,數值 ×1.8", () => {
+  const m2 = E.mergeCards(B("passerby"), B("passerby")); eq(m2.board.length + m2.bench.length, 2, "兩張不合成");
+  const m = E.mergeCards(B("passerby"), B("passerby", "passerby")); eq(m.board, [{ id: "passerby", star: 2 }]); eq(m.bench, []); eq(m.merged, [{ id: "passerby", star: 2 }]);
   const r = E.simulate([{ id: "passerby", star: 2 }], B("onlooker"), "s", { log: true });
   ok(r.winner, "可戰鬥"); // 2★ passerby HP = round(6×1.8)=11
 });
-t("3★ 需要 4 張 1★(連鎖合成)", () => {
-  const m = E.mergeCards([], B("passerby", "passerby", "passerby", "passerby")); eq(m.bench, [{ id: "passerby", star: 3 }]);
-  const m3 = E.mergeCards([], B("passerby", "passerby", "passerby")); eq(m3.bench.map((c) => c.star).sort(), [1, 2]);
+t("3★ 需要 9 張 1★(連鎖合成)", () => {
+  const m = E.mergeCards([], B(...Array(9).fill("passerby"))); eq(m.bench, [{ id: "passerby", star: 3 }]);
+  const m3 = E.mergeCards([], B(...Array(8).fill("passerby"))); eq(m3.bench.map((c) => c.star).sort(), [1, 1, 2, 2]);
 });
 t("3★ 不再合成(上限)", () => { const m = E.mergeCards([], [{ id: "passerby", star: 3 }, { id: "passerby", star: 3 }]); eq(m.bench.length, 2); });
 t("合成保留在上陣位置,且不同名/不同星不會合成", () => {
-  const m = E.mergeCards(B("onlooker", "passerby"), B("passerby", "dart_uncle")); eq(m.board, [{ id: "onlooker", star: 1 }, { id: "passerby", star: 2 }]); eq(m.bench, [{ id: "dart_uncle", star: 1 }]);
-  const n = E.mergeCards([{ id: "passerby", star: 2 }], B("passerby")); eq(n.board.length + n.bench.length, 2);
+  const m = E.mergeCards(B("onlooker", "passerby"), B("passerby", "passerby", "dart_uncle")); eq(m.board, [{ id: "onlooker", star: 1 }, { id: "passerby", star: 2 }]); eq(m.bench, [{ id: "dart_uncle", star: 1 }]);
+  const n = E.mergeCards([{ id: "passerby", star: 2 }], B("passerby", "passerby")); eq(n.board.length + n.bench.length, 3);
 });
 t("星級倍率:1★/2★/3★ 屬性 ×1.0/1.8/3.5", () => eq([AD.STAR.stat[1], AD.STAR.stat[2], AD.STAR.stat[3]], [1, 1.8, 3.5]));
 t("3★ 質變:烤香腸學徒 3★ 會讓灼傷擴散到目標後一位", () => {
@@ -215,20 +216,20 @@ t("Lv10 的傳說比例約 50%(±8%)", () => {
 });
 
 console.log("== 經濟與等級 ==");
-t("基本收入:R1~4=4 / R5~9=5 / R10~14=6 / R15+=7", () => eq([1, 4, 5, 9, 10, 14, 15, 22].map(AD.baseIncome), [4, 4, 5, 5, 6, 6, 7, 7]));
+t("基本收入:R1~4=5 / R5~9=6 / R10~14=7 / R15+=8", () => eq([1, 4, 5, 9, 10, 14, 15, 22].map(AD.baseIncome), [5, 5, 6, 6, 7, 7, 8, 8]));
 t("連勝加成:2 勝+1 / 3~4 勝+2 / 5+ +3", () => eq([1, 2, 3, 4, 5, 9].map(AD.streakBonus), [0, 1, 2, 2, 3, 3]));
 t("利息:每 10 銅板 +1,上限 +3", () => eq([0, 9, 10, 25, 30, 99].map((g) => AD.interestOf(g, 5)), [0, 0, 1, 2, 3, 3]));
 t("贏家結算 = 收入 + 勝利獎金 + 連勝加成 + 利息", () => {
   const s = E.settleEconomy({ result: "win", round: 6, gold: 20, streak: 1, level: 4 });
-  eq([s.base, s.win, s.streakBonus, s.interest, s.gain, s.gold, s.streak], [5, 2, 1, 2, 10, 30, 2]);
+  eq([s.base, s.win, s.streakBonus, s.interest, s.gain, s.gold, s.streak], [6, 3, 1, 2, 12, 32, 2]);
 });
 t("輸家只拿基本收入(+利息),連勝歸零", () => {
-  const s = E.settleEconomy({ result: "lose", round: 6, gold: 10, streak: 4, level: 4 }); eq([s.gain, s.streak, s.win, s.streakBonus], [6, 0, 0, 0]);
+  const s = E.settleEconomy({ result: "lose", round: 6, gold: 10, streak: 4, level: 4 }); eq([s.gain, s.streak, s.win, s.streakBonus], [7, 0, 0, 0]);
 });
-t("平手:拿基本收入,連勝不變", () => { const s = E.settleEconomy({ result: "draw", round: 3, gold: 0, streak: 3, level: 1 }); eq([s.gain, s.streak], [4, 3]); });
+t("平手:拿基本收入,連勝不變", () => { const s = E.settleEconomy({ result: "draw", round: 3, gold: 0, streak: 3, level: 1 }); eq([s.gain, s.streak], [5, 3]); });
 t("Lv10 每輪額外 +2 銅板;暴擊銅板併入收入", () => {
-  eq(E.settleEconomy({ result: "lose", round: 3, gold: 0, streak: 0, level: 10 }).gain, 6);
-  eq(E.settleEconomy({ result: "lose", round: 3, gold: 0, streak: 0, level: 1, bonusCoins: 3 }).gain, 7);
+  eq(E.settleEconomy({ result: "lose", round: 3, gold: 0, streak: 0, level: 10 }).gain, 7);
+  eq(E.settleEconomy({ result: "lose", round: 3, gold: 0, streak: 0, level: 1, bonusCoins: 3 }).gain, 8);
 });
 t("輸家扣血 = 輪次基礎傷害 + 贏家存活星級總和(上限 10)", () => {
   eq([E.loseDamage(1, 3), E.loseDamage(5, 4), E.loseDamage(10, 20), E.loseDamage(25, 10)], [5, 8, 19, 30]);
@@ -239,7 +240,7 @@ t("升級:XP 累計與滿級", () => {
   eq(AD.addXp(1, 0, 138).level, 10); eq(AD.addXp(10, 0, 50), { level: 10, xp: 0 });
 });
 t("上陣位置:Lv1=2 … Lv7=8,Lv8~10 維持 8", () => eq([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(AD.slotsFor), [2, 3, 4, 5, 6, 7, 8, 8, 8, 8]));
-t("賣出退費:1★ 全額,2★/3★ 各少退 1", () => { const c = AD.CARD_BY_ID.chili_lady; eq([AD.sellValue(c, 1), AD.sellValue(c, 2), AD.sellValue(c, 3)], [3, 5, 11]); });
+t("賣出退費:1★ 全額,2★(3 張)/3★(9 張)各少退 1", () => { const c = AD.CARD_BY_ID.chili_lady; eq([AD.sellValue(c, 1), AD.sellValue(c, 2), AD.sellValue(c, 3)], [3, 8, 26]); const p = AD.CARD_BY_ID.passerby; eq([AD.sellValue(p, 1), AD.sellValue(p, 2), AD.sellValue(p, 3)], [1, 2, 8]); });
 
 console.log(`\n${fail ? "✗" : "✓"} ${pass} 通過 / ${fail} 失敗`);
 process.exit(fail ? 1 : 0);

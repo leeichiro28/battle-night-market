@@ -59,7 +59,8 @@ function playPrep(p, round, evSeed) {
       if (p.gold - d.cost < reserve) return;
       const full = p.board.length + p.bench.length >= capacity();
       const pairs = countOwned(p, id, 1) >= 1 || countOwned(p, id, 2) >= 1;
-      if (full && !pairs) return;
+      const need = AD.STAR.mergeNeed - 1; // 滿了還能買的前提:這張買下去能立刻合成(合成要 3 張,所以要已經有 2 張同星)
+      if (full && !(countOwned(p, id, 1) >= need || countOwned(p, id, 2) >= need)) return;
       let sc = d.cost + (pairs ? 5 : 0) + (s.focus && d.tags.includes(s.focus) ? 3 : 0) + (!s.focus && d.tags.length ? 1 : 0);
       if (!pairs && d.tags.length === 0) sc -= 2; // 通用卡沒有羈絆,優先度低
       if (sc > bestScore) { bestScore = sc; best = i; }

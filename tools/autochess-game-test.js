@@ -21,20 +21,20 @@ t("購買:扣銅板、進待命席、商店該格變空", () => {
 });
 t("銅板不夠不能買", () => { const g = fresh(); g.me.gold = 0; ok(!G.buy(g, 0).ok); eq(g.me.bench.length, 0); });
 t("撤銷上一次購買全額退費(含合成),刷新後不能撤銷", () => {
-  const g = fresh(); g.me.gold = 20; g.me.shop = ["passerby", "passerby", "onlooker", null, null]; give(g);
-  G.buy(g, 0); G.buy(g, 1); eq(g.me.bench, [{ id: "passerby", star: 2 }]); eq(g.me.gold, 18);
-  ok(G.undo(g).ok); eq([g.me.gold, g.me.bench.length], [19, 1]); ok(!G.undo(g).ok);
-  G.buy(g, 1); G.refresh(g); ok(!G.undo(g).ok, "刷新後不能撤銷");
+  const g = fresh(); g.me.gold = 20; g.me.shop = ["passerby", "passerby", "passerby", null, null]; give(g);
+  G.buy(g, 0); G.buy(g, 1); G.buy(g, 2); eq(g.me.bench, [{ id: "passerby", star: 2 }]); eq(g.me.gold, 17);
+  ok(G.undo(g).ok); eq([g.me.gold, g.me.bench.length], [18, 2]); ok(!G.undo(g).ok);
+  G.buy(g, 2); G.refresh(g); ok(!G.undo(g).ok, "刷新後不能撤銷");
 });
 t("待命席滿了不能買(除非能合成)", () => {
-  const g = fresh(); g.me.gold = 50; ["passerby", "onlooker", "dart_uncle", "ring_toss_girl", "street_strongman", "shaved_ice_boy"].forEach((id) => g.me.bench.push({ id, star: 1 }));
+  const g = fresh(); g.me.gold = 50; ["passerby", "passerby", "dart_uncle", "ring_toss_girl", "street_strongman", "shaved_ice_boy"].forEach((id) => g.me.bench.push({ id, star: 1 }));
   g.me.shop = ["sausage_apprentice", "passerby", null, null, null];
   ok(!G.buy(g, 0).ok, "滿了買新卡應失敗"); eq(g.me.gold, 50); eq(g.me.bench.length, 6);
-  ok(G.buy(g, 1).ok, "能合成就可以買"); eq(g.me.bench.length, 6); ok(g.me.bench.some((c) => c.id === "passerby" && c.star === 2));
+  ok(G.buy(g, 1).ok, "能合成就可以買"); eq(g.me.bench.length, 5); ok(g.me.bench.some((c) => c.id === "passerby" && c.star === 2));
 });
-t("賣出:1★ 全額、2★ 少 1", () => {
+t("賣出:1★ 全額、2★(3 張)少 1", () => {
   const g = fresh(); g.me.bench.push({ id: "chili_lady", star: 1 }, { id: "chili_lady", star: 2 }); const g0 = g.me.gold;
-  G.sell(g, "bench", 0); eq(g.me.gold, g0 + 3); G.sell(g, "bench", 0); eq(g.me.gold, g0 + 3 + 5);
+  G.sell(g, "bench", 0); eq(g.me.gold, g0 + 3); G.sell(g, "bench", 0); eq(g.me.gold, g0 + 3 + 8);
 });
 t("移動:上陣、交換、位置滿了要交換", () => {
   const g = fresh(); give(g, "passerby", "onlooker", "dart_uncle");
@@ -84,11 +84,11 @@ t("補習班 +8 XP", () => { const g = withPerk("tutoring"); G.pickPerk(g, "tuto
 t("升級折扣券:3 次買經驗各 -2", () => { const g = withPerk("xp_coupon"); G.pickPerk(g, "xp_coupon"); g.me.gold = 20; G.buyXp(g); eq(g.me.gold, 18); G.buyXp(g); G.buyXp(g); eq(g.me.gold, 14); G.buyXp(g); eq(g.me.gold, 10); });
 t("加開攤位:上陣位置 +1", () => { const g = withPerk("stall_plus"); G.pickPerk(g, "stall_plus"); eq(G.slotsOf(g.me), 3); });
 t("免費升星券:只能選 1/2 費的 1★,立刻 2★ 並連鎖合成", () => {
-  const g = withPerk("free_star", (x) => x.me.bench.push({ id: "passerby", star: 2 }));
+  const g = withPerk("free_star", (x) => x.me.bench.push({ id: "passerby", star: 2 }, { id: "passerby", star: 2 }));
   ok(!G.pickPerk(g, "free_star").ok, "沒選對象不行");
   const targets = G.targetsFor(g, "free_star"); ok(targets.every((x) => x.card.star === 1 && AD.CARD_BY_ID[x.card.id].cost <= 2));
   const tg = targets.find((x) => x.card.id === "passerby"); ok(G.pickPerk(g, "free_star", tg).ok);
-  ok(g.me.bench.some((c) => c.id === "passerby" && c.star === 3), "兩張 2★ 應合成 3★");
+  ok(g.me.bench.some((c) => c.id === "passerby" && c.star === 3), "三張 2★ 應合成 3★");
 });
 t("加料:選一張卡永久 +3/+3,戰鬥數值確實增加", () => {
   const g = withPerk("seasoning"); G.pickPerk(g, "seasoning", { zone: "bench", idx: 0 }); eq([g.me.bench[0].bonusAtk, g.me.bench[0].bonusHp], [3, 3]);

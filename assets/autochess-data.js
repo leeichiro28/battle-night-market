@@ -12,7 +12,7 @@
 //   數值參數(n / flat / pct)會依星級放大:1★×1.0、2★×1.5、3★×2.0(見 STAR.fx)。
 window.AutochessData = (function () {
   // 資料版本:每場活動開始時記進 events.rules.autochess.dataVersion,之後調數值不影響進行中的場次(企劃點子 10)
-  const DATA_VERSION = 2; // v2(階段 4):8 流派、53 張卡、隱藏羈絆、新機制
+  const DATA_VERSION = 3; // v3(v58 修復):每流派 +4 張共 85 張卡、合成改 3 張;v2(階段 4):8 流派、53 張卡、隱藏羈絆、新機制
 
   // 流派(icon 為 lucide 名稱,動工階段 2 做畫面時再確認名稱)
   const TAGS = {
@@ -35,11 +35,11 @@ window.AutochessData = (function () {
   ];
   const COST_TO_RARITY = { 1: 0, 2: 1, 3: 2, 5: 3 };
 
-  // 星級倍率(企劃 3-7):屬性倍率 / 效果數值倍率;同名同星 2 張合成 1 張更高星(3★ 因此要 4 張 1★)
+  // 星級倍率(企劃 3-7):屬性倍率 / 效果數值倍率;同名同星 3 張合成 1 張更高星(3★ 因此要 9 張 1★)
   const STAR = {
     stat: { 1: 1.0, 2: 1.8, 3: 3.5 },
     fx: { 1: 1.0, 2: 1.5, 3: 2.0 },
-    mergeNeed: 2,
+    mergeNeed: 3,
     max: 3,
   };
 
@@ -236,6 +236,111 @@ window.AutochessData = (function () {
     { id: "night_patrol", name: "巡邏的警員", cost: 3, tags: [], atk: 5, hp: 15, spd: 3,
       desc: "先鋒:受傷時反彈 1 點傷害,開場獲得 4 點護盾。", fx: [{ on: "hurt", when: "vanguard", do: "reflect", flat: 1 }, { on: "start", when: "vanguard", do: "shieldSelf", flat: 4 }],
       star3: { desc: "3★:不用站第一位也有護盾。", fx: [{ on: "start", do: "shieldSelf", flat: 4 }] } },
+    // ================= v58 修復批次:每流派 +4 張(1 / 2 / 3 / 5 費各一)=================
+    // ---- 炭火 +4 ----
+    { id: "sweet_potato_boy", name: "烤地瓜小弟", cost: 1, tags: ["burn"], atk: 2, hp: 5, spd: 3,
+      desc: "擊殺時,全體敵人灼傷 1 層。", fx: [{ on: "kill", do: "burnAll", n: 1 }],
+      star3: { desc: "3★:出手時,目標灼傷 1 層。", fx: [{ on: "attack", do: "burn", n: 1 }] } },
+    { id: "salty_chicken_vendor", name: "鹽酥雞攤主", cost: 2, tags: ["burn"], atk: 3, hp: 9, spd: 3,
+      desc: "壓軸:每回合結束,全體敵人灼傷 1 層。", fx: [{ on: "roundEnd", when: "finale", do: "burnAll", n: 1 }],
+      star3: { desc: "3★:開場全體敵人灼傷 1 層。", fx: [{ on: "start", do: "burnAll", n: 1 }] } },
+    { id: "spicy_hotpot_chef", name: "麻辣燙大廚", cost: 3, tags: ["burn"], atk: 4, hp: 12, spd: 3,
+      desc: "出手時,目標與後面那一位各灼傷 1 層。", fx: [{ on: "attack", do: "burn", n: 1 }, { on: "attack", do: "burnNext", n: 1 }],
+      star3: { desc: "3★:開場全體敵人灼傷 1 層。", fx: [{ on: "start", do: "burnAll", n: 1 }] } },
+    { id: "whole_lamb_boss", name: "炭烤全羊老闆", cost: 5, tags: ["burn"], atk: 7, hp: 23, spd: 2,
+      desc: "開場:全體敵人灼傷 1 層;先鋒:全隊灼傷每層多受 2 點傷害。", fx: [{ on: "start", do: "burnAll", n: 1 }, { on: "passive", when: "vanguard", do: "burnFlat", n: 2 }],
+      star3: { desc: "3★:擊殺時,全體敵人灼傷 2 層。", fx: [{ on: "kill", do: "burnAll", n: 2 }] } },
+    // ---- 冰鎮 +4 ----
+    { id: "aiyu_ice_sis", name: "愛玉冰姐", cost: 1, tags: ["frost"], atk: 3, hp: 4, spd: 4,
+      desc: "擊殺時,凍結隨機一名敵人 1 回合。", fx: [{ on: "kill", do: "freezeRandom", n: 1 }],
+      star3: { desc: "3★:開場凍結敵方速度最快者。", fx: [{ on: "start", do: "freezeFastest", n: 1 }] } },
+    { id: "cold_drink_lady", name: "冷飲店老闆娘", cost: 2, tags: ["frost"], atk: 3, hp: 9, spd: 2,
+      desc: "受傷時有 25% 機率凍結攻擊者 1 回合。", fx: [{ on: "hurt", do: "freezeSrc", chance: 25 }],
+      star3: { desc: "3★:開場獲得 4 點護盾。", fx: [{ on: "start", do: "shieldSelf", flat: 4 }] } },
+    { id: "polar_shave_ice", name: "北極熊刨冰攤", cost: 3, tags: ["frost"], atk: 4, hp: 10, spd: 3,
+      desc: "開場:凍結敵方速度最快者;出手時有 30% 機率凍結目標。", fx: [{ on: "start", do: "freezeFastest", n: 1 }, { on: "attack", do: "freezeTarget", chance: 30 }],
+      star3: { desc: "3★:開場凍結一名隨機敵人。", fx: [{ on: "start", do: "freezeRandom", n: 1 }] } },
+    { id: "ice_sculptor", name: "冰雕藝術家", cost: 5, tags: ["frost"], atk: 5, hp: 24, spd: 3,
+      desc: "開場:凍結敵方速度最快者;每回合結束,自己獲得 3 點護盾。", fx: [{ on: "start", do: "freezeFastest", n: 1 }, { on: "roundEnd", do: "shieldSelf", flat: 3 }],
+      star3: { desc: "3★:開場再凍結一名隨機敵人。", fx: [{ on: "start", do: "freezeRandom", n: 1 }] } },
+    // ---- 把式 +4 ----
+    { id: "palanquin_bearer", name: "扛轎壯丁", cost: 1, tags: ["guard"], atk: 2, hp: 5, spd: 2,
+      desc: "每回合結束,自己獲得 2 點護盾。", fx: [{ on: "roundEnd", do: "shieldSelf", flat: 2 }],
+      star3: { desc: "3★:每回合結束,左右友軍各獲得 2 點護盾。", fx: [{ on: "roundEnd", do: "shieldAdj", flat: 2 }] } },
+    { id: "lion_dance_captain", name: "舞獅隊長", cost: 2, tags: ["guard"], atk: 3, hp: 8, spd: 2,
+      desc: "開場獲得 2 點護盾;先鋒:受傷時反彈 2 點傷害。", fx: [{ on: "start", do: "shieldSelf", flat: 2 }, { on: "hurt", when: "vanguard", do: "reflect", flat: 2 }],
+      star3: { desc: "3★:開場我方全體獲得 2 點護盾。", fx: [{ on: "start", do: "shieldAllies", flat: 2 }] } },
+    { id: "iron_palm_boss", name: "鐵砂掌老闆", cost: 3, tags: ["guard"], atk: 4, hp: 13, spd: 2,
+      desc: "開場獲得 3 點護盾;受傷時,反彈 2 點傷害。", fx: [{ on: "start", do: "shieldSelf", flat: 3 }, { on: "hurt", do: "reflect", flat: 2 }],
+      star3: { desc: "3★:開場我方全體獲得 3 點護盾。", fx: [{ on: "start", do: "shieldAllies", flat: 3 }] } },
+    { id: "golden_bell_master", name: "金鐘罩掌門", cost: 5, tags: ["guard"], atk: 5, hp: 30, spd: 2,
+      desc: "開場:我方全體獲得 4 點護盾;每回合結束,我方全體獲得 2 點護盾。", fx: [{ on: "start", do: "shieldAllies", flat: 4 }, { on: "roundEnd", do: "shieldAllies", flat: 2 }],
+      star3: { desc: "3★:受傷時,反彈 3 點傷害。", fx: [{ on: "hurt", do: "reflect", flat: 3 }] } },
+    // ---- 遊戲攤 +4 ----
+    { id: "pinball_kid", name: "彈珠台小弟", cost: 1, tags: ["game"], atk: 3, hp: 4, spd: 3,
+      desc: "暴擊率 +10%;暴擊時,自己獲得 2 點護盾。", fx: [{ on: "passive", do: "crit", pct: 10 }, { on: "crit", do: "shieldSelf", flat: 2 }],
+      star3: { desc: "3★:暴擊率 +15%。", fx: [{ on: "passive", do: "crit", pct: 15 }] } },
+    { id: "marble_grandpa", name: "打彈珠阿伯", cost: 2, tags: ["game"], atk: 4, hp: 7, spd: 3,
+      desc: "暴擊率 +20%;暴擊時,對隨機一名敵人造成 2 點傷害。", fx: [{ on: "passive", do: "crit", pct: 20 }, { on: "crit", do: "dmgRandom", n: 2 }],
+      star3: { desc: "3★:暴擊時追加一次隨機攻擊。", fx: [{ on: "crit", do: "extraAttack" }] } },
+    { id: "mahjong_boss", name: "麻將桌老闆", cost: 3, tags: ["game"], atk: 5, hp: 11, spd: 3,
+      desc: "暴擊率 +20%;暴擊時,全體敵人受到 1 點傷害。", fx: [{ on: "passive", do: "crit", pct: 20 }, { on: "crit", do: "dmgAll", n: 1 }],
+      star3: { desc: "3★:暴擊率 +15%。", fx: [{ on: "passive", do: "crit", pct: 15 }] } },
+    { id: "dice_king", name: "骰子王", cost: 5, tags: ["game"], atk: 7, hp: 15, spd: 3,
+      desc: "暴擊率 +35%;暴擊時,全體敵人受到 2 點傷害,本場結算多 1 銅板(上限 5)。", fx: [{ on: "passive", do: "crit", pct: 35 }, { on: "crit", do: "dmgAll", n: 2 }, { on: "crit", do: "coin", n: 1 }],
+      star3: { desc: "3★:暴擊時追加一次隨機攻擊。", fx: [{ on: "crit", do: "extraAttack" }] } },
+    // ---- 藥燉 +4 ----
+    { id: "ginseng_tea_apprentice", name: "蔘茶學徒", cost: 1, tags: ["potion"], atk: 2, hp: 6, spd: 2,
+      desc: "出手時,自己回復 2 點血量。", fx: [{ on: "attack", do: "healSelf", flat: 2 }],
+      star3: { desc: "3★:出手時,目標中毒 1 層。", fx: [{ on: "attack", do: "poison", n: 1 }] } },
+    { id: "almond_tea_grandma", name: "杏仁茶阿嬤", cost: 2, tags: ["potion"], atk: 3, hp: 9, spd: 2,
+      desc: "壓軸:每回合結束,全體敵人中毒 1 層。", fx: [{ on: "roundEnd", when: "finale", do: "poisonAll", n: 1 }],
+      star3: { desc: "3★:開場全體敵人中毒 1 層。", fx: [{ on: "start", do: "poisonAll", n: 1 }] } },
+    { id: "herbal_wine_brewer", name: "藥酒釀造師", cost: 3, tags: ["potion"], atk: 4, hp: 13, spd: 3,
+      desc: "出手時,目標中毒 1 層;擊殺時,我方全體回復 3 點血量。", fx: [{ on: "attack", do: "poison", n: 1 }, { on: "kill", do: "healAllies", flat: 3 }],
+      star3: { desc: "3★:出手時,目標後面那一位也中毒。", fx: [{ on: "attack", do: "poisonNext", n: 1 }] } },
+    { id: "hua_tuo_heir", name: "華陀傳人", cost: 5, tags: ["potion"], atk: 6, hp: 28, spd: 2,
+      desc: "開場:我方全體獲得 3 點護盾,全體敵人中毒 1 層;每回合結束,我方血量最低者回復 5 點。", fx: [{ on: "start", do: "shieldAllies", flat: 3 }, { on: "start", do: "poisonAll", n: 1 }, { on: "roundEnd", do: "healLowest", flat: 5 }],
+      star3: { desc: "3★:每回合結束,我方全體回復 2 點血量。", fx: [{ on: "roundEnd", do: "healAllies", flat: 2 }] } },
+    // ---- 順手 +4 ----
+    { id: "sticky_fingers_guy", name: "順手牽羊客", cost: 1, tags: ["thief"], atk: 3, hp: 4, spd: 4,
+      desc: "出手時,偷走目標 1 點攻擊給自己。", fx: [{ on: "attack", do: "stealAtk", n: 1 }],
+      star3: { desc: "3★:擊殺時,本場結算多 1 銅板。", fx: [{ on: "kill", do: "coin", n: 1 }] } },
+    { id: "wallet_snatcher", name: "扒錢包老手", cost: 2, tags: ["thief"], atk: 3, hp: 7, spd: 3,
+      desc: "擊殺時,自己攻擊 +1,本場結算多 1 銅板(本場上限 5)。", fx: [{ on: "kill", do: "buffSelfAtk", n: 1 }, { on: "kill", do: "coin", n: 1 }],
+      star3: { desc: "3★:開場敵方攻擊最高者攻擊 -2。", fx: [{ on: "start", do: "weakenTop", n: 2 }] } },
+    { id: "pawn_shop_boss", name: "當鋪老闆", cost: 3, tags: ["thief"], atk: 4, hp: 11, spd: 3,
+      desc: "開場:敵方攻擊最高者攻擊 -2;出手時,偷走目標 1 點攻擊給自己。", fx: [{ on: "start", do: "weakenTop", n: 2 }, { on: "attack", do: "stealAtk", n: 1 }],
+      star3: { desc: "3★:我方贏得戰鬥時,本場結算多 2 銅板。", fx: [{ on: "passive", do: "winCoin", n: 2 }] } },
+    { id: "night_market_thief", name: "夜市大盜", cost: 5, tags: ["thief"], atk: 7, hp: 20, spd: 4,
+      desc: "開場:敵方攻擊最高者攻擊 -3;出手時偷走目標 1 點攻擊;擊殺時本場結算多 1 銅板。", fx: [{ on: "start", do: "weakenTop", n: 3 }, { on: "attack", do: "stealAtk", n: 1 }, { on: "kill", do: "coin", n: 1 }],
+      star3: { desc: "3★:我方贏得戰鬥時,本場結算多 2 銅板。", fx: [{ on: "passive", do: "winCoin", n: 2 }] } },
+    // ---- 卜卦 +4 ----
+    { id: "fortune_girl", name: "求籤小妹", cost: 1, tags: ["fortune"], atk: 2, hp: 5, spd: 3,
+      desc: "壓軸:開場攻擊 +3。", fx: [{ on: "start", when: "finale", do: "buffSelfAtk", n: 3 }],
+      star3: { desc: "3★:先鋒時開場攻擊也 +3。", fx: [{ on: "start", when: "vanguard", do: "buffSelfAtk", n: 3 }] } },
+    { id: "astrology_teacher", name: "星座老師", cost: 2, tags: ["fortune"], atk: 3, hp: 8, spd: 2,
+      desc: "先鋒:開場我方全體獲得 2 點護盾。", fx: [{ on: "start", when: "vanguard", do: "shieldAllies", flat: 2 }],
+      star3: { desc: "3★:壓軸時,開場我方全體攻擊 +1。", fx: [{ on: "start", when: "finale", do: "buffAllyAtk", n: 1 }] } },
+    { id: "tarot_vendor", name: "塔羅牌攤主", cost: 3, tags: ["fortune"], atk: 4, hp: 11, spd: 3,
+      desc: "先鋒:開場獲得 4 點護盾。壓軸:開場攻擊 +3。", fx: [{ on: "start", when: "vanguard", do: "shieldSelf", flat: 4 }, { on: "start", when: "finale", do: "buffSelfAtk", n: 3 }],
+      star3: { desc: "3★:開場左右友軍攻擊 +1。", fx: [{ on: "start", do: "buffAdjAtk", n: 1 }] } },
+    { id: "ziwei_master", name: "紫微斗數大師", cost: 5, tags: ["fortune"], atk: 6, hp: 24, spd: 3,
+      desc: "先鋒:受傷時反彈 2 點傷害。壓軸:開場我方全體攻擊 +2。", fx: [{ on: "hurt", when: "vanguard", do: "reflect", flat: 2 }, { on: "start", when: "finale", do: "buffAllyAtk", n: 2 }],
+      star3: { desc: "3★:開場我方全體獲得 4 點護盾。", fx: [{ on: "start", do: "shieldAllies", flat: 4 }] } },
+    // ---- 發條 +4 ----
+    { id: "clockwork_bird", name: "發條小鳥", cost: 1, tags: ["clock"], atk: 2, hp: 5, spd: 3,
+      desc: "每回合結束,血量上限與血量 +2。", fx: [{ on: "roundEnd", do: "growHp", n: 2 }],
+      star3: { desc: "3★:每回合結束,攻擊也 +1。", fx: [{ on: "roundEnd", do: "growAtk", n: 1 }] } },
+    { id: "music_box_boss", name: "八音盒老闆", cost: 2, tags: ["clock"], atk: 3, hp: 8, spd: 3,
+      desc: "壓軸:每回合結束,我方全體攻擊 +1。", fx: [{ on: "roundEnd", when: "finale", do: "buffAllyAtk", n: 1 }],
+      star3: { desc: "3★:先鋒時也有此效果。", fx: [{ on: "roundEnd", when: "vanguard", do: "buffAllyAtk", n: 1 }] } },
+    { id: "old_watch_master", name: "老懷錶匠", cost: 3, tags: ["clock"], atk: 3, hp: 12, spd: 2,
+      desc: "每回合結束,攻擊 +1;第 3 回合起攻擊翻倍。", fx: [{ on: "roundEnd", do: "growAtk", n: 1 }, { on: "roundStart", atRound: 3, do: "doubleAtk" }],
+      star3: { desc: "3★:每回合結束,血量上限與血量 +2。", fx: [{ on: "roundEnd", do: "growHp", n: 2 }] } },
+    { id: "clock_tower_ghost", name: "時空鐘樓怪人", cost: 5, tags: ["clock"], atk: 6, hp: 24, spd: 3,
+      desc: "每回合開始,我方全體攻擊 +1;每回合結束,血量上限與血量 +3。", fx: [{ on: "roundStart", do: "buffAllyAtk", n: 1 }, { on: "roundEnd", do: "growHp", n: 3 }],
+      star3: { desc: "3★:每回合結束,我方全體血量上限與血量 +2。", fx: [{ on: "roundEnd", do: "growAllyHp", n: 2 }] } },
   ];
   const CARD_BY_ID = {};
   CARDS.forEach((c) => (CARD_BY_ID[c.id] = c));
@@ -317,7 +422,7 @@ window.AutochessData = (function () {
   const START_GOLD = 5;
   const BENCH_SLOTS = 6;
   const SHOP_SLOTS = 5;
-  const WIN_BONUS = 2;
+  const WIN_BONUS = 3; // v58:原 2
   const ROUND_BASE_DAMAGE = [[1, 2], [4, 4], [7, 6], [10, 9], [13, 12], [16, 16], [19, 20]]; // [起始輪次, 基礎傷害]
   const SURVIVOR_STAR_CAP = 10;
   const INTEREST = { per: 10, max: 3, startRound: 1 }; // 金庫:每 10 銅板 +1,上限 +3;startRound 是模擬器調平衡用的旋鈕
@@ -376,7 +481,7 @@ window.AutochessData = (function () {
   }
   // 基本收入 I(R)
   function baseIncome(round) {
-    return round <= 4 ? 4 : round <= 9 ? 5 : round <= 14 ? 6 : 7;
+    return round <= 4 ? 5 : round <= 9 ? 6 : round <= 14 ? 7 : 8; // v58:每段 +1(原 4 / 5 / 6 / 7)
   }
   // 連勝加成(n = 本場贏完後的連勝數):2 勝 +1 / 3~4 勝 +2 / 5 勝以上 +3
   function streakBonus(n) {
@@ -389,7 +494,7 @@ window.AutochessData = (function () {
   }
   function slotsFor(level) { return SLOTS_BY_LEVEL[Math.min(MAX_LEVEL, Math.max(1, level))]; }
   function shopSlotsFor(level) { return level >= LEVEL_PERKS.shopSlots6 ? SHOP_SLOTS + 1 : SHOP_SLOTS; }
-  // 賣出退費:1★ 全額;2★ = 2 張費用 -1;3★ = 4 張費用 -1
+  // 賣出退費:1★ 全額;2★ = 3 張費用 -1;3★ = 9 張費用 -1(升星花的錢只少退 1 銅板)
   function sellValue(card, star) {
     const copies = Math.pow(STAR.mergeNeed, star - 1);
     return card.cost * copies - (star > 1 ? SELL_PENALTY : 0);

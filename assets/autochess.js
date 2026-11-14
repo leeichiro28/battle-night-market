@@ -18,7 +18,7 @@
   const params = new URLSearchParams(location.search), EVENT_ID = params.get("event");
   const OL = EVENT_ID && params.get("mode") !== "practice"
     ? { eventId: EVENT_ID, playerId: null, ev: null, clk: null, clkAt: 0, offset: 0, row: null, rev: 0, prepRound: 0, pairedRound: 0, playingRound: 0, checkedRound: 0, outcome: null, sealInfo: null,
-        names: {}, standings: [], deadline: 0, prepTotal: 90, sealing: false, saving: false, dirty: false, savePromise: null, saveSeq: 0, rowSeq: 0, busy: false, stopped: false, timer: null, err: 0, nextDelay: 1000, initDone: false, closing: false }
+        names: {}, standings: [], deadline: 0, prepTotal: 90, sealing: false, saving: false, dirty: false, savePromise: null, saveSeq: 0, rowSeq: 0, busy: false, stopped: false, timer: null, err: 0, nextDelay: 1000, initDone: false, closing: false, botDone: 0, botBusy: false, ready: false, readyAt: 0, readyInfo: null, readyOff: false, tickGen: 0, tickStart: 0, stuckSince: 0, reloadedRound: 0 }
     : null;
 
   // ---------------- 小工具 ----------------
@@ -100,7 +100,21 @@
     const a = e.target.closest("[data-tip]"); if (!a || (e.relatedTarget && a.contains(e.relatedTarget))) return;
     hideTip();
   });
-  root.addEventListener("contextmenu", (e) => { const a = e.target.closest("[data-tip]"); if (!a) return; e.preventDefault(); suppressUntil = Date.now() + 800; showTip(a); });
+  root.addEventListener("contextmenu", (e) => {
+    // 準備階段右鍵自己的卡:待命席 ⇄ 上陣直接互換(滑鼠專用;手機長按仍然是看說明)
+    const own = e.target.closest('[data-act="own"]');
+    if (own && view === "prep" && g && g.phase === "prep" && e.pointerType !== "touch") {
+      e.preventDefault(); hideTip();
+      const zone = own.dataset.zone, i = Number(own.dataset.i);
+      const r = G.move(g, { zone, idx: i }, { zone: zone === "board" ? "bench" : "board", idx: 99 });
+      sel = null;
+      if (!r.ok) setMsg(r.msg, "bad");
+      if (OL && r.ok) persist();
+      renderPrep();
+      return;
+    }
+    const a = e.target.closest("[data-tip]"); if (!a) return; e.preventDefault(); suppressUntil = Date.now() + 800; showTip(a);
+  });
   root.addEventListener("touchstart", (e) => {
     const a = e.target.closest("[data-tip]"); clearTimeout(pressTimer); if (!a) return;
     pressTimer = setTimeout(() => { suppressUntil = Date.now() + 900; showTip(a); }, 420);
@@ -150,7 +164,7 @@
         <ul class="ac-rules">
           <li>${ic("coins")}每輪用<b>銅板</b>買卡、刷新、升級;準備時間到(或按「完成準備」)就自動對戰。</li>
           <li>${ic("swords")}戰鬥全自動:速度快的先出手,預設打對方<b>第 1 位</b>。站位有意義:<b>先鋒</b>(第 1 位)、<b>壓軸</b>(最後一位)、<b>鄰接</b>。</li>
-          <li>${ic("layers")}同名同星 2 張合成更高星,<b>3★ 要 4 張 1★</b>。同流派不同名的卡湊 2 / 4 / 6 張觸發<b>羈絆</b>。</li>
+          <li>${ic("layers")}同名同星 3 張合成更高星,<b>3★ 要 9 張 1★</b>。同流派不同名的卡湊 2 / 4 / 6 張觸發<b>羈絆</b>。</li>
           <li>${ic("heart")}每人 100 血,輸了扣血,越後面扣越多;血量歸零淘汰,最後存活者第 1。</li>
           <li>${ic("piggy-bank")}<b>金庫</b>:結算時每持有 10 銅板多拿 1 銅板(最多 +3)。</li>
           <li>${ic("sparkles")}<b>R3 / R6 / R9</b> 各有一次「攤位加碼」三選一。</li>
@@ -301,7 +315,8 @@
         </div>
       </div>
       ${logCardHtml()}
-      ${OL ? `<div class="ac-dim ac-seal-note">${ic("clock")}時間到自動封板(沒選的加碼會替你選、空位會自動補上)</div>` : `<div class="action-row ac-seal"><button class="btn block" id="ac-seal">${ic("swords")}完成準備,開始對戰</button></div>`}`;
+      ${OL ? `<div class="action-row ac-seal"><button class="btn block${OL.ready ? " ghost" : ""}" id="ac-ready">${ic(OL.ready ? "check-check" : "swords")}${OL.ready ? "已完成準備(點一下取消)" : "完成準備,提早開始"}</button></div>
+        <div class="ac-dim ac-seal-note" id="ac-ready-info">${readyInfoText()}</div>` : `<div class="action-row ac-seal"><button class="btn block" id="ac-seal">${ic("swords")}完成準備,開始對戰</button></div>`}`;
     renderDetail();
     paintTimer();
     if (msg) setMsg(msg.text, msg.tone);
@@ -309,13 +324,14 @@
     const hp = document.getElementById("ac-help"); if (hp) hp.onclick = () => openTutorial(0);
     const sd = document.getElementById("ac-sound"); if (sd) sd.onclick = () => { AutochessSfx.setMuted(!AutochessSfx.isMuted()); sfx("bell"); renderPrep(); };
     const sl = document.getElementById("ac-seal"); if (sl) sl.onclick = () => doSeal(false);
+    const rd = document.getElementById("ac-ready"); if (rd) rd.onclick = olToggleReady;
     const po = document.getElementById("ac-perk-open"); if (po) po.onclick = openPerkIfAny;
   }
 
   function renderDetail() {
     const el = document.getElementById("ac-detail"); if (!el) return;
     const me = g.me;
-    if (!sel) { el.innerHTML = `<div class="ac-dim">點一張卡看說明與賣出;再點另一格就能移動 / 交換位置。點商店的卡直接購買。</div>`; return; }
+    if (!sel) { el.innerHTML = `<div class="ac-dim">點一張卡看說明與賣出;再點另一格就能移動 / 交換位置。點商店的卡直接購買。滑鼠右鍵點自己的卡可直接上陣 / 下陣。</div>`; return; }
     const arr = sel.zone === "board" ? me.board : me.bench, c = arr[sel.idx];
     if (!c) { sel = null; el.innerHTML = ""; return; }
     const d = cardDef(c), st = unitStats(c), sellV = AD.sellValue(d, c.star);
@@ -353,7 +369,7 @@
     else if (act === "toggle" && sel) { r = G.move(g, sel, { zone: sel.zone === "board" ? "bench" : "board", idx: 99 }); if (r.ok) sel = null; }
     else if (act === "sell" && sel) {
       const c = (sel.zone === "board" ? me.board : me.bench)[sel.idx];
-      if (c && c.star >= 3) { const ok = await ui.confirm(`「${cardDef(c).name}」是 3★(合了 4 張),確定要賣掉嗎?`, { title: "賣出 3★ 卡", confirmText: "賣出", tone: "danger" }); if (!ok) return; }
+      if (c && c.star >= 3) { const ok = await ui.confirm(`「${cardDef(c).name}」是 3★(合了 9 張),確定要賣掉嗎?`, { title: "賣出 3★ 卡", confirmText: "賣出", tone: "danger" }); if (!ok) return; }
       r = G.sell(g, sel.zone, sel.idx); if (r.ok) { setMsg(`賣出,+${r.value} 銅板`); sel = null; }
     }
     else if (act === "refresh") r = G.refresh(g);
@@ -378,7 +394,7 @@
   const TUTORIAL = [
     { icon: "store", title: "1. 買卡", body: "每輪先有一段準備時間。點商店裡的卡就能買(花銅板),不喜歡可以「刷新」,喜歡的先「鎖定」留到下一輪。買到的卡先進待命席,點一下再點場上的位置就能上陣。" },
     { icon: "swords", title: "2. 站位很重要", body: "場上從左到右排成一排:第 1 位是「先鋒」,最先挨打;最後一位是「壓軸」。很多卡的效果看站位,例如「先鋒:獲得護盾」「鄰接:替左右友軍加攻擊」。不想自己想,按「自動排站位」。" },
-    { icon: "flame", title: "3. 流派羈絆與升星", body: "同一個流派的卡湊到 2 / 4 / 6 張(要不同名字)會啟動羈絆,整隊變強。兩張同名同星會自動合成更高星,3★ 還會多一個質變效果。有些特定幾張卡湊在一起,會觸發隱藏羈絆……" },
+    { icon: "flame", title: "3. 流派羈絆與升星", body: "同一個流派的卡湊到 2 / 4 / 6 張(要不同名字)會啟動羈絆,整隊變強。三張同名同星會自動合成更高星,3★ 還會多一個質變效果。有些特定幾張卡湊在一起,會觸發隱藏羈絆……" },
     { icon: "piggy-bank", title: "4. 銅板與升級", body: "每輪結算有基本收入;贏了多拿、連勝再加。手上存的銅板每 10 個多 +1 利息(最多 +3)。買經驗可以升級,等級越高能上陣的卡越多、商店出好卡的機率也越高。" },
     { icon: "heart", title: "5. 對戰與淘汰", body: "時間到(或按「完成準備」)就會封板,雙方陣容自動對打,不用操作。輸了扣血,血量歸零就淘汰,最後留下的是棋王。第 3、6、9 輪有「攤位加碼」三選一,沒選會替你隨機選。" },
   ];
@@ -667,27 +683,46 @@
     const h1 = document.querySelector(".marquee h1"); if (h1) h1.innerHTML = `${esc(OL.ev.name)} <span>正式場</span>`;
     document.addEventListener("visibilitychange", () => { if (!document.hidden) olKick(); }); // 切回分頁時馬上校時
     window.addEventListener("online", olKick);
+    setInterval(() => { if (!OL.stopped && OL.busy && Date.now() - OL.tickStart >= 15000) olTick(); }, 3000); // 看門狗:tick 卡死時,主迴圈自己不會再排下一輪,要靠這個獨立的計時器叫醒
     olTick();
   }
   function olKick() { if (!OL || OL.stopped) return; clearTimeout(OL.timer); OL.timer = setTimeout(olTick, 0); }
   async function olTick() {
-    if (OL.stopped || OL.busy) return;
-    OL.busy = true; OL.nextDelay = 1000;
+    if (OL.stopped) return;
+    // 看門狗:上一輪 tick 卡在一個永遠不回來的網路請求(手機切背景、連線中斷後常見)超過 15 秒 → 放棄它,重新開始。
+    // 以前這種情況 busy 會永遠是 true,畫面就停住,要玩家自己重新整理。
+    if (OL.busy) { if (Date.now() - OL.tickStart < 15000) return; OL.tickGen++; OL.busy = false; console.warn("[autochess] tick 卡住超過 15 秒,已重新開始"); }
+    const gen = ++OL.tickGen;
+    OL.busy = true; OL.tickStart = Date.now(); OL.nextDelay = 1000;
     try {
       const t0 = Date.now(), clk = await db.autochessClock(OL.eventId), t1 = Date.now();
+      if (gen !== OL.tickGen) return; // 這個 tick 已經被看門狗作廢
       OL.clk = clk; OL.clkAt = (t0 + t1) / 2; OL.offset = Date.parse(clk.now) - OL.clkAt; // 伺服器時間 = 本機時間 + offset
       OL.err = 0;
       await olReact(clk);
+      olStuckCheck(clk);
     } catch (e) {
+      if (gen !== OL.tickGen) return;
       console.warn("[autochess]", e); OL.err++; olBanner("連線不穩,重試中…");
       OL.nextDelay = Math.min(5000, 1000 + OL.err * 1000);
     }
+    if (gen !== OL.tickGen) return;
     OL.busy = false;
     if (!OL.stopped) OL.timer = setTimeout(olTick, OL.nextDelay);
+  }
+  // 最後一道保險:伺服器已經進到某一輪的準備階段,但這個畫面超過 15 秒都沒跟上 → 自動重新載入頁面(進度都在伺服器上,不會丟)
+  function olStuckCheck(clk) {
+    const behind = clk.started && !clk.endedAt && clk.phase === "prep" && OL.row && OL.row.alive && OL.prepRound !== clk.round && !(OL.playingRound === clk.round);
+    if (!behind) { OL.stuckSince = 0; return; }
+    if (!OL.stuckSince) { OL.stuckSince = Date.now(); return; }
+    if (Date.now() - OL.stuckSince > 15000 && OL.reloadedRound !== clk.round && typeof location !== "undefined" && location.reload) {
+      OL.reloadedRound = clk.round; console.warn("[autochess] 準備階段超過 15 秒沒有刷新,自動重新載入"); location.reload();
+    }
   }
   async function olReact(clk) {
     olBanner(clk.paused ? "主辦人暫停中,計時已暫停" : null);
     if (!clk.started) return olWaiting();
+    if (!clk.endedAt && (clk.phase === "prep" || clk.phase === "countdown")) olDriveBots(clk).catch((e) => console.warn("[autochess] 機器人代打失敗", e));
     OL.rowSeq = OL.saveSeq; // 讀這份資料時的存檔序號:讀完之後如果又存過檔,這份就是舊的,不能拿來判斷「別人改了狀態」
     OL.row = await db.getAutochessPlayer(OL.eventId, OL.playerId);
     if (clk.endedAt) return olFinish();
@@ -698,6 +733,28 @@
     if (!OL.row.alive && !showingMine) return olSpectate(clk);
     if (clk.phase === "prep") return olPrep(clk);
     return olBattlePhase(clk);
+  }
+
+  // ---------- 機器人代打 ----------
+  // 測試機器人 / 補位機器人沒有人在操作:準備階段由在線的每個客戶端(含觀戰)幫忙讀出它的狀態、用電腦 AI 買卡排陣、存回去。
+  // 結果只看 botId + 種子,誰代打都一樣;同時有好幾個人代打時,只有第一個存得進去(版本鎖),其餘靜默略過。
+  async function olDriveBots(clk) {
+    const R = clk.phase === "countdown" ? 1 : clk.round;
+    if (OL.botBusy || OL.botDone >= R) return;
+    OL.botBusy = true;
+    try {
+      const rows = await db.listAutochessPlayers(OL.eventId);
+      let pending = 0;
+      for (const r of rows) {
+        if (!r.alive || !(r.players && r.players.is_bot)) continue;
+        if (((r.state && r.state.stateRound) || 0) >= R) continue;
+        if (r.settled_round < r.sealed_round) { pending++; continue; } // 上一場還沒結算完,存了也會被拒絕,下次再試
+        const next = G.botPrepOnline(r.state, R, r.player_id, `ev${OL.eventId}`, r.hp);
+        if (!next) continue;
+        try { await db.autochessSaveState(OL.eventId, r.player_id, r.state_rev, next, R); } catch (e) { pending++; }
+      }
+      if (!pending) OL.botDone = R;
+    } finally { OL.botBusy = false; }
   }
 
   // ---------- 還沒開始 / 倒數 ----------
@@ -731,6 +788,60 @@
     OL.nextDelay = 500;
   }
 
+  // ---------- 完成準備(全員準備好 → 提早開始)----------
+  function readyInfoText() {
+    const base = `${ic("clock")}時間到自動封板(沒選的加碼會替你選、空位會自動補上)。`;
+    if (!OL || OL.readyOff) return base + "(資料庫尚未更新,無法提早開始)";
+    const ri = OL.readyInfo;
+    return base + (ri && ri.total ? `已準備 <b>${ri.ready}</b> / ${ri.total} 人,全部準備好就會提早開始。` : "所有真人都按下「完成準備」就會提早開始。");
+  }
+  function paintReady() {
+    const info = document.getElementById("ac-ready-info"); if (info) info.innerHTML = readyInfoText();
+    const b = document.getElementById("ac-ready");
+    if (b) { b.classList.toggle("ghost", !!OL.ready); b.innerHTML = ic(OL.ready ? "check-check" : "swords") + (OL.ready ? "已完成準備(點一下取消)" : "完成準備,提早開始"); }
+  }
+  async function olToggleReady() {
+    if (!OL || view !== "prep" || OL.sealing || OL.readyBusy) return;
+    if (OL.readyOff) { setMsg("資料庫尚未更新(migration-autochess-ready.sql),目前只能等時間到自動封板", "bad"); return; }
+    OL.readyBusy = true; OL.readySeq = (OL.readySeq || 0) + 1;
+    try {
+      if (OL.ready) { OL.ready = false; paintReady(); await db.autochessReady(OL.eventId, OL.playerId, OL.prepRound, false); }
+      else {
+        if (g.me.pendingPerk) { setMsg("先選好這一輪的攤位加碼,再按完成準備", "bad"); return; }
+        closeModal(); hideTip(); sel = null;
+        G.sealPrep(g); // 空位補上、沒選的加碼替選(跟時間到封板同一套)
+        OL.readying = true; OL.ready = true; persist(); OL.readying = false; await olFlush(); // 先把陣容存好,再通知伺服器
+        if (!OL.ready) return; // 存檔時被判定為「還有改動」
+        render();
+        const r = await db.autochessReady(OL.eventId, OL.playerId, OL.prepRound, true);
+        if (r && !r.ok) { OL.ready = false; paintReady(); if (r.reason !== "not_prep" && r.reason !== "sealed") setMsg("無法完成準備:" + r.reason, "bad"); }
+        else if (r) { OL.readyInfo = { ready: r.ready, total: r.total }; paintReady(); if (r.early) olKick(); }
+      }
+    } catch (e) {
+      console.warn("[autochess] 完成準備失敗", e); OL.ready = false;
+      if (/autochess_ready|function|schema cache|PGRST202|42883/i.test(String((e && (e.message || e.code)) || e))) { OL.readyOff = true; setMsg("資料庫尚未更新(migration-autochess-ready.sql),目前只能等時間到自動封板", "bad"); }
+      else setMsg("網路不穩,沒有完成準備,請再按一次", "bad");
+      paintReady();
+    } finally { OL.readyBusy = false; }
+  }
+  // 準備階段中改了陣容 → 自動取消「已準備」(不然別人以為你好了,結果你還在調)
+  function olCancelReady() {
+    if (!OL || !OL.ready || OL.readyBusy || OL.sealing || view !== "prep") return;
+    OL.ready = false; OL.readySeq = (OL.readySeq || 0) + 1; paintReady();
+    db.autochessReady(OL.eventId, OL.playerId, OL.prepRound, false).catch(() => {});
+  }
+  async function olPollReady(R) {
+    if (OL.readyOff || Date.now() - OL.readyAt < 3000) return;
+    OL.readyAt = Date.now(); const seq = OL.readySeq || 0;
+    const rows = await db.listAutochessPlayers(OL.eventId);
+    if (seq !== (OL.readySeq || 0) || OL.readyBusy) return; // 讀的途中自己又按了準備 / 取消:這份資料已經是舊的
+    const hum = rows.filter((x) => x.alive && !(x.players && x.players.is_bot));
+    OL.readyInfo = { ready: hum.filter((x) => x.ready_round === R).length, total: hum.length };
+    const mine = rows.find((x) => x.player_id === OL.playerId);
+    if (mine && !OL.readyBusy && OL.prepRound === R && !OL.dirty && !OL.saving) OL.ready = mine.ready_round === R; // 以伺服器為準(例如另一個分頁取消了)
+    if (view === "prep") paintReady();
+  }
+
   // ---------- 準備階段 ----------
   async function olEnterPrep(R) {
     battleToken++; closeModal(); hideTip(); stopTimer();
@@ -745,6 +856,7 @@
     const advanced = g.round < R;
     G.catchUp(g, R);
     OL.prepRound = R; OL.sealing = false; OL.sealInfo = null; sel = null; view = "prep";
+    OL.ready = row.ready_round === R; OL.readyInfo = null; OL.readyAt = 0; OL.stuckSince = 0;
     if (advanced) { persist(); await olFlush(); }
     render(); startTimer(); openPerkIfAny();
     const o = OL.outcome;
@@ -761,6 +873,7 @@
     OL.deadline = (clk.paused ? Date.now() : OL.clkAt) + clk.left * 1000 - 500; // clk.left 是無條件進位的秒數,扣 0.5 秒取平均
     if (view === "prep" && !OL.saving && !OL.dirty && OL.rowSeq === OL.saveSeq && OL.row.state_rev > OL.rev) await olReload(R); // 另一個分頁改了狀態
     if (!timerId) startTimer();
+    olPollReady(R).catch(() => {});
   }
   function olTimerTick() {
     paintTimer();
@@ -769,6 +882,7 @@
   // 存檔:每次操作整批寫入,排隊送出;被拒絕代表狀態已經不是我以為的樣子,重新載入
   function persist() {
     if (!OL) return null;
+    if (OL.ready && !OL.readying) olCancelReady();
     OL.dirty = true; OL.saveSeq++;
     if (!OL.saving) OL.savePromise = olSaveLoop();
     return OL.savePromise;

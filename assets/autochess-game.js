@@ -386,5 +386,32 @@ window.AutochessGame = (function () {
     return { r, outcomes };
   }
 
-  return { createOnline, serialize, restore, catchUp, normState, battleOnline, sealPrep, create, startRound, buy, undo, sell, move, buyXp, autoArrange, refresh, refreshCost, toggleLock, pickPerk, targetsFor, seal, nextRound, bondsPreview, slotsOf, capacityOf, prepSeconds, stats, ranking, extraFor };
+  // ---- 連線版:測試機器人 / 補位機器人的準備階段 ----
+  // 機器人沒有人在操作,所以由在線的客戶端「代打」:把它存在資料庫的 state 讀出來,用單機版同一套電腦 AI(autochess-bot.js)
+  // 買卡、升級、排陣,再存回去。全部由 botId + 種子決定,誰代打結果都一樣(多個客戶端同時代打,只有第一個存得進去,其餘被版本鎖擋掉)。
+  const botHash = (id) => { let h = 0; String(id).split("").forEach((ch) => { h = (h * 31 + ch.charCodeAt(0)) >>> 0; }); return h; };
+  function botStrategy(botId) {
+    const h = botHash(botId), n = TAG_KEYS.length;
+    return { name: "正常", focus: h % (n + 2) >= n ? null : TAG_KEYS[h % (n + 2)], reserve: 0 }; // 約 8/10 專攻一個流派,2/10 雜牌
+  }
+  // state = 資料庫目前的狀態(可以是空物件);round = 現在是第幾輪。回傳要存回去的新 state(已經是這一輪就原樣回傳 null)
+  function botPrepOnline(state, round, botId, evSeed, hp) {
+    const st = normState(state);
+    const done = st.stateRound || 0;
+    if (done >= round) return null;
+    const p = Bot.newPlayer(botId, botStrategy(botId));
+    Object.assign(p, { gold: st.gold, level: st.level, xp: st.xp, streak: st.streak, board: st.board.map(copy), bench: st.bench.map(copy), hp: hp == null ? AD.START_HP : hp });
+    for (let r = done + 1; r <= round; r++) Bot.playPrep(p, r, evSeed); // 被動經驗在 playPrep 裡面算;漏掉的輪次補跑
+    // 保險:待命席不能超過格數,多出來的賣掉最弱的(電腦 AI 偶爾會在滿位時買進)
+    const pw = (c) => (AD.CARD_BY_ID[c.id].atk * 3 + AD.CARD_BY_ID[c.id].hp) * AD.STAR.stat[c.star];
+    while (p.bench.length > AD.BENCH_SLOTS) {
+      let wi = 0; p.bench.forEach((c, i) => { if (pw(c) < pw(p.bench[wi])) wi = i; });
+      const c = p.bench.splice(wi, 1)[0]; p.gold += AD.sellValue(AD.CARD_BY_ID[c.id], c.star);
+    }
+    st.gold = p.gold; st.level = p.level; st.xp = p.xp; st.board = p.board.map(copy); st.bench = p.bench.map(copy);
+    st.shop = []; st.shopLocked = false; st.refreshCount = 0; st.stateRound = round;
+    return st;
+  }
+
+  return { createOnline, botPrepOnline, botStrategy, serialize, restore, catchUp, normState, battleOnline, sealPrep, create, startRound, buy, undo, sell, move, buyXp, autoArrange, refresh, refreshCost, toggleLock, pickPerk, targetsFor, seal, nextRound, bondsPreview, slotsOf, capacityOf, prepSeconds, stats, ranking, extraFor };
 })();

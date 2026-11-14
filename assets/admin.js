@@ -772,13 +772,17 @@ function eventAdminCard(ev) {
   const startAcBtn = card.querySelector('[data-action="start-autochess"]');
   if (startAcBtn) {
     startAcBtn.onclick = async () => {
-      let n = 0;
-      try { n = (await db.listParticipants(ev.id)).length; } catch (e) {}
-      const tip = n < 4 ? `目前只有 ${n} 人報名,人太少不好玩(建議 4 人以上;可以先「加入測試機器人」湊數)。` : `目前 ${n} 人報名。`;
+      const FILL_TO = 10; // 不足 10 人自動補機器人
+      let n = 0, humans = 0;
+      try { const ps = await db.listParticipants(ev.id); n = ps.length; humans = ps.filter((p) => !(p.players && p.players.is_bot)).length; } catch (e) {}
+      if (humans < 1) { await ui.alert("至少要 1 位真人報名才能開始。", { title: "無法開始", tone: "danger" }); return; }
+      const fill = Math.max(0, FILL_TO - n);
+      const tip = fill > 0 ? `目前 ${n} 人報名(其中真人 ${humans} 人),不足 ${FILL_TO} 人,開始時會自動補 ${fill} 隻機器人(名字前面有 🤖,不領獎、不拿稱號)。` : `目前 ${n} 人報名。`;
       const ok = await ui.confirm(`${tip}開始後名單就鎖定,不能再加入。確定開始嗎?`, { title: "開始夜市自走棋", confirmText: "開始", tone: "question" });
       if (!ok) return;
       startAcBtn.disabled = true;
       try {
+        if (fill > 0) await db.addAutochessFillBots(ev.id, fill);
         await db.autochessStart(ev.id, { leadSec: 15, prepSec: [90], battleSec: 25, resultSec: 5, dataVersion: (window.AutochessData && AutochessData.DATA_VERSION) || 1 });
         loadAll();
       } catch (e) {

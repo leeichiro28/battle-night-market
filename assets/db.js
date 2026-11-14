@@ -475,6 +475,25 @@ const db = (function () {
     return { player, participant };
   }
 
+  // 夜市自走棋:人數不足時開賽前自動補「補位機器人」湊滿 total 人(預設 10)。名字固定加 🤖,玩家一看就知道是電腦;
+  // 機器人不領獎、不拿稱號(見 closeAutochessEvent),準備階段由在線的客戶端代打(autochess.js 的 olDriveBots)。
+  const AC_FILL_NAMES = ["阿財", "小芳", "大雄", "阿桂", "發哥", "美玲", "老周", "阿嬌", "小傑", "阿茂", "春嬌", "阿德", "小蘭", "鐵牛", "阿珠"];
+  async function addAutochessFillBots(eventId, count) {
+    const made = [];
+    const { data: ex, error: e0 } = await client.from("event_participants").select("player_id, players(name)").eq("event_id", eventId);
+    if (e0) throw e0;
+    const used = new Set((ex || []).map((r) => r.players && r.players.name));
+    const pool = AC_FILL_NAMES.slice().sort(() => Math.random() - 0.5);
+    for (let i = 0; i < count; i++) {
+      let name = null;
+      for (const n of pool) { if (!used.has("🤖" + n)) { name = "🤖" + n; break; } }
+      if (!name) name = `🤖路人${Math.floor(Math.random() * 900) + 100}`;
+      used.add(name);
+      made.push(await addTestBot(eventId, name));
+    }
+    return made;
+  }
+
   async function getMyParticipant(eventId, playerId) {
     const { data, error } = await client
       .from("event_participants")
@@ -5566,6 +5585,7 @@ const db = (function () {
     _acRpc("autochess_settle_round", { p_event_id: eventId, p_round: round, p_k: k, p_by: by, p_outcomes: outcomes });
   const autochessReportMismatch = (eventId, round, k, by, mine) =>
     _acRpc("autochess_report_mismatch", { p_event_id: eventId, p_round: round, p_k: k, p_by: by, p_mine: mine });
+  const autochessReady = (eventId, playerId, round, ready) => _acRpc("autochess_ready", { p_event_id: eventId, p_player_id: playerId, p_round: round, p_ready: !!ready });
   const autochessHeartbeat = (eventId, playerId) => _acRpc("autochess_heartbeat", { p_event_id: eventId, p_player_id: playerId });
 
   async function getAutochessPlayer(eventId, playerId) {
@@ -5625,7 +5645,7 @@ const db = (function () {
       const rows = (ctx && ctx.rows) || (await listAutochessPlayers(eventId));
       const me = rows.find((r) => r.player_id === playerId);
       if (!me || me.final_rank == null || (me.players && me.players.is_bot)) return [];
-      const nPlayers = rows.filter((r) => (r.settled_round || 0) > 0).length;
+      const nPlayers = rows.filter((r) => (r.settled_round || 0) > 0 && !(r.players && r.players.is_bot)).length; // 補位機器人不算人數(避免開機器人場刷冠軍)
       const allStats = (ctx && ctx.stats) || (await listAutochessStats(eventId));
       const mine = allStats.filter((x) => x.player_id === playerId).map((x) => x.stat);
       // 累計:這位玩家所有「≥4 人場」的冠軍 / 前三名次數(含本場,因為 final_rank 已寫入)
@@ -5634,10 +5654,10 @@ const db = (function () {
       if (error) throw error;
       const evIds = (hist || []).map((h) => h.event_id);
       if (evIds.length) {
-        const { data: all, error: e2 } = await client.from("autochess_players").select("event_id, settled_round").in("event_id", evIds);
+        const { data: all, error: e2 } = await client.from("autochess_players").select("event_id, settled_round, players(is_bot)").in("event_id", evIds);
         if (e2) throw e2;
         const cnt = {};
-        (all || []).forEach((r) => { if ((r.settled_round || 0) > 0) cnt[r.event_id] = (cnt[r.event_id] || 0) + 1; });
+        (all || []).forEach((r) => { if ((r.settled_round || 0) > 0 && !(r.players && r.players.is_bot)) cnt[r.event_id] = (cnt[r.event_id] || 0) + 1; });
         (hist || []).forEach((h) => { if ((cnt[h.event_id] || 0) >= AC_TITLE_MIN_PLAYERS) { top3++; if (h.final_rank === 1) champs++; } });
       }
       // 跨場對局紀錄(搭配類、流派類稱號用);讀不到就只判前面那些
@@ -5666,10 +5686,15 @@ const db = (function () {
     if (!ev || ev.status === "closed") return { already: true };
     const rows = (await listAutochessPlayers(eventId)).filter((r) => r.final_rank != null).sort((a, b) => a.final_rank - b.final_rank);
     if (!rows.length) return { already: false, standings: [] };
+    // 獎勵看「真人之間」的名次:機器人排在前面不會吃掉獎項(沒有機器人的場次,真人名次 = 總名次,行為不變)
+    let humanRank = 0;
     for (const r of rows) {
-      const reward = rewardForRank(ev, r.final_rank);
+      const isBot = !!(r.players && r.players.is_bot);
+      if (isBot) continue; // 機器人不領獎(autochess_players.final_rank 仍保留,畫面照常顯示總名次)
+      humanRank++;
+      const reward = rewardForRank(ev, humanRank);
       await client.from("autochess_players").update({ reward }).eq("event_id", eventId).eq("player_id", r.player_id);
-      await client.from("event_participants").update({ reward, final_rank: r.final_rank }).eq("event_id", eventId).eq("player_id", r.player_id);
+      await client.from("event_participants").update({ reward, final_rank: humanRank }).eq("event_id", eventId).eq("player_id", r.player_id);
     }
     // 稱號:每位真人玩家各自判定(失敗只警告,不擋結算)
     const stats = await listAutochessStats(eventId).catch(() => []);
@@ -5731,6 +5756,7 @@ const db = (function () {
     setDisplayTitle,
     joinEvent,
     addTestBot,
+    addAutochessFillBots,
     getMyParticipant,
     listParticipants,
     listMatches,
@@ -5869,6 +5895,7 @@ const db = (function () {
     autochessSettleRound,
     autochessReportMismatch,
     autochessHeartbeat,
+    autochessReady,
     getAutochessPlayer,
     listAutochessPlayers,
     getAutochessMatch,

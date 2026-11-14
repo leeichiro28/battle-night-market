@@ -49,7 +49,7 @@ function clockOf() {
 const rowsOf = () => Object.values(S.players);
 function srvStart(run) {
   if (S.ev.rules.autochess.run) return { ok: true, already: true };
-  S.parts.forEach((p) => { S.players[p.id] = { event_id: "EV1", player_id: p.id, hp: (run && run.startHp) || 100, wins: 0, losses: 0, state: {}, state_rev: 0, alive: true, eliminated_round: null, overflow: 0, final_rank: null, reward: null, sealed_round: 0, settled_round: 0, last_action_round: 0, players: { name: p.name } }; });
+  S.parts.forEach((p) => { S.players[p.id] = { event_id: "EV1", player_id: p.id, hp: (run && run.startHp) || 100, wins: 0, losses: 0, state: {}, state_rev: 0, alive: true, eliminated_round: null, overflow: 0, final_rank: null, reward: null, sealed_round: 0, settled_round: 0, last_action_round: 0, players: { name: p.name, is_bot: !!p.bot } }; });
   if (rowsOf().length < 2) throw new Error("autochess_need_2_players");
   S.ev.rules.autochess.run = { startedAt: new Date(V.now + ((run && run.leadSec) ?? 15) * 1000).toISOString(), prepSec: (run && run.prepSec) || [90], battleSec: (run && run.battleSec) || 25, resultSec: (run && run.resultSec) || 5, limitSec: (run && run.limitSec) ?? null, pausedTotal: 0, extra: {} };
   S.ev.locked = true; S.ev.status = "running"; return { ok: true };
@@ -112,10 +112,25 @@ function srvSettle(round, k, by, outcomes) {
   if (!S.rounds.some((x) => x.round === round && !x.resolved)) {
     rowsOf().forEach((p) => { if (p.alive && p.hp <= 0) { p.alive = false; p.eliminated_round = round; p.overflow = Math.max(-p.hp, 0); } });
     const aliveN = rowsOf().filter((p) => p.alive).length, c = clockOf();
-    if (aliveN <= 1) srvFinish("last_one"); else if (c.over) srvFinish("timeout");
+    const humansAlive = rowsOf().filter((p) => p.alive && !(p.players && p.players.is_bot)).length, hasHuman = rowsOf().some((p) => !(p.players && p.players.is_bot));
+    if (aliveN <= 1) srvFinish("last_one"); else if (humansAlive === 0 && hasHuman) srvFinish("no_humans"); else if (c.over) srvFinish("timeout");
     return { ok: true, roundDone: true, alive: aliveN };
   }
   return { ok: true, roundDone: false };
+}
+function srvReady(pid, round, ready) {
+  const c = clockOf(), run = S.ev.rules.autochess.run;
+  if (!c.started || c.endedAt) return { ok: false, reason: "not_running" };
+  if (c.phase !== "prep" || c.round !== round) return { ok: false, reason: "not_prep" };
+  const pl = S.players[pid]; if (!pl) return { ok: false, reason: "no_player" }; if (!pl.alive) return { ok: false, reason: "dead" }; if (pl.sealed_round >= round) return { ok: false, reason: "sealed" };
+  pl.ready_round = ready ? round : 0;
+  const hum = rowsOf().filter((p) => p.alive && !(p.players && p.players.is_bot)), rd = hum.filter((p) => p.ready_round === round).length;
+  let early = false;
+  if (ready && hum.length && rd === hum.length && !c.paused && c.left > 3) {
+    const np = Math.ceil(c.phaseElapsed) + 2;
+    if (np < c.prepSec) { run.extra[round] = (run.extra[round] || 0) + (np - c.prepSec); early = true; }
+  }
+  return { ok: true, ready: rd, total: hum.length, early };
 }
 function srvControl(action, sec) {
   const run = S.ev.rules.autochess.run; if (!run || run.endedAt) return { ok: false };
@@ -155,13 +170,14 @@ function makeClient(pid, name, { search } = {}) {
     createElement: () => mkEl(""), querySelector: (sel) => (sel === ".marquee h1" ? h1 : null), addEventListener() {}, body: { appendChild() {} }, documentElement: { clientWidth: 400, clientHeight: 800 }, hidden: false,
   };
   ctx.ui = { esc: (s) => String(s == null ? "" : s), icon: () => "", confirm: async () => true, alert: async () => {} };
-  const lat = async () => { if (me.offline) throw new Error("network down"); await new Promise((r) => ctx.setTimeout(r, 60)); if (me.offline) throw new Error("network down"); };
+  const lat = async () => { if (me.hangOnce) { me.hangOnce = false; await new Promise(() => {}); } if (me.offline) throw new Error("network down"); await new Promise((r) => ctx.setTimeout(r, 60)); if (me.offline) throw new Error("network down"); };
   const wrap = (name, fn) => async (...a) => { await lat(); count(name); return fn(...a); };
   ctx.db = {
     getLocalPlayer: () => (pid ? { id: pid, name } : { id: null, name: "" }),
     getEvent: wrap("getEvent", async () => clone(S.ev)),
     listParticipants: wrap("listParticipants", async () => S.parts.map((p) => ({ player_id: p.id, players: { name: p.name, is_bot: false } }))),
     autochessClock: wrap("clock", async () => clockOf()),
+    autochessReady: wrap("ready", async (e, p, rd, v) => srvReady(p, rd, v)),
     autochessSaveState: wrap("save", async (e, p, rev, st, r) => srvSave(p, rev, st, r)),
     autochessPairRound: wrap("pair", async (e, r) => srvPair(r)),
     autochessSettleRound: wrap("settle", async (e, r, k, by, o) => srvSettle(r, k, by, o)),
@@ -177,7 +193,8 @@ function makeClient(pid, name, { search } = {}) {
     listAutochessStats: wrap("stats", async () => []),
     closeAutochessEvent: wrap("close", async () => {
       if (S.ev.status === "closed") return { already: true };
-      rowsOf().filter((r) => r.final_rank != null).forEach((r) => { r.reward = (S.ev.reward_plan.items || [])[r.final_rank - 1] || null; }); S.ev.status = "closed"; return { already: false };
+      // 跟 db.js closeAutochessEvent 同一套規則:機器人不領獎,獎勵看「真人之間」的名次
+      let hr = 0; rowsOf().filter((r) => r.final_rank != null).sort((x, y) => x.final_rank - y.final_rank).forEach((r) => { if (r.players && r.players.is_bot) return; hr++; r.reward = (S.ev.reward_plan.items || [])[hr - 1] || null; }); S.ev.status = "closed"; return { already: false };
     }),
   };
   for (const f of ["autochess-data.js", "autochess-engine.js", "autochess-bot.js", "autochess-game.js", "autochess-awards.js", "autochess-sfx.js"]) vm.runInContext(fs.readFileSync(path.join(ASSETS, f), "utf8"), ctx, { filename: f });
@@ -185,6 +202,9 @@ function makeClient(pid, name, { search } = {}) {
   me.root = root; me.html = () => html;
   me.load = () => vm.runInContext(fs.readFileSync(path.join(ASSETS, "autochess.js"), "utf8"), ctx, { filename: "autochess.js" });
   me.clickWatch = (k) => me.handlers.click && me.handlers.click({ target: { closest: (sel) => (sel === "[data-watch]" ? { dataset: { watch: String(k) } } : null) } });
+  me.press = (id) => { const el = idCache[id]; if (el && el.onclick) return el.onclick(); };
+  me.el = (id) => idCache[id];
+  me.hasEl = (id) => html.includes(`id="${id}"`);
   me.click = (dataset) => me.handlers.click && me.handlers.click({ target: { closest: (sel) => (sel === "[data-act]" ? { dataset } : null) } });
   clients.push(me); return me;
 }
@@ -230,6 +250,63 @@ async function scenarioB() {
   t("B:沒有結算不一致、沒有金額被夾住", () => eq(S.log.filter((l) => l.kind === "mismatch" || l.kind === "gold_clamped"), []));
   t("B:前端沒有吞掉的例外", () => eq(warns.filter((w) => /TypeError|ReferenceError|RangeError/.test(w)).slice(0, 3), []));
   t("B:活動關閉、獎勵發放", () => { eq(S.ev.status, "closed"); eq(Object.values(S.players).find((p) => p.final_rank === 1).reward, "金"); });
+}
+
+
+// ---------------- 場景 C:測試機器人由在線客戶端代打(上陣卡牌、會被配對、會打) ----------------
+async function scenarioC() {
+  console.log("\n== 場景 C:2 位真人 + 2 隻測試機器人 ==");
+  V.timers = []; clients.length = 0; errors.length = 0; warns.length = 0;
+  S.ev = { id: "EV1", name: "測試場C", game_type: "autochess", status: "open", locked: false, rules: { autochess: {} }, reward_plan: { items: ["金", "銀"] } };
+  S.players = {}; S.rounds = []; S.stats = []; S.log = []; S.parts = []; S.calls = {}; S.rejects = {};
+  S.parts.push({ id: "h1", name: "真人1" }, { id: "h2", name: "真人2" }, { id: "bot1", name: "測試機器人 1", bot: true }, { id: "bot2", name: "測試機器人 2", bot: true });
+  const h1 = makeClient("h1", "真人1"), h2 = makeClient("h2", "真人2");
+  [h1, h2].forEach((c) => c.load());
+  await pump(V.now + 3000);
+  srvStart({ leadSec: 10, prepSec: [60], limitSec: 400 });
+  await pump(V.now + 14000);
+  t("C:倒數期間機器人就已經有第 1 輪的陣容(有上陣卡牌)", () => { ["bot1", "bot2"].forEach((id) => { const st = S.players[id].state; eq(st.stateRound, 1, id); ok(st.board && st.board.length >= 1, id + " 沒有上陣卡牌"); }); });
+  // 提早開始:第 1 輪準備(60 秒)——只有 1 人準備不會開始,2 人都準備才提早進戰鬥
+  await pump(V.now + 3000);
+  t("C:準備畫面有「完成準備」按鈕", () => { ok(h1.hasEl("ac-ready") && h2.hasEl("ac-ready"), "沒有按鈕"); eq(clockOf().phase, "prep"); });
+  h1.press("ac-ready"); await pump(V.now + 3000);
+  t("C:只有 1 位真人按準備 → 不會提早開始;伺服器記下 ready_round", () => { eq(clockOf().phase, "prep"); eq(S.players.h1.ready_round, 1); ok(h1.html().includes("已完成準備")); const info = h1.el("ac-ready-info"); ok(info && info.innerHTML.includes("已準備 <b>1</b> / 2"), "顯示人數: " + (info && info.innerHTML)); });
+  h1.click({ act: "refresh" }); await pump(V.now + 2000);
+  t("C:準備後又改了陣容(刷新商店)→ 自動取消已準備", () => { eq(S.players.h1.ready_round, 0); ok(!h1.html().includes("已完成準備")); });
+  h1.press("ac-ready"); await pump(V.now + 2000); h2.press("ac-ready");
+  const tReady = V.now; await pump(V.now + 6000);
+  t("C:全部真人準備好 → 提早進入戰鬥(遠少於 60 秒)", () => { const c = clockOf(); ok(c.round >= 1 && (c.round > 1 || c.phase !== "prep"), `phase=${c.phase} round=${c.round}`); ok(V.now - tReady < 10000); ok(S.ev.rules.autochess.run.extra[1] < 0, "extra=" + JSON.stringify(S.ev.rules.autochess.run.extra)); });
+  await pump(V.now + 25000);
+  t("C:提早開始後第 1 輪正常配對並結算(陣容都有存進去)", () => { ok(S.rounds.some((m) => m.round === 1), "沒配對"); ok(S.rounds.filter((m) => m.round === 1).every((m) => m.resolved), "沒結算"); eq(errors.slice(0, 3), []); });
+  h2.hangOnce = true; // 真人2 的下一個網路請求永遠不回來(模擬手機切背景 / 連線卡死)
+  await pump(V.now + 100 * 90 * 1000, () => S.ev.rules.autochess.run.endedAt && S.ev.status === "closed");
+  await pump(V.now + 15000);
+  const lastRound = Math.max(...S.rounds.map((m) => m.round));
+  t("C:網路請求卡死 → 看門狗 15 秒後自己重新開始,不用手動重新整理,一路打到最後", () => { ok(warns.some((w) => w.includes("tick 卡住超過 15 秒")), "看門狗沒有觸發"); ok(h2.html().includes("最終名次") || h2.html().includes("夜市棋王"), "真人2 的畫面停住了"); });
+  t("C:每一輪、每隻還活著的機器人,封板時都有上陣卡牌", () => {
+    S.rounds.forEach((m) => [["board1", m.p1], ["board2", m.p2]].forEach(([k, pid]) => { if (pid && pid.startsWith("bot")) ok(((m[k].state || {}).board || []).length >= 1, `R${m.round} ${pid} 空陣容`); }));
+  });
+  t("C:機器人每輪的 stateRound 都有跟上(沒有停在第 1 輪)", () => { const live = ["bot1", "bot2"].filter((id) => S.players[id].alive); live.forEach((id) => ok(S.players[id].state.stateRound >= lastRound - 1, `${id} stateRound=${S.players[id].state.stateRound}、最後一輪 ${lastRound}`)); });
+  t("C:機器人有打出勝負(不是一開打就被秒殺 / 平手)", () => { const wl = ["bot1", "bot2"].reduce((a, id) => a + S.players[id].wins + S.players[id].losses, 0); ok(wl >= 2, "機器人勝敗總數 " + wl); });
+  t("C:所有場次結算、沒有不一致、前端沒有例外", () => { ok(S.rounds.every((m) => m.resolved)); eq(S.log.filter((l) => l.kind === "mismatch"), []); eq(errors.slice(0, 3), []); eq(warns.filter((w) => /TypeError|ReferenceError|RangeError/.test(w)).slice(0, 3), []); });
+}
+
+// ---------------- 場景 D:補位機器人場——真人全部淘汰就結束,獎勵只看真人名次 ----------------
+async function scenarioD() {
+  console.log("\n== 場景 D:1 位真人 + 5 隻補位機器人,真人被淘汰就結束 ==");
+  V.timers = []; clients.length = 0; errors.length = 0; warns.length = 0;
+  S.ev = { id: "EV1", name: "測試場D", game_type: "autochess", status: "open", locked: false, rules: { autochess: {} }, reward_plan: { items: ["金", "銀"] } };
+  S.players = {}; S.rounds = []; S.stats = []; S.log = []; S.parts = []; S.calls = {}; S.rejects = {};
+  S.parts.push({ id: "h1", name: "真人1" }); for (let i = 1; i <= 5; i++) S.parts.push({ id: "fb" + i, name: "🤖路人" + i, bot: true });
+  const h1 = makeClient("h1", "真人1"); h1.load();
+  await pump(V.now + 3000);
+  srvStart({ leadSec: 10, prepSec: [30], limitSec: 900, startHp: 30 }); // 血量少,真人(從不操作、陣容靠自動補位)很快被淘汰
+  await pump(V.now + 100 * 60 * 1000, () => S.ev.rules.autochess.run.endedAt && S.ev.status === "closed");
+  await pump(V.now + 15000);
+  const run = S.ev.rules.autochess.run, h = S.players.h1;
+  t("D:真人被淘汰後遊戲結束(原因 no_humans),不用等機器人互打到只剩一隻", () => { ok(!h.alive, "真人沒被淘汰,測試前提不成立"); eq(run.endReason, "no_humans"); ok(rowsOf().filter((p) => p.alive).length > 1, "機器人應該還有多隻活著"); });
+  t("D:真人的名次排在還活著的機器人後面,活動關閉、獎勵只發給真人", () => { ok(h.final_rank > 1); eq(S.ev.status, "closed"); const rewarded = rowsOf().filter((p) => p.reward); ok(rewarded.every((p) => !p.players.is_bot), "機器人拿到了獎勵"); eq(h.reward, "金"); });
+  t("D:全程沒有前端例外、所有場次結算", () => { eq(errors.slice(0, 3), []); ok(S.rounds.every((m) => m.resolved)); });
 }
 
 // ---------------- 測試劇本 ----------------
@@ -326,6 +403,8 @@ const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new
   t("沒有任何前端例外(timer / unhandledRejection / console.error)", () => { eq(errors.slice(0, 5), []); });
 
   await scenarioB();
+  await scenarioC();
+  await scenarioD();
   if (warns.length) console.log("   警告(前 5 筆):\n    " + warns.slice(0, 5).join("\n    "));
   console.log(`\n${fail ? "✗" : "✓"} ${pass} 通過 / ${fail} 失敗`);
   process.exit(fail ? 1 : 0);

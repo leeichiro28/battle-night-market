@@ -16,6 +16,30 @@ const snap = (pid, state, extra) => Object.assign({ player_id: pid, hp: 100, win
 const withBoard = (state, ids) => Object.assign({}, state, { board: ids.map((id) => ({ id, star: 1 })) });
 const cards = Object.keys(AD.CARD_BY_ID);
 
+console.log("== 機器人代打(測試機器人 / 補位機器人)==");
+t("機器人空狀態第 1 輪:會買卡並上陣,stateRound=1,不超過銅板與格數", () => {
+  const st = G.botPrepOnline({}, 1, "bot-a", "evX", 100);
+  ok(st && st.board.length >= 1, "沒有上陣"); eq(st.stateRound, 1); ok(st.gold >= 0 && st.gold <= AD.START_GOLD, "銅板 " + st.gold);
+  ok(st.board.length <= AD.slotsFor(st.level) && st.bench.length <= AD.BENCH_SLOTS);
+});
+t("同一輪重複代打 → 回傳 null(不重複花錢);同輸入結果完全一樣(決定性)", () => {
+  const a = G.botPrepOnline({}, 1, "bot-a", "evX", 100), b = G.botPrepOnline({}, 1, "bot-a", "evX", 100);
+  eq(a, b); eq(G.botPrepOnline(a, 1, "bot-a", "evX", 100), null);
+});
+t("不同機器人專攻的流派不全一樣(策略由 id 決定)", () => { const f = new Set(["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"].map((id) => G.botStrategy(id).focus)); ok(f.size >= 3, "只有 " + f.size + " 種"); });
+t("連續 15 輪、每輪結算後補銅板:陣容一直不是空的、待命席不超過格數、等級會成長", () => {
+  for (let b = 0; b < 12; b++) {
+    let st = {};
+    for (let r = 1; r <= 15; r++) { const n = G.botPrepOnline(st, r, "bot" + b, "evY", 100); ok(n.board.length >= 1, `bot${b} R${r} 空陣容`); ok(n.bench.length <= AD.BENCH_SLOTS, `bot${b} R${r} 待命席 ${n.bench.length}`); n.gold += AD.baseIncome(r); st = n; }
+    ok(st.level >= 5, `bot${b} 15 輪後只有 Lv${st.level}`);
+  }
+});
+t("漏掉幾輪(離線)會補跑:直接從第 1 輪跳到第 5 輪也能得到合理陣容", () => { const n = G.botPrepOnline({}, 5, "bot-z", "evZ", 100); ok(n.board.length >= 1); eq(n.stateRound, 5); });
+t("機器人的狀態拿去對戰(battleOnline)能正常打、跟空狀態比有實際陣容", () => {
+  const st = G.botPrepOnline({}, 3, "bot-a", "evX", 100);
+  const x = G.battleOnline(3, snap("bot-a", st), snap("b", withBoard(G.normState({}), ["passerby"])), false, "bt", false); eq(x.outcomes.length, 2); ok(st.board.length > 0);
+});
+
 console.log("== 存檔 / 還原 / 補跑 ==");
 t("開局:round 0、沒有電腦玩家、只有自己", () => { const g = mkG(); eq([g.round, g.bots.length, g.players.length], [0, 0, 1]); });
 t("補跑到第 1 輪:商店有 5 格、stateRound=1", () => { const g = mkG(); G.catchUp(g, 1); eq(g.round, 1); eq(g.me.shop.length, 5); eq(G.serialize(g).stateRound, 1); });

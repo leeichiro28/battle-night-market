@@ -15,8 +15,8 @@ t("8 個流派,每個有名稱/圖示/說明與 3 級羈絆(門檻 2/4/6)", () =
   eq(Object.keys(AD.TAGS).length, 8);
   Object.keys(AD.TAGS).forEach((k) => { const tg = AD.TAGS[k]; ok(tg.name && tg.icon && tg.desc, k + " 缺欄位"); eq((AD.BONDS[k] || []).map((x) => x.need), [2, 4, 6], k + " 羈絆門檻"); AD.BONDS[k].forEach((b) => ok(b.desc && b.fx && Object.keys(b.fx).length, k + " 羈絆沒有效果")); });
 });
-t("卡牌 48~56 張,id 不重複,費用只有 1/2/3/5,流派都存在,都有 3★ 質變", () => {
-  ok(AD.CARDS.length >= 48 && AD.CARDS.length <= 56, "張數 " + AD.CARDS.length);
+t("卡牌 80~100 張,id 不重複,費用只有 1/2/3/5,流派都存在,都有 3★ 質變", () => {
+  ok(AD.CARDS.length >= 80 && AD.CARDS.length <= 100, "張數 " + AD.CARDS.length);
   eq(new Set(AD.CARDS.map((c) => c.id)).size, AD.CARDS.length, "id 重複");
   AD.CARDS.forEach((c) => {
     ok([1, 2, 3, 5].includes(c.cost), c.id + " 費用");
@@ -26,8 +26,8 @@ t("卡牌 48~56 張,id 不重複,費用只有 1/2/3/5,流派都存在,都有 3�
     ok(c.star3 && c.star3.desc && c.star3.fx && c.star3.fx.length, c.id + " 缺 3★ 質變");
   });
 });
-t("每個流派 5~6 張單流派卡(含各費用段),雙流派 ≥ 6 張,通用 ≥ 6 張", () => {
-  Object.keys(AD.TAGS).forEach((k) => { const n = AD.CARDS.filter((c) => c.tags.length === 1 && c.tags[0] === k).length; ok(n >= 4 && n <= 6, k + " 單流派 " + n + " 張"); });
+t("每個流派 8~10 張單流派卡(含各費用段),雙流派 ≥ 6 張,通用 ≥ 6 張", () => {
+  Object.keys(AD.TAGS).forEach((k) => { const n = AD.CARDS.filter((c) => c.tags.length === 1 && c.tags[0] === k).length; ok(n >= 8 && n <= 10, k + " 單流派 " + n + " 張"); });
   ok(AD.CARDS.filter((c) => c.tags.length === 2).length >= 6, "雙流派不足");
   ok(AD.CARDS.filter((c) => c.tags.length === 0).length >= 6, "通用不足");
   [1, 2, 3, 5].forEach((cost) => ok(AD.CARDS.filter((c) => c.cost === cost).length >= 5, cost + " 費卡太少"));
@@ -47,7 +47,7 @@ t("隱藏羈絆:3 張卡都存在、不重複、各有效果與說明", () => {
   AD.HIDDEN_BONDS.forEach((h) => { eq(h.cards.length, 3); eq(new Set(h.cards).size, 3); h.cards.forEach((id) => ok(AD.CARD_BY_ID[id], h.id + " 找不到 " + id)); ok(h.name && h.desc && Object.keys(h.fx).length); });
   eq(new Set(AD.HIDDEN_BONDS.map((h) => h.id)).size, AD.HIDDEN_BONDS.length);
 });
-t("資料版本已升為 2", () => ok(AD.DATA_VERSION >= 2));
+t("資料版本已升為 3", () => ok(AD.DATA_VERSION >= 3));
 
 console.log("== 羈絆與隱藏羈絆 ==");
 t("雙流派卡兩個流派都算、同名不重複計數", () => {

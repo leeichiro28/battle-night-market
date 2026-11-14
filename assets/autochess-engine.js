@@ -428,7 +428,7 @@ window.AutochessEngine = (function () {
   }
 
   // ---------------- 合成 ----------------
-  // 待命席 + 上陣加起來,同名同星有 2 張 → 合成 1 張高 1 星(優先保留在上陣的位置)。3★ 因此需要 4 張 1★。
+  // 待命席 + 上陣加起來,同名同星有 3 張 → 合成 1 張高 1 星(優先保留在上陣的位置)。3★ 因此需要 9 張 1★。
   function mergeCards(board, bench) {
     board = board.map((c) => ({ ...c })); bench = bench.map((c) => ({ ...c }));
     const merged = [];
