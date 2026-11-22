@@ -210,6 +210,36 @@ t("格數:5 格,Lv8 起 6 格", () => { eq(E.rollShop("s", 1, 0, 1).length, 5); 
 t("Lv1 只出普通;Lv2 沒有史詩/傳說", () => {
   for (let i = 0; i < 100; i++) { E.rollShop("s", i, 0, 1).forEach((id) => eq(AD.CARD_BY_ID[id].cost, 1)); E.rollShop("s", i, 1, 2).forEach((id) => ok(AD.CARD_BY_ID[id].cost <= 2)); }
 });
+t("排除清單:被排除的卡永遠不會出現;沒傳或傳空陣列時結果跟以前完全一樣", () => {
+  const ban = AD.CARDS.slice(0, 20).map((c) => c.id);
+  for (let i = 0; i < 300; i++) E.rollShop("ex", i, i % 3, 1 + (i % 10), { exclude: ban }).forEach((id) => ok(ban.indexOf(id) < 0, "出現了被排除的卡 " + id));
+  for (let i = 0; i < 50; i++) { eq(E.rollShop("ex", i, 0, 5, { exclude: [] }), E.rollShop("ex", i, 0, 5)); eq(E.rollShop("ex", i, 1, 5, {}), E.rollShop("ex", i, 1, 5)); }
+});
+t("排除清單:同樣的排除清單永遠抽到同一排(決定性)", () => { const ban = [AD.CARDS[0].id, AD.CARDS[5].id]; eq(E.rollShop("ex2", 4, 2, 6, { exclude: ban }), E.rollShop("ex2", 4, 2, 6, { exclude: ban })); });
+t("排除清單:整個稀有度被排除光了也不會當掉(往低階補抽;全部卡都排除就忽略清單)", () => {
+  const legend = AD.CARDS.filter((c) => c.cost === 5).map((c) => c.id), commons = AD.CARDS.filter((c) => c.cost === 1).map((c) => c.id);
+  for (let i = 0; i < 100; i++) { E.rollShop("ex3", i, 0, 10, { exclude: legend }).forEach((id) => ok(AD.CARD_BY_ID[id] && legend.indexOf(id) < 0)); E.rollShop("ex3", i, 0, 1, { exclude: commons }).forEach((id) => ok(AD.CARD_BY_ID[id] && commons.indexOf(id) < 0)); }
+  const all = AD.CARDS.map((c) => c.id); E.rollShop("ex3", 1, 0, 5, { exclude: all }).forEach((id) => ok(AD.CARD_BY_ID[id]));
+  E.rollShop("ex3", 1, 0, 5, { exclude: AD.CARDS.filter((c) => c.cost >= 3).map((c) => c.id), guaranteeEpic: true }).forEach((id) => ok(AD.CARD_BY_ID[id]));
+});
+t("夜市事件:只在 R4、R8、R12…出現,避開怪物輪,同種子結果固定", () => {
+  for (let r = 1; r <= 40; r++) { const e = E.nightEvent("S", r), want = r >= 4 && r % 4 === 0 && !AD.isMonsterRound(r); eq(!!e, want, "R" + r); if (e) ok(AD.NIGHT_EVENT_BY_ID[e.id]); eq(E.nightEvent("S", r), e); }
+});
+t("夜市事件:不會連續兩個事件一樣;7 種事件在不同種子下都出現過", () => {
+  const seen = {};
+  for (let i = 0; i < 80; i++) { let prev = null; for (let r = 4; r <= 24; r += 4) { const e = E.nightEvent("sd" + i, r); ok(!prev || prev !== e.id, "連續重複 " + e.id); prev = e.id; seen[e.id] = 1; } }
+  eq(Object.keys(seen).sort(), AD.NIGHT_EVENTS.map((e) => e.id).sort());
+});
+t("夜市事件結算:發財時段 +2;颱風夜不計利息、贏了 +2、輸了不給", () => {
+  const b = { round: 8, gold: 50, streak: 0, level: 5 }, n = E.settleEconomy({ ...b, result: "win" });
+  const j = E.settleEconomy({ ...b, result: "win", event: "jackpot" }); eq([j.eventCoins, j.gain - n.gain], [2, 2]);
+  const ty = E.settleEconomy({ ...b, result: "win", event: "typhoon" }); eq([ty.interest, ty.eventCoins, ty.gain - n.gain], [0, 2, 2 - n.interest]);
+  const tl = E.settleEconomy({ ...b, result: "lose", event: "typhoon" }); eq([tl.interest, tl.eventCoins], [0, 0]);
+  eq(E.settleEconomy({ ...b, result: "win", event: "rain" }).gain, n.gain);
+});
+t("重壓之夜:輸家扣血 ×1.5(無條件進位),其他事件不變", () => {
+  const d = E.loseDamage(8, 5); eq(E.loseDamage(8, 5, "heavy"), Math.ceil(d * 1.5)); eq(E.loseDamage(8, 5, "rain"), d); eq(E.loseDamage(8, 5, null), d);
+});
 t("Lv10 的傳說比例約 50%(±8%)", () => {
   let leg = 0, n = 0; for (let i = 0; i < 400; i++) E.rollShop("L", i, 0, 10).forEach((id) => { n++; if (AD.CARD_BY_ID[id].cost === 5) leg++; });
   ok(Math.abs(leg / n - 0.5) < 0.08, "傳說比例 " + (leg / n).toFixed(3));
@@ -217,8 +247,8 @@ t("Lv10 的傳說比例約 50%(±8%)", () => {
 
 console.log("== 經濟與等級 ==");
 t("基本收入:R1~4=5 / R5~9=6 / R10~14=7 / R15+=8", () => eq([1, 4, 5, 9, 10, 14, 15, 22].map(AD.baseIncome), [5, 5, 6, 6, 7, 7, 8, 8]));
-t("連勝加成:2 勝+1 / 3~4 勝+2 / 5+ +3", () => eq([1, 2, 3, 4, 5, 9].map(AD.streakBonus), [0, 1, 2, 2, 3, 3]));
-t("利息:每 10 銅板 +1,上限 +3", () => eq([0, 9, 10, 25, 30, 99].map((g) => AD.interestOf(g, 5)), [0, 0, 1, 2, 3, 3]));
+t("連勝加成:2 勝+1 / 3~4 勝+2 / 5~6 勝+3 / 7~8 勝+4 / 9+ +5", () => eq([1, 2, 3, 4, 5, 6, 7, 8, 9, 20].map(AD.streakBonus), [0, 1, 2, 2, 3, 3, 4, 4, 5, 5]));
+t("利息:每 10 銅板 +1,上限 +5(存到 50 拿滿)", () => eq([0, 9, 10, 25, 30, 49, 50, 99].map((g) => AD.interestOf(g, 5)), [0, 0, 1, 2, 3, 4, 5, 5]));
 t("贏家結算 = 收入 + 勝利獎金 + 連勝加成 + 利息", () => {
   const s = E.settleEconomy({ result: "win", round: 6, gold: 20, streak: 1, level: 4 });
   eq([s.base, s.win, s.streakBonus, s.interest, s.gain, s.gold, s.streak], [6, 3, 1, 2, 12, 32, 2]);
@@ -239,7 +269,7 @@ t("升級:XP 累計與滿級", () => {
   eq(AD.addXp(1, 0, 2), { level: 2, xp: 0 }); eq(AD.addXp(1, 0, 5), { level: 3, xp: 0 }); eq(AD.addXp(1, 0, 6), { level: 3, xp: 1 });
   eq(AD.addXp(1, 0, 138).level, 10); eq(AD.addXp(10, 0, 50), { level: 10, xp: 0 });
 });
-t("上陣位置:Lv1=2 … Lv7=8,Lv8~10 維持 8", () => eq([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(AD.slotsFor), [2, 3, 4, 5, 6, 7, 8, 8, 8, 8]));
+t("上陣位置:Lv1=2 … Lv7=8,Lv8=9,Lv9=9,Lv10=10;待命席 8 格;一排 5 格", () => { eq([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(AD.slotsFor), [2, 3, 4, 5, 6, 7, 8, 9, 9, 10]); eq([AD.BENCH_SLOTS, AD.ROW_SIZE], [8, 5]); });
 t("賣出退費:1★ 全額,2★(3 張)/3★(9 張)各少退 1", () => { const c = AD.CARD_BY_ID.chili_lady; eq([AD.sellValue(c, 1), AD.sellValue(c, 2), AD.sellValue(c, 3)], [3, 8, 26]); const p = AD.CARD_BY_ID.passerby; eq([AD.sellValue(p, 1), AD.sellValue(p, 2), AD.sellValue(p, 3)], [1, 2, 8]); });
 
 console.log(`\n${fail ? "✗" : "✓"} ${pass} 通過 / ${fail} 失敗`);

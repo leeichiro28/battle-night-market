@@ -505,6 +505,10 @@
       `<p style="font-size:11px;color:var(--ink-dim);margin-top:6px;">※ Lv.${lp.shopSlots6} 起商店變 6 格;Lv.${lp.freeFirstRefresh} 起每輪第一次刷新免費;Lv.${lp.extraIncome} 起每輪多 +${lp.extraIncomeAmount} 銅板。</p>`;
   })();
 
+  // 夜市事件、雜貨攤
+  if (el("ac-event-table")) el("ac-event-table").innerHTML = tbl(["事件", "效果"], AD.NIGHT_EVENTS.map((e) => `<tr><td><i data-lucide="${e.icon}" class="ico"></i> <b>${esc(e.name)}</b></td><td>${esc(e.desc)}</td></tr>`));
+  if (el("ac-store-table")) el("ac-store-table").innerHTML = tbl(["道具", { t: "價格", num: 1 }, "效果"], AD.STORE_ITEMS.map((i) => `<tr><td><i data-lucide="${i.icon}" class="ico"></i> <b>${esc(i.name)}</b></td><td class="num">${i.price}</td><td>${esc(i.desc)}</td></tr>`));
+
   // 羈絆表
   el("ac-bond-table").innerHTML = tbl(["流派", "特色", "2 張", "4 張", "6 張"], Object.keys(AD.TAGS).map((k) => {
     const t = AD.TAGS[k], b = AD.BONDS[k];
@@ -522,7 +526,7 @@
       const g = groups.find((x) => x.key === key);
       const cards = AD.CARDS.filter(g.test).sort((a, b) => a.cost - b.cost);
       listEl.innerHTML = tbl(["卡牌", { t: "費用", num: 1 }, "流派", { t: "攻", num: 1 }, { t: "血", num: 1 }, { t: "速", num: 1 }, "效果", "3★ 質變"], cards.map((c) =>
-        `<tr><td><b>${esc(c.name)}</b></td><td class="num">${c.cost}</td><td>${c.tags.length ? c.tags.map(tagName).join(" + ") : "通用"}</td><td class="num">${c.atk}</td><td class="num">${c.hp}</td><td class="num">${c.spd}</td><td>${esc(c.desc)}</td><td>${esc(c.star3 ? c.star3.desc.replace(/^3★:/, "") : "—")}</td></tr>`), "equipment-table");
+        `<tr><td><b>${esc(c.name)}</b>${c.exclusive ? ' <span style="color:var(--gold);font-size:11px;">怪物專屬</span>' : ""}</td><td class="num">${c.cost}</td><td>${c.tags.length ? c.tags.map(tagName).join(" + ") : "通用"}</td><td class="num">${c.atk}</td><td class="num">${c.hp}</td><td class="num">${c.spd}</td><td>${esc(c.desc)}</td><td>${esc(c.star3 ? c.star3.desc.replace(/^3★:/, "") : "—")}</td></tr>`), "equipment-table");
       icons();
     }
     tabsEl.querySelectorAll("[data-ac-tab]").forEach((b) => (b.onclick = () => { render(b.dataset.acTab); tabsEl.querySelectorAll("[data-ac-tab]").forEach((t) => t.classList.toggle("active", t === b)); }));

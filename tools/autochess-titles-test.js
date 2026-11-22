@@ -67,8 +67,8 @@ const stat = (o) => Object.assign({ res: "win", afk: false, gold: 0, refresh: 0 
   ok(K({ ...base, state: { bestStreak: 5 } }).includes("ac_streak5") && !K({ ...base, state: { bestStreak: 4 } }).includes("ac_streak5"), "手氣正旺:連勝 5");
   ok(K({ ...base, state: { bestStreak: 8 } }).includes("ac_streak8") && !K({ ...base, state: { bestStreak: 7 } }).includes("ac_streak8"), "勢不可擋:連勝 8");
   const full = (n, o) => Array.from({ length: n }, () => stat({ gold: 30, ...(o || {}) }));
-  ok(K({ ...base, stats: full(10) }).includes("ac_vault_full") && !K({ ...base, stats: full(9) }).includes("ac_vault_full"), "金庫大戶:10 輪利息拿滿(銅板 ≥ 30)");
-  ok(!K({ ...base, stats: full(10).map((x) => ({ ...x, gold: 29 })) }).includes("ac_vault_full"), "29 銅板不算拿滿");
+  ok(K({ ...base, stats: full(10) }).includes("ac_vault_full") && !K({ ...base, stats: full(9) }).includes("ac_vault_full"), "金庫大戶:10 輪封板時銅板 ≥ 30(利息上限提高到 +5 後門檻維持 30)");
+  ok(!K({ ...base, stats: full(10).map((x) => ({ ...x, gold: 29 })) }).includes("ac_vault_full"), "29 銅板不算");
   ok(!K({ ...base, stats: full(10, { afk: true }) }).includes("ac_vault_full"), "掛網的輪次不算");
   ok(K({ ...base, stats: [stat({ refresh: 10 })] }).includes("ac_reroll_addict") && !K({ ...base, stats: [stat({ refresh: 9 })] }).includes("ac_reroll_addict"), "刷新狂人:單輪 10 次");
   ok(K({ ...base, state: { threeStar: 1 } }).includes("ac_three_star") && !K({ ...base, state: { threeStar: 0 } }).includes("ac_three_star"), "三星攤主");

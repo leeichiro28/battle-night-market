@@ -73,7 +73,7 @@ window.AutochessEngine = (function () {
       const mode = def.deploy || (def.star3 && out[i].star >= 3 && def.star3.deploy);
       if (!mode) continue;
       const j = mode === "swapFront" ? 0 : out.length - 1;
-      if (j !== i) { const t = out[i]; out[i] = out[j]; out[j] = t; }
+      if (j !== i) { const t = out[i]; out[i] = out[j]; out[j] = t; const r = out[i].row; out[i].row = out[j].row; out[j].row = r; } // 換位連排別一起換
     }
     return out;
   }
@@ -88,39 +88,75 @@ window.AutochessEngine = (function () {
 
   // ---------------- 自動排站位(企劃點子 17;給新手用的按鈕)----------------
   // 依「先鋒 / 壓軸 / 前排 / 後排 / 鄰接」效果、血厚的放前面、卜卦羈絆的兩端加成,替上陣的卡找一個分數最高的排法。
-  // 最多 8 張 → 全排列 40320 種,純算分數不跑戰鬥,幾十毫秒內完成。分數相同維持原本的順序;回傳「換位前」的新順序。
+  // 最多 8 張 → 全排列 40320 種,純算分數不跑戰鬥,幾十毫秒內完成(9~10 張改用多起點爬坡,見函式內)。分數相同維持原本的順序;回傳「換位前」的新順序。
   const ADJ_ACTIONS = { buffAdjAtk: 1, shieldAdj: 1, healAdj: 1 };
+  // 站位評分(階段 11:懂前後排)。d = 戰鬥順序(前排由左到右接後排),每張卡帶 row;分數越高越好,只用來挑排法,不影響戰鬥
   function arrangeScore(d, ends) {
     const n = d.length; let sc = 0;
+    const nf = d.filter((c) => c.row === 0).length, nb = n - nf;
     d.forEach((c, i) => {
       const def = AD.CARD_BY_ID[c.id], sm = AD.STAR.stat[c.star || 1];
       const effects = def.fx.concat((c.star || 1) >= 3 && def.star3 ? def.star3.fx : []);
-      const front = i < Math.ceil(n / 2);
+      const front = c.row === 0;
       effects.forEach((e) => {
         if (e.when === "vanguard" && i === 0) sc += 4;
         else if (e.when === "finale" && i === n - 1) sc += 4;
         else if (e.when === "front" && front) sc += 3;
         else if (e.when === "back" && !front) sc += 3;
-        if (ADJ_ACTIONS[e.do]) sc += (i > 0 ? 1.5 : 0) + (i < n - 1 ? 1.5 : 0);
+        if (ADJ_ACTIONS[e.do]) { // 鄰接只算同一排左右
+          sc += (i > 0 && d[i - 1].row === c.row ? 1.5 : 0) + (i < n - 1 && d[i + 1].row === c.row ? 1.5 : 0);
+        }
+        if (e.do === "shieldRow" || e.do === "buffRowAtk") sc += (e.row === "back" ? nb : nf) * 0.9; // 那一排人越多越划算
+        if (e.do === "swapRow") sc += (e.to === "back" ? front : !front) ? 2 : 0; // 要換去的那一排不是自己現在這排才有用
       });
       sc += def.hp * sm * (n - 1 - i) / Math.max(1, n) * 0.04;      // 血厚的站前面
       sc += def.atk * sm * i / Math.max(1, n) * 0.05;               // 輸出放後面比較活得久
+      sc += front ? def.hp * sm * 0.02 : def.atk * sm * 0.04;       // 前排吃傷害 → 放血厚的;後排被保護 → 放輸出
       if (ends && (i === 0 || i === n - 1)) sc += def.atk * sm * 0.15; // 卜卦羈絆:先鋒與壓軸有加成,放強的
     });
     return sc;
   }
+  // 自動排站位(階段 11):同時決定「誰在前排、誰在後排」和「排內順序」。每排最多 ROW_SIZE 張。
+  // 7 張以內全部試一遍(排列 × 前排張數,最多約 2 萬種);8~10 張改用「多個起點 + 兩兩交換 / 移動前後排分界爬坡」,起點由陣容決定,結果固定。
   function autoArrange(board) {
-    const n = board.length;
-    if (n < 2) return board.map((c) => ({ ...c }));
+    const n = board.length, R = AD.ROW_SIZE;
+    if (n < 2) return board.map((c, i) => ({ ...c, row: n ? 0 : undefined }));
     const ends = !!computeBonds(board).fx.endsAtk;
-    let best = board.map((c, i) => i), bestSc = arrangeScore(applyDeploy(best.map((i) => board[i])), ends);
-    const idx = best.slice(), c = new Array(n).fill(0);
-    const test = () => { const sc = arrangeScore(applyDeploy(idx.map((i) => board[i])), ends); if (sc > bestSc + 1e-9) { bestSc = sc; best = idx.slice(); } };
-    for (let i = 0; i < n;) { // Heap's algorithm(非遞迴)
-      if (c[i] < i) { const k = i % 2 === 0 ? 0 : c[i]; const t = idx[k]; idx[k] = idx[i]; idx[i] = t; test(); c[i]++; i = 0; } else { c[i] = 0; i++; }
+    const kMin = Math.max(1, n - R), kMax = Math.min(n, R); // 前排張數的範圍(至少 1 張前排;兩排各最多 R 張)
+    const build = (idx, k) => idx.map((i, p) => ({ ...board[i], row: p < k ? 0 : 1 }));
+    const score = (idx, k) => arrangeScore(applyDeploy(layoutBoardRows(build(idx, k))), ends);
+    let best = null, bestSc = -Infinity;
+    const consider = (idx, k) => { const sc = score(idx, k); if (sc > bestSc + 1e-9) { bestSc = sc; best = { idx: idx.slice(), k }; } };
+    const ident = board.map((c, i) => i);
+    if (n <= 7) {
+      for (let k = kMin; k <= kMax; k++) {
+        const idx = ident.slice(), c = new Array(n).fill(0); consider(idx, k);
+        for (let i = 0; i < n;) { // Heap's algorithm(非遞迴)
+          if (c[i] < i) { const j = i % 2 === 0 ? 0 : c[i]; const t = idx[j]; idx[j] = idx[i]; idx[i] = t; consider(idx, k); c[i]++; i = 0; } else { c[i] = 0; i++; }
+        }
+      }
+    } else {
+      const rng = makeRng("autoarrange|" + board.map((c) => c.id + c.star).join(","));
+      for (let st = 0; st < 12; st++) {
+        const idx = ident.slice();
+        if (st > 0) for (let i = n - 1; i > 0; i--) { const j = rng.int(i + 1); const t = idx[i]; idx[i] = idx[j]; idx[j] = t; }
+        let k = Math.min(kMax, Math.max(kMin, Math.ceil(n / 2))), sc = score(idx, k), improved = true, guard = 0;
+        while (improved && guard++ < 40) {
+          improved = false;
+          for (let i = 0; i < n - 1; i++) for (let j = i + 1; j < n; j++) {
+            const t = idx[i]; idx[i] = idx[j]; idx[j] = t;
+            const s2 = score(idx, k);
+            if (s2 > sc + 1e-9) { sc = s2; improved = true; } else { idx[j] = idx[i]; idx[i] = t; }
+          }
+          for (const dk of [-1, 1]) { const k2 = k + dk; if (k2 < kMin || k2 > kMax) continue; const s2 = score(idx, k2); if (s2 > sc + 1e-9) { sc = s2; k = k2; improved = true; } }
+        }
+        if (sc > bestSc + 1e-9) { bestSc = sc; best = { idx: idx.slice(), k }; }
+      }
     }
-    return best.map((i) => ({ ...board[i] }));
+    return build(best.idx, best.k);
   }
+  // 評分用:不重新分排(卡已經帶 row),只把前排排前面;前排一張都沒有時整排視為前排
+  const layoutBoardRows = (b) => AD.layoutBoard(b);
 
   // ---------------- 建立戰鬥單位 ----------------
   const scale = (v, m) => Math.max(1, Math.round(v * m));
@@ -135,7 +171,7 @@ window.AutochessEngine = (function () {
       spd: def.spd,
       shield: 0, burn: 0, burnSrc: null, poison: 0, dr: 0, frozen: 0, critPct: 0, attackLast: false,
       tie: rng.next(), // 同速度時的先後,由種子決定
-      isVanguard: idx === 0, isFinale: idx === total - 1, isFront: idx < Math.ceil(total / 2),
+      row: card.row === 1 ? 1 : 0, isVanguard: idx === 0, isFinale: idx === total - 1, isFront: card.row !== 1,
       fx: { start: [], roundStart: [], attack: [], hurt: [], kill: [], death: [], roundEnd: [], crit: [] },
       passives: [],
     };
@@ -166,7 +202,7 @@ window.AutochessEngine = (function () {
     const f = t.flags;
     t.reviveLeft = f.reviveFirstPct ? 1 : 0;
     // 羈絆的全隊加成:全隊暴擊率(遊戲攤等)、隱藏羈絆的全隊攻擊
-    t.units.forEach((u) => { if (f.critPct) u.critPct += f.critPct; if (f.allAtk) u.atk += f.allAtk; });
+    t.units.forEach((u) => { if (f.critPct) u.critPct += f.critPct; if (f.allAtk) u.atk = Math.max(1, u.atk + f.allAtk); if (f.allHp) { u.maxHp = Math.max(1, u.maxHp + f.allHp); u.hp = Math.max(1, u.hp + f.allHp); } });
     // 卜卦:先鋒與壓軸(只有 1 張時算一次)
     const ends = t.units.length ? (t.units.length > 1 ? [t.units[0], t.units[t.units.length - 1]] : [t.units[0]]) : [];
     ends.forEach((u) => {
@@ -178,14 +214,14 @@ window.AutochessEngine = (function () {
     return t;
   }
 
-  const unitView = (u) => ({ id: u.id, star: u.star, atk: u.atk, hp: u.hp, maxHp: u.maxHp, spd: u.spd });
+  const unitView = (u) => ({ id: u.id, star: u.star, atk: u.atk, hp: u.hp, maxHp: u.maxHp, spd: u.spd, row: u.row });
 
   // ---------------- 戰鬥 ----------------
   // opts.log = true 時回傳 events(演出/回放用的簡短事件,不影響結果)
   function simulate(boardA, boardB, seed, opts) {
     opts = opts || {};
     const rng = makeRng(seed);
-    const ta = makeTeam("a", applyDeploy(boardA), rng, opts.extraA), tb = makeTeam("b", applyDeploy(boardB), rng, opts.extraB);
+    const ta = makeTeam("a", applyDeploy(AD.layoutBoard(boardA)), rng, opts.extraA), tb = makeTeam("b", applyDeploy(AD.layoutBoard(boardB)), rng, opts.extraB);
     const teams = { a: ta, b: tb };
     const foe = (side) => (side === "a" ? tb : ta);
     const events = opts.log ? [] : null;
@@ -204,7 +240,17 @@ window.AutochessEngine = (function () {
     function addShield(u, n) { if (u.hp > 0 && n > 0) { u.shield += n; ev({ t: "shield", to: tag(u), n }); } }
     function freeze(u, n) { if (u && u.hp > 0) { u.frozen = Math.max(u.frozen, n); ev({ t: "freeze", to: tag(u) }); } }
     function fastest(list) { return list.slice().sort((x, y) => y.spd - x.spd || x.idx - y.idx)[0]; }
-    function adjacent(u) { return teams[u.side].units.filter((v) => v.hp > 0 && Math.abs(v.idx - u.idx) === 1); }
+    // 鄰接 = 同一排、位置上左右相鄰(換位後用新的位置)
+    function adjacent(u) { const arr = teams[u.side].units, p = arr.indexOf(u); return [arr[p - 1], arr[p + 1]].filter((v) => v && v.hp > 0 && v.row === u.row); }
+    // 擊殺換位:u 和「目標那一排第一個活著的友軍」互換位置與排別(演出用 swap 事件)
+    function swapRow(u, to) {
+      if (u.hp <= 0) return;
+      const want = to === "back" ? 1 : 0; if (u.row === want) return;
+      const arr = teams[u.side].units, cand = arr.find((v) => v !== u && v.hp > 0 && v.row === want); if (!cand) return;
+      const i = arr.indexOf(u), j = arr.indexOf(cand); arr[i] = cand; arr[j] = u;
+      const r = u.row; u.row = cand.row; cand.row = r;
+      ev({ t: "swap", a: tag(u), b: tag(cand) });
+    }
 
     // 效果動作表:fire(u, 鉤子, ctx) 逐一呼叫
     const ACTIONS = {
@@ -219,6 +265,9 @@ window.AutochessEngine = (function () {
       freezeRandom: (u, e) => { const l = aliveOf(foe(u.side)); if (l.length) freeze(rng.pick(l), e.n); },
       freezeTarget: (u, e, c) => { if (c.target && rng.next() * 100 < e.chance) freeze(c.target, 1); },
       shieldSelf: (u, e) => addShield(u, e.flat),
+      shieldRow: (u, e) => aliveOf(teams[u.side]).filter((x) => x.row === (e.row === "back" ? 1 : 0)).forEach((x) => addShield(x, e.flat)), // 前排 / 後排全體護盾
+      buffRowAtk: (u, e) => aliveOf(teams[u.side]).filter((x) => x.row === (e.row === "back" ? 1 : 0)).forEach((x) => buffAtk(x, e.n)), // 前排 / 後排全體攻擊
+      swapRow: (u, e) => swapRow(u, e.to),
       shieldAllies: (u, e) => aliveOf(teams[u.side]).forEach((x) => addShield(x, e.flat)),
       reflect: (u, e, c) => { if (c.src && c.src.hp > 0) hit(u, c.src, e.flat, "reflect"); },
       buffAdjAtk: (u, e) => adjacent(u).forEach((x) => { x.atk += e.n; ev({ t: "buff", to: tag(x), atk: e.n }); }),
@@ -398,12 +447,15 @@ window.AutochessEngine = (function () {
   // ---------------- 商店(用種子推算,不另外存;企劃 3-4)----------------
   // baseSeed 建議傳 `${活動種子}|${玩家id}`;同樣的(輪次、本輪刷新次數)永遠抽到同一排,重新整理網頁刷不出新卡
   // opts:extraSlots 多幾格 / tagBoost { tag, mult } 該流派出現權重倍數(預購單) / guaranteeEpic 保證至少 1 張史詩以上(老主顧)
+  //      exclude 不要出現的卡 id 清單(v59:玩家已經有 3★ 的卡,再買沒有用,企劃 11-8);沒傳或傳空陣列時抽出的結果跟以前完全一樣
   function rollShop(baseSeed, round, refreshCount, level, opts) {
     opts = opts || {};
     const rng = makeRng(`${baseSeed}|shop|${round}|${refreshCount}`);
     const odds = AD.SHOP_ODDS[Math.min(AD.MAX_LEVEL, Math.max(1, level))];
     const slots = AD.shopSlotsFor(level) + (opts.extraSlots || 0);
-    const pools = AD.RARITY.map((r) => AD.CARDS.filter((c) => AD.COST_TO_RARITY[c.cost] === AD.RARITY.indexOf(r)));
+    const ban = new Set(opts.exclude || []);
+    const cards = AD.CARDS.filter((c) => !c.exclusive && !ban.has(c.id)); // 怪物專屬卡不進商店(企劃 11-4)
+    const pools = AD.RARITY.map((r, ri) => cards.filter((c) => AD.COST_TO_RARITY[c.cost] === ri));
     const boost = opts.tagBoost;
     const pickFrom = (pool) => {
       if (!boost) return rng.pick(pool);
@@ -418,11 +470,12 @@ window.AutochessEngine = (function () {
       for (k = 0; k < odds.length; k++) { acc += odds[k]; if (r < acc) break; }
       k = Math.min(k, odds.length - 1);
       while (k > 0 && !pools[k].length) k--;
-      out.push(pickFrom(pools[k]).id);
+      if (!pools[k].length) { const up = pools.findIndex((x) => x.length); k = up >= 0 ? up : -1; } // 低階池被排除光了:往上找(理論上才會發生)
+      out.push((k >= 0 ? pickFrom(pools[k]) : rng.pick(AD.CARDS)).id); // 連全部卡都被排除:忽略排除清單
     }
     if (opts.guaranteeEpic && !out.some((id) => AD.CARD_BY_ID[id].cost >= 3)) {
       const pool = pools[2].concat(rng.next() < 0.25 ? pools[3] : []);
-      out[rng.int(out.length)] = rng.pick(pool).id;
+      if (pool.length) out[rng.int(out.length)] = rng.pick(pool).id;
     }
     return out;
   }
@@ -462,19 +515,32 @@ window.AutochessEngine = (function () {
 
   // ---------------- 結算:銅板與扣血(企劃 3-2、3-3)----------------
   // 輸入本輪結果,回傳新銅板、連勝與各項明細。利息以「結算當下持有的銅板」計算(尚未加入本輪收入)。
+  // o.event = 夜市事件 id(發財時段:收入 +2;颱風夜:不計利息、贏了 +2);沒有事件就不傳
   function settleEconomy(o) {
     const base = AD.baseIncome(o.round) + (o.level >= AD.LEVEL_PERKS.extraIncome ? AD.LEVEL_PERKS.extraIncomeAmount : 0);
-    const interest = AD.interestOf(o.gold, o.round);
-    let streak = o.streak, win = 0, streakBonus = 0;
-    if (o.result === "win") { streak += 1; win = AD.WIN_BONUS; streakBonus = AD.streakBonus(streak); }
+    const interest = o.event === "typhoon" ? 0 : AD.interestOf(o.gold, o.round);
+    let streak = o.streak, win = 0, streakBonus = 0, eventCoins = o.event === "jackpot" ? 2 : 0;
+    if (o.result === "win") { streak += 1; win = AD.WIN_BONUS; streakBonus = AD.streakBonus(streak); if (o.event === "typhoon") eventCoins += 2; }
     else if (o.result === "lose") streak = 0; // 平手:連勝不增加也不中斷
-    const gain = base + win + streakBonus + interest + (o.bonusCoins || 0);
-    return { base, win, streakBonus, interest, bonusCoins: o.bonusCoins || 0, gain, gold: o.gold + gain, streak };
+    const gain = base + win + streakBonus + interest + (o.bonusCoins || 0) + eventCoins;
+    return { base, win, streakBonus, interest, bonusCoins: o.bonusCoins || 0, eventCoins, gain, gold: o.gold + gain, streak };
   }
-  // 輸家扣血 = 輪次基礎傷害 + 贏家存活單位星級總和(上限 10)
-  function loseDamage(round, winnerSurvivorStars) {
-    return AD.roundBaseDamage(round) + Math.min(AD.SURVIVOR_STAR_CAP, winnerSurvivorStars);
+  // 輸家扣血 = 輪次基礎傷害 + 贏家存活單位星級總和(上限 10);重壓之夜 ×1.5(無條件進位)
+  function loseDamage(round, winnerSurvivorStars, event) {
+    const d = AD.roundBaseDamage(round) + Math.min(AD.SURVIVOR_STAR_CAP, winnerSurvivorStars);
+    return event === "heavy" ? Math.ceil(d * 1.5) : d;
+  }
+  // 這一輪的夜市事件(物件或 null)。由「事件種子 + 輪次」決定,不跟上一個事件重複
+  function nightEvent(seed, round) {
+    if (!AD.isEventRound(round)) return null;
+    let prev = null;
+    for (let r = AD.NIGHT_EVENT_FIRST; r <= round; r += AD.NIGHT_EVENT_EVERY) {
+      if (!AD.isEventRound(r)) continue;
+      const pool = AD.NIGHT_EVENTS.filter((e) => !prev || e.id !== prev.id);
+      prev = makeRng(`${seed}|nightev|${r}`).pick(pool);
+    }
+    return prev;
   }
 
-  return { makeRng, hashSeed, computeBonds, applyDeploy, autoArrange, countTags, pickMainTag, simulate, rollShop, mergeCards, settleEconomy, loseDamage };
+  return { makeRng, hashSeed, computeBonds, applyDeploy, autoArrange, arrangeScore, countTags, pickMainTag, simulate, rollShop, mergeCards, settleEconomy, loseDamage, nightEvent };
 })();

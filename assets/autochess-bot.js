@@ -35,14 +35,18 @@ function arrange(p) {
   p.bench = rest;
 }
 
-function playPrep(p, round, evSeed) {
+// ev = 這一輪的夜市事件 id(沒有就不傳):人潮 = 商店多 1 格、打烊特賣 = 買卡 −1
+function playPrep(p, round, evSeed, ev) {
   if (round > 1) { const r = AD.addXp(p.level, p.xp, AD.PASSIVE_XP); p.level = r.level; p.xp = r.xp; }
   const s = p.strat;
   const panic = s.panicHp && p.hp < s.panicHp;
   const reserve = panic ? 0 : s.reserve || 0;
   let refresh = 0;
   const base = `${evSeed}|${p.id}`;
-  let shop = E.rollShop(base, round, refresh, p.level);
+  const maxed = () => p.board.concat(p.bench).filter((c) => c.star >= AD.STAR.max).map((c) => c.id); // 已經 3★ 的卡不會出現在商店(企劃 11-8)
+  const shopOpts = () => ({ exclude: maxed(), extraSlots: ev === "crowd" ? 1 : 0 });
+  const priceOf = (id) => (ev === "sale" ? Math.max(1, AD.CARD_BY_ID[id].cost - 1) : AD.CARD_BY_ID[id].cost);
+  let shop = E.rollShop(base, round, refresh, p.level, shopOpts());
   let guard = 0;
   const maxRefresh = s.reserve ? 6 : round < 4 ? 1 : 3;
   const capacity = () => AD.slotsFor(p.level) + AD.BENCH_SLOTS;
@@ -56,7 +60,7 @@ function playPrep(p, round, evSeed) {
     shop.forEach((id, i) => {
       if (!id) return;
       const d = AD.CARD_BY_ID[id];
-      if (p.gold - d.cost < reserve) return;
+      if (p.gold - priceOf(id) < reserve) return;
       const full = p.board.length + p.bench.length >= capacity();
       const pairs = countOwned(p, id, 1) >= 1 || countOwned(p, id, 2) >= 1;
       const need = AD.STAR.mergeNeed - 1; // 滿了還能買的前提:這張買下去能立刻合成(合成要 3 張,所以要已經有 2 張同星)
@@ -66,14 +70,14 @@ function playPrep(p, round, evSeed) {
       if (sc > bestScore) { bestScore = sc; best = i; }
     });
     if (best >= 0 && bestScore >= (round <= 2 ? 1 : 3)) {
-      const id = shop[best]; shop[best] = null; p.gold -= AD.CARD_BY_ID[id].cost;
+      const id = shop[best]; shop[best] = null; p.gold -= priceOf(id);
       p.bench.push({ id, star: 1 });
       const m = E.mergeCards(p.board, p.bench); p.board = m.board; p.bench = m.bench;
       arrange(p); continue;
     }
     // 3) 刷新
     if (refresh < maxRefresh && p.gold - 1 >= reserve + (round < 3 ? 99 : 0) && p.gold >= reserve + 2) {
-      refresh++; p.gold -= 1; shop = E.rollShop(base, round, refresh, p.level); continue;
+      refresh++; p.gold -= 1; shop = E.rollShop(base, round, refresh, p.level, shopOpts()); continue;
     }
     break;
   }

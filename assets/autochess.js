@@ -37,6 +37,18 @@
     if (text) msgTimer = setTimeout(() => setMsg(null), 2600);
   }
 
+  // 超過一排(AD.ROW_SIZE = 5 格)就分兩排顯示,每排格子寬度一樣;cells 是已經組好的 html 字串陣列(階段 8)
+  function rowsGrid(cells, cls) {
+    const R = AD.ROW_SIZE, n = cells.length, cols = Math.min(R, Math.max(1, n));
+    const rows = []; for (let i = 0; i < n; i += R) rows.push(cells.slice(i, i + R));
+    return rows.map((r) => `<div class="ac-grid ${cls || ""}" style="--cols:${cols}">${r.join("")}</div>`).join("");
+  }
+  // 場上陣容(前排 / 後排)用:依每張卡的排別分兩排顯示;cellFn(卡, 原陣列索引) 回傳格子 html
+  function boardRowsGrid(cards, cellFn) {
+    const r = AD.rowsOf(cards), cols = Math.min(AD.ROW_SIZE, Math.max(1, r.front.length, r.back.length));
+    const mk = (idxs, label) => `<div class="ac-rowlbl">${label}</div><div class="ac-grid" style="--cols:${cols}">${idxs.map((i) => cellFn(cards[i], i)).join("")}</div>`;
+    return mk(r.front, "前排") + (r.back.length ? mk(r.back, "後排") : "");
+  }
   const rarName = (cost) => AD.RARITY[AD.COST_TO_RARITY[cost]].name;
   const tipAttrs = (c) => `data-tip="card" data-cid="${c.id}" data-star="${c.star}" data-ba="${c.bonusAtk || 0}" data-bh="${c.bonusHp || 0}"`;
   function cardHtml(c, o) {
@@ -48,7 +60,12 @@
     const badge = o.pos ? `<i class="ac-pos">${o.pos}</i>` : "";
     if (o.mode === "shop") {
       const tags = d.tags.length ? d.tags.map(tagName).join("・") : "通用";
-      return `<button class="${cls}" ${data}><span class="ac-rowtop"><span class="ac-cost">${ic("coins")}${d.cost}</span><span class="ac-rar">${rarName(d.cost)}</span></span>${ic(icon, { cls: "ac-ticon" })}<b class="ac-name">${esc(d.name)}</b><span class="ac-ttag">${esc(tags)}</span><span class="ac-st">${st.atk}/${st.hp}</span></button>`;
+      // 已擁有標示(企劃 11-8):場上或待命席有這張 → 「已有 ×N」;買下去會合成 → 「可升 N★」。一律保留這一行,商店每張卡高度才一致
+      const ow = o.own || { n: 0, up: 0 };
+      const ownRow = ow.up ? `<span class="ac-ownrow up">${ic("chevrons-up")}可升 ${ow.up}★</span>` : ow.n ? `<span class="ac-ownrow">${ic("circle-check")}已有 ×${ow.n}</span>` : `<span class="ac-ownrow none"></span>`;
+      const own = ow.up ? " own up" : ow.n ? " own" : "";
+      const price = o.cost != null ? o.cost : d.cost; // 打烊特賣時是折扣後的價格
+      return `<button class="${cls}${own}" ${data}><span class="ac-rowtop"><span class="ac-cost${price < d.cost ? " sale" : ""}">${ic("coins")}${price}</span><span class="ac-rar">${rarName(d.cost)}</span></span>${ic(icon, { cls: "ac-ticon" })}<b class="ac-name">${esc(d.name)}</b><span class="ac-ttag">${esc(tags)}</span><span class="ac-st">${st.atk}/${st.hp}</span>${ownRow}</button>`;
     }
     return `<button class="${cls}" ${data}><span class="ac-cost">${d.cost}</span><span class="ac-stars">${stars(c.star)}</span>${ic(icon, { cls: "ac-ticon" })}<b class="ac-name">${esc(d.name.slice(0, 2))}</b><span class="ac-st">${st.atk}/${st.hp}</span>${badge}</button>`;
   }
@@ -68,7 +85,7 @@
     const on = h && E.computeBonds(g.me.board, G.extraFor(g.me)).hidden.includes(id);
     if (!h) return "";
     if (!on) return `<div class="ac-tip-h">${ic("circle-help")}<b>？？？</b><span class="ac-tip-cost">隱藏羈絆</span></div><div class="ac-dim">場上有人的組合很特別……把對的幾位攤主一起放上陣試試看。</div>`;
-    return `<div class="ac-tip-h">${ic("sparkles")}<b>${esc(h.name)}</b><span class="ac-tip-cost">隱藏羈絆 · 已觸發</span></div><div class="ac-dim">${esc(h.desc)}</div><div class="ac-dim">需要:${h.cards.map((c) => esc(AD.CARD_BY_ID[c].name)).join("、")}</div>`;
+    return `<div class="ac-tip-h">${ic(h.anti ? "triangle-alert" : "sparkles")}<b>${esc(h.name)}</b><span class="ac-tip-cost">${h.anti ? "反羈絆(吵架)· 已觸發" : "隱藏羈絆 · 已觸發"}</span></div><div class="ac-dim">${esc(h.desc)}</div><div class="ac-dim">需要:${h.cards.map((c) => esc(AD.CARD_BY_ID[c].name)).join("、")}</div>`;
   }
   function cardTipHtml(a) {
     const c = { id: a.dataset.cid, star: Number(a.dataset.star), bonusAtk: Number(a.dataset.ba), bonusHp: Number(a.dataset.bh) };
@@ -163,10 +180,10 @@
         <h3>怎麼玩</h3>
         <ul class="ac-rules">
           <li>${ic("coins")}每輪用<b>銅板</b>買卡、刷新、升級;準備時間到(或按「完成準備」)就自動對戰。</li>
-          <li>${ic("swords")}戰鬥全自動:速度快的先出手,預設打對方<b>第 1 位</b>。站位有意義:<b>先鋒</b>(第 1 位)、<b>壓軸</b>(最後一位)、<b>鄰接</b>。</li>
+          <li>${ic("swords")}戰鬥全自動:速度快的先出手,先打對方<b>前排</b>、前排倒光才打後排。站位有意義:自己決定卡放<b>前排</b>還是<b>後排</b>(每排最多 5 張)、<b>先鋒</b>(前排最左)、<b>壓軸</b>(最後一張)、同一排的<b>鄰接</b>;「自動排站位」會幫你排。</li>
           <li>${ic("layers")}同名同星 3 張合成更高星,<b>3★ 要 9 張 1★</b>。同流派不同名的卡湊 2 / 4 / 6 張觸發<b>羈絆</b>。</li>
           <li>${ic("heart")}每人 100 血,輸了扣血,越後面扣越多;血量歸零淘汰,最後存活者第 1。</li>
-          <li>${ic("piggy-bank")}<b>金庫</b>:結算時每持有 10 銅板多拿 1 銅板(最多 +3)。</li>
+          <li>${ic("piggy-bank")}<b>金庫</b>:結算時每持有 10 銅板多拿 1 銅板(最多 +${AD.INTEREST.max})。</li>
           <li>${ic("sparkles")}<b>R3 / R6 / R9</b> 各有一次「攤位加碼」三選一。</li>
         </ul>
         <label class="ac-check"><input type="checkbox" id="ac-timer-on" ${timerOn ? "checked" : ""} /> 準備階段倒數計時(每輪 ${fmtSecs(AD.prepSeconds(1))},可提前按「完成準備」)</label>
@@ -192,9 +209,9 @@
     if (!cards || !cards.length) return "";
     const mvp = AutochessAwards.mvpCard(cards), mi = mvp ? cards.indexOf(mvp) : -1;
     const b = E.computeBonds(cards);
-    const chips = Object.keys(b.active).map((t) => `<span class="ac-bond on t-${t}">${ic(TAG_ICON[t])}${tagName(t)} ${b.active[t]}</span>`).concat(b.hidden.map((id) => `<span class="ac-bond on hidden">${ic("sparkles")}${esc(AD.HIDDEN_BONDS.find((h) => h.id === id).name)}</span>`)).join("");
+    const chips = Object.keys(b.active).map((t) => `<span class="ac-bond on t-${t}">${ic(TAG_ICON[t])}${tagName(t)} ${b.active[t]}</span>`).concat(b.hidden.map((id) => { const hb = AD.HIDDEN_BONDS.find((h) => h.id === id); return `<span class="ac-bond on hidden${hb.anti ? " anti" : ""}">${ic(hb.anti ? "triangle-alert" : "sparkles")}${esc(hb.name)}</span>`; })).join("");
     return `<div class="ac-lineup"><div class="ac-lu-h">${ic(rank === 1 ? "crown" : "medal")}<b>第 ${rank} 名・${esc(name)}</b>${badge || ""}</div>
-      <div class="ac-grid" style="--cols:${cards.length}">${cards.map((c, i) => cardHtml({ ...c, bonusAtk: 0, bonusHp: 0 }, { noTip: true, data: i === mi ? 'data-mvp="1"' : "" })).join("")}</div>
+      ${boardRowsGrid(cards, (c, i) => cardHtml({ ...c, bonusAtk: 0, bonusHp: 0 }, { noTip: true, data: i === mi ? 'data-mvp="1"' : "" }))}
       ${chips ? `<div class="ac-bonds">${chips}</div>` : ""}${mvp ? `<div class="ac-dim">${ic("star")}MVP 卡:<b>${esc(cardDef(mvp).name)} ${mvp.star}★</b>(最終陣容戰力最高)</div>` : ""}</div>`;
   }
   function awardsHtml(list) {
@@ -203,23 +220,55 @@
   }
 
   // ---------------- 準備階段 ----------------
+  // 夜市事件橫幅(企劃 11-2);沒有事件的輪次不顯示
+  function eventBannerHtml(evId) {
+    const e = evId && AD.NIGHT_EVENT_BY_ID[evId]; if (!e) return "";
+    return `<div class="ac-event">${ic(e.icon)}<div><b>夜市事件・${esc(e.name)}</b><span>${esc(e.desc)}</span></div></div>`;
+  }
+  function olEventId(round) { if (!OL || !OL.nightEvents) return null; const e = E.nightEvent(OL.nightSeed, round); return e ? e.id : null; }
+  // 雜貨攤:每輪 3 件一次性道具,買了立刻生效
+  function storeHtml(me) {
+    const items = (me.store || []).map((id, i) => {
+      const it = id && AD.STORE_BY_ID[id];
+      if (!it) return `<div class="ac-sitem sold">${ic("check")}<b>已售完</b></div>`;
+      return `<button class="ac-sitem${me.gold < it.price ? " dim" : ""}" data-act="store" data-i="${i}">${ic(it.icon)}<b>${esc(it.name)}</b><small>${esc(it.desc)}</small><em>${ic("coins")}${it.price}</em></button>`;
+    }).join("");
+    const fx = me.roundFx || {}, on = fx.atk || fx.hp ? `<div class="ac-dim ac-store-on">本輪戰鬥已加成:${fx.atk ? `攻擊 +${fx.atk}` : ""}${fx.atk && fx.hp ? "、" : ""}${fx.hp ? `血量 +${fx.hp}` : ""}</div>` : "";
+    return `<div class="card ac-store-card"><div class="ac-sec">${ic("shopping-basket")}雜貨攤<span class="ac-hint">一次性道具・買了立刻生效・每輪重新進貨</span></div><div class="ac-store">${items}</div>${on}</div>`;
+  }
+  function openStoreTarget(i) {
+    const me = g.me, it = AD.STORE_BY_ID[me.store[i]]; if (!it) return;
+    const ts = G.storeTargets(g);
+    if (!ts.length) { setMsg("場上或待命席要先有一張卡", "bad"); return; }
+    modalCard.innerHTML = `<h3>${ic(it.icon)}${esc(it.name)}</h3><p class="ac-dim">${esc(it.desc)}<br>選擇一張卡:</p><div class="ac-grid" style="--cols:5">${ts.map((t, k) => cardHtml(t.card, { data: `data-t="${k}"` })).join("")}</div><button class="btn ghost block" id="ac-store-back" style="margin-top:12px;">${ic("x")}取消</button>`;
+    modal.classList.add("show");
+    modalCard.querySelectorAll("[data-t]").forEach((b) => (b.onclick = () => {
+      const r = G.buyStore(g, i, ts[Number(b.dataset.t)]);
+      if (!r.ok) { setMsg(r.msg, "bad"); return; }
+      closeModal(); sel = null; setMsg(`買了「${r.item.name}」`, "good"); if (OL) persist(); renderPrep();
+    }));
+    document.getElementById("ac-store-back").onclick = closeModal;
+  }
   function vaultHtml(me) {
-    const gold = me.gold, next = Math.min(AD.INTEREST.max * AD.INTEREST.per, (Math.floor(gold / AD.INTEREST.per) + 1) * AD.INTEREST.per);
-    const full = gold >= AD.INTEREST.max * AD.INTEREST.per;
+    const mx = AD.INTEREST.max, per = AD.INTEREST.per, cap = mx * per;
+    const gold = me.gold, next = Math.min(cap, (Math.floor(gold / per) + 1) * per);
+    const full = gold >= cap;
     const interest = AD.interestOf(gold, g.round);
-    const pctFill = Math.min(100, gold / (AD.INTEREST.max * AD.INTEREST.per) * 100);
-    return `<div class="ac-vault" title="結算時每持有 10 銅板 +1(最多 +3)">
+    const pctFill = Math.min(100, gold / cap * 100);
+    const ticks = Array.from({ length: mx - 1 }, (_, k) => `<s style="left:${((k + 1) / mx * 100).toFixed(1)}%"></s>`).join("");
+    return `<div class="ac-vault" title="結算時每持有 ${per} 銅板 +1(最多 +${mx},存到 ${cap} 拿滿)">
       <div class="ac-vault-top">${ic("piggy-bank")}<span>金庫 利息 <b>+${interest}</b>${full ? "(已滿)" : ` · 再存 ${next - gold} 個多 +1`}</span></div>
-      <div class="ac-vault-bar"><i style="width:${pctFill}%"></i><s style="left:33.3%"></s><s style="left:66.6%"></s></div></div>`;
+      <div class="ac-vault-bar"><i style="width:${pctFill}%"></i>${ticks}</div></div>`;
   }
   // 羈絆列:四個流派永遠都在,已觸發的亮起來;只放圖示 + 名字,細節(目前張數、各級效果)用浮窗看
+  const antiOn = (me) => E.computeBonds(me.board, null).hidden.filter((id) => { const h = AD.HIDDEN_BONDS.find((x) => x.id === id); return h && h.anti; });
   function bondRow(board, extra) {
     const b = E.computeBonds(board, extra);
     const have = {}; board.forEach((c) => (have[c.id] = 1));
     // 隱藏羈絆:湊齊才顯示名字;場上已有其中 2 張時先露出一個「？？？」當線索
     const hid = AD.HIDDEN_BONDS.map((h) => {
       const n = h.cards.filter((id) => have[id]).length;
-      if (n === h.cards.length) return `<button class="ac-bond on hidden" data-act="bond" data-tip="hidden" data-hid="${h.id}">${ic("sparkles")}${esc(h.name)}</button>`;
+      if (n === h.cards.length) return `<button class="ac-bond on hidden${h.anti ? " anti" : ""}" data-act="bond" data-tip="hidden" data-hid="${h.id}">${ic(h.anti ? "triangle-alert" : "sparkles")}${esc(h.name)}</button>`;
       if (n >= 2) return `<button class="ac-bond part hidden" data-act="bond" data-tip="hidden" data-hid="${h.id}">${ic("circle-help")}？？？</button>`;
       return "";
     }).join("");
@@ -255,17 +304,19 @@
   }
 
   // ---- 怪物輪(R5 / R10 / R15):全場打同一隻怪物,不扣血、不計連勝 ----
+  // 這一輪的怪物:3 個候選裡由活動種子抽一個,全場同一隻(階段 10)
+  const monOf = (round) => AD.monsterFor(OL ? OL.nightSeed : g && g.eventSeed, round);
   function monsterBannerHtml(round) {
     if (!AD.isMonsterRound(round)) return "";
-    const mon = AD.MONSTERS[round], names = AD.monsterBoard(round).map((c) => AD.CARD_BY_ID[c.id].name + (c.star > 1 ? "★" + c.star : ""));
+    const mon = monOf(round), names = AD.monsterBoard(round, mon).map((c) => AD.CARD_BY_ID[c.id].name + (c.star > 1 ? "★" + c.star : ""));
     return `<div class="card ac-monster"><div class="ac-sec">${ic("skull")}怪物輪 · ${esc(mon.title)}</div>
       <div class="ac-dim">${esc(mon.intro)}</div>
-      <div class="ac-dim">這一輪<b>全場都打同一隻怪物</b>,不扣血、不計勝敗、連勝不變。打贏 +${AD.MONSTER_WIN_COINS} 銅板,並掉落一張卡(下一輪進待命席);輸了只拿基本收入與利息。</div>
+      <div class="ac-dim">這一輪<b>全場都打同一隻怪物</b>,不扣血、不計勝敗、連勝不變。打贏 +${AD.MONSTER_WIN_COINS} 銅板,並掉落這隻怪物的專屬卡「${esc((AD.CARD_BY_ID[mon.drop] || { name: "隨機卡" }).name)}」(只能從這裡拿到,下一輪進待命席);輸了只拿基本收入與利息。</div>
       <div class="ac-dim">怪物陣容:${esc(names.join("、"))}</div></div>`;
   }
   // 結算畫面的怪物輪區塊(單機 o.pve = true;連線版 o.pve = { won, res, drop })
   function pveNotes(round, won, drop) {
-    const mon = AD.MONSTERS[round], out = [];
+    const mon = monOf(round), out = [];
     out.push(esc(won ? mon.win : mon.lose));
     if (won && drop && AD.CARD_BY_ID[drop]) out.push(`掉落「${esc(AD.CARD_BY_ID[drop].name)}」,下一輪準備階段進你的待命席`);
     return out;
@@ -276,18 +327,20 @@
     const me = g.me, slots = G.slotsOf(me), cost = G.refreshCost(me);
     const needXp = me.level < AD.MAX_LEVEL ? AD.XP_TO_LEVEL[me.level + 1] : 0;
     const xpCost = Math.max(0, AD.BUY_XP.cost - (me.perks.xpCoupon > 0 ? AD.PERK_BY_ID.xp_coupon.off : 0));
-    const boardCells = [];
-    for (let i = 0; i < slots; i++) {
-      const c = me.board[i];
-      if (c) boardCells.push(cardHtml(c, { sel: sel && sel.zone === "board" && sel.idx === i, data: `data-act="own" data-zone="board" data-i="${i}"`, pos: i === 0 ? "先" : i === me.board.length - 1 ? "壓" : "" }));
-      else boardCells.push(`<button class="ac-slot" data-act="slot" data-zone="board" data-i="${i}">${i === 0 ? "先鋒" : ""}</button>`);
-    }
+    // 上陣區:前排 / 後排各最多 ROW_SIZE 格,自己決定卡放哪一排(選一張卡再點某一排的空格,或點另一張卡交換);總張數不超過 slots
+    const rws = AD.rowsOf(me.board), lastIdx = (rws.back.length ? rws.back : rws.front).slice(-1)[0], perRow = Math.min(AD.ROW_SIZE, slots), full = me.board.length >= slots;
+    const rowCells = (idxs, row) => {
+      const cells = idxs.map((i) => cardHtml(me.board[i], { sel: sel && sel.zone === "board" && sel.idx === i, data: `data-act="own" data-zone="board" data-i="${i}"`, pos: i === rws.front[0] ? "先" : i === lastIdx ? "壓" : "" }));
+      for (let k = idxs.length; k < perRow; k++) cells.push(`<button class="ac-slot${full ? " full" : ""}" data-act="slot" data-zone="board" data-row="${row}">${row === 0 && k === 0 && !idxs.length ? "先鋒" : ""}</button>`);
+      return cells;
+    };
+    const boardRowsHtml = `<div class="ac-rowlbl">前排<small>先挨打</small></div><div class="ac-grid" style="--cols:${perRow}">${rowCells(rws.front, 0).join("")}</div><div class="ac-rowlbl">後排<small>被前排保護</small></div><div class="ac-grid" style="--cols:${perRow}">${rowCells(rws.back, 1).join("")}</div>`;
     const benchCells = [];
     for (let i = 0; i < AD.BENCH_SLOTS; i++) {
       const c = me.bench[i];
       benchCells.push(c ? cardHtml(c, { sel: sel && sel.zone === "bench" && sel.idx === i, data: `data-act="own" data-zone="bench" data-i="${i}"` }) : `<button class="ac-slot" data-act="slot" data-zone="bench" data-i="${i}"></button>`);
     }
-    const shopCells = me.shop.map((id, i) => (id ? cardHtml({ id, star: 1 }, { mode: "shop", data: `data-act="shop" data-i="${i}"`, dim: me.gold < AD.CARD_BY_ID[id].cost }) : `<div class="ac-slot empty"></div>`)).join("");
+    const shopCells = me.shop.map((id, i) => (id ? cardHtml({ id, star: 1 }, { mode: "shop", data: `data-act="shop" data-i="${i}"`, dim: me.gold < G.costOf(g, id), cost: G.costOf(g, id), own: G.ownedInfo(me, id) }) : `<div class="ac-slot empty"></div>`)).join("");
     const pp = me.pendingPerk;
     root.innerHTML = `
       <div class="ac-top">
@@ -308,16 +361,17 @@
         </div>
         ${vaultHtml(me)}
       </div>
+      ${eventBannerHtml(G.eventIdOf(g))}
       <div class="ac-msg" id="ac-msg"></div>
-      ${pp ? `<button class="btn ac-perk-btn" id="ac-perk-open">${ic("sparkles")}攤位加碼 第 ${pp.n} 次:選一張(封板前沒選會隨機替你選)</button>` : ""}
+      ${pp ? `<button class="btn ac-perk-btn" id="ac-perk-open">${ic("sparkles")}${pp.extra ? "夜市加碼回合" : `攤位加碼 第 ${pp.n} 次`}:選一張(封板前沒選會隨機替你選)</button>` : ""}
       ${me.perkPicks.length ? `<div class="tag-row ac-perks">${perkChips(me)}</div>` : ""}
       <div class="card ac-board-card">
         <div class="ac-bondrow">${bondRow(me.board, G.extraFor(me))}</div>
         ${monsterBannerHtml(g.round)}
-      <div class="ac-sec">${ic("swords")}上陣 <em>${me.board.length}/${slots}</em><span class="ac-hint">第 1 位先鋒・最後一位壓軸</span><button class="btn ghost ac-mini-btn" data-act="autoarrange" title="依先鋒/壓軸/鄰接效果自動排">${ic("wand-sparkles")}自動排站位</button></div>
-        <div class="ac-grid" style="--cols:${slots}">${boardCells.join("")}</div>
+      <div class="ac-sec">${ic("swords")}上陣 <em>${me.board.length}/${slots}</em><span class="ac-hint">前排先挨打、後排被保護・左→右・第 1 位先鋒・最後一位壓軸</span><button class="btn ghost ac-mini-btn" data-act="autoarrange" title="自動決定誰在前排 / 後排與排內順序(依先鋒、壓軸、鄰接與前後排效果)">${ic("wand-sparkles")}自動排站位</button></div>
+        ${boardRowsHtml}
         <div class="ac-sec">${ic("archive")}待命席 <em>${me.bench.length}/${AD.BENCH_SLOTS}</em></div>
-        <div class="ac-grid" style="--cols:${AD.BENCH_SLOTS}">${benchCells.join("")}</div>
+        ${rowsGrid(benchCells)}
         <div id="ac-detail" class="ac-detail"></div>
       </div>
       <div class="card ac-shop-card">
@@ -331,6 +385,7 @@
           <button class="btn ghost" data-act="undo"${me.undo ? "" : " disabled"}>${ic("undo-2")}撤銷購買</button>
         </div>
       </div>
+      ${storeHtml(me)}
       ${logCardHtml()}
       ${OL ? `<div class="action-row ac-seal"><button class="btn block${OL.ready ? " ghost" : ""}" id="ac-ready">${ic(OL.ready ? "check-check" : "swords")}${OL.ready ? "已完成準備(點一下取消)" : "完成準備,提早開始"}</button></div>
         <div class="ac-dim ac-seal-note" id="ac-ready-info">${readyInfoText()}</div>` : `<div class="action-row ac-seal"><button class="btn block" id="ac-seal">${ic("swords")}完成準備,開始對戰</button></div>`}`;
@@ -351,7 +406,7 @@
     if (!sel) { el.innerHTML = `<div class="ac-dim">點一張卡看說明與賣出;再點另一格就能移動 / 交換位置。點商店的卡直接購買。滑鼠右鍵點自己的卡可直接上陣 / 下陣。</div>`; return; }
     const arr = sel.zone === "board" ? me.board : me.bench, c = arr[sel.idx];
     if (!c) { sel = null; el.innerHTML = ""; return; }
-    const d = cardDef(c), st = unitStats(c), sellV = AD.sellValue(d, c.star);
+    const d = cardDef(c), st = unitStats(c), sellV = G.sellValueOf(g, c);
     const tags = d.tags.length ? d.tags.map((t) => `<span class="tag t-${t}">${ic(TAG_ICON[t])}${tagName(t)}</span>`).join("") : `<span class="tag">${ic("store")}通用</span>`;
     el.innerHTML = `
       <div class="ac-dhead"><b>${esc(d.name)}</b> <span class="ac-stars big">${stars(c.star)}</span><span class="tag-row">${tags}<span class="tag">${ic("coins")}${d.cost} 費</span></span></div>
@@ -372,13 +427,15 @@
     const w = e.target.closest("[data-watch]"); if (w && view === "spectate") { olWatch(Number(w.dataset.watch)); return; } // 觀戰:看這場對戰
     const b = e.target.closest("[data-act]"); if (!b || view !== "prep") return;
     const act = b.dataset.act, me = g.me, i = Number(b.dataset.i), zone = b.dataset.zone;
+    const antiBefore = antiOn(me); // 反羈絆(吵架):操作後如果新湊齊了,要跳出提示,不能讓玩家無意中踩到
     let r = null;
     if (act === "shop") { r = G.buy(g, i); if (r.ok) { sel = null; if (r.merged.length) setMsg("合成!" + r.merged.map((m) => `${cardDef(m).name} ${m.star}★`).join("、"), "good"); } }
+    else if (act === "store") { const it = AD.STORE_BY_ID[me.store[i]]; if (it && it.target) { openStoreTarget(i); return; } r = G.buyStore(g, i); if (r.ok) setMsg(`買了「${r.item.name}」:${r.item.desc}`, "good"); }
     else if (act === "own") {
       if (sel && !(sel.zone === zone && sel.idx === i)) { r = G.move(g, sel, { zone, idx: i }); if (r.ok) sel = null; }
       else sel = sel && sel.zone === zone && sel.idx === i ? null : { zone, idx: i };
     }
-    else if (act === "slot") { if (sel) { r = G.move(g, sel, { zone, idx: i }); if (r.ok) sel = null; } }
+    else if (act === "slot") { if (sel) { r = G.move(g, sel, zone === "board" ? { zone, row: Number(b.dataset.row) } : { zone, idx: i }); if (r.ok) sel = null; } }
     else if (act === "bond") { if (tipAnchor === b) hideTip(); else showTip(b); return; }
     else if (act === "logtoggle") showLog = !showLog;
     else if (act === "logsel") logRound = Number(b.dataset.r);
@@ -395,6 +452,7 @@
     else if (act === "undo") { r = G.undo(g); if (r.ok) setMsg("已撤銷上一次購買,全額退費"); }
     else if (act === "autoarrange") { r = G.autoArrange(g); if (r.ok) { sel = null; setMsg(r.changed ? "已依先鋒/壓軸/鄰接效果重新排好(不滿意可以再手動調整)" : "現在的排法已經是最適合的了"); } }
     if (r && !r.ok) setMsg(r.msg, "bad");
+    if (r && r.ok) { const nw = antiOn(me).filter((x) => antiBefore.indexOf(x) < 0); if (nw.length) setMsg("⚠ " + nw.map((id) => { const h = AD.HIDDEN_BONDS.find((x) => x.id === id); return `「${h.name}」吵架了:${h.desc.replace(/^.*?:/, "")}`; }).join(";") + "(不想要就把其中一張換下場)", "bad"); }
     if (OL && r && r.ok) persist(); // 連線版:每次操作立刻整批存檔
     renderPrep();
   });
@@ -412,8 +470,9 @@
     { icon: "store", title: "1. 買卡", body: "每輪先有一段準備時間。點商店裡的卡就能買(花銅板),不喜歡可以「刷新」,喜歡的先「鎖定」留到下一輪。買到的卡先進待命席,點一下再點場上的位置就能上陣。" },
     { icon: "swords", title: "2. 站位很重要", body: "場上從左到右排成一排:第 1 位是「先鋒」,最先挨打;最後一位是「壓軸」。很多卡的效果看站位,例如「先鋒:獲得護盾」「鄰接:替左右友軍加攻擊」。不想自己想,按「自動排站位」。" },
     { icon: "flame", title: "3. 流派羈絆與升星", body: "同一個流派的卡湊到 2 / 4 / 6 張(要不同名字)會啟動羈絆,整隊變強。三張同名同星會自動合成更高星,3★ 還會多一個質變效果。有些特定幾張卡湊在一起,會觸發隱藏羈絆……" },
-    { icon: "piggy-bank", title: "4. 銅板與升級", body: "每輪結算有基本收入;贏了多拿、連勝再加。手上存的銅板每 10 個多 +1 利息(最多 +3)。買經驗可以升級,等級越高能上陣的卡越多、商店出好卡的機率也越高。" },
+    { icon: "piggy-bank", title: "4. 銅板與升級", body: "每輪結算有基本收入;贏了多拿、連勝再加。手上存的銅板每 10 個多 +1 利息(最多 +" + AD.INTEREST.max + ")。買經驗可以升級,等級越高能上陣的卡越多、商店出好卡的機率也越高。" },
     { icon: "heart", title: "5. 對戰與淘汰", body: "時間到(或按「完成準備」)就會封板,雙方陣容自動對打,不用操作。輸了扣血,血量歸零就淘汰,最後留下的是棋王。第 3、6、9 輪有「攤位加碼」三選一,沒選會替你隨機選。第 5、10、15 輪是「怪物輪」:全場一起打同一隻怪物,不扣血、不影響連勝,打贏還有銅板和掉落卡。" },
+    { icon: "cloud-rain", title: "6. 夜市事件與雜貨攤", body: "每隔 4 輪(第 4、8、12……輪)會有一個「夜市事件」,例如雨夜、人潮、打烊特賣,全場同時套用,準備畫面最上方會告訴你。準備階段還有「雜貨攤」:用銅板買一次性道具(辣椒粉、糖葫蘆、調味料、外送券),買了立刻生效,每輪重新進貨。" },
   ];
   function openTutorial(i) {
     const st = TUTORIAL[i];
@@ -434,7 +493,7 @@
       const pk = AD.PERK_BY_ID[id];
       return `<button class="ac-perk-opt" data-perk="${id}">${ic(pk.icon, { size: "22px" })}<span><b>${esc(pk.name)}</b><em class="tag">${AD.PERK_CATS[pk.cat]}</em><small>${esc(pk.desc)}</small></span></button>`;
     }).join("");
-    modalCard.innerHTML = `<h3>${ic("sparkles")}攤位加碼 第 ${pp.n} 次(R${AD.PERK_ROUNDS[pp.n - 1]})</h3><p class="ac-dim">三選一。封板前沒選,系統會隨機替你選一張。</p><div class="ac-perk-list">${opts}</div><button class="btn ghost block" id="ac-perk-later">${ic("clock")}先看看棋盤,稍後再選</button>`;
+    modalCard.innerHTML = `<h3>${ic("sparkles")}${pp.extra ? "夜市加碼回合" : `攤位加碼 第 ${pp.n} 次(R${AD.PERK_ROUNDS[pp.n - 1]})`}</h3><p class="ac-dim">三選一。封板前沒選,系統會隨機替你選一張。</p><div class="ac-perk-list">${opts}</div><button class="btn ghost block" id="ac-perk-later">${ic("clock")}先看看棋盤,稍後再選</button>`;
     modal.classList.add("show");
     modalCard.querySelectorAll("[data-perk]").forEach((b) => (b.onclick = () => choosePerk(b.dataset.perk)));
     document.getElementById("ac-perk-later").onclick = closeModal;
@@ -470,8 +529,16 @@
   function renderBattleShell() { /* 由 playBattle 自己畫 */ }
 
   function bstateFrom(init) {
-    const mk = (u) => ({ ...u, shield: 0, burn: 0, poison: 0, frozen: 0, dead: false, flash: "" });
+    // row = 排別(舊戰報沒有就照位置:前 5 個前排);ord = 畫面上的排序(擊殺換位時兩個單位互換 row 與 ord)
+    const mk = (u, i) => ({ ...u, row: u.row != null ? u.row : i < AD.ROW_SIZE ? 0 : 1, ord: i, shield: 0, burn: 0, poison: 0, frozen: 0, dead: false, flash: "" });
     return { a: init.a.map(mk), b: init.b.map(mk) };
+  }
+  // 戰場:一邊最多 10 個單位分前排 / 後排兩排(前排在靠近對手的那一側);引擎的單位編號不變,只是畫面分排,擊殺換位時兩個單位互換排別與順序
+  function battleSideHtml(units, isMe) {
+    const byOrd = (x, y) => x.ord - y.ord, front = units.filter((u) => u.row !== 1).sort(byOrd), back = units.filter((u) => u.row === 1).sort(byOrd);
+    const cols = Math.min(AD.ROW_SIZE, Math.max(1, front.length, back.length));
+    const rows = [front, back].filter((r) => r.length).map((r) => `<div class="ac-brow" style="--cols:${cols}">${battleRowHtml(r, isMe)}</div>`);
+    return (isMe ? rows : rows.reverse()).join("");
   }
   function battleRowHtml(units, isMe) {
     return units.map((u) => {
@@ -486,6 +553,7 @@
     const u = (tag) => bs[tag[0]][Number(tag.slice(1))], sideOf = (tag) => (tag[0] === mySide ? "my" : "foe");
     switch (ev.t) {
       case "round": return { text: `第 ${ev.n} 回合`, side: "round", delay: 350, round: ev.n };
+      case "swap": { const x = u(ev.a), y = u(ev.b); const r = x.row, o = x.ord; x.row = y.row; x.ord = y.ord; y.row = r; y.ord = o; return { text: `${nameOf(ev.a)} 與 ${nameOf(ev.b)} 換位`, side: sideOf(ev.a), delay: 350 }; }
       case "atk": return { text: `${nameOf(ev.from)} 攻擊 ${nameOf(ev.to)}${ev.crit ? "(暴擊!)" : ""}`, side: sideOf(ev.from), delay: 450, flashTag: ev.from, flash: "atk" };
       case "dmg": {
         const t = u(ev.to); t.shield = Math.max(0, t.shield - (ev.ab || 0)); t.hp -= ev.n;
@@ -548,7 +616,7 @@
     document.getElementById("ac-skip").onclick = () => { skipped = true; };
     paintSpeed();
     const draw = () => { // 只重畫戰場,速度鈕與戰報不會被洗掉
-      fieldEl.innerHTML = `<div class="ac-brow" style="--cols:${bs[foeSide].length}">${battleRowHtml(bs[foeSide], false)}</div><div class="ac-gap"></div><div class="ac-brow" style="--cols:${bs[mySide].length}">${battleRowHtml(bs[mySide], true)}</div>`;
+      fieldEl.innerHTML = `${battleSideHtml(bs[foeSide], false)}<div class="ac-gap"></div>${battleSideHtml(bs[mySide], true)}`;
     };
     const addLine = (k, text) => {
       const l = { k, text }; lines.push(l);
@@ -593,6 +661,7 @@
     if (e.monsterCoins) rows.push(["擊敗怪物獎勵", `+${e.monsterCoins}`]);
     if (e.win) rows.push(["勝利獎金", `+${e.win}`]);
     if (e.streakBonus) rows.push([`連勝 ${e.streak} 場加成`, `+${e.streakBonus}`]);
+    if (e.eventCoins) rows.push(["夜市事件獎勵", `+${e.eventCoins}`]);
     if (e.interest) rows.push(["金庫利息", `+${e.interest}`]);
     if (e.bonusCoins) rows.push(["暴擊 / 加碼獎勵", `+${e.bonusCoins}`]);
     const ranking = G.ranking(g).map((p) => `<li class="${p.human ? "me" : ""}${p.alive ? "" : " dead"}"><span>${esc(p.name)}</span><span class="ac-hpb"><i style="width:${Math.max(0, p.hp)}%"></i></span><b>${p.alive ? Math.max(0, p.hp) : "淘汰"}</b></li>`).join("");
@@ -698,6 +767,7 @@
     if (!me.id) return olNotice("請先登入", "要先回首頁登入(取個名字)並報名這場活動,才能進正式場。想先熟悉玩法可以去<a href=\"autochess.html?mode=practice\">練習場</a>。");
     OL.playerId = me.id; OL.localName = me.name || "你";
     try { OL.ev = await db.getEvent(OL.eventId); } catch (e) { return olNotice("找不到這場活動", "活動可能已經被刪除,請回活動列表確認。"); }
+    { const ac = OL.ev && OL.ev.rules && OL.ev.rules.autochess; OL.nightEvents = !!(ac && ac.nightEvents); OL.nightSeed = "ne" + OL.eventId; } // 夜市事件:活動建立時有勾才有(舊活動沒有這個欄位 = 沒開)
     if (OL.ev.game_type !== "autochess") return olNotice("這不是夜市自走棋的活動", "請回活動列表,從活動卡片進入。");
     const h1 = document.querySelector(".marquee h1"); if (h1) h1.innerHTML = `${esc(OL.ev.name)} <span>正式場</span>`;
     document.addEventListener("visibilitychange", () => { if (!document.hidden) olKick(); }); // 切回分頁時馬上校時
@@ -768,7 +838,7 @@
         if (!r.alive || !(r.players && r.players.is_bot)) continue;
         if (((r.state && r.state.stateRound) || 0) >= R) continue;
         if (r.settled_round < r.sealed_round) { pending++; continue; } // 上一場還沒結算完,存了也會被拒絕,下次再試
-        const next = G.botPrepOnline(r.state, R, r.player_id, `ev${OL.eventId}`, r.hp);
+        const next = G.botPrepOnline(r.state, R, r.player_id, `ev${OL.eventId}`, r.hp, OL.nightEvents ? OL.nightSeed : null);
         if (!next) continue;
         try { await db.autochessSaveState(OL.eventId, r.player_id, r.state_rev, next, R); } catch (e) { pending++; }
       }
@@ -797,7 +867,7 @@
     const st = OL.row.state || {};
     if (st.stateRound === undefined && !OL.initDone) { // 第一次進來:建立初始狀態並存檔(失敗代表別的分頁已經建好了)
       OL.initDone = true;
-      const g0 = G.createOnline({ seed: `${OL.eventId}:${OL.playerId}`, name: OL.localName });
+      const g0 = G.createOnline({ seed: `${OL.eventId}:${OL.playerId}`, name: OL.localName, nightEvents: OL.nightEvents, eventSeed: OL.nightSeed });
       try { await db.autochessSaveState(OL.eventId, OL.playerId, OL.row.state_rev, G.serialize(g0), 1); } catch (e) { OL.initDone = false; throw e; }
     }
     root.innerHTML = `<div class="card ac-intro" style="text-align:center;">
@@ -870,7 +940,7 @@
       row = OL.row = await db.getAutochessPlayer(OL.eventId, OL.playerId);
       if (row.sealed_round > row.settled_round) return false;
     }
-    g = G.createOnline({ seed: `${OL.eventId}:${OL.playerId}`, name: OL.localName });
+    g = G.createOnline({ seed: `${OL.eventId}:${OL.playerId}`, name: OL.localName, nightEvents: OL.nightEvents, eventSeed: OL.nightSeed });
     G.restore(g, row.state, row); OL.rev = row.state_rev;
     const advanced = g.round < R;
     G.catchUp(g, R);
@@ -930,7 +1000,7 @@
   async function olReload(R) {
     const row = OL.row = await db.getAutochessPlayer(OL.eventId, OL.playerId);
     if (!row) return;
-    g = G.createOnline({ seed: `${OL.eventId}:${OL.playerId}`, name: OL.localName });
+    g = G.createOnline({ seed: `${OL.eventId}:${OL.playerId}`, name: OL.localName, nightEvents: OL.nightEvents, eventSeed: OL.nightSeed });
     G.restore(g, row.state, row); OL.rev = row.state_rev; G.catchUp(g, R);
     sel = null; if (view === "prep") { render(); openPerkIfAny(); }
   }
@@ -969,7 +1039,7 @@
       const age = (Date.now() + OL.offset - Date.parse(m.created_at)) / 1000;
       const mineP1 = m.p1 === OL.playerId, mineP2 = m.p2 === OL.playerId;
       if (!(force || (mineP1 ? age > 3 : mineP2 ? age > 6 : age > 10))) continue;
-      const res = G.battleOnline(m.round, m.board1, m.board2, m.p2 == null, m.seed, false);
+      const res = G.battleOnline(m.round, m.board1, m.board2, m.p2 == null, m.seed, false, olEventId(m.round), OL.nightSeed);
       await db.autochessSettleRound(OL.eventId, m.round, m.k, OL.playerId, res.outcomes);
     }
   }
@@ -978,7 +1048,7 @@
     if (!m) { if (OL.pairedRound >= R) { OL.playingRound = R; root.innerHTML = `<div class="card ac-intro"><h3>這一輪沒有你的對戰</h3><p class="ac-dim">等下一輪開始。</p></div>`; } return; }
     OL.playingRound = R;
     const ghost = m.p2 == null, meP1 = m.p1 === OL.playerId;
-    const res = G.battleOnline(R, m.board1, m.board2, ghost, m.seed, true); // A = p1、B = p2(幽靈戰 B 是被複製者),固定次序
+    const res = G.battleOnline(R, m.board1, m.board2, ghost, m.seed, true, olEventId(R), OL.nightSeed); // A = p1、B = p2(幽靈戰 B 是被複製者),固定次序
     const mine = res.outcomes.find((o) => o.player_id === OL.playerId);
     if (!mine) return;
     OL.outcome = Object.assign({ round: R, matchK: m.k }, mine);
@@ -986,7 +1056,7 @@
     if (!OL.standings.length) await olLoadStandings();
     const foeId = ghost ? m.ghost_of : meP1 ? m.p2 : m.p1;
     const rep = res.monster
-      ? { round: R, mine: { side: "a", r: res.rBy[OL.playerId], res: mine.pve.res, ghost: false, foe: { name: AD.MONSTERS[R].title, badge: "" } } } // 怪物輪:每個人自己都是 A 方
+      ? { round: R, mine: { side: "a", r: res.rBy[OL.playerId], res: mine.pve.res, ghost: false, foe: { name: monOf(R).title, badge: "" } } } // 怪物輪:每個人自己都是 A 方
       : { round: R, mine: { side: mine.side, r: res.r, res: mine.res, ghost, foe: { name: OL.names[foeId] || "對手", badge: ghost ? "" : olBadge(foeId) } } };
     OL.lastRep = rep;
     if (clk.phase === "battle") { view = "battle"; playBattle(rep, !!(OL.sealInfo && OL.sealInfo), clk.left * 1000 + 2000); }
@@ -1016,6 +1086,7 @@
     if (e.monsterCoins) rows.push(["擊敗怪物獎勵", `+${e.monsterCoins}`]);
     if (e.win) rows.push(["勝利獎金", `+${e.win}`]);
     if (e.streakBonus) rows.push([`連勝 ${e.streak} 場加成`, `+${e.streakBonus}`]);
+    if (e.eventCoins) rows.push(["夜市事件獎勵", `+${e.eventCoins}`]);
     if (e.interest) rows.push(["金庫利息", `+${e.interest}`]);
     if (e.bonusCoins) rows.push(["暴擊 / 加碼獎勵", `+${e.bonusCoins}`]);
     const notes = [];
@@ -1059,12 +1130,12 @@
     const rowOf = (id) => rows.find((r) => r.player_id === id);
     const nm = (id) => OL.names[id] || (rowOf(id) && olName(rowOf(id))) || "玩家";
     const boardOf = (snap) => ((snap && snap.state && snap.state.board) || []).map((c) => ({ id: c.id, star: c.star }));
-    const grid = (cards) => (cards.length ? `<div class="ac-grid" style="--cols:${cards.length}">${cards.map((c) => cardHtml({ ...c, bonusAtk: 0, bonusHp: 0 }, { noTip: true })).join("")}</div>` : `<div class="ac-dim">沒有上陣的卡</div>`);
+    const grid = (cards) => (cards.length ? boardRowsGrid(cards, (c) => cardHtml({ ...c, bonusAtk: 0, bonusHp: 0 }, { noTip: true })) : `<div class="ac-dim">沒有上陣的卡</div>`);
     const matchHtml = matches.map((m) => {
       if (AD.isMonsterRound(m.round)) { // 怪物輪:配對的兩人各打各的怪物,互相不對戰
-        const mon = AD.MONSTERS[m.round], oc2 = m.result && (m.result.outcomes || m.result), arr = Array.isArray(oc2) ? oc2 : [];
+        const mon = monOf(m.round), oc2 = m.result && (m.result.outcomes || m.result), arr = Array.isArray(oc2) ? oc2 : [];
         const stat2 = (pid) => { const o = arr.find((x) => x.player_id === pid); return !m.resolved ? `<span class="tag running">${ic("swords")}對戰中</span>` : o && o.pve ? `<span class="tag">${o.pve.won ? "擊敗怪物" : "被怪物擊退"}</span>` : `<span class="tag">已結算</span>`; };
-        const monGrid = grid(AD.monsterBoard(m.round));
+        const monGrid = grid(AD.monsterBoard(m.round, mon));
         return `<div class="ac-spec-match">
           <div class="ac-spec-h"><b>${esc(nm(m.p1))}</b><span class="vs">VS</span><b>${esc(mon.title)}</b>${stat2(m.p1)}</div>
           ${m.p2 ? `<div class="ac-spec-h"><b>${esc(nm(m.p2))}</b><span class="vs">VS</span><b>${esc(mon.title)}</b>${stat2(m.p2)}</div>` : ""}
@@ -1106,8 +1177,8 @@
     const m = (OL.specMatches || []).find((x) => x.k === k);
     if (!m) return;
     const ghost = m.p2 == null;
-    const res = G.battleOnline(m.round, m.board1, m.board2, ghost, m.seed, true);
-    const a = res.outcomes[0], aName = OL.names[m.p1] || "玩家", bName = res.monster ? AD.MONSTERS[m.round].title : ghost ? (OL.names[m.ghost_of] || "玩家") : (OL.names[m.p2] || "玩家");
+    const res = G.battleOnline(m.round, m.board1, m.board2, ghost, m.seed, true, olEventId(m.round), OL.nightSeed);
+    const a = res.outcomes[0], aName = OL.names[m.p1] || "玩家", bName = res.monster ? monOf(m.round).title : ghost ? (OL.names[m.ghost_of] || "玩家") : (OL.names[m.p2] || "玩家");
     // 左右畫面用 A(= p1)當「主角」:下方標 A 的名字、上方是對手
     const rep = { round: m.round, spectator: { name: aName }, mine: { side: "a", r: res.r, res: res.monster ? a.pve.res : a.res, ghost: res.monster ? false : ghost, foe: { name: bName, badge: ghost || res.monster ? "" : olBadge(m.p2) } } };
     OL.watching = true; OL.watchUntil = Date.now() + 40000; view = "battle";

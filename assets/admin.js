@@ -914,7 +914,7 @@ document.getElementById("create-btn").onclick = async () => {
   }
   if (type === "autochess") {
     // 練習模式預設開放;主辦人取消勾選才關閉(首頁就不顯示「練習」按鈕)
-    rules.autochess = { practice: document.getElementById("new-ac-practice").checked };
+    rules.autochess = { practice: document.getElementById("new-ac-practice").checked, nightEvents: document.getElementById("new-ac-events").checked }; // nightEvents:沒有這個欄位的舊活動視為沒開
   }
   if (type === "auction") {
     rules.startingBudget = Math.max(1, parseInt(document.getElementById("auction-budget").value) || AUCTION_DEFAULT_BUDGET);

@@ -12,7 +12,7 @@
 //   數值參數(n / flat / pct)會依星級放大:1★×1.0、2★×1.5、3★×2.0(見 STAR.fx)。
 window.AutochessData = (function () {
   // 資料版本:每場活動開始時記進 events.rules.autochess.dataVersion,之後調數值不影響進行中的場次(企劃點子 10)
-  const DATA_VERSION = 3; // v3(v58 修復):每流派 +4 張共 85 張卡、合成改 3 張;v2(階段 4):8 流派、53 張卡、隱藏羈絆、新機制
+  const DATA_VERSION = 8; // v8(階段 11):前排 / 後排(自選排別)、站位關鍵字、擊殺換位、自動排站位重做;v7(階段 10):怪物輪候選池與專屬卡、隱藏羈絆擴充;v6(階段 9):夜市事件、雜貨攤;v5(階段 8):待命席 8 格、上陣最多 10 格分兩排、連勝與利息上限 +5;v4(v59):商店不再出現已 3★ 的卡(企劃 11-8);v3(v58 修復):每流派 +4 張共 85 張卡、合成改 3 張;v2(階段 4):8 流派、53 張卡、隱藏羈絆、新機制
 
   // 流派(icon 為 lucide 名稱,動工階段 2 做畫面時再確認名稱)
   const TAGS = {
@@ -77,7 +77,7 @@ window.AutochessData = (function () {
     // ---- 把式 ----
     { id: "street_strongman", name: "賣藝壯漢", cost: 1, tags: ["guard"], atk: 2, hp: 6, spd: 2,
       desc: "先鋒:開場獲得 4 點護盾。", fx: [{ on: "start", when: "vanguard", do: "shieldSelf", flat: 4 }],
-      star3: { desc: "3★:不用站第一位也有護盾。", fx: [{ on: "start", do: "shieldSelf", flat: 4 }] } },
+      star3: { desc: "3★:不用站第一位也有護盾;開場前排全體再獲得 2 點護盾。", fx: [{ on: "start", do: "shieldSelf", flat: 4 }, { on: "start", do: "shieldRow", row: "front", flat: 2 }] } },
     { id: "iron_head_master", name: "鐵頭功師傅", cost: 2, tags: ["guard"], atk: 3, hp: 9, spd: 2,
       desc: "受傷時,反彈 1 點傷害。", fx: [{ on: "hurt", do: "reflect", flat: 1 }],
       star3: { desc: "3★:開場獲得 5 點護盾。", fx: [{ on: "start", do: "shieldSelf", flat: 5 }] } },
@@ -121,15 +121,15 @@ window.AutochessData = (function () {
     // ---- 冰鎮 +1 ----
     { id: "plum_ice_girl", name: "梅子冰妹", cost: 1, tags: ["frost"], atk: 2, hp: 5, spd: 3,
       desc: "受傷時有 25% 機率凍結攻擊者 1 回合。", fx: [{ on: "hurt", do: "freezeSrc", chance: 25 }],
-      star3: { desc: "3★:開場凍結一名隨機敵人。", fx: [{ on: "start", do: "freezeRandom", n: 1 }] } },
+      star3: { desc: "3★:開場凍結一名隨機敵人,後排全體獲得 2 點護盾。", fx: [{ on: "start", do: "freezeRandom", n: 1 }, { on: "start", do: "shieldRow", row: "back", flat: 2 }] } },
     // ---- 把式 +1 ----
     { id: "wooden_dummy_man", name: "木樁武生", cost: 2, tags: ["guard"], atk: 3, hp: 9, spd: 2,
       desc: "鄰接:開場左右友軍各獲得 3 點護盾。", fx: [{ on: "start", do: "shieldAdj", flat: 3 }],
-      star3: { desc: "3★:自己也獲得 4 點護盾。", fx: [{ on: "start", do: "shieldSelf", flat: 4 }] } },
+      star3: { desc: "3★:自己也獲得 4 點護盾;前排全體也各獲得 2 點護盾。", fx: [{ on: "start", do: "shieldSelf", flat: 4 }, { on: "start", do: "shieldRow", row: "front", flat: 2 }] } },
     // ---- 遊戲攤 +1 ----
     { id: "balloon_stall", name: "氣球射擊攤主", cost: 1, tags: ["game"], atk: 3, hp: 4, spd: 4,
       desc: "暴擊時,對隨機一名敵人造成 2 點傷害。", fx: [{ on: "crit", do: "dmgRandom", n: 2 }],
-      star3: { desc: "3★:暴擊率 +15%。", fx: [{ on: "passive", do: "crit", pct: 15 }] } },
+      star3: { desc: "3★:暴擊率 +15%;開場後排全體攻擊 +1。", fx: [{ on: "passive", do: "crit", pct: 15 }, { on: "start", do: "buffRowAtk", row: "back", n: 1 }] } },
     // ---- 藥燉 ----
     { id: "herb_tea_boy", name: "青草茶小弟", cost: 1, tags: ["potion"], atk: 2, hp: 6, spd: 2,
       desc: "每回合結束,回復自己 2 點血量。", fx: [{ on: "roundEnd", do: "healSelf", flat: 2 }],
@@ -149,7 +149,7 @@ window.AutochessData = (function () {
       star3: { desc: "3★:開場我方全體獲得 4 點護盾。", fx: [{ on: "start", do: "shieldAllies", flat: 4 }] } },
     // ---- 順手 ----
     { id: "pickpocket_kid", name: "扒手小子", cost: 1, tags: ["thief"], atk: 3, hp: 4, spd: 4,
-      desc: "擊殺時,本場結算多 1 銅板(本場上限 5)。", fx: [{ on: "kill", do: "coin", n: 1 }],
+      desc: "擊殺時,本場結算多 1 銅板(本場上限 5)。擊殺後與後排第一位換位(退到後排)。", fx: [{ on: "kill", do: "coin", n: 1 }, { on: "kill", do: "swapRow", to: "back" }],
       star3: { desc: "3★:開場本場結算多 1 銅板。", fx: [{ on: "start", do: "coin", n: 1 }] } },
     { id: "haggler_auntie", name: "殺價阿姨", cost: 2, tags: ["thief"], atk: 3, hp: 8, spd: 3,
       desc: "開場:敵方攻擊最高者攻擊 -2。", fx: [{ on: "start", do: "weakenTop", n: 2 }],
@@ -240,7 +240,7 @@ window.AutochessData = (function () {
     // ---- 炭火 +4 ----
     { id: "sweet_potato_boy", name: "烤地瓜小弟", cost: 1, tags: ["burn"], atk: 2, hp: 5, spd: 3,
       desc: "擊殺時,全體敵人灼傷 1 層。", fx: [{ on: "kill", do: "burnAll", n: 1 }],
-      star3: { desc: "3★:出手時,目標灼傷 1 層。", fx: [{ on: "attack", do: "burn", n: 1 }] } },
+      star3: { desc: "3★:出手時,目標灼傷 1 層;開場後排全體攻擊 +1。", fx: [{ on: "attack", do: "burn", n: 1 }, { on: "start", do: "buffRowAtk", row: "back", n: 1 }] } },
     { id: "salty_chicken_vendor", name: "鹽酥雞攤主", cost: 2, tags: ["burn"], atk: 3, hp: 9, spd: 3,
       desc: "壓軸:每回合結束,全體敵人灼傷 1 層。", fx: [{ on: "roundEnd", when: "finale", do: "burnAll", n: 1 }],
       star3: { desc: "3★:開場全體敵人灼傷 1 層。", fx: [{ on: "start", do: "burnAll", n: 1 }] } },
@@ -307,7 +307,7 @@ window.AutochessData = (function () {
       desc: "出手時,偷走目標 1 點攻擊給自己。", fx: [{ on: "attack", do: "stealAtk", n: 1 }],
       star3: { desc: "3★:擊殺時,本場結算多 1 銅板。", fx: [{ on: "kill", do: "coin", n: 1 }] } },
     { id: "wallet_snatcher", name: "扒錢包老手", cost: 2, tags: ["thief"], atk: 3, hp: 7, spd: 3,
-      desc: "擊殺時,自己攻擊 +1,本場結算多 1 銅板(本場上限 5)。", fx: [{ on: "kill", do: "buffSelfAtk", n: 1 }, { on: "kill", do: "coin", n: 1 }],
+      desc: "擊殺時,自己攻擊 +1,本場結算多 1 銅板(本場上限 5)。擊殺後與後排第一位換位(退到後排)。", fx: [{ on: "kill", do: "buffSelfAtk", n: 1 }, { on: "kill", do: "coin", n: 1 }, { on: "kill", do: "swapRow", to: "back" }],
       star3: { desc: "3★:開場敵方攻擊最高者攻擊 -2。", fx: [{ on: "start", do: "weakenTop", n: 2 }] } },
     { id: "pawn_shop_boss", name: "當鋪老闆", cost: 3, tags: ["thief"], atk: 4, hp: 11, spd: 3,
       desc: "開場:敵方攻擊最高者攻擊 -2;出手時,偷走目標 1 點攻擊給自己。", fx: [{ on: "start", do: "weakenTop", n: 2 }, { on: "attack", do: "stealAtk", n: 1 }],
@@ -341,6 +341,34 @@ window.AutochessData = (function () {
     { id: "clock_tower_ghost", name: "時空鐘樓怪人", cost: 5, tags: ["clock"], atk: 6, hp: 24, spd: 3,
       desc: "每回合開始,我方全體攻擊 +1;每回合結束,血量上限與血量 +3。", fx: [{ on: "roundStart", do: "buffAllyAtk", n: 1 }, { on: "roundEnd", do: "growHp", n: 3 }],
       star3: { desc: "3★:每回合結束,我方全體血量上限與血量 +2。", fx: [{ on: "roundEnd", do: "growAllyHp", n: 2 }] } },
+    // ---- 怪物專屬卡(企劃 11-4):只能打贏怪物輪掉落,不進商店;沒有流派(不影響流派羈絆數量),靠自己的效果和宿敵隱藏羈絆 ----
+    { id: "alley_kitten", name: "巷口小橘貓", cost: 2, tags: [], atk: 3, hp: 8, spd: 3, exclusive: true,
+      desc: "開場:左右友軍攻擊 +2。(野貓幫掉落)", fx: [{ on: "start", do: "buffAdjAtk", n: 2 }],
+      star3: { desc: "3★:陣亡時全體友軍獲得 4 點護盾。", fx: [{ on: "death", do: "shieldAllies", flat: 4 }] } },
+    { id: "rascal_rookie", name: "跟班小混混", cost: 2, tags: [], atk: 4, hp: 6, spd: 4, exclusive: true,
+      desc: "出手時偷取目標 1 點攻擊。(夜市搶攤團掉落)", fx: [{ on: "attack", do: "stealAtk", n: 1 }],
+      star3: { desc: "3★:開場削弱敵方攻擊最高者 2 點。", fx: [{ on: "start", do: "weakenTop", n: 2 }] } },
+    { id: "lucky_regular", name: "運氣常客", cost: 2, tags: [], atk: 3, hp: 7, spd: 3, exclusive: true,
+      desc: "暴擊率 +20%;暴擊時隨機一名敵人受到 2 點傷害。(麻將桌常客掉落)", fx: [{ on: "passive", do: "crit", pct: 20 }, { on: "crit", do: "dmgRandom", n: 2 }],
+      star3: { desc: "3★:暴擊時賺 1 銅板。", fx: [{ on: "crit", do: "coin", n: 1 }] } },
+    { id: "awang_tripod", name: "阿旺的三腳架", cost: 3, tags: [], atk: 4, hp: 12, spd: 2, exclusive: true,
+      desc: "開場:全體友軍獲得 3 點護盾;受傷時反彈 1 點。(相片攤老闆·阿旺掉落)", fx: [{ on: "start", do: "shieldAllies", flat: 3 }, { on: "hurt", do: "reflect", flat: 1 }],
+      star3: { desc: "3★:開場全體友軍再獲得 3 點護盾。", fx: [{ on: "start", do: "shieldAllies", flat: 3 }] } },
+    { id: "herb_cart_boss", name: "藥膳推車老闆", cost: 3, tags: [], atk: 4, hp: 12, spd: 2, exclusive: true,
+      desc: "每回合結束治療血量最少的友軍 3 點;出手時目標中毒 1 層。(中藥鋪聯盟掉落)", fx: [{ on: "roundEnd", do: "healLowest", flat: 3 }, { on: "attack", do: "poison", n: 1 }],
+      star3: { desc: "3★:開場全體敵人中毒 1 層。", fx: [{ on: "start", do: "poisonAll", n: 1 }] } },
+    { id: "dojo_disciple", name: "武館入門弟子", cost: 3, tags: [], atk: 5, hp: 11, spd: 2, exclusive: true,
+      desc: "開場:先鋒獲得 6 點護盾;受傷時反彈 1 點。(鐵拳武館聯隊掉落)", fx: [{ on: "start", do: "shieldVanguard", flat: 6 }, { on: "hurt", do: "reflect", flat: 1 }],
+      star3: { desc: "3★:開場全體友軍獲得 3 點護盾。", fx: [{ on: "start", do: "shieldAllies", flat: 3 }] } },
+    { id: "king_heir", name: "夜市王儲", cost: 5, tags: [], atk: 6, hp: 20, spd: 3, exclusive: true,
+      desc: "開場:其他友軍攻擊 +2;贏了這場多賺 2 銅板。(傳說夜市之王掉落)", fx: [{ on: "start", do: "buffAllyAtk", n: 2 }, { on: "passive", do: "winCoin", n: 2 }],
+      star3: { desc: "3★:開場全體友軍獲得 6 點護盾。", fx: [{ on: "start", do: "shieldAllies", flat: 6 }] } },
+    { id: "midnight_bellman", name: "午夜敲鐘人", cost: 5, tags: [], atk: 5, hp: 24, spd: 3, exclusive: true,
+      desc: "每回合開始自己攻擊 +1;每回合結束全體友軍血量上限與血量 +2。(午夜鐘樓掉落)", fx: [{ on: "roundStart", do: "growAtk", n: 1 }, { on: "roundEnd", do: "growAllyHp", n: 2 }],
+      star3: { desc: "3★:每回合結束自己血量再 +3。", fx: [{ on: "roundEnd", do: "growHp", n: 3 }] } },
+    { id: "fire_ice_chef", name: "冰火總鋪師", cost: 5, tags: [], atk: 6, hp: 20, spd: 3, exclusive: true,
+      desc: "開場:全體敵人灼傷 1 層,並凍結敵方速度最快者 1 回合。(冰火大廚團掉落)", fx: [{ on: "start", do: "burnAll", n: 1 }, { on: "start", do: "freezeFastest", n: 1 }],
+      star3: { desc: "3★:每回合結束全體敵人再灼傷 1 層。", fx: [{ on: "roundEnd", do: "burnAll", n: 1 }] } },
   ];
   const CARD_BY_ID = {};
   CARDS.forEach((c) => (CARD_BY_ID[c.id] = c));
@@ -403,7 +431,17 @@ window.AutochessData = (function () {
     { id: "bosses_meetup", name: "老闆們的聚會", cards: ["squid_boss", "snow_queen", "gambling_god"], desc: "三位攤主同台:全隊攻擊 +3,開場全隊護盾 +6", fx: { allAtk: 3, startShieldAll: 6 } },
     { id: "awang_day", name: "阿旺的一天", cards: ["awang", "passerby", "onlooker"], desc: "阿旺與路人們:全隊暴擊率 +15%,開場全隊護盾 +3", fx: { critPct: 15, startShieldAll: 3 } },
     { id: "closing_time", name: "打烊前的一碗", cards: ["sausage_apprentice", "shaved_ice_boy", "ring_toss_girl"], desc: "收攤前的三位小幫手:全隊攻擊 +2,每回合結束全隊回復 2 點血量", fx: { allAtk: 2, healAll: 2 } },
+    // ---- 階段 10 新增(企劃 11-3):宿敵(2 張)/ 大型(4~5 張)/ 反羈絆(2 張,有好有壞,anti = true)----
+    { id: "cat_vs_thief", name: "貓與大盜", cards: ["stall_cat", "night_market_thief"], desc: "宿敵對視:全隊攻擊 +2,暴擊率 +10%", fx: { allAtk: 2, critPct: 10 } },
+    { id: "patrol_chase", name: "警員追阿旺", cards: ["night_patrol", "awang"], desc: "追逐戰:全隊攻擊 +1,開場全隊護盾 +5", fx: { allAtk: 1, startShieldAll: 5 } },
+    { id: "kitten_awang", name: "阿旺與小橘貓", cards: ["alley_kitten", "awang"], desc: "老朋友重逢:全隊攻擊 +2,每回合結束全隊回復 2 點血量", fx: { allAtk: 2, healAll: 2 } },
+    { id: "heir_tycoon", name: "王儲與大亨", cards: ["king_heir", "market_tycoon"], desc: "繼承人與大亨聯手:全隊攻擊 +3,開場全隊護盾 +4", fx: { allAtk: 3, startShieldAll: 4 } },
+    { id: "five_kings", name: "五大天王", cards: ["squid_boss", "snow_queen", "tonic_grandma", "market_tycoon", "oracle_grandpa"], desc: "五位傳說攤主同台:全隊攻擊 +5,開場全隊護盾 +10,每回合結束全隊回復 3 點血量", fx: { allAtk: 5, startShieldAll: 10, healAll: 3 } },
+    { id: "martial_gathering", name: "武林大會", cards: ["dojo_master", "iron_palm_boss", "arm_wrestle_champ", "iron_head_master"], desc: "四位武館高手聚首:全隊攻擊 +3,開場全隊護盾 +6", fx: { allAtk: 3, startShieldAll: 6 } },
+    { id: "thieves_quarrel", name: "搶地盤", anti: true, cards: ["pickpocket_kid", "sticky_fingers_guy"], desc: "同行是冤家(吵架):全隊攻擊 +4,但開場全隊血量 −4", fx: { allAtk: 4, allHp: -4 } },
+    { id: "hot_cold_fight", name: "冰火不容", anti: true, cards: ["whole_lamb_boss", "ice_sculptor"], desc: "炭烤與冰雕互看不順眼(吵架):全隊暴擊率 +25%,但開場全隊血量 −5", fx: { critPct: 25, allHp: -5 } },
   ];
+
 
   // ---- 戰鬥常數(企劃 3-10)----
   const BATTLE = {
@@ -420,12 +458,13 @@ window.AutochessData = (function () {
   // ---- 經濟 / 血量(企劃 3-2、3-3)----
   const START_HP = 100;
   const START_GOLD = 5;
-  const BENCH_SLOTS = 6;
+  const BENCH_SLOTS = 8; // v5:原 6
+  const ROW_SIZE = 5; // 畫面一排最多幾格:上陣 / 待命席 / 戰場都是 5 格一排,超過換第二排(階段 8:目前只影響畫面與位置,戰鬥順序 = 第一排由左到右再接第二排)
   const SHOP_SLOTS = 5;
   const WIN_BONUS = 3; // v58:原 2
   const ROUND_BASE_DAMAGE = [[1, 2], [4, 4], [7, 6], [10, 9], [13, 12], [16, 16], [19, 20]]; // [起始輪次, 基礎傷害]
   const SURVIVOR_STAR_CAP = 10;
-  const INTEREST = { per: 10, max: 3, startRound: 1 }; // 金庫:每 10 銅板 +1,上限 +3;startRound 是模擬器調平衡用的旋鈕
+  const INTEREST = { per: 10, max: 5, startRound: 1 }; // 金庫:每 10 銅板 +1,上限 +5(v5:原 +3);startRound 是模擬器調平衡用的旋鈕
   const SELL_PENALTY = 1; // 2★、3★ 賣出少退 1 銅板
 
   // 升到該級需要的 XP(企劃 3-5)。每輪被動 +2,買經驗 4 銅板 = 4 XP
@@ -433,7 +472,7 @@ window.AutochessData = (function () {
   const PASSIVE_XP = 2;
   const BUY_XP = { cost: 4, xp: 4 };
   const MAX_LEVEL = 10;
-  const SLOTS_BY_LEVEL = [0, 2, 3, 4, 5, 6, 7, 8, 8, 8, 8]; // 索引=等級
+  const SLOTS_BY_LEVEL = [0, 2, 3, 4, 5, 6, 7, 8, 9, 9, 10]; // 索引=等級(v5:Lv8 起 9 格、Lv10 滿 10 格,原本 Lv7 起都是 8 格)
   // Lv8 商店 6 格 / Lv9 每輪第一次刷新免費 / Lv10 每輪額外 +2 銅板(數值待模擬)
   const LEVEL_PERKS = { shopSlots6: 8, freeFirstRefresh: 9, extraIncome: 10, extraIncomeAmount: 2 };
 
@@ -483,11 +522,11 @@ window.AutochessData = (function () {
   function baseIncome(round) {
     return round <= 4 ? 5 : round <= 9 ? 6 : round <= 14 ? 7 : 8; // v58:每段 +1(原 4 / 5 / 6 / 7)
   }
-  // 連勝加成(n = 本場贏完後的連勝數):2 勝 +1 / 3~4 勝 +2 / 5 勝以上 +3
+  // 連勝加成(n = 本場贏完後的連勝數):2 勝 +1 / 3~4 勝 +2 / 5~6 勝 +3 / 7~8 勝 +4 / 9 勝以上 +5(v5:上限由 +3 提高到 +5)
   function streakBonus(n) {
-    return n >= 5 ? 3 : n >= 3 ? 2 : n >= 2 ? 1 : 0;
+    return n >= 9 ? 5 : n >= 7 ? 4 : n >= 5 ? 3 : n >= 3 ? 2 : n >= 2 ? 1 : 0;
   }
-  // 金庫利息:依「當下持有」銅板,每 10 +1,上限 +3
+  // 金庫利息:依「當下持有」銅板,每 10 +1,上限 +5
   function interestOf(gold, round) {
     if (round != null && round < INTEREST.startRound) return 0;
     return Math.min(INTEREST.max, Math.floor(Math.max(0, gold) / INTEREST.per));
@@ -495,19 +534,87 @@ window.AutochessData = (function () {
   // ---------------- 怪物輪(PVE 輪)----------------
   // R5 / R10 / R15:全場不打玩家,改打同一個夜市怪物(陣容固定,全場公平)。不扣血、不計連勝、不中斷連勝;
   // 贏了 +3 銅板並掉落一張卡(下一輪準備階段進待命席)。輸了只拿基本收入與利息。
-  // 強度用 tools/autochess-sim.js 的電腦玩家校準:R5 / R10 / R15 勝率約 69% / 65% / 69%(目標「正常成長的玩家約 70% 打得贏」)。
+  // 強度用 tools/autochess-sim.js 的電腦玩家校準(`node tools/autochess-sim.js monster`):9 隻怪物對取樣玩家陣容的勝率約 63%~76%(目標「正常成長的玩家約 70% 打得贏」);階段 8 放寬格數與經濟後原本的怪物變太容易,所以連原本 3 隻一起重新調過。
   const MONSTER_ROUNDS = [5, 10, 15];
   const MONSTER_WIN_COINS = 3;
-  const MONSTERS = {
-    5: { name: "野貓幫", title: "夜市野貓幫", intro: "一群覓食的野貓擋住了通道:「喵——這攤的魚是我們的!」", win: "野貓們叼著戰利品一溜煙跑了。", lose: "野貓幫大搖大擺地走過你的攤位。",
-         board: [{ id: "stall_cat", star: 1 }, { id: "night_patrol", star: 1 }, { id: "street_strongman", star: 1 }, { id: "iron_head_master", star: 1 }, { id: "dart_uncle", star: 1 }] },
-    10: { name: "阿旺", title: "相片攤老闆·阿旺", intro: "阿旺舉起三腳架:「想過關?先讓我替你拍張定裝照!」", win: "阿旺放下相機大笑:「這張拍得好,送你一個紀念品!」", lose: "阿旺對著你按下快門:「很好,苦瓜臉也是一種風格。」",
-          board: [{ id: "awang", star: 1 }, { id: "chili_lady", star: 1 }, { id: "claw_machine_boss", star: 1 }, { id: "dojo_master", star: 1 }, { id: "arm_wrestle_champ", star: 1 }, { id: "wooden_dummy_man", star: 2 }] },
-    15: { name: "夜市之王", title: "傳說夜市之王", intro: "人聲忽然安靜下來,夜市之王緩緩起身:「年輕人,讓我看看你的攤位。」", win: "夜市之王點點頭:「今晚的夜市,有你的位置。」", lose: "夜市之王搖頭:「再回去多磨練幾個夜晚。」",
-          board: [{ id: "awang", star: 1 }, { id: "dojo_master", star: 1 }, { id: "iron_palm_boss", star: 1 }, { id: "snow_queen", star: 1 }, { id: "market_tycoon", star: 1 }, { id: "herbal_pharmacist", star: 1 }] },
+  // 階段 10(企劃 11-4):每個怪物輪有 3 個候選,由活動種子抽一個(全場抽到同一隻,公平、大螢幕好顯示);第 1 個是原本的怪物。
+  // 打贏必掉該怪物的專屬卡(drop,只能這樣取得);如果玩家已經有那張卡的 3★,改掉落一般隨機卡。
+  const MONSTER_POOLS = {
+    5: [
+      { id: "stray_cats", name: "野貓幫", title: "夜市野貓幫", intro: "一群覓食的野貓擋住了通道:「喵——這攤的魚是我們的!」", win: "野貓們叼著戰利品一溜煙跑了。", lose: "野貓幫大搖大擺地走過你的攤位。", drop: "alley_kitten",
+        board: [ { id: "stall_cat", star: 2 }, { id: "dart_uncle", star: 1 }, { id: "street_strongman", star: 1 }, { id: "iron_head_master", star: 1 }, { id: "passerby", star: 1 } ] },
+      { id: "snatch_gang", name: "搶攤團", title: "夜市搶攤團", intro: "幾個黑影擠到你的攤位前:「老闆,這攤今晚歸我們看!」", win: "搶攤團丟下贓物落荒而逃。", lose: "搶攤團把你的攤位翻了個底朝天。", drop: "rascal_rookie",
+        board: [ { id: "pickpocket_kid", star: 2 }, { id: "wallet_snatcher", star: 1 }, { id: "sticky_fingers_guy", star: 1 }, { id: "street_gambler", star: 1 }, { id: "bargain_king", star: 1 } ] },
+      { id: "mahjong_regulars", name: "麻將桌常客", title: "麻將桌常客團", intro: "麻將桌旁的老客人們一字排開:「來來來,三缺一,不打不能走!」", win: "常客們笑著推倒牌:「年輕人手氣不錯!」", lose: "常客們一胡牌,你的攤位就被圍得水洩不通。", drop: "lucky_regular",
+        board: [ { id: "pinball_kid", star: 1 }, { id: "street_gambler", star: 1 }, { id: "ring_toss_girl", star: 2 }, { id: "balloon_stall", star: 1 }, { id: "dart_uncle", star: 1 } ] },
+    ],
+    10: [
+      { id: "awang", name: "阿旺", title: "相片攤老闆·阿旺", intro: "阿旺舉起三腳架:「想過關?先讓我替你拍張定裝照!」", win: "阿旺放下相機大笑:「這張拍得好,送你一個紀念品!」", lose: "阿旺對著你按下快門:「很好,苦瓜臉也是一種風格。」", drop: "awang_tripod",
+        board: [{ id: "awang", star: 1 }, { id: "chili_lady", star: 1 }, { id: "claw_machine_boss", star: 1 }, { id: "dojo_master", star: 1 }, { id: "arm_wrestle_champ", star: 1 }, { id: "wooden_dummy_man", star: 2 }] },
+      { id: "herb_alliance", name: "中藥鋪聯盟", title: "中藥鋪聯盟", intro: "藥香飄過整條街,幾位老掌櫃並肩而立:「年輕人,火氣太旺,來帖藥?」", win: "掌櫃們捻鬚點頭:「底子不錯,這包送你。」", lose: "掌櫃們搖搖頭:「體質虛啊,回去補一補。」", drop: "herb_cart_boss",
+        board: [ { id: "herbal_pharmacist", star: 1 }, { id: "ginseng_chicken_auntie", star: 2 }, { id: "almond_tea_grandma", star: 2 }, { id: "herbal_wine_brewer", star: 1 }, { id: "tonic_grandma", star: 1 }, { id: "herb_tea_boy", star: 1 } ] },
+      { id: "dojo_squad", name: "鐵拳武館聯隊", title: "鐵拳武館聯隊", intro: "武館的大門轟然打開,弟子們列隊出場:「踢館的?先過我們這一關!」", win: "館主抱拳:「後生可畏,這個徒弟你帶走。」", lose: "弟子們齊聲喝道:「再練三年!」", drop: "dojo_disciple",
+        board: [ { id: "dojo_master", star: 2 }, { id: "lion_dance_captain", star: 1 }, { id: "arm_wrestle_champ", star: 2 }, { id: "ice_wall_master", star: 1 }, { id: "palanquin_bearer", star: 1 } ] },
+    ],
+    15: [
+      { id: "market_king", name: "夜市之王", title: "傳說夜市之王", intro: "人聲忽然安靜下來,夜市之王緩緩起身:「年輕人,讓我看看你的攤位。」", win: "夜市之王點點頭:「今晚的夜市,有你的位置。」", lose: "夜市之王搖頭:「再回去多磨練幾個夜晚。」", drop: "king_heir",
+        board: [ { id: "awang", star: 2 }, { id: "market_tycoon", star: 1 }, { id: "snow_queen", star: 2 }, { id: "tonic_grandma", star: 2 }, { id: "dojo_master", star: 1 } ] },
+      { id: "midnight_tower", name: "午夜鐘樓", title: "午夜鐘樓守護者", intro: "鐘聲在夜市上空迴盪,齒輪轉動的聲音越來越近:「午夜十二點,時間到了。」", win: "鐘聲停了:「你,趕上了時間。」", lose: "鐘聲再度響起:「太慢了,下次早點來。」", drop: "midnight_bellman",
+        board: [ { id: "clockwork_giant", star: 2 }, { id: "old_watch_master", star: 2 }, { id: "gear_craftsman", star: 1 }, { id: "music_box_boss", star: 1 }, { id: "battery_toy_seller", star: 1 }, { id: "clock_tower_ghost", star: 1 } ] },
+      { id: "fire_ice_kitchen", name: "冰火大廚團", title: "冰火大廚團", intro: "一邊烈焰沖天、一邊寒氣逼人,大廚們同時亮出鍋鏟:「今晚的主菜,是你!」", win: "大廚們收起鍋鏟:「這道菜,合格。」", lose: "大廚們冷笑:「火候不夠。」", drop: "fire_ice_chef",
+        board: [ { id: "squid_boss", star: 2 }, { id: "snow_queen", star: 1 }, { id: "salty_chicken_vendor", star: 1 }, { id: "chili_lady", star: 1 }, { id: "fire_ice_dessert", star: 1 } ] },
+    ],
   };
+  const MONSTERS = { 5: MONSTER_POOLS[5][0], 10: MONSTER_POOLS[10][0], 15: MONSTER_POOLS[15][0] }; // 舊介面:預設(第 1 個)怪物
+  // 這一輪的怪物:由種子決定(沒傳種子 = 預設怪物)。每個客戶端算出來都一樣
+  function monsterFor(seed, round) {
+    const pool = MONSTER_POOLS[round]; if (!pool) return null;
+    if (seed == null) return pool[0];
+    let h = 2166136261; const str = `${seed}|monster|${round}`;
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    return pool[h % pool.length];
+  }
+  // ---- 隨機夜市事件(企劃 11-2)----
+  // 從 R4 起每隔 4 輪(R4、R8、R12、R16……)全場同時套用同一個事件,只持續那一輪,避開怪物輪。
+  // 事件由「事件種子 + 輪次」決定(E.nightEvent),每個客戶端算出來都一樣,不需要資料表。
+  const NIGHT_EVENT_FIRST = 4, NIGHT_EVENT_EVERY = 4;
+  const NIGHT_EVENTS = [
+    { id: "rain", name: "雨夜", icon: "cloud-rain", desc: "冰鎮流派全隊攻擊 +2;炭火流派全隊攻擊 −2", tags: { frost: 2, burn: -2 } },
+    { id: "crowd", name: "人潮", icon: "users", desc: "本輪商店多 1 格" },
+    { id: "sale", name: "打烊特賣", icon: "tag", desc: "本輪買卡費用 −1(最低 1);本輪賣出也少 1 銅板" },
+    { id: "jackpot", name: "發財時段", icon: "gem", desc: "本輪結算基本收入 +2" },
+    { id: "typhoon", name: "颱風夜", icon: "wind", desc: "本輪結算不計利息,但贏了 +2 銅板" },
+    { id: "extra_pick", name: "加碼回合", icon: "sparkles", desc: "本輪多一次攤位加碼三選一" },
+    { id: "heavy", name: "重壓之夜", icon: "hammer", desc: "本輪輸家扣血 ×1.5" },
+  ];
+  const NIGHT_EVENT_BY_ID = {}; NIGHT_EVENTS.forEach((e) => (NIGHT_EVENT_BY_ID[e.id] = e));
+  // ---- 雜貨攤(企劃 11-2):準備階段用銅板買一次性道具,買了立刻生效,沒有道具欄。每輪隨機提供 STORE_SLOTS 件 ----
+  const STORE_SLOTS = 3;
+  const STORE_ITEMS = [
+    { id: "chili", name: "辣椒粉", icon: "flame", price: 3, desc: "本輪戰鬥我方全隊攻擊 +1", fx: { atk: 1 } },
+    { id: "candy", name: "糖葫蘆", icon: "candy", price: 3, desc: "本輪戰鬥我方全隊血量 +3", fx: { hp: 3 } },
+    { id: "spice", name: "調味料", icon: "chef-hat", price: 5, desc: "選一張卡永久 +1 攻擊 / +2 血量", target: "card", atk: 1, hp: 2 },
+    { id: "coupon", name: "外送券", icon: "ticket", price: 2, desc: "商店免費刷新 2 次(沒用完會留著)", fx: { freeRefresh: 2 } },
+  ];
+  const STORE_BY_ID = {}; STORE_ITEMS.forEach((i) => (STORE_BY_ID[i.id] = i));
+  // ---- 前排 / 後排(階段 11,企劃 11-5)----
+  // 場上的卡可以帶 row:0 = 前排、1 = 後排(玩家自選);沒有 row 的卡(舊存檔、怪物陣容)照位置分:前 ROW_SIZE 張前排、其餘後排。
+  // 每排最多 ROW_SIZE 張。戰鬥順序 = 前排由左到右、再接後排由左到右(陣列順序 = 排內由左到右)。
+  const rowOfCard = (c, i) => (c.row === 0 || c.row === 1 ? c.row : i < ROW_SIZE ? 0 : 1);
+  // board → { front: [原陣列索引...], back: [...] };前排一張都沒有時,後排視為前排(不會出現「沒有前排」)
+  function rowsOf(board) {
+    const front = [], back = [];
+    board.forEach((c, i) => (rowOfCard(c, i) === 0 ? front : back).push(i));
+    return front.length ? { front, back } : { front: back, back: [] };
+  }
+  // 戰鬥 / 評分用的順序:前排接後排,每張卡是帶正規化 row 的複本
+  function layoutBoard(board) {
+    const r = rowsOf(board);
+    return r.front.map((i) => ({ ...board[i], row: 0 })).concat(r.back.map((i) => ({ ...board[i], row: 1 })));
+  }
   const isMonsterRound = (round) => MONSTER_ROUNDS.indexOf(round) >= 0;
-  const monsterBoard = (round) => (MONSTERS[round] ? MONSTERS[round].board.map((c) => ({ id: c.id, star: c.star })) : []);
+  const isEventRound = (round) => round >= NIGHT_EVENT_FIRST && (round - NIGHT_EVENT_FIRST) % NIGHT_EVENT_EVERY === 0 && !isMonsterRound(round);
+  const monsterBoard = (round, mon) => { const m = mon || MONSTERS[round]; return m ? m.board.map((c) => ({ id: c.id, star: c.star })) : []; };
 
   function slotsFor(level) { return SLOTS_BY_LEVEL[Math.min(MAX_LEVEL, Math.max(1, level))]; }
   function shopSlotsFor(level) { return level >= LEVEL_PERKS.shopSlots6 ? SHOP_SLOTS + 1 : SHOP_SLOTS; }
@@ -526,9 +633,10 @@ window.AutochessData = (function () {
 
   return {
     DATA_VERSION, TAGS, RARITY, COST_TO_RARITY, STAR, CARDS, CARD_BY_ID, BOND_TIERS, BOND_COIN_CAP, BONDS, HIDDEN_BONDS, BATTLE,
-    START_HP, START_GOLD, BENCH_SLOTS, SHOP_SLOTS, WIN_BONUS, ROUND_BASE_DAMAGE, SURVIVOR_STAR_CAP, INTEREST, SELL_PENALTY,
+    START_HP, START_GOLD, BENCH_SLOTS, ROW_SIZE, SHOP_SLOTS, WIN_BONUS, ROUND_BASE_DAMAGE, SURVIVOR_STAR_CAP, INTEREST, SELL_PENALTY,
     XP_TO_LEVEL, PASSIVE_XP, BUY_XP, MAX_LEVEL, SLOTS_BY_LEVEL, LEVEL_PERKS, SHOP_ODDS, PERK_ROUNDS, PERK_CATS, PERKS, PERK_BY_ID,
     PREP_SECONDS, prepSeconds, roundBaseDamage, baseIncome, streakBonus, interestOf, slotsFor, shopSlotsFor, sellValue, addXp,
-    MONSTER_ROUNDS, MONSTER_WIN_COINS, MONSTERS, isMonsterRound, monsterBoard,
+    MONSTER_ROUNDS, MONSTER_WIN_COINS, MONSTER_POOLS, MONSTERS, monsterFor, isMonsterRound, monsterBoard,
+    rowOfCard, rowsOf, layoutBoard, NIGHT_EVENT_FIRST, NIGHT_EVENT_EVERY, NIGHT_EVENTS, NIGHT_EVENT_BY_ID, isEventRound, STORE_SLOTS, STORE_ITEMS, STORE_BY_ID,
   };
 })();

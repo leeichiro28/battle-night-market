@@ -783,22 +783,28 @@
               <tr><td><b style="color:var(--ink);">開場銅板</b></td><td><b style="color:var(--gold);">5</b></td></tr>
               <tr><td><b style="color:var(--ink);">基本收入</b></td><td>R1~4 <b style="color:var(--gold);">5</b>、R5~9 <b style="color:var(--gold);">6</b>、R10~14 <b style="color:var(--gold);">7</b>、R15 起 <b style="color:var(--gold);">8</b></td></tr>
               <tr><td><b style="color:var(--ink);">贏場獎勵</b></td><td>贏了 <b style="color:var(--gold);">+3</b>(平手、輸了沒有)</td></tr>
-              <tr><td><b style="color:var(--ink);">連勝加成</b></td><td>2 連勝 +1、3~4 連勝 +2、5 連勝以上 +3(連敗沒有額外懲罰;掛網不發)</td></tr>
-              <tr><td><b style="color:var(--ink);">金庫利息</b></td><td>輪末每持有 <b style="color:var(--gold);">10</b> 銅板多 +1,最多 <b style="color:var(--gold);">+3</b>(存到 30 才拿滿)</td></tr>
-              <tr><td><b style="color:var(--ink);">商店</b></td><td>每次 <b style="color:var(--gold);">5</b> 格(Lv.8 起 6 格);可「鎖定」留到下一輪,「刷新」要付銅板</td></tr>
+              <tr><td><b style="color:var(--ink);">連勝加成</b></td><td>2 連勝 +1、3~4 連勝 +2、5~6 連勝 +3、7~8 連勝 +4、9 連勝以上 <b style="color:var(--gold);">+5</b>(連敗沒有額外懲罰;掛網不發)</td></tr>
+              <tr><td><b style="color:var(--ink);">金庫利息</b></td><td>輪末每持有 <b style="color:var(--gold);">10</b> 銅板多 +1,最多 <b style="color:var(--gold);">+5</b>(存到 50 才拿滿)</td></tr>
+              <tr><td><b style="color:var(--ink);">商店</b></td><td>每次 <b style="color:var(--gold);">5</b> 格(Lv.8 起 6 格);可「鎖定」留到下一輪,「刷新」要付銅板。商店裡你<b style="color:var(--ink);">場上或待命席已經有的卡</b>會標「已有 ×N」,買下去能合成升星的會標「可升 N★」;已經是 <b style="color:var(--gold);">3★</b> 的卡不會再出現在你的商店(賣掉後才會再出現)</td></tr>
               <tr><td><b style="color:var(--ink);">買經驗</b></td><td><b style="color:var(--gold);">4</b> 銅板買 <b style="color:var(--gold);">4</b> 點經驗,每輪另送 <b style="color:var(--gold);">2</b> 點</td></tr>
-              <tr><td><b style="color:var(--ink);">待命席</b></td><td><b style="color:var(--gold);">6</b> 格;同名卡 3 張自動合成升星(最高 3★),賣掉升星卡會少拿 1 銅板</td></tr>
+              <tr><td><b style="color:var(--ink);">待命席</b></td><td><b style="color:var(--gold);">8</b> 格;同名卡 3 張自動合成升星(最高 3★),賣掉升星卡會少拿 1 銅板</td></tr>
               <tr><td><b style="color:var(--ink);">銅板上限</b></td><td>羈絆與卡牌效果在戰鬥中額外賺的銅板,每場最多 <b style="color:var(--gold);">5</b></td></tr>
             </tbody>
           </table></div>
           <div id="ac-level-table"></div>
+          <h5 style="margin:14px 0 6px;">夜市事件(活動有開才會出現)</h5>
+          <p style="font-size:12px;color:var(--ink-dim);margin:0 0 6px;">從第 4 輪起,每隔 4 輪(R4、R8、R12……,避開怪物輪)全場同時套用一個事件,只持續那一輪,準備畫面最上方會告訴你。</p>
+          <div id="ac-event-table"></div>
+          <h5 style="margin:14px 0 6px;">雜貨攤</h5>
+          <p style="font-size:12px;color:var(--ink-dim);margin:0 0 6px;">準備階段可以用銅板買一次性道具,買了立刻生效,不佔位置,每輪重新進貨 3 件。</p>
+          <div id="ac-store-table"></div>
         </div>
 
         <div class="game-section">
           <h4 data-tab-label="流派羈絆"><i data-lucide="flame" class="ico"></i> 流派與羈絆</h4>
           <p style="color:var(--ink-dim);line-height:1.9;margin:0 0 10px;">上陣的卡,同一流派湊到 <b style="color:var(--gold);">2 / 4 / 6</b> 張(只算不同名字的卡)就會啟動羈絆。<b style="color:var(--ink);">雙流派卡</b>兩邊都算,是混搭的橋樑;<b style="color:var(--ink);">通用卡</b>不佔羈絆,但有補洞、換位、鄰接等效果。</p>
           <div id="ac-bond-table"></div>
-          <p style="color:var(--ink-dim);line-height:1.9;margin:0 0 10px;"><b style="color:var(--ink);">站位</b>也有影響:第 1 位是<b style="color:var(--ink);">先鋒</b>(最先挨打)、最後一位是<b style="color:var(--ink);">壓軸</b>;有些卡看「前排 / 後排」或「左右鄰接」,少數卡會在開場<b style="color:var(--ink);">換位</b>(換位後才判定先鋒與壓軸)。<b style="color:var(--ink);">隱藏羈絆</b>:特定幾位攤主同台就會觸發,湊到一半羈絆列會冒出「？？？」當線索,湊齊才揭曉。</p>
+          <p style="color:var(--ink-dim);line-height:1.9;margin:0 0 10px;"><b style="color:var(--ink);">站位</b>也有影響:上陣區分<b style="color:var(--ink);">前排</b>與<b style="color:var(--ink);">後排</b>(每排最多 5 張,卡放哪一排自己決定),敵人的攻擊先打前排、前排倒光才打後排,所以後排比較安全;前排最左的是<b style="color:var(--ink);">先鋒</b>(最先挨打)、最後面那張是<b style="color:var(--ink);">壓軸</b>。有些卡看「前排 / 後排」(例如前排全體護盾、後排全體攻擊 +1)或「同一排左右鄰接」,少數卡會在開場<b style="color:var(--ink);">換位</b>(連排別一起換),還有卡<b style="color:var(--ink);">擊殺後換位</b>(例如退到後排)。「自動排站位」會幫你決定誰放前排、誰放後排。<b style="color:var(--ink);">隱藏羈絆</b>:特定幾位攤主同台就會觸發(有 2 張的「宿敵」、4～5 張的「大型」),湊到一半羈絆列會冒出「？？？」當線索,湊齊才揭曉。另外有「<b style="color:var(--red);">反羈絆</b>」:兩張特定的卡一起上陣會<b style="color:var(--ink);">吵架</b>,有好處也有壞處(例如攻擊大增、但開場血量減少,最低剩 1),湊齊的當下會跳出提示,不想要就把其中一張換下場。部分隱藏羈絆要用<b style="color:var(--ink);">怪物專屬卡</b>才湊得齊。</p>
         </div>
 
         <div class="game-section">
@@ -826,7 +832,7 @@
               <tr><td><b style="color:var(--ink);">時間到 / 強制結束</b></td><td>依剩餘血量,再比勝場</td></tr>
               <tr><td><b style="color:var(--ink);">被淘汰之後</b></td><td>自動變成<b style="color:var(--ink);">觀眾</b>觀眾:可以看本輪(準備階段看上一輪)所有對戰、展開雙方陣容、重播任何一場,也看得到全場血量,直到比賽結束公布最終名次。不影響你已經拿到的名次。</td></tr>
               <tr><td><b style="color:var(--ink);">幽靈戰</b></td><td>打贏照拿銅板、打輸照扣血;被複製的本人不受影響</td></tr>
-              <tr><td><b style="color:var(--ink);">怪物輪(R5、R10、R15)</b></td><td>這三輪<b style="color:var(--ink);">全場都不打玩家,改打同一隻夜市怪物</b>(R5 野貓幫、R10 相片攤老闆·阿旺、R15 傳說夜市之王),陣容公開、每個人面對的一樣。<b style="color:var(--ink);">不扣血、不計勝敗場、連勝不變也不中斷</b>。打贏 <b style="color:var(--gold);">+3</b> 銅板並<b style="color:var(--ink);">掉落一張卡</b>(下一輪準備階段進待命席,放不下就折成銅板);輸了只拿基本收入與利息。累計擊敗怪物 5 次拿「夜市驅邪人」稱號。</td></tr>
+              <tr><td><b style="color:var(--ink);">怪物輪(R5、R10、R15)</b></td><td>這三輪<b style="color:var(--ink);">全場都不打玩家,改打同一隻夜市怪物</b>(每一輪有 3 個候選怪物,開場由活動抽一隻,全場一樣:R5 野貓幫 / 夜市搶攤團 / 麻將桌常客團、R10 相片攤老闆·阿旺 / 中藥鋪聯盟 / 鐵拳武館聯隊、R15 傳說夜市之王 / 午夜鐘樓守護者 / 冰火大廚團),陣容公開、每個人面對的一樣。<b style="color:var(--ink);">不扣血、不計勝敗場、連勝不變也不中斷</b>。打贏 <b style="color:var(--gold);">+3</b> 銅板並<b style="color:var(--ink);">掉落那隻怪物的專屬卡</b>(只能從怪物輪拿到,不會出現在商店;下一輪準備階段進待命席,放不下就折成銅板;如果你已經有那張的 3★,改掉落一般卡);輸了只拿基本收入與利息。累計擊敗怪物 5 次拿「夜市驅邪人」稱號。</td></tr>
             </tbody>
           </table></div>
         </div>

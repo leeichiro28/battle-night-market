@@ -44,7 +44,8 @@ t("屬性預算:ATK×3+HP 不超過費用標尺的 1.5 倍、也不低於 0.6 �
 });
 t("隱藏羈絆:3 張卡都存在、不重複、各有效果與說明", () => {
   ok(AD.HIDDEN_BONDS.length >= 3);
-  AD.HIDDEN_BONDS.forEach((h) => { eq(h.cards.length, 3); eq(new Set(h.cards).size, 3); h.cards.forEach((id) => ok(AD.CARD_BY_ID[id], h.id + " 找不到 " + id)); ok(h.name && h.desc && Object.keys(h.fx).length); });
+  ok(AD.HIDDEN_BONDS.length >= 10, "隱藏羈絆不到 10 個");
+  AD.HIDDEN_BONDS.forEach((h) => { ok(h.cards.length >= 2 && h.cards.length <= 5, h.id + " 張數 " + h.cards.length); eq(new Set(h.cards).size, h.cards.length); h.cards.forEach((id) => ok(AD.CARD_BY_ID[id], h.id + " 找不到 " + id)); ok(h.name && h.desc && Object.keys(h.fx).length); });
   eq(new Set(AD.HIDDEN_BONDS.map((h) => h.id)).size, AD.HIDDEN_BONDS.length);
 });
 t("資料版本已升為 3", () => ok(AD.DATA_VERSION >= 3));
@@ -118,7 +119,9 @@ t("卜卦:先鋒/壓軸/前排/後排條件", () => {
   ok(!b.events.some((e) => e.t === "buff" && e.to === "a2" && e.atk === 3), "不在先鋒位不該 +3");
   const fs = (arr) => run(B(...arr), dummy(4), "fs");
   ok(fs(["fengshui_master", "passerby", "passerby", "passerby"]).events.some((e) => e.t === "shield" && e.to === "a0" && e.n === 3), "前排護盾");
-  ok(fs(["passerby", "passerby", "passerby", "fengshui_master"]).events.some((e) => e.t === "buff" && e.to === "a3" && e.atk === 2), "後排攻擊");
+  const backBoard = B("passerby", "passerby", "passerby", "fengshui_master"); backBoard[3].row = 1; // 階段 11:前排 / 後排看排別,不再看位置
+  ok(run(backBoard, dummy(4), "fs").events.some((e) => e.t === "buff" && e.to === "a3" && e.atk === 2), "後排攻擊");
+  ok(fs(["passerby", "passerby", "passerby", "fengshui_master"]).events.some((e) => e.t === "shield" && e.to === "a3" && e.n === 3), "沒指定排別時 4 張都在前排");
 });
 t("卜卦羈絆:先鋒與壓軸才有加成", () => {
   const board = B("fortune_stick_boy", "palm_reader", "fengshui_master", "antique_dealer", "oracle_grandpa");
@@ -162,6 +165,21 @@ t("隨機陣容 3000 場不丟例外、一定有結果", () => {
   for (let i = 0; i < 3000; i++) { const r = E.simulate(mk(), mk(), "f" + i); ok(["a", "b", "draw"].includes(r.winner), "沒有結果"); ok(r.rounds <= AD.BATTLE.maxRounds); }
 });
 
+t("怪物輪候選池:每輪 3 隻、第 1 隻是原本的怪物、每隻都有專屬卡掉落且互不重複", () => {
+  const drops = [];
+  AD.MONSTER_ROUNDS.forEach((r) => {
+    const pool = AD.MONSTER_POOLS[r]; eq(pool.length, 3, "R" + r); eq(pool[0], AD.MONSTERS[r]); eq(new Set(pool.map((m) => m.id)).size, 3);
+    pool.forEach((m) => { ok(m.name && m.title && m.intro && m.win && m.lose, m.id + " 缺台詞"); ok(m.board.length >= 4 && m.board.length <= 8, m.id + " 張數"); m.board.forEach((c) => ok(AD.CARD_BY_ID[c.id] && !AD.CARD_BY_ID[c.id].exclusive && c.star >= 1 && c.star <= 3, m.id + " 壞卡 " + c.id)); const d = AD.CARD_BY_ID[m.drop]; ok(d && d.exclusive, m.id + " 掉落不是專屬卡"); drops.push(m.drop); });
+  });
+  eq(new Set(drops).size, 9);
+  eq(AD.monsterFor(null, 5).id, AD.MONSTERS[5].id); eq(AD.monsterFor("x", 6), null);
+  const seen = {}; for (let i = 0; i < 200; i++) seen[AD.monsterFor("s" + i, 10).id] = 1; eq(Object.keys(seen).length, 3, "3 隻都會被抽到");
+  eq(AD.monsterFor("same", 15).id, AD.monsterFor("same", 15).id);
+});
+t("專屬卡:不屬於任何流派、有 exclusive 標記、說明與 3★ 質變齊全,數量 9 張", () => {
+  const ex = AD.CARDS.filter((c) => c.exclusive); eq(ex.length, 9);
+  ex.forEach((c) => { eq(c.tags, []); ok(c.desc && c.star3 && c.star3.desc && c.star3.fx.length, c.id); });
+});
 t("怪物輪:R5 / R10 / R15,每隻怪物的陣容都是存在的卡、不超過上陣格數、有台詞", () => {
   eq(AD.MONSTER_ROUNDS, [5, 10, 15]);
   AD.MONSTER_ROUNDS.forEach((r) => {
@@ -170,7 +188,7 @@ t("怪物輪:R5 / R10 / R15,每隻怪物的陣容都是存在的卡、不超過�
     b.forEach((c) => ok(AD.CARD_BY_ID[c.id] && c.star >= 1 && c.star <= 3, "R" + r + " 壞卡 " + c.id));
   });
   ok(AD.isMonsterRound(5) && AD.isMonsterRound(10) && AD.isMonsterRound(15) && !AD.isMonsterRound(6) && !AD.isMonsterRound(1));
-  const a = AD.monsterBoard(5); a[0].star = 3; eq(AD.monsterBoard(5)[0].star, 1, "monsterBoard 要回傳副本");
+  const a = AD.monsterBoard(5), before = a[0].star; a[0].star = 3; eq(AD.monsterBoard(5)[0].star, before, "monsterBoard 要回傳副本");
 });
 
 console.log(`\n${pass} 通過,${fail} 失敗`);

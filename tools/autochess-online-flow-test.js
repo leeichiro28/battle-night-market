@@ -9,6 +9,7 @@
 // 注意:這驗證的是「前端流程」和「我對 SQL 行為的理解」,不是 SQL 本身 —— SQL 一定要在 Supabase 實跑過。
 const fs = require("fs"), path = require("path"), vm = require("vm");
 const ASSETS = path.join(__dirname, "..", "assets");
+const AD0 = (() => { const sb = { window: {} }; sb.window.window = sb.window; vm.runInNewContext(fs.readFileSync(path.join(ASSETS, "autochess-data.js"), "utf8"), sb); return sb.window.AutochessData; })(); // 只拿資料表來對照事件 id
 
 // ---------------- 虛擬時鐘 ----------------
 const V = { now: Date.parse("2026-11-12T12:00:00Z"), timers: [], seq: 1 };
@@ -28,7 +29,7 @@ async function pump(untilMs, stop) {
 
 // ---------------- 假伺服器(照 SQL 邏輯)----------------
 const clone = (x) => JSON.parse(JSON.stringify(x));
-const S = { ev: { id: "EV1", name: "測試場", game_type: "autochess", status: "open", locked: false, rules: { autochess: { practice: true } }, reward_plan: { items: ["金", "銀", "銅"] } }, players: {}, rounds: [], stats: [], log: [], parts: [], calls: {} };
+const S = { ev: { id: "EV1", name: "測試場", game_type: "autochess", status: "open", locked: false, rules: { autochess: { practice: true, nightEvents: true } }, reward_plan: { items: ["金", "銀", "銅"] } }, players: {}, rounds: [], stats: [], log: [], parts: [], calls: {} };
 const count = (n) => { S.calls[n] = (S.calls[n] || 0) + 1; };
 let rngState = 12345; const rnd = () => { rngState = (rngState * 1664525 + 1013904223) >>> 0; return rngState / 4294967296; };
 const iso = () => new Date(V.now).toISOString();
@@ -257,7 +258,7 @@ async function scenarioB() {
 async function scenarioC() {
   console.log("\n== 場景 C:2 位真人 + 2 隻測試機器人 ==");
   V.timers = []; clients.length = 0; errors.length = 0; warns.length = 0;
-  S.ev = { id: "EV1", name: "測試場C", game_type: "autochess", status: "open", locked: false, rules: { autochess: {} }, reward_plan: { items: ["金", "銀"] } };
+  S.ev = { id: "EV1", name: "測試場C", game_type: "autochess", status: "open", locked: false, rules: { autochess: { nightEvents: true } }, reward_plan: { items: ["金", "銀"] } };
   S.players = {}; S.rounds = []; S.stats = []; S.log = []; S.parts = []; S.calls = {}; S.rejects = {};
   S.parts.push({ id: "h1", name: "真人1" }, { id: "h2", name: "真人2" }, { id: "bot1", name: "測試機器人 1", bot: true }, { id: "bot2", name: "測試機器人 2", bot: true });
   const h1 = makeClient("h1", "真人1"), h2 = makeClient("h2", "真人2");
@@ -293,6 +294,13 @@ async function scenarioC() {
   });
   t("C:機器人每輪的 stateRound 都有跟上(沒有停在第 1 輪)", () => { const live = ["bot1", "bot2"].filter((id) => S.players[id].alive); live.forEach((id) => ok(S.players[id].state.stateRound >= lastRound - 1, `${id} stateRound=${S.players[id].state.stateRound}、最後一輪 ${lastRound}`)); });
   t("C:機器人有打出勝負(不是一開打就被秒殺 / 平手)", () => { const wl = ["bot1", "bot2"].reduce((a, id) => a + S.players[id].wins + S.players[id].losses, 0); ok(wl >= 2, "機器人勝敗總數 " + wl); });
+  t("C:夜市事件有開:R4 / R8 的結算紀錄都帶事件 id,其他輪沒有;全程沒有結算不一致", () => {
+    const ev = (r) => S.stats.filter((x) => x.round === r).map((x) => x.stat.event);
+    const last = Math.max(...S.stats.map((x) => x.round)); ok(last >= 4, "測試沒打到第 4 輪");
+    [4, 8].forEach((r) => { if (r <= last) { ok(ev(r).length > 0 && ev(r).every((e) => AD0.NIGHT_EVENT_BY_ID[e]), `R${r} 沒有事件`); } });
+    [1, 2, 3, 6, 7].forEach((r) => { if (r <= last) ok(ev(r).every((e) => e == null), `R${r} 不該有事件`); });
+    eq(S.log.filter((l) => l.kind === "mismatch"), []);
+  });
   t("C:所有場次結算、沒有不一致、前端沒有例外", () => { ok(S.rounds.every((m) => m.resolved)); eq(S.log.filter((l) => l.kind === "mismatch"), []); eq(errors.slice(0, 3), []); eq(warns.filter((w) => /TypeError|ReferenceError|RangeError/.test(w)).slice(0, 3), []); });
 }
 

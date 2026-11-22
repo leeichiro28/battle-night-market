@@ -9,11 +9,13 @@
 // 已知限制(解讀結果時要記得):
 //  - 玩家 AI 是簡單貪心(買分數最高的卡、湊對子、固定升級節奏),真人會更會取捨;絕對勝率只看相對關係
 //  - 不含攤位加碼、怪物輪、機器人以外的任何策略;配對為純隨機(沒有避免連續遇到同一人)
+//   node tools/autochess-sim.js monster  怪物輪校準:各輪各怪物對「正常成長的電腦玩家陣容」的勝率(目標約 65~70%;--n 100 場取樣)
+//  - 夜市事件(雨夜、人潮、打烊特賣…)預設開,--events 0 關掉;雜貨攤沒有模擬(電腦玩家不會買道具)
 //  - 選項:--tweak 檔案.json 可覆蓋 AutochessData 數值,例如 {"INTEREST.max":2,"INTEREST.startRound":4}
 const path = require("path"), fs = require("fs");
 global.window = global;
 const A = (f) => require(path.join(__dirname, "..", "assets", f));
-A("autochess-data.js"); A("autochess-engine.js"); A("autochess-bot.js");
+A("autochess-data.js"); A("autochess-engine.js"); A("autochess-bot.js"); A("autochess-game.js"); // game.js 只拿 fightBoard(夜市事件的流派加減)來用
 const AD = window.AutochessData, E = window.AutochessEngine;
 
 const args = process.argv.slice(2);
@@ -28,6 +30,8 @@ const pct = (x) => (x * 100).toFixed(1) + "%";
 const avg = (a) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0);
 const pad = (s, n) => { s = String(s); let w = 0; for (const ch of s) w += ch.charCodeAt(0) > 255 ? 2 : 1; return s + " ".repeat(Math.max(0, n - w)); };
 const TAGS = Object.keys(AD.TAGS);
+const MON_SNAPS = { 5: [], 10: [], 15: [] }; // monster 指令用:各怪物輪準備完的玩家陣容
+const EVENTS_ON = opt("events", 1) !== 0, FIGHT = window.AutochessGame.fightBoard;
 
 // ---------------- 玩家 AI(與試玩頁共用:assets/autochess-bot.js)----------------
 const Bot = window.AutochessBot;
@@ -43,23 +47,24 @@ function playGame(strats, seed) {
   while (ps.filter((p) => p.alive).length > 1 && round < 40) {
     round++;
     const live = ps.filter((p) => p.alive);
-    live.forEach((p) => playPrep(p, round, evSeed));
-    const snap = {}; live.forEach((p) => (snap[p.id] = p.board.map((c) => ({ ...c }))));
+    const ev = EVENTS_ON ? E.nightEvent("ne" + evSeed, round) : null, evId = ev ? ev.id : null;
+    live.forEach((p) => playPrep(p, round, evSeed, evId));
+    const snap = {}, fbd = {}; live.forEach((p) => { snap[p.id] = p.board.map((c) => ({ ...c })); fbd[p.id] = FIGHT({}, snap[p.id], evId); if (MON_SNAPS[round]) MON_SNAPS[round].push(snap[p.id]); });
     const order = rng.shuffle(live);
     const pairs = [];
     for (let i = 0; i + 1 < order.length; i += 2) pairs.push([order[i], order[i + 1], false]);
     if (order.length % 2) { const lone = order[order.length - 1]; const ghost = rng.pick(live.filter((x) => x !== lone)); pairs.push([lone, ghost, true]); }
     const outcomes = [];
     pairs.forEach(([a, b, ghost], k) => {
-      const r = E.simulate(snap[a.id], snap[b.id], `${evSeed}|${round}|${k}`);
+      const r = E.simulate(fbd[a.id], fbd[b.id], `${evSeed}|${round}|${k}`);
       battles++; battleRounds += r.rounds; if (r.bellRounds) bellHits++; if (r.endedBy === "limit") limitHits++;
       const ta = E.pickMainTag(snap[a.id]), tb = E.pickMainTag(snap[b.id]);
-      outcomes.push({ p: a, res: r.winner === "a" ? "win" : r.winner === "b" ? "lose" : "draw", dmg: r.winner === "b" ? E.loseDamage(round, r.starsB) : 0, coins: r.bonusCoinsA, tag: ta, foe: tb });
-      if (!ghost) outcomes.push({ p: b, res: r.winner === "b" ? "win" : r.winner === "a" ? "lose" : "draw", dmg: r.winner === "a" ? E.loseDamage(round, r.starsA) : 0, coins: r.bonusCoinsB, tag: tb, foe: ta });
+      outcomes.push({ p: a, res: r.winner === "a" ? "win" : r.winner === "b" ? "lose" : "draw", dmg: r.winner === "b" ? E.loseDamage(round, r.starsB, evId) : 0, coins: r.bonusCoinsA, tag: ta, foe: tb });
+      if (!ghost) outcomes.push({ p: b, res: r.winner === "b" ? "win" : r.winner === "a" ? "lose" : "draw", dmg: r.winner === "a" ? E.loseDamage(round, r.starsA, evId) : 0, coins: r.bonusCoinsB, tag: tb, foe: ta });
     });
     outcomes.forEach((o) => {
       const p = o.p;
-      const s = E.settleEconomy({ result: o.res, round, gold: p.gold, streak: p.streak, level: p.level, bonusCoins: o.coins });
+      const s = E.settleEconomy({ result: o.res, round, gold: p.gold, streak: p.streak, level: p.level, bonusCoins: o.coins, event: evId });
       p.gold = s.gold; p.streak = s.streak;
       if (o.res === "win") p.wins++; else if (o.res === "lose") p.losses++;
       p.hp -= o.dmg; p.battles.push({ round, res: o.res, tag: o.tag });
@@ -120,6 +125,17 @@ if (cmd === "game") {
   console.log("\n實際上陣主流派(不同名張數最多且 ≥2)的對戰勝率:");
   Object.keys(byMain).forEach((k) => { const m = byMain[k]; console.log(pad(k === "none" ? "無羈絆主流派" : AD.TAGS[k].name, 14) + pad(pct(m.w / (m.w + m.l)), 9) + `(${m.w + m.l} 場)`); });
   console.log("目標:各流派勝率 40%~60%");
+} else if (cmd === "monster") {
+  const n = opt("n", 100); for (let i = 0; i < n; i++) playGame(mixed(PL), 5000 + i + opt("seed", 0));
+  if (opt("dump", 0)) { require("fs").writeFileSync("/tmp/monsnaps.json", JSON.stringify(MON_SNAPS)); console.log("已存 /tmp/monsnaps.json"); }
+  console.log(`\n=== 怪物輪校準:${n} 場取樣的玩家陣容 vs 每個候選怪物(目標勝率約 65%~70%)===`);
+  AD.MONSTER_ROUNDS.forEach((r) => {
+    const boards = MON_SNAPS[r].filter((b) => b.length);
+    AD.MONSTER_POOLS[r].forEach((m, mi) => {
+      let w = 0, d = 0; boards.forEach((b, k) => { const x = E.simulate(b.map((c) => ({ ...c })), AD.monsterBoard(r, m), `cal|${m.id}|${k}`); if (x.winner === "a") w++; else if (x.winner === "draw") d++; });
+      console.log(`R${r}  ${m.name.padEnd(8, "　")} 勝率 ${(w / boards.length * 100).toFixed(1)}%  (平手 ${(d / boards.length * 100).toFixed(1)}%,樣本 ${boards.length})${mi === 0 ? "  ← 原本的怪物" : ""}`);
+    });
+  });
 } else if (cmd === "saver") {
   const panic = opt("panic", 0), reserve = opt("reserve", 30);
   header(`金庫風險:4 位「正常買」vs 4 位「存錢(至少留 ${reserve}${panic ? ",血<" + panic + " 就花" : ""})」× ${N} 場`);

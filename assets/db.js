@@ -283,7 +283,7 @@ const db = (function () {
     ["ac_close_call", "一口氣的距離", "拿冠軍且最終血量 ≤ 10(≥4 人場)", "heart-pulse"],
     ["ac_streak5", "手氣正旺", "單場連勝 5 輪", "flame"],
     ["ac_streak8", "勢不可擋", "單場連勝 8 輪", "flame"],
-    ["ac_vault_full", "金庫大戶", "單場有 10 輪以上利息拿滿(+3)", "landmark"],
+    ["ac_vault_full", "金庫大戶", "單場有 10 輪以上封板時存款達 30 銅板(利息 +3 以上)", "landmark"],
     ["ac_reroll_addict", "刷新狂人", "單輪刷新商店 10 次以上", "refresh-cw"],
     ["ac_three_star", "三星攤主", "第一次合成出 3★ 卡牌", "sparkles"],
   ];
@@ -328,8 +328,8 @@ const db = (function () {
     if ((i.top3 || 0) >= 5) out.push("ac_regular");
     if ((st.bestStreak || 0) >= 5) out.push("ac_streak5");
     if ((st.bestStreak || 0) >= 8) out.push("ac_streak8");
-    // 利息拿滿:當輪封板時銅板 ≥ per × max(= 30)
-    const full = (window.AutochessData && window.AutochessData.INTEREST) ? window.AutochessData.INTEREST.per * window.AutochessData.INTEREST.max : 30;
+    // 金庫大戶:當輪封板時銅板 ≥ 30。階段 8 利息上限提高到 +5(存到 50 才滿)後,門檻刻意維持 30,稱號難度不變
+    const full = 30;
     if (stats.filter((x) => (x.gold || 0) >= full).length >= 10) out.push("ac_vault_full");
     if (stats.some((x) => (x.refresh || 0) >= 10)) out.push("ac_reroll_addict");
     if ((st.threeStar || 0) >= 1) out.push("ac_three_star");

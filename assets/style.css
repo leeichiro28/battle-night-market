@@ -2541,3 +2541,40 @@ input,select,textarea{max-width:100%;min-width:0;}
 .ac-spec-match details{margin-top:6px;} .ac-spec-match summary{cursor:pointer;font-size:12.5px;color:var(--ink-dim);display:flex;align-items:center;gap:6px;}
 .ac-spec-match .ac-grid{margin:4px 0 6px;}
 .ac-spec-match .action-row{margin-top:6px;}
+
+/* 商店卡片的「已擁有」標示(企劃 11-8):文字 + 圖示 + 邊框,不單靠顏色 */
+.ac-card .ac-ownrow{display:flex;align-items:center;justify-content:center;gap:2px;min-height:14px;width:100%;font-size:10px;font-weight:700;line-height:1;border-radius:4px;padding:1px 0;white-space:nowrap;}
+.ac-card .ac-ownrow .ico{width:10px;height:10px;}
+.ac-card .ac-ownrow.none{visibility:hidden;}
+.ac-card.shop.own{outline:2px dashed rgba(255,255,255,.8);outline-offset:1px;}
+.ac-card.shop.own .ac-ownrow{background:rgba(255,255,255,.16);color:var(--ink);}
+.ac-card.shop.up{outline:3px solid var(--gold);outline-offset:1px;box-shadow:0 0 10px 1px var(--gold);}
+.ac-card.shop.up .ac-ownrow{background:var(--gold);color:#1B1706;}
+
+/* 夜市事件橫幅 + 雜貨攤(企劃 11-2) */
+.ac-event{display:flex;align-items:center;gap:10px;margin:8px 0;padding:8px 10px;border-radius:10px;background:linear-gradient(90deg,rgba(255,200,80,.18),rgba(255,200,80,.06));border:1px solid var(--gold);}
+.ac-event .ico{width:22px;height:22px;flex:none;color:var(--gold);}
+.ac-event div{display:flex;flex-direction:column;gap:2px;min-width:0;}
+.ac-event b{font-size:13px;color:var(--gold);}
+.ac-event span{font-size:12px;color:var(--ink-dim);}
+.ac-cost.sale{color:var(--green);font-weight:800;}
+.ac-store{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;}
+.ac-sitem{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 4px;border-radius:10px;border:1px solid var(--line,#444);background:var(--panel2);color:var(--ink);text-align:center;cursor:pointer;font:inherit;}
+.ac-sitem .ico{width:20px;height:20px;}
+.ac-sitem b{font-size:12px;}
+.ac-sitem small{font-size:10px;line-height:1.3;color:var(--ink-dim);}
+.ac-sitem em{font-style:normal;font-size:12px;font-weight:700;color:var(--gold);display:inline-flex;align-items:center;gap:2px;}
+.ac-sitem em .ico{width:12px;height:12px;}
+.ac-sitem.dim{opacity:.45;}
+.ac-sitem.sold{opacity:.35;cursor:default;justify-content:center;}
+.ac-store-on{margin-top:6px;}
+
+/* 反羈絆(吵架)與怪物專屬卡(階段 10) */
+.ac-bond.anti{border-color:var(--red);color:var(--red);}
+.ac-bond.anti .ico{color:var(--red);}
+
+/* 前排 / 後排(階段 11) */
+.ac-rowlbl{font-size:11px;font-weight:700;color:var(--ink-dim);margin:6px 0 2px;display:flex;align-items:baseline;gap:6px;}
+.ac-rowlbl small{font-weight:400;font-size:10px;opacity:.8;}
+.ac-slot.full{opacity:.45;}
+
